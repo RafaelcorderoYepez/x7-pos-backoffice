@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { createPortal } from 'react-dom';
 
 type AppModalSize = 'md' | 'lg' | '2xl';
@@ -32,7 +32,11 @@ export const AppModal: React.FC<AppModalProps> = ({
   children,
   closeOnBackdrop = false,
 }) => {
-  const resolvedTitleId = titleId ?? 'app-modal-title';
+  // Id propio por instancia: con dos modales apilados (un formulario y su confirmación
+  // encima) un id fijo se duplicaba en el DOM y aria-labelledby resolvía al título del
+  // primero, así que el segundo diálogo se anunciaba con el nombre del que tapa.
+  const generatedTitleId = useId();
+  const resolvedTitleId = titleId ?? generatedTitleId;
 
   const handleBackdropClick = () => {
     if (!closeOnBackdrop || closeDisabled) return;

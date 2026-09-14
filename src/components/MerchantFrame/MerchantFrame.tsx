@@ -59,7 +59,7 @@ import { CashDrawerHistoryView } from './views/restaurant-operations/CashDrawerH
 import { CollaboratorPersonalScheduleView } from './views/restaurant-operations/CollaboratorPersonalScheduleView';
 import { ShiftAssignmentView } from './views/restaurant-operations/ShiftAssignmentView';
 import { TimeClockKioskView } from './views/restaurant-operations/TimeClockKioskView';
-import { TimeEntriesView } from './views/restaurant-operations/TimeEntriesView';
+import { TimeEntriesView as RestaurantTimeEntriesView } from './views/restaurant-operations/TimeEntriesView';
 import { TipsLedgerView } from './views/restaurant-operations/TipsLedgerView';
 import { TipPoolsView } from './views/restaurant-operations/TipPoolsView';
 import { TipPoolMembersView } from './views/restaurant-operations/TipPoolMembersView';
@@ -90,12 +90,16 @@ import { MovementsView } from './views/products-inventory/stocks/movements/Movem
 import { FloorPlansView } from './views/dining-system/FloorPlansView';
 import { FloorZonesView } from './views/dining-system/FloorZonesView';
 import { DiningTablesView } from './views/dining-system/DiningTablesView';
+import { CollaboratorsView } from './views/hr/CollaboratorsView';
+import { TimeEntriesView as HrTimeEntriesView } from './views/hr/TimeEntriesView';
+import { ContractsView } from './views/hr/ContractsView';
 import { TableAssignmentsView } from './views/dining-system/TableAssignmentsView';
 import { RawMaterialsView } from './views/products-inventory/raw-materials/RawMaterialsView';
 import { RawMaterialCategoriesView } from './views/products-inventory/category/RawMaterialCategoriesView';
 import { RecipesView } from './views/products-inventory/recipes/RecipesView';
 import { KitchenStationsView } from './views/restaurant-operations/kitchen-stations/KitchenStationsView';
 import { KitchenKDSHubView } from './views/restaurant-operations/kitchen-stations/KitchenKDSHubView';
+import { KitchenDisplayDevicesView } from './views/restaurant-operations/kitchen-stations/KitchenDisplayDevicesView';
 import { clearAuthSession } from '../../lib/auth-storage';
 import { getCurrentMerchantId } from '../../api/users';
 
@@ -750,6 +754,12 @@ export const MerchantFrame: React.FC = () => {
 
     if (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries' || activeTab === 'attendance-ledger' || activeTab === 'ledger') {
       return <TimeEntriesView onNavigate={handleStaffNavigate} />;
+    if (
+      (activeCategory === 'restaurant-operations' && (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries')) ||
+      activeTab === 'attendance-ledger' ||
+      activeTab === 'ledger'
+    ) {
+      return <RestaurantTimeEntriesView onNavigate={handleStaffNavigate} />;
     }
 
     if (activeTab === 'tips-ledger' || activeTab === 'tips' || activeTab === '/store-operations/tips-ledger') {
@@ -928,6 +938,33 @@ export const MerchantFrame: React.FC = () => {
       );
     }
 
+    if (activeTab === 'collaborators-contracts') {
+      return (
+        <ContractsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries') {
+      return (
+        <HrTimeEntriesView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'collaborators') {
+      return (
+        <CollaboratorsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
     if (activeTab === 'tables') {
       return (
         <DiningTablesView
@@ -995,6 +1032,10 @@ export const MerchantFrame: React.FC = () => {
 
     if (activeTab === 'kitchen-stations') {
       return <KitchenStationsView onNavigate={(view) => setActiveTab(view)} />;
+    }
+
+    if (activeTab === 'kitchen-display-devices') {
+      return <KitchenDisplayDevicesView onNavigate={(view) => setActiveTab(view)} />;
     }
 
 

@@ -357,6 +357,55 @@ test('2D editor renders the seeded tables and persists a drag with PUT /api/tabl
   await expect(page.getByText('Floor plan layout saved')).toBeVisible();
 });
 
+test('el editor fusiona varias mesas: Ctrl+clic, marco de selección y una sola unión', async ({
+  page,
+}) => {
+  await bootstrap(page);
+  await gotoFloorPlans(page);
+
+  await page
+    .getByTestId('floor-plan-row-1')
+    .getByRole('button', { name: 'Open editor for Main Dining Room' })
+    .click();
+  await expect(page.getByTestId('floor-plan-canvas')).toBeVisible();
+
+  // --- Ctrl+clic suma la segunda mesa a la selección ---
+  const t1 = page.getByTestId('floor-table-101');
+  const t2 = page.getByTestId('floor-table-102');
+  await t1.click();
+  await t2.click({ modifiers: ['Control'] });
+
+  const panel = page.getByTestId('floor-plan-multi-inspector');
+  await expect(panel).toContainText('2 tables');
+  // T1 tiene 4 asientos y T2 dos.
+  await expect(panel).toContainText('6 seats combined');
+
+  // --- El marco de selección por arrastre llega al mismo sitio ---
+  await page.getByRole('button', { name: 'Clear selection' }).click();
+  await expect(page.getByTestId('floor-plan-inspector-empty')).toBeVisible();
+
+  const canvas = page.getByTestId('floor-plan-canvas');
+  const cbox = (await canvas.boundingBox())!;
+  await page.mouse.move(cbox.x + 5, cbox.y + 5);
+  await page.mouse.down();
+  // Durante el arrastre el marco es visible.
+  await page.mouse.move(cbox.x + 300, cbox.y + 250, { steps: 8 });
+  await expect(page.getByTestId('selection-marquee')).toBeVisible();
+  await page.mouse.up();
+
+  await expect(panel).toContainText('2 tables');
+
+  // --- Una sola unión para todo el grupo ---
+  const putRequest = page.waitForRequest(
+    (r) => pathOf(r.url()) === '/api/tables/102' && r.method() === 'PUT',
+  );
+  await page.getByRole('button', { name: /join 2 selected tables/i }).click();
+  await page.getByTestId('floor-plan-save').click();
+
+  const body = JSON.parse((await putRequest).postData() || '{}');
+  expect(body.parent_table_id).toBe(101);
+});
+
 test('quick links hub marks FLOOR PLANS active and routes to the other dining workspaces', async ({
   page,
 }) => {

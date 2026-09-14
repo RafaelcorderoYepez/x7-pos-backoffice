@@ -100,7 +100,12 @@ export const navigationService = {
               'sub-plans-core',
               'sub-apps-mapping'
             ];
-            return !exclusiveSaaS.includes(f.id) && f.planId === userPlanId;
+            // Los planes son ACUMULATIVOS (1 Quick Service ⊂ 2 Full Restaurant ⊂ 3
+            // Enterprise), así que un plan superior incluye las features de los inferiores.
+            // Con la igualdad exacta que había aquí, un Full Restaurant se quedaba sin las
+            // 36 features de plan 1 —mesas, productos, categorías, comandas, clientes— y
+            // esos workspaces existían pero no había forma de llegar a ellos desde el menú.
+            return !exclusiveSaaS.includes(f.id) && f.planId <= userPlanId;
           }
         });
 

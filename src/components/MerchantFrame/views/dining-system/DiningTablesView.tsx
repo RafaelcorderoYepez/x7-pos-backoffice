@@ -10,11 +10,37 @@ import type {
 } from '../../../../types/dining-system';
 import {
   TABLE_SHAPES,
+  TABLE_STATUSES,
   TABLE_MIN_SIZE_PX,
   TABLE_MAX_SIZE_PX,
+  TABLE_MIN_ROTATION,
+  TABLE_MAX_ROTATION,
   tableFootprint,
+  tableStatusBadgeStyle,
+  tableStatusLabel,
   zoneSwatchColor,
 } from '../../../../types/dining-system';
+import {
+  activeServiceGuard,
+  changesTableLayout,
+  childTablesOf,
+  duplicateTableNumberError,
+  eligibleParentTables,
+  eligibleTransferTargets,
+  footprintClipWarning,
+  formatSeats,
+  formatSpatialSummary,
+  GROUP_RELEASE_STATUS,
+  inheritedChildStatus,
+  isJoined,
+  joinedChildrenLabel,
+  joinedToLabel,
+  parentTableId,
+  positionBoundsError,
+  rotationError,
+} from '../../../../lib/dining-tables';
+import { isActiveDuty, type TableAssignment } from '../../../../lib/table-assignments';
+import { useDiningRealtime } from '../../../../lib/useDiningRealtime';
 import type { UnitSystem } from '../../../../lib/measurement-units';
 import {
   formatDimensions,
@@ -27,6 +53,8 @@ import {
   UNIT_SYSTEM_SHORT,
 } from '../../../../lib/measurement-units';
 import { DiningSystemQuickLinks } from './DiningSystemQuickLinks';
+import { TableJoinModal } from './TableJoinModal';
+import { TableTransferModal } from './TableTransferModal';
 import { FloorPlanEditor } from './FloorPlanEditor';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter, ModalFormError } from '../../shared/AppModal';
@@ -34,20 +62,9 @@ import { Toast } from '../../shared/Toast';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-// El backend guarda `status` como varchar libre; éstos son los valores que maneja el POS.
-// 'deleted' es el borrado lógico de una mesa: nunca se ofrece en el formulario.
-const TABLE_STATUSES = ['available', 'occupied', 'reserved', 'out_of_service'];
+// 'deleted' es el borrado lógico de una mesa: nunca es un estado operativo ni se ofrece
+// en el formulario. El resto del vocabulario vive en types/dining-system.
 const DELETED_STATUS = 'deleted';
-
-const STATUS_BADGE_STYLES: Record<string, string> = {
-  available: 'bg-green-500/10 text-green-700',
-  occupied: 'bg-blue-500/10 text-blue-700',
-  reserved: 'bg-amber-500/10 text-amber-700',
-  out_of_service: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
-};
-
-const statusLabel = (raw: string): string =>
-  (raw ?? '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
 
@@ -61,8 +78,13 @@ interface TableFormDrawerProps {
   initial?: DiningTable;
   plans: FloorPlan[];
   zones: FloorZone[];
+  // Inventario vivo: alimenta el selector de mesa madre y cierra el candado circular.
+  tables: DiningTable[];
   // Números ya usados por el comercio: el índice (merchant_id, number) es ÚNICO en base.
   takenNumbers: Set<string>;
+  // Camareros con esta mesa a su cargo ahora mismo. Con servicio vivo, mudarla de plano o
+  // de zona deja al POS sin saber dónde está la comanda, así que se bloquea.
+  activeAssignments: number;
   unitSystem: UnitSystem;
   submitting: boolean;
   formError: string;
@@ -75,7 +97,9 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
   initial,
   plans,
   zones,
+  tables,
   takenNumbers,
+  activeAssignments,
   unitSystem,
   submitting,
   formError,
@@ -96,6 +120,14 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
   const base = tableFootprint(initial ?? { shape });
   const [width, setWidth] = useState(String(lengthValue(base.w, unitSystem)));
   const [height, setHeight] = useState(String(lengthValue(base.h, unitSystem)));
+  const [rotation, setRotation] = useState(String(initial?.rotation ?? 0));
+  // Una mesa nueva aterriza a 40,40 del origen: dentro de cualquier lienzo y visible de
+  // inmediato en el editor, donde se recoloca arrastrándola.
+  const [posX, setPosX] = useState(String(initial?.pos_x ?? 40));
+  const [posY, setPosY] = useState(String(initial?.pos_y ?? 40));
+  const [parentId, setParentId] = useState<string>(
+    initial ? String(parentTableId(initial) ?? '') : '',
+  );
 
   useModalDismiss(onCancel);
 
@@ -114,12 +146,50 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
   const widthPx = clamp(lengthToPx(Number(width) || 0, unitSystem), TABLE_MIN_SIZE_PX, TABLE_MAX_SIZE_PX);
   const heightPx = clamp(lengthToPx(Number(height) || 0, unitSystem), TABLE_MIN_SIZE_PX, TABLE_MAX_SIZE_PX);
 
+  const rotationNum = Number(rotation);
+  const posXNum = Number(posX);
+  const posYNum = Number(posY);
+  const selectedPlan = plans.find((p) => String(p.id) === planId);
+
+  // Las coordenadas se teclean en píxeles de lienzo (los mismos que persiste el backend y
+  // que muestra la parrilla), no en la unidad de medida: son una posición sobre el plano,
+  // no una distancia que el operador mida con cinta métrica.
+  const positionError = positionBoundsError(posXNum, posYNum, selectedPlan, unitSystem);
+  const clipWarning = positionError
+    ? ''
+    : footprintClipWarning(
+        { pos_x: posXNum, pos_y: posYNum, shape, width: widthPx, height: heightPx },
+        selectedPlan,
+      );
+  const rotationMsg = rotationError(rotationNum);
+
+  // Mesa madre: nunca ella misma ni ninguna de sus hijas, para que no se cierre el ciclo.
+  const parentOptions = useMemo(
+    () => eligibleParentTables(tables, initial?.id ?? -1),
+    [tables, initial],
+  );
+
+  // Con la mesa en servicio, cambiar de plano o de zona queda bloqueado; renombrarla o
+  // recolocarla en el mismo lienzo sigue permitido.
+  const layoutGuard =
+    mode === 'edit' && initial
+      ? changesTableLayout(initial, {
+          floorPlan: Number(planId) || null,
+          floorZone: Number(zoneId) || null,
+        })
+        ? activeServiceGuard(initial, { activeAssignments })
+        : ''
+      : '';
+
   const canSubmit =
     number.trim().length > 0 &&
     !duplicateNumber &&
     capacityNum >= 1 &&
     planId.trim().length > 0 &&
-    zoneId.trim().length > 0;
+    zoneId.trim().length > 0 &&
+    !positionError &&
+    !rotationMsg &&
+    !layoutGuard;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,8 +202,13 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
       shape,
       width: widthPx,
       height: heightPx,
+      rotation: rotationNum,
+      pos_x: Math.round(posXNum),
+      pos_y: Math.round(posYNum),
       floorPlan: Number(planId),
       floorZone: Number(zoneId),
+      // null explícito desune la mesa; el DTO de escritura sólo entiende el escalar.
+      parent_table_id: parentId ? Number(parentId) : null,
     });
   };
 
@@ -174,7 +249,7 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
             />
             {duplicateNumber && (
               <p role="alert" className="text-[11px] font-semibold text-[#ae001a]">
-                Table number &apos;{number.trim()}&apos; is already used by another table.
+                {duplicateTableNumberError(number)}
               </p>
             )}
           </div>
@@ -242,6 +317,15 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
           </div>
         </div>
 
+        {layoutGuard && (
+          <p
+            role="alert"
+            className="text-[11px] font-semibold text-[#ae001a] bg-[#ae001a]/5 border border-[#ae001a]/20 rounded px-3 py-2"
+          >
+            {layoutGuard}
+          </p>
+        )}
+
         <div className="grid grid-cols-3 gap-3">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="tbl-shape" className={labelClass}>
@@ -295,6 +379,98 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
           </div>
         </div>
 
+        {/* Colocación sobre el lienzo. Las coordenadas van en píxeles del plano —la unidad
+            en la que el backend las persiste— y el giro en grados enteros. */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="tbl-pos-x" className={labelClass}>
+              Position X (px)
+            </label>
+            <input
+              id="tbl-pos-x"
+              type="number"
+              step={1}
+              value={posX}
+              onChange={(e) => setPosX(e.target.value)}
+              aria-invalid={Boolean(positionError)}
+              className={`${inputClass} font-mono`}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="tbl-pos-y" className={labelClass}>
+              Position Y (px)
+            </label>
+            <input
+              id="tbl-pos-y"
+              type="number"
+              step={1}
+              value={posY}
+              onChange={(e) => setPosY(e.target.value)}
+              aria-invalid={Boolean(positionError)}
+              className={`${inputClass} font-mono`}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="tbl-rotation" className={labelClass}>
+              <span className="material-symbols-outlined text-[13px] align-middle" aria-hidden="true">
+                rotate_right
+              </span>{' '}
+              Rotation (°)
+            </label>
+            <input
+              id="tbl-rotation"
+              type="number"
+              min={TABLE_MIN_ROTATION}
+              max={TABLE_MAX_ROTATION}
+              step={1}
+              value={rotation}
+              onChange={(e) => setRotation(e.target.value)}
+              aria-invalid={Boolean(rotationMsg)}
+              className={`${inputClass} font-mono`}
+            />
+          </div>
+        </div>
+
+        {positionError && (
+          <p role="alert" className="text-[11px] font-semibold text-[#ae001a]">
+            {positionError}
+          </p>
+        )}
+        {rotationMsg && (
+          <p role="alert" className="text-[11px] font-semibold text-[#ae001a]">
+            {rotationMsg}
+          </p>
+        )}
+        {clipWarning && (
+          <p className="text-[11px] text-[#5f5e5e] italic">{clipWarning}</p>
+        )}
+
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="tbl-parent" className={labelClass}>
+            <span className="material-symbols-outlined text-[13px] align-middle" aria-hidden="true">
+              link
+            </span>{' '}
+            Joined to
+          </label>
+          <select
+            id="tbl-parent"
+            value={parentId}
+            onChange={(e) => setParentId(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">Not joined — standalone table</option>
+            {parentOptions.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.number} · {formatSeats(t.capacity)}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-[#5f5e5e]">
+            Joining hands this table to a larger party. A table can never be joined to itself
+            or to one of its own child tables, so those are left out of the list.
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="tbl-status" className={labelClass}>
@@ -308,7 +484,7 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
             >
               {TABLE_STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {statusLabel(s)}
+                  {tableStatusLabel(s)}
                 </option>
               ))}
             </select>
@@ -344,10 +520,13 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
 
 const ConfirmDeleteTableDialog: React.FC<{
   table: DiningTable;
+  // Motivo por el que la mesa no puede borrarse (comanda o camarero vivos). Vacío = adelante.
+  guard: string;
+  childCount: number;
   submitting: boolean;
   onCancel: () => void;
   onConfirm: () => void;
-}> = ({ table, submitting, onCancel, onConfirm }) => {
+}> = ({ table, guard, childCount, submitting, onCancel, onConfirm }) => {
   useModalDismiss(onCancel);
   return (
     <AppModal
@@ -359,18 +538,46 @@ const ConfirmDeleteTableDialog: React.FC<{
       closeAriaLabel="Close delete confirmation"
     >
       <div className="p-6 space-y-4 text-left font-sans">
-        <p className="text-sm text-[#1d1c17]">
-          Delete table <strong className="font-mono">{table.number}</strong>? It disappears from the
-          floor plan canvas and from the POS.
-        </p>
-        <ModalFormFooter
-          onCancel={onCancel}
-          submitLabel={submitting ? 'Deleting…' : 'Delete Table'}
-          isSubmitting={submitting}
-          submitType="button"
-          onSubmit={onConfirm}
-          destructive
-        />
+        {guard ? (
+          <>
+            <p
+              role="alert"
+              className="text-sm text-[#ae001a] font-semibold bg-[#ae001a]/5 border border-[#ae001a]/20 rounded px-3 py-2"
+            >
+              {guard}
+            </p>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-5 py-2.5 border border-[#e8e2d8] text-[#1d1c17] text-[11px] font-bold uppercase tracking-widest hover:text-[#ae001a] transition-colors duration-200"
+              >
+                Close
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-[#1d1c17]">
+              Delete table <strong className="font-mono">{table.number}</strong>? It disappears from
+              the floor plan canvas and from the POS.
+            </p>
+            {childCount > 0 && (
+              <p className="text-[11px] text-[#5f5e5e] italic">
+                {childCount === 1 ? 'One table is' : `${childCount} tables are`} joined to it and
+                will be released back to standalone.
+              </p>
+            )}
+            <ModalFormFooter
+              onCancel={onCancel}
+              submitLabel={submitting ? 'Deleting…' : 'Delete Table'}
+              isSubmitting={submitting}
+              submitType="button"
+              onSubmit={onConfirm}
+              destructive
+            />
+          </>
+        )}
       </div>
     </AppModal>
   );
@@ -389,6 +596,8 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
   const [tables, setTables] = useState<DiningTable[]>([]);
   const [plans, setPlans] = useState<FloorPlan[]>([]);
   const [zones, setZones] = useState<FloorZone[]>([]);
+  // Asignaciones vivas: alimentan la guarda de "mesa con camarero" sin pedir otra vista.
+  const [assignments, setAssignments] = useState<TableAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [unitSystem, setUnitSystem] = useState<UnitSystem>(loadUnitSystem);
@@ -407,6 +616,9 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
   const [deletingTable, setDeletingTable] = useState<DiningTable | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [editorPlan, setEditorPlan] = useState<FloorPlan | null>(null);
+  const [joinParent, setJoinParent] = useState<DiningTable | null>(null);
+  const [transferSource, setTransferSource] = useState<DiningTable | null>(null);
+  const [linkSubmitting, setLinkSubmitting] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
@@ -447,15 +659,30 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
 
   const fetchContext = async () => {
     try {
-      const [planRes, zoneRes] = await Promise.all([
+      const [planRes, zoneRes, asgRes] = await Promise.all([
         fetch(`${API_BASE}/floor-plan?limit=100`, { headers: authHeaders() }),
         fetch(`${API_BASE}/floor-zone?limit=100`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/table-assignments?limit=100`, { headers: authHeaders() }),
       ]);
       if (planRes.ok) setPlans(((await planRes.json()).data ?? []) as FloorPlan[]);
       if (zoneRes.ok) setZones(((await zoneRes.json()).data ?? []) as FloorZone[]);
+      // Si el plan del comercio no incluye la feature, el backend responde 403: la parrilla
+      // se queda sin el dato de camarero y la guarda cae al estado de la mesa, que basta.
+      if (asgRes.ok) setAssignments(((await asgRes.json()).data ?? []) as TableAssignment[]);
     } catch (err) {
       console.error('Error fetching plans/zones for tables:', err);
     }
+  };
+
+  // Mezcla filas frescas sobre las que ya están pintadas, sin reordenar ni parpadear la
+  // parrilla entera: es lo que necesita tanto un evento suelto como el delta de reconexión.
+  const mergeTables = (incoming: DiningTable[]) => {
+    if (incoming.length === 0) return;
+    setTables((prev) => {
+      const byId = new Map(prev.map((t) => [t.id, t]));
+      incoming.forEach((t) => byId.set(t.id, { ...byId.get(t.id), ...t }));
+      return Array.from(byId.values()).filter((t) => t.status !== DELETED_STATUS);
+    });
   };
 
   useEffect(() => {
@@ -486,9 +713,33 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     return m;
   }, [merchantZones]);
 
+  // Cuántos camareros tienen ahora mismo cada mesa a su cargo (releasedAt === null).
+  const activeAssignmentsByTable = useMemo(() => {
+    const m = new Map<number, number>();
+    assignments.filter(isActiveDuty).forEach((a) => {
+      m.set(a.tableId, (m.get(a.tableId) ?? 0) + 1);
+    });
+    return m;
+  }, [assignments]);
+
+  const activeServersOn = (tableId: number): number => activeAssignmentsByTable.get(tableId) ?? 0;
+
+  const guardFor = (t: DiningTable): string =>
+    activeServiceGuard(t, { activeAssignments: activeServersOn(t.id) });
+
   const takenNumbers = useMemo(
     () => new Set(tables.map((t) => (t.number ?? '').trim().toLowerCase())),
     [tables],
+  );
+
+  // Cascada: elegir un plano recorta el selector de zonas a las suyas. Sin esto el operador
+  // puede combinar "Rooftop" con una zona de la planta baja y quedarse con la parrilla vacía.
+  const selectableZones = useMemo(
+    () =>
+      planFilter
+        ? merchantZones.filter((z) => String(z.floorPlan?.id ?? '') === planFilter)
+        : merchantZones,
+    [merchantZones, planFilter],
   );
 
   const filteredTables = useMemo(() => {
@@ -614,6 +865,184 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     }
   };
 
+  // PUT parcial sobre una mesa. Las mesas usan PUT (no PATCH) y rechazan merchant_id.
+  const putTable = async (id: number, dto: UpdateDiningTableDto): Promise<void> => {
+    const res = await fetch(`${API_BASE}/tables/${id}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(dto),
+    });
+    if (res.status === 401) return handleUnauthorized();
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.message || 'Failed to update table');
+    }
+  };
+
+  // Unir mesas para un grupo grande: cada hija apunta a la madre y, si la madre ya tiene
+  // comensales sentados, hereda su estado — el POS no puede ofrecer como libre una mesa
+  // que forma parte de un grupo ocupado.
+  const handleJoinSubmit = async (childIds: number[]) => {
+    if (!joinParent) return;
+    setLinkSubmitting(true);
+    try {
+      const inherited = inheritedChildStatus(joinParent.status);
+      await Promise.all(
+        childIds.map((id) =>
+          putTable(id, {
+            parent_table_id: joinParent.id,
+            ...(inherited ? { status: inherited } : {}),
+          }),
+        ),
+      );
+      await fetchTables();
+      setJoinParent(null);
+      setToast({
+        message: `${childIds.length === 1 ? '1 table' : `${childIds.length} tables`} joined to ${joinParent.number}`,
+        type: 'success',
+      });
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : 'Failed to join the tables',
+        type: 'error',
+      });
+    } finally {
+      setLinkSubmitting(false);
+    }
+  };
+
+  // Desunir una hija antes de cerrar la cuenta: parte del grupo se va y su mesa vuelve a
+  // estar disponible por su cuenta.
+  const handleUnjoin = async (child: DiningTable) => {
+    setLinkSubmitting(true);
+    try {
+      await putTable(child.id, { parent_table_id: null });
+      await fetchTables();
+      setToast({ message: `Table ${child.number} unjoined`, type: 'success' });
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : 'Failed to unjoin the table',
+        type: 'error',
+      });
+    } finally {
+      setLinkSubmitting(false);
+    }
+  };
+
+  // Liberar el grupo entero: se sueltan todas las hijas y madre e hijas pasan a limpieza,
+  // que es lo mismo que hace el backend al cobrar la cuenta de la mesa madre.
+  const handleReleaseGroup = async (parent: DiningTable) => {
+    const children = childTablesOf(tables, parent.id);
+    setLinkSubmitting(true);
+    try {
+      await Promise.all([
+        ...children.map((c) =>
+          putTable(c.id, { parent_table_id: null, status: GROUP_RELEASE_STATUS }),
+        ),
+        putTable(parent.id, { status: GROUP_RELEASE_STATUS }),
+      ]);
+      await fetchTables();
+      setToast({
+        message: `Group released — ${parent.number} and ${children.length} joined ${
+          children.length === 1 ? 'table' : 'tables'
+        } moved to cleaning`,
+        type: 'success',
+      });
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : 'Failed to release the group',
+        type: 'error',
+      });
+    } finally {
+      setLinkSubmitting(false);
+    }
+  };
+
+  // Transferencia en vivo: el backend la resuelve en una sola transacción (re-vincula la
+  // comanda abierta, libera el origen y ocupa el destino). Aquí sólo se elige el destino.
+  const handleTransferSubmit = async (target: DiningTable) => {
+    if (!transferSource) return;
+    setLinkSubmitting(true);
+    try {
+      const res = await fetch(`${API_BASE}/tables/transfer`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ sourceTableId: transferSource.id, targetTableId: target.id }),
+      });
+      if (res.status === 401) return handleUnauthorized();
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Failed to transfer the table');
+      await fetchTables();
+      await fetchContext();
+      setTransferSource(null);
+      setToast({
+        message: `Guests moved from ${transferSource.number} to ${target.number}`,
+        type: 'success',
+      });
+    } catch (err) {
+      setToast({
+        message: err instanceof Error ? err.message : 'Failed to transfer the table',
+        type: 'error',
+      });
+    } finally {
+      setLinkSubmitting(false);
+    }
+  };
+
+  // Al recuperar la red pedimos sólo lo que cambió mientras estuvimos sordos, en vez de
+  // recargar la parrilla entera. Si el backend no expone el delta, recarga completa.
+  const resyncFromDelta = async (since: string) => {
+    try {
+      const res = await fetch(
+        `${API_BASE}/tables/status-delta?since=${encodeURIComponent(since)}`,
+        { headers: authHeaders() },
+      );
+      if (res.status === 401) return handleUnauthorized();
+      if (res.ok) {
+        const json = await res.json().catch(() => ({}));
+        mergeTables((json.data ?? []) as DiningTable[]);
+        return;
+      }
+    } catch (err) {
+      console.error('Error reconciling table status delta:', err);
+    }
+    fetchTables();
+  };
+
+  // La sala se mueve desde las tablets del POS: la parrilla tiene que reflejarlo sin que
+  // nadie recargue la página.
+  const { connected: liveConnected } = useDiningRealtime({
+    onTableStatusChanged: (p) => {
+      if (p.merchantId !== activeMerchantId) return;
+      setTables((prev) => {
+        // Una mesa que no tenemos pintada (recién creada en otra terminal) obliga a recargar.
+        if (!prev.some((t) => t.id === p.tableId)) {
+          fetchTables();
+          return prev;
+        }
+        return prev.map((t) =>
+          t.id === p.tableId
+            ? { ...t, status: p.status, parent_table_id: p.parent_table_id ?? t.parent_table_id }
+            : t,
+        );
+      });
+    },
+    onTableTransferred: (p) => {
+      if (p.merchantId === activeMerchantId) fetchTables();
+    },
+    onAssignmentChanged: (p) => {
+      if (p.merchantId === activeMerchantId) fetchContext();
+    },
+    onFloorPlanUpdated: (p) => {
+      if (p.merchantId !== activeMerchantId) return;
+      fetchTables();
+      fetchContext();
+    },
+    onReconnect: (since) => {
+      void resyncFromDelta(since);
+    },
+  });
+
   // El eje del módulo: desde la mesa se salta al lienzo donde vive.
   const openEditorForTable = (t: DiningTable) => {
     const plan = t.floorPlan?.id != null ? planById.get(t.floorPlan.id) : undefined;
@@ -677,7 +1106,10 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
         </div>
         <select
           value={planFilter}
-          onChange={(e) => setPlanFilter(e.target.value)}
+          onChange={(e) => {
+            setPlanFilter(e.target.value);
+            setZoneFilter('');
+          }}
           className="px-3 py-2 bg-[#fef9f1] border border-[#e8e2d8] rounded text-sm focus:border-[#ae001a] outline-none"
           aria-label="Filter by floor plan"
         >
@@ -695,7 +1127,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
           aria-label="Filter by zone"
         >
           <option value="">All Zones</option>
-          {merchantZones.map((z) => (
+          {selectableZones.map((z) => (
             <option key={z.id} value={z.id}>
               {z.name}
             </option>
@@ -710,7 +1142,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
           <option value="">All Statuses</option>
           {TABLE_STATUSES.map((s) => (
             <option key={s} value={s}>
-              {statusLabel(s)}
+              {tableStatusLabel(s)}
             </option>
           ))}
         </select>
@@ -766,8 +1198,8 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
             table_restaurant
           </span>
           <p className="text-[#5f5e5e] mt-4 max-w-md text-sm leading-relaxed">
-            No tables configured. Click &apos;Create Table&apos; to add your first table, or place
-            them visually from the floor plan editor.
+            No dining tables configured. Click &apos;Create Table&apos; to place tables on your
+            floor plans.
           </p>
           <button
             type="button"
@@ -788,8 +1220,28 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
             <span className="text-[11px] font-bold text-white uppercase tracking-widest">
               DINING TABLES
             </span>
-            <span className="text-white/50 text-xs">
-              {loading ? 'Loading...' : pluralize(filteredTables.length, 'table', 'tables')}
+            <span className="flex items-center gap-3">
+              {/* Estado del canal en vivo: si la sala se mueve y esto dice "Offline", lo que
+                  hay en pantalla puede estar rancio. */}
+              <span
+                data-testid="dining-realtime-status"
+                title={
+                  liveConnected
+                    ? 'Live floor updates connected'
+                    : 'Live floor updates unavailable — data refreshes on reload'
+                }
+                className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${
+                  liveConnected ? 'text-green-400' : 'text-white/40'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                  {liveConnected ? 'sensors' : 'sensors_off'}
+                </span>
+                {liveConnected ? 'Live' : 'Offline'}
+              </span>
+              <span className="text-white/50 text-xs">
+                {loading ? 'Loading...' : pluralize(filteredTables.length, 'table', 'tables')}
+              </span>
             </span>
           </div>
           <div className="overflow-x-auto">
@@ -803,7 +1255,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
                     Seats
                   </th>
                   <th className="px-6 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#5f5e5e]">
-                    Shape &amp; Size
+                    Spatial
                   </th>
                   <th className="px-6 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#5f5e5e]">
                     Zone
@@ -856,12 +1308,34 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
                     const fp = tableFootprint(t);
                     const zone = t.floorZone?.id != null ? zoneById.get(t.floorZone.id) : undefined;
                     const zoneColor = zoneSwatchColor(zone?.color ?? t.floorZone?.color);
+                    const joinedLabel = joinedToLabel(tables, t);
+                    const childrenLabel = joinedChildrenLabel(tables, t.id);
                     return (
                       <tr key={t.id} className="group hover:bg-[#f8f3eb] transition-colors">
                         <td className="px-6 py-4">
                           <p className="font-bold text-[#1d1c17] font-mono">{t.number}</p>
-                          {t.location && (
-                            <p className="text-xs text-[#5f5e5e]">{t.location}</p>
+                          {t.location && <p className="text-xs text-[#5f5e5e]">{t.location}</p>}
+                          {joinedLabel && (
+                            <span
+                              data-testid={`table-joined-badge-${t.id}`}
+                              className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-[#ae001a]/10 text-[#ae001a]"
+                            >
+                              <span className="material-symbols-outlined text-[13px]" aria-hidden="true">
+                                link
+                              </span>
+                              {joinedLabel}
+                            </span>
+                          )}
+                          {childrenLabel && (
+                            <span
+                              data-testid={`table-children-badge-${t.id}`}
+                              className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-[#1d1c17]/5 text-[#1d1c17]"
+                            >
+                              <span className="material-symbols-outlined text-[13px]" aria-hidden="true">
+                                link
+                              </span>
+                              {childrenLabel}
+                            </span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-center">
@@ -869,11 +1343,16 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
                             <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
                               person
                             </span>
-                            {t.capacity}
+                            {formatSeats(t.capacity)}
                           </span>
                         </td>
                         <td className="px-6 py-4">
-                          <p className="text-sm text-[#1d1c17]">{t.shape ?? 'Square'}</p>
+                          <p
+                            data-testid={`table-spatial-${t.id}`}
+                            className="text-sm text-[#1d1c17] font-mono whitespace-nowrap"
+                          >
+                            {formatSpatialSummary(t)}
+                          </p>
                           <p className="text-xs text-[#5f5e5e] font-mono">
                             {formatDimensions(fp.w, fp.h, unitSystem)}
                           </p>
@@ -916,11 +1395,12 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span
-                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
-                              STATUS_BADGE_STYLES[t.status] ?? 'bg-[#ece8e0] text-[#1d1c17]'
-                            }`}
+                            data-testid={`table-status-${t.id}`}
+                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${tableStatusBadgeStyle(
+                              t.status,
+                            )}`}
                           >
-                            {statusLabel(t.status)}
+                            {tableStatusLabel(t.status)}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-center">
@@ -938,6 +1418,59 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
                               Open Editor
                             </button>
                             <span className="flex gap-2 opacity-30 group-hover:opacity-100 transition-opacity">
+                              {t.status === 'occupied' && (
+                                <button
+                                  type="button"
+                                  onClick={() => setTransferSource(t)}
+                                  aria-label={`Transfer guests from table ${t.number}`}
+                                  title="Move this party to another table"
+                                  className="p-1 text-[#1d1c17] hover:text-[#ae001a] transition-colors duration-200"
+                                >
+                                  <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                                    swap_horiz
+                                  </span>
+                                </button>
+                              )}
+                              {isJoined(t) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnjoin(t)}
+                                  disabled={linkSubmitting}
+                                  aria-label={`Unjoin table ${t.number}`}
+                                  title="Unjoin from its parent table"
+                                  className="p-1 text-[#1d1c17] hover:text-[#ae001a] transition-colors duration-200 disabled:opacity-40"
+                                >
+                                  <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                                    link_off
+                                  </span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setJoinParent(t)}
+                                  aria-label={`Join tables to ${t.number}`}
+                                  title="Join other tables to this one"
+                                  className="p-1 text-[#1d1c17] hover:text-[#ae001a] transition-colors duration-200"
+                                >
+                                  <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                                    link
+                                  </span>
+                                </button>
+                              )}
+                              {childrenLabel && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleReleaseGroup(t)}
+                                  disabled={linkSubmitting}
+                                  aria-label={`Release the group joined to table ${t.number}`}
+                                  title="Release the whole group back to cleaning"
+                                  className="p-1 text-[#1d1c17] hover:text-[#ae001a] transition-colors duration-200 disabled:opacity-40"
+                                >
+                                  <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
+                                    group_remove
+                                  </span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => {
@@ -995,7 +1528,11 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
           initial={formDrawer.table}
           plans={merchantPlans}
           zones={merchantZones}
+          tables={tables}
           takenNumbers={takenNumbers}
+          activeAssignments={
+            formDrawer.table ? activeServersOn(formDrawer.table.id) : 0
+          }
           unitSystem={unitSystem}
           submitting={formSubmitting}
           formError={formError}
@@ -1011,9 +1548,31 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
       {deletingTable && (
         <ConfirmDeleteTableDialog
           table={deletingTable}
+          guard={guardFor(deletingTable)}
+          childCount={childTablesOf(tables, deletingTable.id).length}
           submitting={deleteSubmitting}
           onCancel={() => setDeletingTable(null)}
           onConfirm={handleDeleteConfirm}
+        />
+      )}
+
+      {joinParent && (
+        <TableJoinModal
+          parent={joinParent}
+          tables={tables}
+          submitting={linkSubmitting}
+          onCancel={() => setJoinParent(null)}
+          onSubmit={handleJoinSubmit}
+        />
+      )}
+
+      {transferSource && (
+        <TableTransferModal
+          source={transferSource}
+          targets={eligibleTransferTargets(tables, transferSource.id)}
+          submitting={linkSubmitting}
+          onCancel={() => setTransferSource(null)}
+          onSubmit={handleTransferSubmit}
         />
       )}
 

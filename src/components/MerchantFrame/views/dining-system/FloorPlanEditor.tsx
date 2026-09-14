@@ -2,6 +2,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
+import {
+  childTablesOf,
+  descendantTableIds,
+  wouldCreateCycle,
+  eligibleParentTables,
+  eligibleTransferTargets,
+  inheritedChildStatus,
+  joinedChildrenLabel,
+  parentTableId,
+} from '../../../../lib/dining-tables';
+import { useDiningRealtime } from '../../../../lib/useDiningRealtime';
+import { TableTransferModal } from './TableTransferModal';
 import { Toast } from '../../shared/Toast';
 import type {
   CreateDiningTableDto,
@@ -14,6 +26,9 @@ import type {
 import {
   FLOOR_PLAN_MIN_DIMENSION,
   FLOOR_PLAN_STATUS_BADGE_STYLES,
+  TABLE_STATUSES,
+  isTableStatus,
+  tableStatusLabel,
   FLOOR_PLAN_STATUS_LABELS,
   TABLE_FOOTPRINT,
   TABLE_MIN_SIZE_PX,
@@ -90,8 +105,6 @@ const VERTEX_HANDLE_PX = 12;
 const EDGE_HANDLE_PX = 7;
 
 type EditorMode = 'tables' | 'shape' | 'zones';
-
-const TABLE_STATUSES = ['available', 'occupied', 'reserved', 'out_of_service'];
 
 // ---- Unidades de presentación ----
 
@@ -259,6 +272,23 @@ const findFreeSpot = (
 
 // Siguiente "T{n}" libre. El índice UNIQUE (merchant_id, number) del backend convierte
 // una colisión en un 409 duro, así que la deduplicación se hace en cliente antes de POST.
+/**
+ * Id real de la mesa madre para el payload.
+ *
+ * Devuelve tal cual un id ya persistido, traduce un id temporal (negativo) al que devolvió
+ * su alta en este mismo guardado, y da null cuando la mesa no cuelga de nadie. Si la madre
+ * era nueva y su creación falló, también devuelve null: preferible guardar la hija suelta a
+ * mandar un id inventado que el backend rechazaría con toda la razón.
+ */
+const resolveParentId = (
+  parentId: number | null,
+  created: Array<{ tempId: number; row: DiningTable }>,
+): number | null => {
+  if (parentId == null) return null;
+  if (parentId > 0) return parentId;
+  return created.find((c) => c.tempId === parentId)?.row.id ?? null;
+};
+
 const nextTableNumber = (taken: Set<string>): string => {
   for (let i = 1; i < 5000; i += 1) {
     const candidate = `T${i}`;
@@ -315,13 +345,29 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   } | null>(null);
 
   const [tables, setTables] = useState<EditorTable[]>([]);
+  // Todas las mesas del comercio, no sólo las de este plano: un traslado puede llevarse a
+  // los comensales a la terraza, que es otro lienzo.
+  const [allTables, setAllTables] = useState<DiningTable[]>([]);
   const [zones, setZones] = useState<FloorZone[]>([]);
   const [activeZoneId, setActiveZoneId] = useState<number | null>(null);
   const [takenNumbers, setTakenNumbers] = useState<Set<string>>(new Set());
 
   const [dirtyIds, setDirtyIds] = useState<Set<number>>(new Set());
   const [pendingDeletes, setPendingDeletes] = useState<number[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Selección MÚLTIPLE: fusionar mesas es una operación de conjunto, no de pareja, así que
+  // la selección es el conjunto y `selectedId` pasa a ser el caso particular de uno solo.
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  // Marco de selección por arrastre sobre el lienzo vacío, en coordenadas de lienzo.
+  // Madre elegida a mano para la fusión, si la hubo. La efectiva se deriva más abajo.
+  const [joinParentId, setJoinParentId] = useState<number | null>(null);
+  const [marquee, setMarquee] = useState<{
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    additive: boolean;
+  } | null>(null);
 
   const [zoom, setZoom] = useState(1);
   // Unidad de LECTURA. El píxel sigue siendo la unidad de almacenamiento y de cálculo: aquí
@@ -335,6 +381,10 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   // renombrando/recoloreando, null significa alta nueva.
   const [zoneDraftOpen, setZoneDraftOpen] = useState(false);
   const [zoneDraftEditId, setZoneDraftEditId] = useState<number | null>(null);
+  // Traslado de comensales: lo resuelve el backend en una transacción, así que se lanza
+  // desde aquí contra el servidor y no forma parte del lote de cambios locales.
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
 
   // Zona activa resuelta: alimenta el swatch y el formulario de edición.
   const activeZone = useMemo(
@@ -460,6 +510,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       // El pool de números ocupados incluye las mesas borradas en soft: la fila sigue en
       // la tabla y el índice UNIQUE (merchant_id, number) también.
       setTakenNumbers(new Set(allTables.map((t) => (t.number ?? '').toLowerCase())));
+      setAllTables(allTables.filter((t) => t.status !== 'deleted'));
 
       originalById.current = new Map(planTables.map((t) => [t.id, { ...t }]));
       setTables(planTables.map((t) => ({ ...t })));
@@ -533,9 +584,79 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     return map;
   }, [zones]);
 
+  // Mesas de la selección, en el orden en que se fueron sumando: la primera es la madre
+  // propuesta, que es lo que el usuario espera tras encuadrar o ir haciendo Ctrl+clic.
+  const selectedTables = useMemo(
+    () =>
+      selectedIds
+        .map((id) => tables.find((t) => t.id === id))
+        .filter((t): t is EditorTable => t != null),
+    [tables, selectedIds],
+  );
+
+  /**
+   * Madre efectiva del grupo: la elegida a mano mientras siga seleccionada, y si no la
+   * primera de la selección. Derivarla evita tener que reajustar el estado cada vez que
+   * cambia el conjunto, que es justo donde aparecerían las incoherencias.
+   */
+  const effectiveJoinParent =
+    joinParentId != null && selectedIds.includes(joinParentId)
+      ? joinParentId
+      : (selectedIds[0] ?? null);
+
   const selectedTable = useMemo(
     () => tables.find((t) => t.id === selectedId) ?? null,
     [tables, selectedId],
+  );
+
+  // Vínculos madre-hija que se pueden TRAZAR: sólo si ambas mesas están en este plano. Una
+  // madre en otra sala es legítima (la parrilla lo permite), pero aquí no hay a dónde tirar
+  // la línea, así que esa unión se comunica sólo con el badge de la mesa.
+  const joinLinks = useMemo(() => {
+    const byId = new Map(tables.map((t) => [t.id, t]));
+    return tables.flatMap((t) => {
+      const pid = parentTableId(t);
+      const parent = pid != null ? byId.get(pid) : undefined;
+      if (!parent) return [];
+      const cf = footprintOfTable(t);
+      const pf = footprintOfTable(parent);
+      return [
+        {
+          childId: t.id,
+          parentId: parent.id,
+          x1: t.pos_x + cf.w / 2,
+          y1: t.pos_y + cf.h / 2,
+          x2: parent.pos_x + pf.w / 2,
+          y2: parent.pos_y + pf.h / 2,
+        },
+      ];
+    });
+  }, [tables]);
+
+  // Grupo entero de la mesa seleccionada: se sube hasta la raíz y se baja por toda la
+  // descendencia, para poder resaltar la unión completa y no sólo el eslabón elegido.
+  const selectedGroupIds = useMemo(() => {
+    if (!selectedTable) return new Set<number>();
+    const byId = new Map(tables.map((t) => [t.id, t]));
+    let root = selectedTable;
+    // El `climbed` corta la subida si los datos vinieran con un ciclo ya persistido.
+    const climbed = new Set<number>([root.id]);
+    let pid = parentTableId(root);
+    while (pid != null && byId.has(pid) && !climbed.has(pid)) {
+      root = byId.get(pid) as EditorTable;
+      climbed.add(root.id);
+      pid = parentTableId(root);
+    }
+    return new Set<number>([root.id, ...descendantTableIds(tables, root.id)]);
+  }, [tables, selectedTable]);
+
+  // Candidatas a madre: ni ella misma ni su descendencia (candado circular). Las mesas aún
+  // sin guardar SÍ entran: su id temporal se traduce al real durante el guardado, porque
+  // exigir "guarda primero" para poder unir dejaba la función escondida detrás de un paso
+  // que nadie adivina.
+  const parentChoices = useMemo(
+    () => (selectedTable ? eligibleParentTables(tables, selectedTable.id) : []),
+    [tables, selectedTable],
   );
 
   // El índice sobrevive a borrar un vértice (queda fuera de rango), de ahí el ?? null.
@@ -554,6 +675,87 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       dirtyZoneIds.size,
     [tables, dirtyIds, pendingDeletes, outlineDirty, dirtyZoneIds],
   );
+
+  // ---------------- Traslado de comensales ----------------
+
+  // Lo resuelve el backend en una transacción (comanda, cobertura y ambos estados), así que
+  // aquí sólo se lanza y se recarga. El botón está deshabilitado con cambios pendientes,
+  // porque recargar después los tiraría.
+  const handleTransfer = useCallback(
+    async (target: DiningTable) => {
+      const source = tablesRef.current.find((t) => t.id === selectedId);
+      if (!source) return;
+      setTransferSubmitting(true);
+      try {
+        const res = await fetch(`${API_BASE}/tables/transfer`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ sourceTableId: source.id, targetTableId: target.id }),
+        });
+        if (res.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        const json = (await res.json().catch(() => ({}))) as ApiErrorBody;
+        if (!res.ok) {
+          throw new Error(errorMessageOf(json) || 'Transfer rejected by the server');
+        }
+        setTransferOpen(false);
+        await loadLayout();
+        setToast({
+          message: `Guests moved from ${source.number} to ${target.number}`,
+          type: 'success',
+        });
+      } catch (err) {
+        setToast({
+          message: err instanceof Error ? err.message : 'Failed to transfer the table',
+          type: 'error',
+        });
+      } finally {
+        setTransferSubmitting(false);
+      }
+    },
+    [authHeaders, handleUnauthorized, loadLayout, selectedId],
+  );
+
+  // ---------------- Canal en vivo ----------------
+
+  // Recargar el plano descarta lo que el usuario no ha guardado, así que con trabajo
+  // pendiente NO se recarga: se avisa y se le deja decidir.
+  const refreshFromFloor = () => {
+    if (dirtyCount > 0) {
+      setToast({
+        message:
+          'The floor changed on another terminal. Save or discard your changes to pull the update.',
+        type: 'error',
+      });
+      return;
+    }
+    void loadLayout();
+  };
+
+  const { connected: liveConnected } = useDiningRealtime({
+    onTableStatusChanged: (p) => {
+      if (p.merchantId !== merchantId) return;
+      setTables((prev) => {
+        const local = prev.find((t) => t.id === p.tableId);
+        // Una mesa que el usuario está editando conserva SU versión: el evento no puede
+        // pisar trabajo sin guardar.
+        if (!local || dirtyIds.has(p.tableId)) return prev;
+        // Borrada en otra terminal: desaparece del lienzo en vez de quedarse pintada.
+        if (p.status === 'deleted') return prev.filter((t) => t.id !== p.tableId);
+        if (local.status === p.status) return prev;
+        return prev.map((t) => (t.id === p.tableId ? { ...t, status: p.status } : t));
+      });
+    },
+    onTableTransferred: (p) => {
+      if (p.merchantId === merchantId) refreshFromFloor();
+    },
+    onFloorPlanUpdated: (p) => {
+      if (p.merchantId === merchantId && p.floorPlanId === plan.id) refreshFromFloor();
+    },
+    onReconnect: () => refreshFromFloor(),
+  });
 
   // Mesas cuya huella se sale de la sala (no del lienzo): con una planta en L el rectángulo
   // del papel ya no es la frontera real.
@@ -646,6 +848,51 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     [canvasW, canvasH, markDirty],
   );
 
+  /**
+   * Une o desune una mesa dentro del lote local: la fusión es una propiedad más de la mesa
+   * y viaja en el mismo Save que la posición o la capacidad.
+   *
+   * Se escriben los DOS campos a la vez —el escalar y el objeto embebido— porque la
+   * respuesta de la API trae `parent_table` y los DTO de escritura hablan de
+   * `parent_table_id`: dejar uno viejo haría que el lienzo y el formulario discreparan.
+   */
+  const setTableParent = useCallback(
+    (childId: number, parentId: number | null) => {
+      const parent =
+        parentId != null ? (tablesRef.current.find((t) => t.id === parentId) ?? null) : null;
+      // Al unirse a una madre con comensales, la hija hereda su estado: un grupo unido es
+      // una sola unidad de servicio y media unión libre no significa nada en la sala.
+      const inherited = parent ? inheritedChildStatus(parent.status) : null;
+      patchTable(childId, {
+        parent_table_id: parentId,
+        parent_table: parent ? { id: parent.id, number: parent.number } : null,
+        ...(inherited ? { status: inherited } : {}),
+      });
+    },
+    [patchTable],
+  );
+
+  /**
+   * Fusiona TODAS las mesas seleccionadas bajo una madre.
+   *
+   * Sin límite de número: un grupo grande se arma encuadrando cinco mesas y pulsando una
+   * vez, no encadenando cinco uniones de a pares. Las que cerrarían un ciclo se saltan en
+   * silencio — no pueden ocurrir si la madre sale de la propia selección, pero la guarda
+   * evita que un dato heredado raro rompa el gesto entero.
+   */
+  const joinSelected = useCallback(
+    (parentId: number) => {
+      selectedIds
+        .filter((id) => id !== parentId && !wouldCreateCycle(tablesRef.current, id, parentId))
+        .forEach((childId) => setTableParent(childId, parentId));
+    },
+    [selectedIds, setTableParent],
+  );
+
+  const unjoinSelected = useCallback(() => {
+    selectedIds.forEach((id) => setTableParent(id, null));
+  }, [selectedIds, setTableParent]);
+
   const removeTable = useCallback((id: number) => {
     setTables((prev) => prev.filter((t) => t.id !== id));
     setDirtyIds((prev) => {
@@ -657,7 +904,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     // Una mesa creada localmente y borrada antes de guardar simplemente desaparece: no
     // existe en el servidor, así que no hay DELETE que encolar.
     if (id > 0) setPendingDeletes((prev) => (prev.includes(id) ? prev : [...prev, id]));
-    setSelectedId((prev) => (prev === id ? null : prev));
+    setSelectedIds((prev) => prev.filter((x) => x !== id));
   }, []);
 
   // ---------------- Contorno de la sala ----------------
@@ -983,7 +1230,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         };
         return [...prev, fresh];
       });
-      setSelectedId(tempId);
+      setSelectedIds([tempId]);
     },
     [activeZoneId, canvasW, canvasH, createZone, merchantId, plan.id, plan.name, takenNumbers, zones],
   );
@@ -1006,7 +1253,19 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     (e: React.PointerEvent<HTMLDivElement>, t: EditorTable) => {
       // Los controles embebidos (botón de borrado rápido) no deben iniciar un arrastre.
       if ((e.target as HTMLElement).closest('[data-no-drag="true"]')) return;
-      setSelectedId(t.id);
+      // Ctrl/Cmd (o Shift) suma o quita de la selección y NO arrastra: mezclar ambos gestos
+      // haría que cada intento de sumar una mesa la moviera un poco.
+      const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+      if (additive) {
+        setSelectedIds((prev) =>
+          prev.includes(t.id) ? prev.filter((x) => x !== t.id) : [...prev, t.id],
+        );
+        e.preventDefault();
+        return;
+      }
+      // Arrastrar una mesa que ya forma parte de una selección múltiple la conserva; si no,
+      // el clic simple reinicia la selección a esa mesa.
+      setSelectedIds((prev) => (prev.includes(t.id) ? prev : [t.id]));
       // preventDefault() cancela el mousedown y con él el foco implícito, así que lo
       // damos a mano: sin foco las flechas del teclado nunca llegan a la mesa y el foco
       // se queda en el botón del grid que hay detrás del overlay aria-modal.
@@ -1027,6 +1286,85 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       e.preventDefault();
     },
     [toCanvasCoords],
+  );
+
+  /**
+   * Arrastre sobre el lienzo VACÍO: dibuja un marco de selección.
+   *
+   * Sólo arranca si el gesto empieza fuera de una mesa (el pointerdown de la mesa no
+   * burbujea hasta aquí porque llama a preventDefault y captura el puntero), así que
+   * arrastrar una mesa y encuadrar varias nunca compiten por el mismo gesto.
+   */
+  const handleCanvasPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.target !== e.currentTarget) return;
+      setSelectedVertex(null);
+      if (mode !== 'tables' || e.button !== 0) {
+        setSelectedIds([]);
+        return;
+      }
+      const point = toCanvasCoords(e.clientX, e.clientY);
+      if (!point) return;
+      const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+      // Sin modificador el encuadre reemplaza la selección; con él la amplía.
+      if (!additive) setSelectedIds([]);
+      setMarquee({ x1: point.x, y1: point.y, x2: point.x, y2: point.y, additive });
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // Ver comentario en el pointerdown de la mesa.
+      }
+    },
+    [mode, toCanvasCoords],
+  );
+
+  const handleCanvasPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!marquee) return;
+      const point = toCanvasCoords(e.clientX, e.clientY);
+      if (!point) return;
+      setMarquee((prev) => (prev ? { ...prev, x2: point.x, y2: point.y } : prev));
+    },
+    [marquee, toCanvasCoords],
+  );
+
+  const handleCanvasPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!marquee) return;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        // Ver comentario en el pointerdown de la mesa.
+      }
+      const left = Math.min(marquee.x1, marquee.x2);
+      const right = Math.max(marquee.x1, marquee.x2);
+      const top = Math.min(marquee.y1, marquee.y2);
+      const bottom = Math.max(marquee.y1, marquee.y2);
+      setMarquee(null);
+
+      // Un clic sin arrastre no encuadra nada: sólo deselecciona, que es lo que el usuario
+      // espera al pinchar en el suelo vacío.
+      if (right - left < 4 && bottom - top < 4) return;
+
+      // Basta con TOCAR la mesa: exigir que quepa entera dentro del marco obliga a encuadres
+      // quirúrgicos en un plano apretado.
+      const hit = tablesRef.current
+        .filter((t) => {
+          const fp = footprintOfTable(t);
+          return (
+            t.pos_x < right &&
+            t.pos_x + fp.w > left &&
+            t.pos_y < bottom &&
+            t.pos_y + fp.h > top
+          );
+        })
+        .map((t) => t.id);
+
+      setSelectedIds((prev) =>
+        marquee.additive ? Array.from(new Set([...prev, ...hit])) : hit,
+      );
+    },
+    [marquee],
   );
 
   const handleTablePointerMove = useCallback(
@@ -1209,13 +1547,13 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       const delta = deltas[e.key];
       if (delta) {
         e.preventDefault();
-        setSelectedId(t.id);
+        setSelectedIds([t.id]);
         moveTable(t.id, t.pos_x + delta[0], t.pos_y + delta[1]);
         return;
       }
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        setSelectedId(t.id);
+        setSelectedIds([t.id]);
       }
     },
     [moveTable],
@@ -1319,7 +1657,22 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     }
 
     if (!unauthorized) {
-      for (const t of tables.filter((row) => row.id < 0)) {
+      // Una mesa nueva puede colgar de otra mesa nueva: se crean primero las madres para
+      // que su id real exista cuando le toque el turno a la hija.
+      const pending = tables.filter((row) => row.id < 0);
+      const newIds = new Set(pending.map((t) => t.id));
+      const parentsFirst = [
+        ...pending.filter((t) => {
+          const pid = parentTableId(t);
+          return pid == null || !newIds.has(pid);
+        }),
+        ...pending.filter((t) => {
+          const pid = parentTableId(t);
+          return pid != null && newIds.has(pid);
+        }),
+      ];
+
+      for (const t of parentsFirst) {
         const zoneId = t.floorZone?.id ?? activeZoneId;
         if (!zoneId) {
           failures.push(`Table ${t.number}: a floor zone is required before saving.`);
@@ -1342,6 +1695,11 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           pos_y: Math.round(t.pos_y),
           floorZone: zoneId,
           floorPlan: plan.id,
+          // La madre puede ser una mesa recién creada en este mismo guardado: su id
+          // temporal se cambia por el real que devolvió su POST.
+          ...(resolveParentId(parentTableId(t), created) != null
+            ? { parent_table_id: resolveParentId(parentTableId(t), created) }
+            : {}),
         };
         try {
           const res = await fetch(`${API_BASE}/tables`, {
@@ -1382,6 +1740,12 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         if (!original || original.height !== t.height) dto.height = t.height ?? null;
         if (!original || original.pos_x !== t.pos_x) dto.pos_x = Math.round(t.pos_x);
         if (!original || original.pos_y !== t.pos_y) dto.pos_y = Math.round(t.pos_y);
+        // La unión se compara con parentTableId() y no campo a campo: el original llega de
+        // la API con `parent_table` embebido y el editado lleva además el escalar. Si la
+        // madre era una mesa nueva, su id temporal ya tiene equivalente real.
+        if (!original || parentTableId(original) !== parentTableId(t)) {
+          dto.parent_table_id = resolveParentId(parentTableId(t), created);
+        }
         if (t.floorZone?.id && original?.floorZone?.id !== t.floorZone.id) {
           dto.floorZone = t.floorZone.id;
         }
@@ -1469,7 +1833,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     // refresque (de ahí que no se vuelva a parsear aquí).
     await loadLayout();
     setOutlineDirty(false);
-    setSelectedId(null);
+    setSelectedIds([]);
     setSaving(false);
     setToast({ message: 'Floor plan layout saved', type: 'success' });
     onSaved?.();
@@ -1515,8 +1879,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       setSelectedVertex(null);
       return;
     }
-    if (selectedId !== null) {
-      setSelectedId(null);
+    if (selectedIds.length > 0) {
+      setSelectedIds([]);
       return;
     }
     requestClose();
@@ -1526,9 +1890,9 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   // ve, y dejar una mesa "seleccionada" invisible confunde al volver.
   const switchMode = useCallback((next: EditorMode) => {
     setMode(next);
-    if (next === 'shape') setSelectedId(null);
+    if (next === 'shape') setSelectedIds([]);
     else if (next === 'zones') {
-      setSelectedId(null);
+      setSelectedIds([]);
       setSelectedVertex(null);
     } else setSelectedVertex(null);
   }, []);
@@ -1572,9 +1936,12 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     'w-full bg-[#fef9f1] text-[#1d1c17] px-3 py-2 border border-[#e8e2d8] rounded text-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none';
   const labelClass = 'text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider';
 
-  const statusOptions = selectedTable && !TABLE_STATUSES.includes(selectedTable.status)
-    ? [selectedTable.status, ...TABLE_STATUSES]
-    : TABLE_STATUSES;
+  // Un status heredado fuera del vocabulario se ofrece igual, para no cambiárselo por
+  // accidente a la mesa sólo por abrir el inspector.
+  const statusOptions: string[] =
+    selectedTable && !isTableStatus(selectedTable.status)
+      ? [selectedTable.status, ...TABLE_STATUSES]
+      : TABLE_STATUSES;
 
   return createPortal(
     <div
@@ -1604,6 +1971,24 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
               {customShape ? ` · ${formatArea(roomAreaPx2, unitSystem)}` : ''}
             </p>
           </div>
+          {/* Estado del canal en vivo. Va aparte de la línea de dimensiones para que esa
+              cadena siga siendo un único texto legible de un vistazo. */}
+          <span
+            data-testid="editor-realtime-status"
+            title={
+              liveConnected
+                ? 'Live floor updates connected'
+                : 'Live floor updates unavailable — the canvas refreshes on reload'
+            }
+            className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${
+              liveConnected ? 'text-green-400' : 'text-white/40'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+              {liveConnected ? 'sensors' : 'sensors_off'}
+            </span>
+            {liveConnected ? 'Live' : 'Offline'}
+          </span>
           <span
             className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${FLOOR_PLAN_STATUS_BADGE_STYLES[planStatus]}`}
           >
@@ -1954,7 +2339,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           className="flex-1 min-w-0 overflow-auto p-8 relative"
           onPointerDown={(e) => {
             // Clic en el vacío (fuera del lienzo) = deseleccionar.
-            if (e.target === e.currentTarget) setSelectedId(null);
+            if (e.target === e.currentTarget) setSelectedIds([]);
           }}
         >
           {error ? (
@@ -1979,12 +2364,10 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
               <div
                 ref={canvasRef}
                 data-testid="floor-plan-canvas"
-                onPointerDown={(e) => {
-                  if (e.target === e.currentTarget) {
-                    setSelectedId(null);
-                    setSelectedVertex(null);
-                  }
-                }}
+                onPointerDown={handleCanvasPointerDown}
+                onPointerMove={handleCanvasPointerMove}
+                onPointerUp={handleCanvasPointerUp}
+                onPointerCancel={handleCanvasPointerUp}
                 style={{
                   width: canvasW,
                   height: canvasH,
@@ -2035,9 +2418,61 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                   />
                 </svg>
 
+                {marquee && (
+                  <div
+                    data-testid="selection-marquee"
+                    aria-hidden="true"
+                    style={{
+                      left: Math.min(marquee.x1, marquee.x2),
+                      top: Math.min(marquee.y1, marquee.y2),
+                      width: Math.abs(marquee.x2 - marquee.x1),
+                      height: Math.abs(marquee.y2 - marquee.y1),
+                    }}
+                    className="absolute border-2 border-dashed border-[#ae001a] bg-[#ae001a]/10 pointer-events-none z-20"
+                  />
+                )}
+
+                {/* Vínculos de fusión: una línea de puntos entre el centro de cada hija y
+                    el de su madre. Va antes que las mesas para que pase por DEBAJO de ellas
+                    y no tape números ni asientos. */}
+                {joinLinks.length > 0 && (
+                  <svg
+                    width={canvasW}
+                    height={canvasH}
+                    viewBox={`0 0 ${canvasW} ${canvasH}`}
+                    className="absolute inset-0"
+                    style={{ pointerEvents: 'none' }}
+                    aria-hidden="true"
+                  >
+                    {joinLinks.map((link) => {
+                      // Con una mesa del grupo seleccionada, el resto de uniones se atenúa:
+                      // en una sala con varios grupos, todas las líneas a la vez son ruido.
+                      const inSelectedGroup =
+                        selectedGroupIds.has(link.childId) && selectedGroupIds.has(link.parentId);
+                      const dimmed = selectedGroupIds.size > 0 && !inSelectedGroup;
+                      return (
+                        <line
+                          key={`join-${link.childId}`}
+                          data-testid={`join-link-${link.childId}`}
+                          x1={link.x1}
+                          y1={link.y1}
+                          x2={link.x2}
+                          y2={link.y2}
+                          stroke="#ae001a"
+                          strokeWidth={inSelectedGroup ? 3 : 2}
+                          strokeDasharray="8 6"
+                          strokeLinecap="round"
+                          opacity={mode === 'tables' ? (dimmed ? 0.25 : 0.85) : 0.2}
+                        />
+                      );
+                    })}
+                  </svg>
+                )}
+
                 {tables.map((t) => {
                   const fp = footprintOfTable(t);
-                  const isSelected = t.id === selectedId;
+                  const isSelected = selectedIds.includes(t.id);
+                  const joinedTo = parentTableId(t);
                   const clipped = isTableClipped(t, canvasW, canvasH);
                   const outsideRoom = !clipped && !tableInsideOutline(t, outline);
                   const duplicated = duplicateNumbers.has((t.number ?? '').trim().toLowerCase());
@@ -2049,7 +2484,13 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                       // En modo ROOM SHAPE las mesas quedan de decorado: sin foco tabulable y
                       // sin eventos, para que el arrastre de vértices no compita con el suyo.
                       tabIndex={mode === 'tables' ? 0 : -1}
-                      aria-label={`Table ${t.number}, ${t.capacity} seats, ${t.shape.toLowerCase()}`}
+                      aria-label={
+                        joinedTo != null
+                          ? `Table ${t.number}, ${t.capacity} seats, ${t.shape.toLowerCase()}, joined to ${
+                              tables.find((x) => x.id === joinedTo)?.number ?? `#${joinedTo}`
+                            }`
+                          : `Table ${t.number}, ${t.capacity} seats, ${t.shape.toLowerCase()}`
+                      }
                       aria-pressed={isSelected}
                       onPointerDown={(e) => handleTablePointerDown(e, t)}
                       onPointerMove={handleTablePointerMove}
@@ -2110,6 +2551,24 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                       {t.id < 0 && (
                         <span className="absolute -top-1.5 -right-1.5 bg-white text-[#ae001a] text-[8px] font-black uppercase px-1 rounded-full border border-[#ae001a]">
                           new
+                        </span>
+                      )}
+                      {joinedTo != null && (
+                        <span
+                          data-testid={`join-badge-${t.id}`}
+                          // El giro de la mesa no debe girar el icono: se contrarresta para
+                          // que el eslabón se lea igual con la mesa a 90°.
+                          style={{ transform: `rotate(${-t.rotation}deg)` }}
+                          title={`Joined to ${
+                            tables.find((x) => x.id === joinedTo)?.number ??
+                            t.parent_table?.number ??
+                            `#${joinedTo}`
+                          }`}
+                          className="absolute -top-1.5 -left-1.5 bg-white text-[#ae001a] w-4 h-4 rounded-full border border-[#ae001a] flex items-center justify-center"
+                        >
+                          <span className="material-symbols-outlined text-[10px]" aria-hidden="true">
+                            link
+                          </span>
                         </span>
                       )}
                     </div>
@@ -2532,6 +2991,79 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                 )}
               </div>
             </div>
+          ) : selectedIds.length > 1 ? (
+            <div className="p-4 flex flex-col gap-4" data-testid="floor-plan-multi-inspector">
+              <div>
+                <p className="text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider">
+                  Selection
+                </p>
+                <p className="text-sm text-[#1d1c17] mt-1">
+                  <strong>{selectedIds.length} tables</strong> selected ·{' '}
+                  {selectedTables.reduce((sum, t) => sum + t.capacity, 0)} seats combined
+                </p>
+                <p className="text-[11px] text-[#5f5e5e] mt-1 font-mono">
+                  {selectedTables.map((t) => t.number).join(', ')}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="multi-parent" className={labelClass}>
+                  <span className="material-symbols-outlined text-[13px] align-middle" aria-hidden="true">
+                    link
+                  </span>{' '}
+                  Join them under
+                </label>
+                <select
+                  id="multi-parent"
+                  value={effectiveJoinParent ?? ''}
+                  onChange={(e) => setJoinParentId(Number(e.target.value))}
+                  className={inputClass}
+                >
+                  {selectedTables.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.number} · {t.capacity} seats{t.id < 0 ? ' · unsaved' : ''}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() =>
+                    effectiveJoinParent != null && joinSelected(effectiveJoinParent)
+                  }
+                  aria-label={`Join ${selectedIds.length} selected tables`}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#ae001a] hover:bg-[#930015] text-white text-[10px] font-bold uppercase tracking-widest transition-colors"
+                >
+                  <span className="material-symbols-outlined text-base" aria-hidden="true">
+                    link
+                  </span>
+                  Join {selectedIds.length} tables
+                </button>
+                <button
+                  type="button"
+                  onClick={unjoinSelected}
+                  aria-label="Unjoin the selected tables"
+                  className="w-full flex items-center justify-center gap-2 py-2 border border-[#e8e2d8] text-[#1d1c17] text-[10px] font-bold uppercase tracking-widest hover:text-[#ae001a] transition-colors duration-200"
+                >
+                  <span className="material-symbols-outlined text-base" aria-hidden="true">
+                    link_off
+                  </span>
+                  Unjoin selected
+                </button>
+              </div>
+
+              <p className="text-[11px] text-[#5f5e5e] leading-relaxed">
+                Ctrl/Cmd-click adds or removes a table. Drag on empty floor to box-select. The
+                parent keeps the group together; the rest hang from it.
+              </p>
+
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                className="w-full py-2 border border-[#e8e2d8] text-[#5f5e5e] text-[10px] font-bold uppercase tracking-widest hover:bg-[#f2ede5] transition-colors"
+              >
+                Clear selection
+              </button>
+            </div>
           ) : !selectedTable ? (
             <div
               data-testid="floor-plan-inspector-empty"
@@ -2712,7 +3244,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                 >
                   {statusOptions.map((s) => (
                     <option key={s} value={s}>
-                      {s.replace(/_/g, ' ')}
+                      {tableStatusLabel(s)}
                     </option>
                   ))}
                 </select>
@@ -2800,6 +3332,101 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                 </div>
               </div>
 
+              {/* ---------------- Fusión ---------------- */}
+              <div className="flex flex-col gap-1.5 pt-3 border-t border-[#e8e2d8]">
+                <label htmlFor="insp-parent" className={labelClass}>
+                  <span className="material-symbols-outlined text-[13px] align-middle" aria-hidden="true">
+                    link
+                  </span>{' '}
+                  Joined to
+                </label>
+                <select
+                  id="insp-parent"
+                  value={parentTableId(selectedTable) ?? ''}
+                  onChange={(e) =>
+                    setTableParent(
+                      selectedTable.id,
+                      e.target.value ? Number(e.target.value) : null,
+                    )
+                  }
+                  className={inputClass}
+                >
+                  <option value="">Not joined — standalone</option>
+                  {parentChoices.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.number} · {t.capacity} seats{t.id < 0 ? ' · unsaved' : ''}
+                    </option>
+                  ))}
+                </select>
+
+                {parentTableId(selectedTable) != null && (
+                  <button
+                    type="button"
+                    onClick={() => setTableParent(selectedTable.id, null)}
+                    aria-label={`Unjoin table ${selectedTable.number}`}
+                    className="w-full flex items-center justify-center gap-2 py-2 border border-[#e8e2d8] text-[#1d1c17] text-[10px] font-bold uppercase tracking-widest hover:text-[#ae001a] transition-colors duration-200"
+                  >
+                    <span className="material-symbols-outlined text-base" aria-hidden="true">
+                      link_off
+                    </span>
+                    Unjoin
+                  </button>
+                )}
+
+                {joinedChildrenLabel(tables, selectedTable.id) && (
+                  <p
+                    data-testid="inspector-group-summary"
+                    className="text-[11px] text-[#5f5e5e] leading-relaxed"
+                  >
+                    {joinedChildrenLabel(tables, selectedTable.id)} —{' '}
+                    {childTablesOf(tables, selectedTable.id)
+                      .map((c) => c.number)
+                      .join(', ')}
+                    . Combined capacity{' '}
+                    {selectedTable.capacity +
+                      childTablesOf(tables, selectedTable.id).reduce(
+                        (sum, c) => sum + c.capacity,
+                        0,
+                      )}
+                    .
+                  </p>
+                )}
+
+                {parentChoices.length === 0 && parentTableId(selectedTable) == null && (
+                  <p className="text-[11px] text-[#5f5e5e] italic">
+                    No other saved table on this plan can act as the parent.
+                  </p>
+                )}
+              </div>
+
+              {/* ---------------- Traslado de comensales ---------------- */}
+              {selectedTable.status === 'occupied' && (
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setTransferOpen(true)}
+                    disabled={dirtyCount > 0}
+                    aria-label={`Transfer guests from table ${selectedTable.number}`}
+                    title={
+                      dirtyCount > 0
+                        ? 'Save your layout changes first — the transfer runs on the server and would fight your pending edits.'
+                        : 'Move this party to another table'
+                    }
+                    className="w-full flex items-center justify-center gap-2 py-2.5 border border-[#e8e2d8] text-[#1d1c17] text-[10px] font-bold uppercase tracking-widest hover:text-[#ae001a] transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#1d1c17]"
+                  >
+                    <span className="material-symbols-outlined text-base" aria-hidden="true">
+                      swap_horiz
+                    </span>
+                    Transfer party
+                  </button>
+                  {dirtyCount > 0 && (
+                    <p className="text-[11px] text-[#5f5e5e] italic">
+                      Save the layout to enable the transfer.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={() => removeTable(selectedTable.id)}
@@ -2867,6 +3494,16 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {transferOpen && selectedTable && (
+        <TableTransferModal
+          source={selectedTable}
+          targets={eligibleTransferTargets(allTables, selectedTable.id)}
+          submitting={transferSubmitting}
+          onCancel={() => setTransferOpen(false)}
+          onSubmit={handleTransfer}
+        />
       )}
 
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}

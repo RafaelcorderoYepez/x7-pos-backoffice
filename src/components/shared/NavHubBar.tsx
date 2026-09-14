@@ -14,6 +14,8 @@ export interface NavHubBarProps {
   items: NavHubItem[];
   className?: string;
   isSidebarCollapsed?: boolean;
+  onBackToDashboard?: () => void;
+  backToDashboardLabel?: string;
 }
 
 export const NavHubBar: React.FC<NavHubBarProps> = ({
@@ -22,6 +24,8 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
   items = [],
   className = '',
   isSidebarCollapsed: propIsSidebarCollapsed,
+  onBackToDashboard,
+  backToDashboardLabel,
 }) => {
   const [collapsed, setCollapsed] = useState<boolean>(false);
 
@@ -54,9 +58,21 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
     <div
       className={`fixed bottom-0 ${leftOffsetClass} right-0 z-40 bg-[#222222] border-t-2 border-[#ae001a] text-white py-2 px-4 shadow-2xl font-sans transition-all duration-300 ease-in-out ${className}`}
     >
-      <div className="w-full flex items-center justify-center relative">
-        {/* Título de la barra (Si existe, alineado a la izquierda) */}
-        {title && (
+      <div className="w-full flex items-center justify-center relative min-h-[36px]">
+        {/* Botón de Regreso a la izquierda (Solo Flecha Compacta) */}
+        {onBackToDashboard ? (
+          <button
+            type="button"
+            onClick={() => {
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              onBackToDashboard();
+            }}
+            className="flex items-center justify-center w-8 h-8 bg-[#ae001a] hover:bg-[#900015] text-white rounded transition-all shadow-xs cursor-pointer absolute left-2 sm:left-4 select-none shrink-0"
+            title={backToDashboardLabel || 'Return to Main Dashboard'}
+          >
+            <span className="material-symbols-outlined text-base">arrow_back</span>
+          </button>
+        ) : title ? (
           <div className="hidden lg:flex items-center gap-2 text-xs font-bold tracking-wider text-[#e8e2d8] uppercase absolute left-4">
             {titleIcon && (
               <span className="material-symbols-outlined text-[#ae001a] text-lg">
@@ -65,7 +81,7 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
             )}
             <span>{title}</span>
           </div>
-        )}
+        ) : null}
 
         {/* Arreglo de Botones de Navegación PERFECTAMENTE CENTRADOS */}
         <div className="flex items-center justify-center gap-1.5 flex-wrap">

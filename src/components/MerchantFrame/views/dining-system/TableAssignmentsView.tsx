@@ -1,6 +1,33 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type { DiningTable } from '../../../../types/dining-system';
+import { zoneSwatchColor } from '../../../../types/dining-system';
+import type {
+  CollaboratorRef,
+  DutyFilter,
+  ShiftRef,
+  TableAssignment,
+} from '../../../../lib/table-assignments';
+import {
+  assignmentHaystack,
+  collaboratorBadge,
+  collaboratorLabel,
+  conflictingAssignment,
+  DUTY_FILTER_LABELS,
+  dutyBadgeLabel,
+  dutyBadgeStyle,
+  formatDutyWindow,
+  hasOpenChecks,
+  isActiveDuty,
+  isHistoricalShift,
+  matchesDutyFilter,
+  openOrdersReleaseWarning,
+  reassignConflictPrompt,
+  resolveActiveShiftId,
+  shiftHours,
+  shiftLabel,
+} from '../../../../lib/table-assignments';
+import { useDiningRealtime } from '../../../../lib/useDiningRealtime';
 import { DiningSystemQuickLinks } from './DiningSystemQuickLinks';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter, ModalFormError } from '../../shared/AppModal';
@@ -8,128 +35,122 @@ import { Toast } from '../../shared/Toast';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-// El backend acepta solo estos dos valores en el DTO de creación.
-const ASSIGNMENT_STATUSES = ['active', 'inactive'];
+const DUTY_FILTERS: DutyFilter[] = ['all', 'active', 'released'];
 
-const STATUS_BADGE_STYLES: Record<string, string> = {
-  active: 'bg-green-500/10 text-green-700',
-  inactive: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
-};
-
-interface ShiftRef {
-  id: number;
-  merchantId?: number;
-  startTime?: string;
-  endTime?: string;
-  role?: string;
-  status?: string;
-}
-
-interface TableAssignment {
-  id: number;
+// Lo que el drawer entrega al enviar. `assignedAt` no viaja: lo sella el servidor, y
+// mandarlo desde el cliente sólo abriría la puerta a relojes desalineados entre tablets.
+interface AssignmentDraft {
   shiftId: number;
   tableId: number;
   collaboratorId: number;
-  assignedAt?: string;
-  releasedAt?: string | null;
-  status: string;
-  // El backend carga estas relaciones en eager, así que suelen venir hidratadas.
-  shift?: ShiftRef | null;
-  table?: Partial<DiningTable> | null;
-  collaborator?: { id: number; name?: string; firstName?: string; lastName?: string } | null;
 }
-
-const formatDateTime = (value?: string | null): string => {
-  if (!value) return '—';
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? '—' : `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
-};
-
-const formatTimeRange = (s?: ShiftRef | null): string => {
-  if (!s?.startTime) return '—';
-  const start = new Date(s.startTime);
-  const end = s.endTime ? new Date(s.endTime) : null;
-  if (isNaN(start.getTime())) return '—';
-  const t = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return end && !isNaN(end.getTime()) ? `${t(start)} – ${t(end)}` : t(start);
-};
-
-// El nombre del colaborador sale de la relación eager; si la feature COLLABORATORS no está
-// concedida el backend devuelve 403 y sólo tenemos el id.
-const collaboratorLabel = (a: TableAssignment): string => {
-  const c = a.collaborator;
-  if (!c) return `Collaborator #${a.collaboratorId}`;
-  const full = [c.firstName, c.lastName].filter(Boolean).join(' ').trim();
-  return c.name || full || `Collaborator #${a.collaboratorId}`;
-};
 
 // ========================= FORM DRAWER =========================
 
 interface AssignmentFormDrawerProps {
   tables: DiningTable[];
   shifts: ShiftRef[];
-  // Asignaciones vivas: una mesa no puede estar en dos manos a la vez en el mismo turno.
+  collaborators: CollaboratorRef[];
+  // Turno abierto: el drawer arranca ya apuntando ahí, que es donde ocurre el 99% del trabajo.
+  defaultShiftId: string;
+  // Asignaciones vivas, para avisar del conflicto ANTES de enviar.
   activeAssignments: TableAssignment[];
   submitting: boolean;
   formError: string;
   onCancel: () => void;
-  onSubmit: (dto: {
-    shiftId: number;
-    tableId: number;
-    collaboratorId: number;
-    status: string;
-  }) => void;
+  onSubmit: (draft: AssignmentDraft) => void;
 }
 
 const AssignmentFormDrawer: React.FC<AssignmentFormDrawerProps> = ({
   tables,
   shifts,
+  collaborators,
+  defaultShiftId,
   activeAssignments,
   submitting,
   formError,
   onCancel,
   onSubmit,
 }) => {
-  const [shiftId, setShiftId] = useState('');
+  const [shiftId, setShiftId] = useState(defaultShiftId);
   const [tableId, setTableId] = useState('');
   const [collaboratorId, setCollaboratorId] = useState('');
-  const [status, setStatus] = useState('active');
+  // Filtros de teclado sobre los dos catálogos largos: en un local con 60 mesas, un select
+  // pelado obliga a recorrer la lista entera con la rueda del ratón.
+  const [tableQuery, setTableQuery] = useState('');
+  const [zoneFilter, setZoneFilter] = useState('');
+  const [staffQuery, setStaffQuery] = useState('');
 
   useModalDismiss(onCancel);
 
-  // El índice (tableId, shiftId) del backend no es único, así que el guard vive aquí:
-  // asignar dos camareros a la misma mesa en el mismo turno es un error operativo.
-  const duplicateError = useMemo(() => {
-    if (!shiftId || !tableId) return '';
-    const clash = activeAssignments.some(
-      (a) =>
-        String(a.shiftId) === shiftId &&
-        String(a.tableId) === tableId &&
-        a.status === 'active' &&
-        !a.releasedAt,
+  // Zonas que de verdad tienen mesas. Se derivan del propio inventario en vez de pedir
+  // /api/floor-zone: ofrecer una zona vacía sólo llevaría a un desplegable sin opciones.
+  const zoneOptions = useMemo(() => {
+    const byId = new Map<number, string>();
+    tables.forEach((t) => {
+      if (t.floorZone?.id != null) {
+        byId.set(t.floorZone.id, t.floorZone.name ?? `Zone #${t.floorZone.id}`);
+      }
+    });
+    return Array.from(byId, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name),
     );
-    if (!clash) return '';
-    const t = tables.find((x) => String(x.id) === tableId);
-    return `Table ${t?.number ?? tableId} is already assigned on this shift. Release the current assignment first.`;
-  }, [shiftId, tableId, activeAssignments, tables]);
+  }, [tables]);
+
+  const visibleTables = useMemo(() => {
+    const term = tableQuery.trim().toLowerCase();
+    return tables.filter((t) => {
+      if (zoneFilter && String(t.floorZone?.id ?? '') !== zoneFilter) return false;
+      if (!term) return true;
+      return [t.number ?? '', t.floorZone?.name ?? '', t.location ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(term);
+    });
+  }, [tables, tableQuery, zoneFilter]);
+
+  const visibleStaff = useMemo(() => {
+    const term = staffQuery.trim().toLowerCase();
+    if (!term) return collaborators;
+    return collaborators.filter((c) =>
+      [c.name ?? '', c.firstName ?? '', c.lastName ?? '', c.role ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [collaborators, staffQuery]);
+
+  // El conflicto ya no bloquea: se anuncia aquí y se resuelve con el traspaso de turno que
+  // confirma el diálogo siguiente.
+  const conflict = useMemo(() => {
+    if (!shiftId || !tableId) return null;
+    return conflictingAssignment(activeAssignments, Number(tableId), Number(shiftId));
+  }, [shiftId, tableId, activeAssignments]);
 
   const collaboratorNum = Number(collaboratorId);
   const canSubmit =
     shiftId.trim().length > 0 &&
     tableId.trim().length > 0 &&
     Number.isInteger(collaboratorNum) &&
-    collaboratorNum > 0 &&
-    !duplicateError;
+    collaboratorNum > 0;
+
+  const handleZoneChange = (value: string) => {
+    setZoneFilter(value);
+    // Cambiar de zona invalida la mesa elegida si ya no pertenece a la lista visible: es
+    // preferible obligar a reelegir que enviar una mesa que el operador cree haber cambiado.
+    const stillVisible = tables.some(
+      (t) => String(t.id) === tableId && (!value || String(t.floorZone?.id ?? '') === value),
+    );
+    if (!stillVisible) setTableId('');
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || submitting) return;
-    // assignedAt lo pone el servidor; enviarlo desde el cliente lo ignoraría.
     onSubmit({
       shiftId: Number(shiftId),
       tableId: Number(tableId),
       collaboratorId: collaboratorNum,
-      status,
     });
   };
 
@@ -166,7 +187,8 @@ const AssignmentFormDrawer: React.FC<AssignmentFormDrawerProps> = ({
             <option value="">Select a shift…</option>
             {shifts.map((s) => (
               <option key={s.id} value={s.id}>
-                #{s.id} · {s.role ?? 'shift'} · {formatTimeRange(s)}
+                {shiftLabel(s)} · {shiftHours(s)}
+                {isHistoricalShift(s) ? ' · closed' : ''}
               </option>
             ))}
           </select>
@@ -182,64 +204,105 @@ const AssignmentFormDrawer: React.FC<AssignmentFormDrawerProps> = ({
             Table <span className="text-[#ae001a]">*</span>
           </label>
           <select
+            id="asg-zone"
+            value={zoneFilter}
+            onChange={(e) => handleZoneChange(e.target.value)}
+            className={`${inputClass} text-[13px]`}
+            aria-label="Filter tables by zone"
+          >
+            <option value="">All zones</option>
+            {zoneOptions.map((z) => (
+              <option key={z.id} value={z.id}>
+                {z.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={tableQuery}
+            onChange={(e) => setTableQuery(e.target.value)}
+            placeholder="Filter tables by number or location…"
+            className={`${inputClass} text-[13px]`}
+            aria-label="Filter tables"
+          />
+          <select
             id="asg-table"
             value={tableId}
             onChange={(e) => setTableId(e.target.value)}
             className={inputClass}
           >
             <option value="">Select a table…</option>
-            {tables.map((t) => (
+            {visibleTables.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.number} · {t.capacity} seats
                 {t.floorZone?.name ? ` · ${t.floorZone.name}` : ''}
               </option>
             ))}
           </select>
-          {duplicateError && (
-            <p role="alert" className="text-[11px] font-semibold text-[#ae001a]">
-              {duplicateError}
+          {visibleTables.length === 0 && (
+            <p className="text-[11px] text-[#5f5e5e] italic">
+              No table matches this zone and filter. Widen the filter to see the rest.
+            </p>
+          )}
+          {conflict && (
+            <p className="text-[11px] font-semibold text-[#ae001a]" role="status">
+              {reassignConflictPrompt(
+                tables.find((t) => String(t.id) === tableId)?.number ?? `#${tableId}`,
+                collaboratorLabel(conflict),
+              )}
             </p>
           )}
         </div>
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="asg-collaborator" className={labelClass}>
-            Collaborator ID <span className="text-[#ae001a]">*</span>
+            Collaborator <span className="text-[#ae001a]">*</span>
           </label>
-          <input
-            id="asg-collaborator"
-            type="number"
-            min={1}
-            step={1}
-            value={collaboratorId}
-            onChange={(e) => setCollaboratorId(e.target.value)}
-            className={`${inputClass} font-mono`}
-            placeholder="e.g., 4"
-          />
-          {/* Honesto sobre la limitación: sin la feature de colaboradores no hay catálogo
-              de nombres, así que el id se teclea a mano. */}
-          <p className="text-[11px] text-[#5f5e5e]">
-            The collaborator directory is not available on this plan, so the staff member is
-            referenced by id.
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="asg-status" className={labelClass}>
-            Status
-          </label>
-          <select
-            id="asg-status"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className={inputClass}
-          >
-            {ASSIGNMENT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s === 'active' ? 'Active' : 'Inactive'}
-              </option>
-            ))}
-          </select>
+          {collaborators.length > 0 ? (
+            <>
+              <input
+                type="text"
+                value={staffQuery}
+                onChange={(e) => setStaffQuery(e.target.value)}
+                placeholder="Filter staff by name or role…"
+                className={`${inputClass} text-[13px]`}
+                aria-label="Filter collaborators"
+              />
+              <select
+                id="asg-collaborator"
+                value={collaboratorId}
+                onChange={(e) => setCollaboratorId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Select a collaborator…</option>
+                {visibleStaff.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name || [c.firstName, c.lastName].filter(Boolean).join(' ') || `#${c.id}`}
+                    {c.role ? ` · ${c.role}` : ''}
+                  </option>
+                ))}
+              </select>
+            </>
+          ) : (
+            <>
+              {/* Honesto sobre la limitación: sin la feature de colaboradores el backend
+                  responde 403 y no hay catálogo de nombres que ofrecer. */}
+              <input
+                id="asg-collaborator"
+                type="number"
+                min={1}
+                step={1}
+                value={collaboratorId}
+                onChange={(e) => setCollaboratorId(e.target.value)}
+                className={`${inputClass} font-mono`}
+                placeholder="e.g., 4"
+              />
+              <p className="text-[11px] text-[#5f5e5e]">
+                The collaborator directory is not available on this plan, so the staff member is
+                referenced by id.
+              </p>
+            </>
+          )}
         </div>
 
         <ModalFormFooter
@@ -253,15 +316,54 @@ const AssignmentFormDrawer: React.FC<AssignmentFormDrawerProps> = ({
   );
 };
 
+// ========================= CONFLICT / REASSIGN =========================
+
+// La mesa ya está cubierta en este turno. No se duplica la cobertura: se traspasa, y el
+// diálogo deja claro a quién se le retira antes de tocar nada.
+const ConfirmReassignDialog: React.FC<{
+  tableNumber: string;
+  holder: TableAssignment;
+  submitting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}> = ({ tableNumber, holder, submitting, onCancel, onConfirm }) => {
+  useModalDismiss(onCancel);
+  return (
+    <AppModal
+      title="Reassign Table"
+      subtitle="Dining System"
+      onClose={onCancel}
+      closeDisabled={submitting}
+      size="md"
+      closeAriaLabel="Close reassignment confirmation"
+    >
+      <div className="p-6 space-y-4 text-left font-sans">
+        <p role="alert" className="text-sm text-[#1d1c17]">
+          {reassignConflictPrompt(tableNumber, collaboratorLabel(holder))}
+        </p>
+        <ModalFormFooter
+          onCancel={onCancel}
+          submitLabel={submitting ? 'Reassigning…' : 'Reassign Table'}
+          isSubmitting={submitting}
+          submitType="button"
+          onSubmit={onConfirm}
+        />
+      </div>
+    </AppModal>
+  );
+};
+
 // ========================= RELEASE CONFIRM =========================
 
 const ConfirmReleaseDialog: React.FC<{
   assignment: TableAssignment;
   tableLabel: string;
+  // Aviso, no bloqueo: el turno se acaba igual, pero alguien tiene que recoger esas cuentas.
+  openChecksWarning: string;
   submitting: boolean;
   onCancel: () => void;
   onConfirm: () => void;
-}> = ({ assignment, tableLabel, submitting, onCancel, onConfirm }) => {
+}> = ({ assignment, tableLabel, openChecksWarning, submitting, onCancel, onConfirm }) => {
   useModalDismiss(onCancel);
   return (
     <AppModal
@@ -278,6 +380,14 @@ const ConfirmReleaseDialog: React.FC<{
           <strong>{collaboratorLabel(assignment)}</strong>? The table becomes free for a new
           assignment on this shift.
         </p>
+        {openChecksWarning && (
+          <p
+            role="alert"
+            className="text-[13px] font-semibold text-[#ae001a] bg-[#ae001a]/5 border border-[#ae001a]/20 rounded px-3 py-2"
+          >
+            {openChecksWarning}
+          </p>
+        )}
         <ModalFormFooter
           onCancel={onCancel}
           submitLabel={submitting ? 'Releasing…' : 'Release Table'}
@@ -307,16 +417,24 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
   const [assignments, setAssignments] = useState<TableAssignment[]>([]);
   const [tables, setTables] = useState<DiningTable[]>([]);
   const [shifts, setShifts] = useState<ShiftRef[]>([]);
+  const [collaborators, setCollaborators] = useState<CollaboratorRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [shiftFilter, setShiftFilter] = useState('');
+  const [dutyFilter, setDutyFilter] = useState<DutyFilter>('all');
+  // null = el operador aún no ha tocado el selector, así que manda el turno abierto.
+  // '' = ha elegido "All Shifts" a conciencia. Distinguirlos evita que una recarga de datos
+  // le devuelva al turno de hoy justo cuando acaba de irse a revisar el de ayer.
+  const [shiftFilter, setShiftFilter] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [pendingDraft, setPendingDraft] = useState<{
+    draft: AssignmentDraft;
+    holder: TableAssignment;
+  } | null>(null);
   const [releasing, setReleasing] = useState<TableAssignment | null>(null);
   const [releaseSubmitting, setReleaseSubmitting] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -360,9 +478,10 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
 
   const fetchContext = async () => {
     try {
-      const [tblRes, shiftRes] = await Promise.all([
+      const [tblRes, shiftRes, staffRes] = await Promise.all([
         fetch(`${API_BASE}/tables?limit=100`, { headers: authHeaders() }),
         fetch(`${API_BASE}/shifts?limit=100`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/collaborators?limit=100`, { headers: authHeaders() }),
       ]);
       if (tblRes.ok) {
         const json = await tblRes.json();
@@ -371,6 +490,16 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
       if (shiftRes.ok) {
         const json = await shiftRes.json();
         setShifts(((json.data ?? []) as ShiftRef[]).filter((s) => s.status !== 'deleted'));
+      }
+      // 403 cuando el plan no incluye la feature de colaboradores: el drawer cae entonces
+      // al id numérico en vez de al catálogo de nombres.
+      if (staffRes.ok) {
+        const json = await staffRes.json();
+        setCollaborators(
+          ((json.data ?? []) as CollaboratorRef[]).filter(
+            (c) => (c as { status?: string }).status !== 'deleted',
+          ),
+        );
       }
     } catch (err) {
       console.error('Error fetching tables/shifts for assignments:', err);
@@ -382,6 +511,11 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     fetchContext();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMerchantId]);
+
+  const activeShiftId = useMemo(() => resolveActiveShiftId(shifts), [shifts]);
+
+  // El turno que de verdad filtra la parrilla: el elegido, o el abierto mientras nadie elija.
+  const effectiveShift = shiftFilter ?? activeShiftId;
 
   const tableById = useMemo(() => {
     const m = new Map<number, DiningTable>();
@@ -395,49 +529,71 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     return m;
   }, [shifts]);
 
+  const tableOf = (a: TableAssignment): DiningTable | undefined =>
+    tableById.get(a.tableId) ?? (a.table as DiningTable | undefined);
+
   const tableLabelOf = (a: TableAssignment): string =>
-    tableById.get(a.tableId)?.number ?? a.table?.number ?? `Table #${a.tableId}`;
+    tableOf(a)?.number ?? `Table #${a.tableId}`;
 
   const filteredAssignments = useMemo(() => {
     const term = searchQuery.trim().toLowerCase();
     return assignments.filter((a) => {
-      if (term) {
-        const haystack = [tableLabelOf(a), collaboratorLabel(a), String(a.shiftId)]
-          .join(' ')
-          .toLowerCase();
-        if (!haystack.includes(term)) return false;
-      }
-      if (statusFilter && a.status !== statusFilter) return false;
-      if (shiftFilter && String(a.shiftId) !== shiftFilter) return false;
+      if (term && !assignmentHaystack(a, tableById.get(a.tableId)).includes(term)) return false;
+      if (!matchesDutyFilter(a, dutyFilter)) return false;
+      if (effectiveShift && String(a.shiftId) !== effectiveShift) return false;
       return true;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignments, tables, searchQuery, statusFilter, shiftFilter]);
+  }, [assignments, tableById, searchQuery, dutyFilter, effectiveShift]);
 
-  const hasActiveFilter = Boolean(searchQuery || statusFilter || shiftFilter);
+  // Sólo las vivas alimentan la exclusividad mesa/turno.
+  const liveAssignments = useMemo(() => assignments.filter(isActiveDuty), [assignments]);
+
+  const hasActiveFilter = Boolean(searchQuery || dutyFilter !== 'all' || effectiveShift);
   const clearFilters = () => {
     setSearchQuery('');
-    setStatusFilter('');
+    setDutyFilter('all');
     setShiftFilter('');
   };
 
-  const handleCreateSubmit = async (dto: {
-    shiftId: number;
-    tableId: number;
-    collaboratorId: number;
-    status: string;
-  }) => {
+  // Crea la asignación. `assignedAt` y los timestamps los sella el servidor.
+  const createAssignment = async (draft: AssignmentDraft) => {
+    const res = await fetch(`${API_BASE}/table-assignments`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ ...draft, status: 'active' }),
+    });
+    if (res.status === 401) return handleUnauthorized();
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.message || 'Failed to assign the table');
+  };
+
+  // Cierra una cobertura: sella releasedAt y la desactiva. No borra, para no perder la
+  // traza de quién cubrió qué durante el turno.
+  const releaseAssignment = async (id: number) => {
+    const res = await fetch(`${API_BASE}/table-assignments/${id}`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ releasedAt: new Date().toISOString(), status: 'inactive' }),
+    });
+    if (res.status === 401) return handleUnauthorized();
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json.message || 'Failed to release the assignment');
+    }
+  };
+
+  const handleCreateSubmit = async (draft: AssignmentDraft) => {
+    // Exclusividad mesa/turno: si ya hay alguien cubriéndola, se pide confirmación en vez
+    // de duplicar la cobertura en silencio.
+    const holder = conflictingAssignment(liveAssignments, draft.tableId, draft.shiftId);
+    if (holder) {
+      setPendingDraft({ draft, holder });
+      return;
+    }
     setFormSubmitting(true);
     setFormError('');
     try {
-      const res = await fetch(`${API_BASE}/table-assignments`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to assign the table');
+      await createAssignment(draft);
       await fetchAssignments();
       setFormOpen(false);
       setToast({ message: 'Table assigned successfully', type: 'success' });
@@ -448,24 +604,33 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     }
   };
 
-  // Liberar no borra: marca releasedAt y desactiva, para conservar la traza del turno.
+  // Traspaso de cobertura: se libera al camarero anterior y se crea la nueva fila. Si la
+  // creación falla, la liberación ya está hecha — la mesa queda descubierta, que es un
+  // estado visible y arreglable, y nunca con dos camareros a la vez.
+  const handleReassignConfirm = async () => {
+    if (!pendingDraft) return;
+    setFormSubmitting(true);
+    setFormError('');
+    try {
+      await releaseAssignment(pendingDraft.holder.id);
+      await createAssignment(pendingDraft.draft);
+      await fetchAssignments();
+      setPendingDraft(null);
+      setFormOpen(false);
+      setToast({ message: 'Table duty transferred successfully', type: 'success' });
+    } catch (err) {
+      setPendingDraft(null);
+      setFormError(err instanceof Error ? err.message : 'Failed to reassign the table');
+    } finally {
+      setFormSubmitting(false);
+    }
+  };
+
   const handleReleaseConfirm = async () => {
     if (!releasing) return;
     setReleaseSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/table-assignments/${releasing.id}`, {
-        method: 'PATCH',
-        headers: authHeaders(),
-        body: JSON.stringify({
-          releasedAt: new Date().toISOString(),
-          status: 'inactive',
-        }),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to release the assignment');
-      }
+      await releaseAssignment(releasing.id);
       setReleasing(null);
       await fetchAssignments();
       setToast({ message: 'Assignment released successfully', type: 'success' });
@@ -480,9 +645,35 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     }
   };
 
+  // Las coberturas cambian desde las tablets de sala; el supervisor mira esta parrilla en
+  // una pantalla fija y tiene que ver lo mismo que ellos.
+  const { connected: liveConnected } = useDiningRealtime({
+    onAssignmentChanged: (p) => {
+      if (p.merchantId === activeMerchantId) fetchAssignments();
+    },
+    onTableStatusChanged: (p) => {
+      if (p.merchantId !== activeMerchantId) return;
+      setTables((prev) => prev.map((t) => (t.id === p.tableId ? { ...t, status: p.status } : t)));
+    },
+    onTableTransferred: (p) => {
+      if (p.merchantId !== activeMerchantId) return;
+      fetchAssignments();
+      fetchContext();
+    },
+    onReconnect: () => {
+      // Las asignaciones no tienen endpoint de delta: la lista es corta y una recarga
+      // completa reconcilia igual de rápido.
+      fetchAssignments();
+      fetchContext();
+    },
+  });
+
   const isTrueEmpty = !loading && !error && assignments.length === 0;
   const isFilteredEmpty =
     !loading && !error && assignments.length > 0 && filteredAssignments.length === 0;
+
+  const emptyCopy =
+    "No staff assignments found for the selected shift. Click 'Assign Table' to dispatch collaborators to dining tables.";
 
   if (error) {
     return (
@@ -526,34 +717,34 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by table, collaborator or shift..."
+            placeholder="Search by collaborator, table or zone..."
             className="w-full pl-11 pr-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none text-sm transition-all"
             aria-label="Search assignments"
           />
         </div>
         <select
-          value={shiftFilter}
+          value={effectiveShift}
           onChange={(e) => setShiftFilter(e.target.value)}
-          className="px-3 py-2 bg-[#fef9f1] border border-[#e8e2d8] rounded text-sm focus:border-[#ae001a] outline-none min-w-[150px]"
+          className="px-3 py-2 bg-[#fef9f1] border border-[#e8e2d8] rounded text-sm focus:border-[#ae001a] outline-none min-w-[190px]"
           aria-label="Filter by shift"
         >
           <option value="">All Shifts</option>
           {shifts.map((s) => (
             <option key={s.id} value={s.id}>
-              #{s.id} · {s.role ?? 'shift'}
+              {shiftLabel(s)}
+              {isHistoricalShift(s) ? ' · closed' : ' · open'}
             </option>
           ))}
         </select>
         <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          value={dutyFilter}
+          onChange={(e) => setDutyFilter(e.target.value as DutyFilter)}
           className="px-3 py-2 bg-[#fef9f1] border border-[#e8e2d8] rounded text-sm focus:border-[#ae001a] outline-none"
-          aria-label="Filter by status"
+          aria-label="Filter by duty status"
         >
-          <option value="">All Statuses</option>
-          {ASSIGNMENT_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s === 'active' ? 'Active' : 'Inactive'}
+          {DUTY_FILTERS.map((f) => (
+            <option key={f} value={f}>
+              {DUTY_FILTER_LABELS[f]}
             </option>
           ))}
         </select>
@@ -591,10 +782,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
           <span className="material-symbols-outlined text-[#d51f2c] text-6xl" aria-hidden="true">
             assignment_ind
           </span>
-          <p className="text-[#5f5e5e] mt-4 max-w-md text-sm leading-relaxed">
-            No table assignments yet. Click &apos;Assign Table&apos; to put a collaborator in charge
-            of a table for a shift.
-          </p>
+          <p className="text-[#5f5e5e] mt-4 max-w-md text-sm leading-relaxed">{emptyCopy}</p>
           <button
             type="button"
             onClick={() => {
@@ -617,10 +805,28 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
             <span className="text-[11px] font-bold text-white uppercase tracking-widest">
               TABLE ASSIGNMENTS
             </span>
-            <span className="text-white/50 text-xs">
-              {loading
-                ? 'Loading...'
-                : `${filteredAssignments.length} ${filteredAssignments.length === 1 ? 'assignment' : 'assignments'}`}
+            <span className="flex items-center gap-3">
+              <span
+                data-testid="assignments-realtime-status"
+                title={
+                  liveConnected
+                    ? 'Live floor updates connected'
+                    : 'Live floor updates unavailable — data refreshes on reload'
+                }
+                className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest ${
+                  liveConnected ? 'text-green-400' : 'text-white/40'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[14px]" aria-hidden="true">
+                  {liveConnected ? 'sensors' : 'sensors_off'}
+                </span>
+                {liveConnected ? 'Live' : 'Offline'}
+              </span>
+              <span className="text-white/50 text-xs">
+                {loading
+                  ? 'Loading...'
+                  : `${filteredAssignments.length} ${filteredAssignments.length === 1 ? 'assignment' : 'assignments'}`}
+              </span>
             </span>
           </div>
           <div className="overflow-x-auto">
@@ -628,16 +834,16 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
               <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
                 <tr>
                   <th className="px-6 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#5f5e5e]">
-                    Table
+                    Collaborator
                   </th>
                   <th className="px-6 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#5f5e5e]">
-                    Collaborator
+                    Table &amp; Zone
                   </th>
                   <th className="px-6 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#5f5e5e]">
                     Shift
                   </th>
                   <th className="px-6 py-3 text-left text-[11px] font-bold uppercase tracking-widest text-[#5f5e5e]">
-                    Assigned / Released
+                    Duty Window
                   </th>
                   <th className="px-6 py-3 text-center text-[11px] font-bold uppercase tracking-widest text-[#5f5e5e]">
                     Status
@@ -668,8 +874,8 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
                         >
                           search_off
                         </span>
-                        <p className="text-sm text-[#5f5e5e]">
-                          No assignments match your active filters
+                        <p className="text-sm text-[#5f5e5e] max-w-md">
+                          {effectiveShift ? emptyCopy : 'No assignments match your active filters'}
                         </p>
                         <button
                           type="button"
@@ -683,62 +889,81 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
                   </tr>
                 ) : (
                   filteredAssignments.map((a) => {
-                    const tbl = tableById.get(a.tableId);
+                    const tbl = tableOf(a);
                     const shift = shiftById.get(a.shiftId) ?? a.shift;
-                    const released = Boolean(a.releasedAt);
+                    const zoneName = tbl?.floorZone?.name;
+                    const badge = collaboratorBadge(a);
+                    const onDuty = isActiveDuty(a);
                     return (
                       <tr key={a.id} className="group hover:bg-[#f8f3eb] transition-colors">
                         <td className="px-6 py-4">
-                          <p className="font-bold text-[#1d1c17] font-mono">{tableLabelOf(a)}</p>
-                          {tbl?.floorZone?.name && (
-                            <p className="text-xs text-[#5f5e5e]">{tbl.floorZone.name}</p>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="inline-flex items-center gap-1.5 text-sm text-[#1d1c17]">
-                            <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
+                          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#1d1c17]">
+                            <span
+                              className="material-symbols-outlined text-[16px]"
+                              aria-hidden="true"
+                            >
                               badge
                             </span>
                             {collaboratorLabel(a)}
                           </span>
+                          {badge && (
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-[#5f5e5e] mt-0.5">
+                              {badge}
+                            </p>
+                          )}
                         </td>
                         <td className="px-6 py-4">
-                          <p className="text-sm text-[#1d1c17]">
-                            #{a.shiftId}
-                            {shift?.role ? ` · ${shift.role}` : ''}
-                          </p>
-                          <p className="text-xs text-[#5f5e5e] font-mono">
-                            {formatTimeRange(shift)}
-                          </p>
+                          <p className="font-bold text-[#1d1c17] font-mono">{tableLabelOf(a)}</p>
+                          {zoneName && (
+                            <span className="mt-1 inline-flex items-center gap-1.5">
+                              <span
+                                data-testid={`assignment-zone-swatch-${a.id}`}
+                                aria-hidden="true"
+                                style={{
+                                  backgroundColor: zoneSwatchColor(tbl?.floorZone?.color),
+                                }}
+                                className="inline-block w-3 h-3 rounded border border-[#e8e2d8] shrink-0"
+                              />
+                              <span className="text-xs text-[#5f5e5e]">{zoneName}</span>
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-4">
-                          <p className="text-xs text-[#5f5e5e]">{formatDateTime(a.assignedAt)}</p>
-                          <p className="text-xs text-[#5f5e5e]">
-                            {released ? formatDateTime(a.releasedAt) : '— still serving'}
+                          <p className="text-sm text-[#1d1c17]">{shiftLabel(shift)}</p>
+                          <p className="text-xs text-[#5f5e5e] font-mono">{shiftHours(shift)}</p>
+                        </td>
+                        <td className="px-6 py-4">
+                          <p
+                            data-testid={`assignment-duty-window-${a.id}`}
+                            className="text-xs text-[#5f5e5e] font-mono whitespace-nowrap"
+                          >
+                            {formatDutyWindow(a)}
                           </p>
                         </td>
                         <td className="px-6 py-4 text-center">
                           <span
-                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
-                              STATUS_BADGE_STYLES[a.status] ?? 'bg-[#ece8e0] text-[#1d1c17]'
-                            }`}
+                            data-testid={`assignment-status-${a.id}`}
+                            className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${dutyBadgeStyle(
+                              a,
+                            )}`}
                           >
-                            {a.status === 'active' ? 'Active' : 'Inactive'}
+                            {dutyBadgeLabel(a)}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-center">
                           <button
                             type="button"
                             onClick={() => setReleasing(a)}
-                            disabled={released || a.status !== 'active'}
+                            disabled={!onDuty}
                             aria-label={`Release ${tableLabelOf(a)}`}
-                            title={
-                              released ? 'Already released' : 'Release this table from the shift'
-                            }
+                            title={onDuty ? 'Release this table from the shift' : 'Already released'}
                             className="px-3 py-1.5 border border-[#e8e2d8] text-[10px] font-bold uppercase tracking-widest text-[#1d1c17] hover:text-[#ae001a] transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#1d1c17] inline-flex items-center gap-1.5"
                           >
-                            <span className="material-symbols-outlined text-[16px]" aria-hidden="true">
-                              logout
+                            <span
+                              className="material-symbols-outlined text-[16px]"
+                              aria-hidden="true"
+                            >
+                              person_remove
                             </span>
                             Release
                           </button>
@@ -773,7 +998,9 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
         <AssignmentFormDrawer
           tables={tables}
           shifts={shifts}
-          activeAssignments={assignments}
+          collaborators={collaborators}
+          defaultShiftId={effectiveShift}
+          activeAssignments={liveAssignments}
           submitting={formSubmitting}
           formError={formError}
           onCancel={() => setFormOpen(false)}
@@ -781,10 +1008,26 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
         />
       )}
 
+      {pendingDraft && (
+        <ConfirmReassignDialog
+          tableNumber={
+            tables.find((t) => t.id === pendingDraft.draft.tableId)?.number ??
+            `#${pendingDraft.draft.tableId}`
+          }
+          holder={pendingDraft.holder}
+          submitting={formSubmitting}
+          onCancel={() => setPendingDraft(null)}
+          onConfirm={handleReassignConfirm}
+        />
+      )}
+
       {releasing && (
         <ConfirmReleaseDialog
           assignment={releasing}
           tableLabel={tableLabelOf(releasing)}
+          openChecksWarning={
+            hasOpenChecks(tableOf(releasing)) ? openOrdersReleaseWarning(tableLabelOf(releasing)) : ''
+          }
           submitting={releaseSubmitting}
           onCancel={() => setReleasing(null)}
           onConfirm={handleReleaseConfirm}

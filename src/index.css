@@ -11,6 +11,9 @@
   --color-error: #ba1a1a;
 
   --font-poppins: 'Poppins', sans-serif;
+  /* Tailwind resuelve `font-sans` contra este token. Sin él la clase caía en el stack
+     genérico (ui-sans-serif, system-ui…) y pisaba el Poppins que hereda del body. */
+  --font-sans: 'Poppins', sans-serif;
   --spacing-sidebar-width: 260px;
   --spacing-header-height: 4rem;
   --spacing-xl: 32px;

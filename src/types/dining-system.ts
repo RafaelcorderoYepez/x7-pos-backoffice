@@ -59,6 +59,64 @@ export const TABLE_SHAPES: TableShape[] = [
   'Counter',
 ];
 
+// ================= Mesas: estado operativo =================
+
+// Espejo del enum TableStatus del backend. La columna es varchar libre, pero éstos son los
+// únicos valores que el POS sabe pintar; 'deleted' es el borrado lógico y jamás un estado
+// operativo, por eso no está en la lista.
+export type TableStatus =
+  | 'available'
+  | 'occupied'
+  | 'reserved'
+  | 'cleaning'
+  | 'out_of_service';
+
+export const TABLE_STATUSES: TableStatus[] = [
+  'available',
+  'occupied',
+  'reserved',
+  'cleaning',
+  'out_of_service',
+];
+
+export const TABLE_STATUS_LABELS: Record<TableStatus, string> = {
+  available: 'Available',
+  occupied: 'Occupied',
+  reserved: 'Reserved',
+  cleaning: 'Cleaning',
+  out_of_service: 'Out of Service',
+};
+
+// Código de color operativo del POS, idéntico en la parrilla y en el lienzo: verde libre,
+// coral ocupada, ámbar reservada, azul en limpieza, gris apagado fuera de servicio.
+export const TABLE_STATUS_BADGE_STYLES: Record<TableStatus, string> = {
+  available: 'bg-green-500/10 text-green-700',
+  occupied: 'bg-[#ff6b5a]/20 text-[#c2352a]',
+  reserved: 'bg-amber-500/10 text-amber-700',
+  cleaning: 'bg-blue-500/10 text-blue-700',
+  out_of_service: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
+};
+
+export const isTableStatus = (raw?: string | null): raw is TableStatus =>
+  TABLE_STATUSES.includes((raw ?? '') as TableStatus);
+
+// El backend puede devolver un status heredado fuera de la quíntuple; en vez de esconder
+// la fila la etiquetamos legible ('needs_bussing' -> 'Needs Bussing') con badge neutro.
+export const tableStatusLabel = (raw?: string | null): string => {
+  const value = (raw ?? '').trim();
+  if (isTableStatus(value)) return TABLE_STATUS_LABELS[value];
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
+export const tableStatusBadgeStyle = (raw?: string | null): string =>
+  isTableStatus(raw ?? '')
+    ? TABLE_STATUS_BADGE_STYLES[raw as TableStatus]
+    : 'bg-[#ece8e0] text-[#1d1c17]';
+
+// El rango que acepta la columna `rotation` (int 0-360). Un decimal se truncaría en silencio.
+export const TABLE_MIN_ROTATION = 0;
+export const TABLE_MAX_ROTATION = 360;
+
 // Límites del tamaño propio de una mesa, en píxeles de lienzo (100px = 1m). Replican los
 // del backend: por debajo de 20cm la mesa es invisible y por encima de 6m desborda
 // cualquier sala razonable.
@@ -166,6 +224,11 @@ export interface DiningTable {
   // plano pertenece la mesa es este objeto anidado (puede venir null si el FK es null).
   floorPlan?: FloorPlanRef | null;
   floorZone?: { id: number; name?: string; color?: string | null } | null;
+  // Mesa madre de una unión. Asimetría real del contrato: la respuesta de /api/tables
+  // embebe `parent_table: {id, number} | null`, mientras que los DTO de escritura sólo
+  // aceptan el escalar `parent_table_id`. Ambos conviven aquí para no perder ninguno;
+  // parentTableId() en lib/dining-tables.ts es quien los unifica al leer.
+  parent_table?: { id: number; number?: string } | null;
   parent_table_id?: number | null;
   created_at?: string;
   updated_at?: string;
