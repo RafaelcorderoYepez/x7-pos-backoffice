@@ -4,6 +4,7 @@ import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storag
 import { QuickLaunchPanel } from '../../../shared/QuickLaunchPanel';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
 
 interface Product {
   id: number;
@@ -31,7 +32,21 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
 
   // Filtros locales
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [productFilter, setProductFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All Status');
+
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    name: true,
+    product: true,
+    sku: true,
+    price: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Estados del Modal
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -125,6 +140,24 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
     fetchAllData();
   }, []);
 
+  const handleExportCSV = () => {
+    if (filteredVariants.length === 0) return;
+    const headers = ['ID', 'Name', 'SKU', 'Price', 'Associated Product', 'Status'];
+    const rows = filteredVariants.map(v => [v.id, `"${v.name.replace(/"/g, '""')}"`, v.sku, v.price, `"${v.product?.name || 'None'}"`, v.isActive ? 'Active' : 'Inactive']);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const link = document.createElement('a');
+    link.setAttribute('href', encodeURI(csvContent));
+    link.setAttribute('download', `variants_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  const handlePrintTable = () => { window.print(); };
+
+  const handleCopySummary = () => {
+    const active = filteredVariants.filter(v => v.isActive).length;
+    navigator.clipboard.writeText(`Variants & Sizes: ${filteredVariants.length} total, ${active} active, ${filteredVariants.length - active} inactive.`);
+  };
+
   const filteredVariants = variants.filter((v) => {
     const matchesSearch =
       v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -132,12 +165,33 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
       (v.product?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesStatus =
+      statusFilter === 'All' ||
       statusFilter === 'All Status' ||
       (statusFilter === 'Active' && v.isActive) ||
       (statusFilter === 'Inactive' && !v.isActive);
 
     return matchesSearch && matchesStatus;
   });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, pageSize]);
+
+  const densityPadding = getDensityPadding(rowDensity);
+
+  const colSpan =
+    (visibleColumns.name ? 1 : 0) +
+    (visibleColumns.product ? 1 : 0) +
+    (visibleColumns.sku ? 1 : 0) +
+    (visibleColumns.price ? 1 : 0) +
+    (visibleColumns.status ? 1 : 0) +
+    (visibleColumns.actions ? 1 : 0);
+
+  const totalPages = Math.ceil(filteredVariants.length / pageSize) || 1;
+  const paginatedVariants = filteredVariants.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   const formatPrice = (price: number | string) => {
     const num = typeof price === 'number' ? price : parseFloat(price);
@@ -281,9 +335,14 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
       {/* Título de Sección */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div>
-          <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+              style
+            </span>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
             Product Variants Matrix
           </h2>
+          </div>
           <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
             Establish size parameters, specific configurations, and unique price structures for different versions of catalog items.
           </p>
@@ -300,7 +359,10 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full pl-11 pr-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none text-body-md transition-all font-sans"
             placeholder="Search variants by name, SKU or product..."
           />
@@ -312,7 +374,10 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
             {/* Filtro por Estado */}
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none min-w-[130px] font-sans text-secondary"
             >
               <option>All Status</option>
@@ -330,13 +395,6 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
               ADD VARIANT
             </button>
 
-            <button
-              onClick={() => fetchAllData()}
-              className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
-              title="Reload variants"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
           </div>
         </div>
       </div>
@@ -344,42 +402,93 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
       {/* Tabla del Directorio de Variantes */}
       <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm">
         {/* Header Oscuro #222222 */}
-        <div className="p-4 bg-[#222222] flex justify-between items-center">
-          <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
-            VARIANTS DIRECTORY
-          </span>
-          <span className="material-symbols-outlined text-white text-sm cursor-pointer">
-            more_vert
-          </span>
+        <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+          <div className="flex items-center gap-3">
+            <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
+              VARIANTS DIRECTORY
+            </span>
+            <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+              {paginatedVariants.length === filteredVariants.length
+                ? `${filteredVariants.length} variant${filteredVariants.length === 1 ? '' : 's'}`
+                : `${paginatedVariants.length} / ${filteredVariants.length} variants`}
+            </span>
+          </div>
+
+          <TableOptionsMenu
+            onExportCSV={handleExportCSV}
+            onPrint={handlePrintTable}
+            onCopySummary={handleCopySummary}
+            onReload={fetchAllData}
+            columns={[
+              { key: 'name', label: 'Variant Name' },
+              { key: 'product', label: 'Associated Product' },
+              { key: 'sku', label: 'SKU' },
+              { key: 'price', label: 'Price' },
+              { key: 'status', label: 'Status' },
+              { key: 'actions', label: 'Actions' },
+            ]}
+            visibleColumns={visibleColumns}
+            onToggleColumn={(key) =>
+              setVisibleColumns((prev) => ({
+                ...prev,
+                [key]: !prev[key],
+              }))
+            }
+            rowDensity={rowDensity}
+            onChangeDensity={setRowDensity}
+            totalItems={filteredVariants.length}
+            pageSize={pageSize}
+            onChangePageSize={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+          />
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
-              <tr>
-                <th className="px-6 py-3 text-left text-label-caps font-bold text-text-muted font-sans">
-                  Variant Name
-                </th>
-                <th className="px-6 py-3 text-left text-label-caps font-bold text-text-muted font-sans">
-                  Associated Product
-                </th>
-                <th className="px-6 py-3 text-left text-label-caps font-bold text-text-muted font-sans">
-                  SKU
-                </th>
-                <th className="px-6 py-3 text-right text-label-caps font-bold text-text-muted font-sans">
-                  Price
-                </th>
-                <th className="px-6 py-3 text-center text-label-caps font-bold text-text-muted font-sans">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-center text-label-caps font-bold text-text-muted font-sans">
-                  Actions
-                </th>
-              </tr>
-            </thead>
+        {colSpan === 0 ? (
+          <NoColumnsEmptyState />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
+                <tr>
+                  {visibleColumns.name && (
+                    <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e] font-sans`}>
+                      Variant Name
+                    </th>
+                  )}
+                  {visibleColumns.product && (
+                    <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e] font-sans`}>
+                      Associated Product
+                    </th>
+                  )}
+                  {visibleColumns.sku && (
+                    <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e] font-sans`}>
+                      SKU
+                    </th>
+                  )}
+                  {visibleColumns.price && (
+                    <th className={`${densityPadding} text-right text-label-caps font-bold text-[#5f5e5e] font-sans`}>
+                      Price
+                    </th>
+                  )}
+                  {visibleColumns.status && (
+                    <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e] font-sans`}>
+                      Status
+                    </th>
+                  )}
+                  {visibleColumns.actions && (
+                    <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e] font-sans`}>
+                      Actions
+                    </th>
+                  )}
+                </tr>
+              </thead>
             <tbody className="divide-y divide-[#e8e2d8]">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                  <td colSpan={colSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
                     <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
                       sync
                     </span>
@@ -388,7 +497,7 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
+                  <td colSpan={colSpan} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
                     <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
                       error
                     </span>
@@ -402,23 +511,21 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
                   </td>
                 </tr>
               ) : variants.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-secondary font-sans bg-white">
-                    <span className="material-symbols-outlined text-secondary text-5xl block mb-2 mx-auto select-none">
-                      layers
-                    </span>
-                    <p className="font-bold text-[#222222] uppercase text-sm">No variants found</p>
-                    <p className="text-xs text-[#666666] mt-1">Click 'Add Variant' to start building your variants catalog.</p>
-                  </td>
-                </tr>
+                <TableEmptyState
+                  colSpan={colSpan}
+                  icon="layers"
+                  title="No variants found"
+                  description="Click 'Add Variant' to start building your variants catalog."
+                />
               ) : filteredVariants.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-secondary italic font-sans bg-white">
-                    No variants match the selected filters.
-                  </td>
-                </tr>
+                <TableEmptyState
+                  colSpan={colSpan}
+                  icon="layers"
+                  title="No variants found"
+                  description="No variants match the selected filter criteria."
+                />
               ) : (
-                filteredVariants.map((variant) => {
+                paginatedVariants.map((variant) => {
                   const isInactive = !variant.isActive;
                   return (
                     <tr
@@ -427,50 +534,62 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
                         isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
                       }`}
                     >
-                      <td className="px-6 py-4 flex items-center gap-3">
-                        <div className={`w-1 h-8 rounded-full ${isInactive ? 'bg-zinc-400' : 'bg-[#ae001a]'}`}></div>
-                        <p className={`font-bold text-[#1d1c17] font-sans ${isInactive ? 'line-through' : ''}`}>{variant.name}</p>
-                      </td>
-                      <td className="px-6 py-4 text-body-md text-[#1d1c17] font-sans">
-                        {variant.product ? variant.product.name : 'No Product'}
-                      </td>
-                      <td className={`px-6 py-4 font-mono text-[13px] text-secondary ${isInactive ? 'line-through' : ''}`}>
-                        {variant.sku}
-                      </td>
-                      <td className="px-6 py-4 text-right font-mono font-bold text-[#1d1c17]">
-                        {formatPrice(variant.price)}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span
-                          className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase font-sans ${
-                            variant.isActive
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-zinc-200 text-[#5f5e5e]'
-                          }`}
-                        >
-                          {variant.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex justify-center gap-3">
-                          <button
-                            onClick={() => handleOpenEditModal(variant)}
-                            className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                            title="Editar variante"
+                      {visibleColumns.name && (
+                        <td className={`${densityPadding} flex items-center gap-3`}>
+                          <div className={`w-1 h-8 rounded-full ${isInactive ? 'bg-zinc-400' : 'bg-[#ae001a]'}`}></div>
+                          <p className={`font-bold text-[#1d1c17] font-sans ${isInactive ? 'line-through' : ''}`}>{variant.name}</p>
+                        </td>
+                      )}
+                      {visibleColumns.product && (
+                        <td className={`${densityPadding} text-body-md text-[#1d1c17] font-sans`}>
+                          {variant.product ? variant.product.name : 'No Product'}
+                        </td>
+                      )}
+                      {visibleColumns.sku && (
+                        <td className={`${densityPadding} font-mono text-[13px] text-secondary ${isInactive ? 'line-through' : ''}`}>
+                          {variant.sku}
+                        </td>
+                      )}
+                      {visibleColumns.price && (
+                        <td className={`${densityPadding} text-right font-mono font-bold text-[#1d1c17]`}>
+                          {formatPrice(variant.price)}
+                        </td>
+                      )}
+                      {visibleColumns.status && (
+                        <td className={`${densityPadding} text-center`}>
+                          <span
+                            className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase font-sans ${
+                              variant.isActive
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-zinc-200 text-[#5f5e5e]'
+                            }`}
                           >
-                            <span className="material-symbols-outlined text-[20px]">edit</span>
-                          </button>
-                          <button
-                            onClick={() => void handleToggleActive(variant)}
-                            className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                            title={variant.isActive ? "Desactivar variante" : "Activar variante"}
-                          >
-                            <span className="material-symbols-outlined text-[20px]">
-                              {variant.isActive ? 'block' : 'check_circle_outline'}
-                            </span>
-                          </button>
-                        </div>
-                      </td>
+                            {variant.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                      )}
+                      {visibleColumns.actions && (
+                        <td className={`${densityPadding} text-center`}>
+                          <div className="flex justify-center gap-3">
+                            <button
+                              onClick={() => handleOpenEditModal(variant)}
+                              className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
+                              title="Editar variante"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">edit</span>
+                            </button>
+                            <button
+                              onClick={() => void handleToggleActive(variant)}
+                              className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
+                              title={variant.isActive ? "Desactivar variante" : "Activar variante"}
+                            >
+                              <span className="material-symbols-outlined text-[20px]">
+                                {variant.isActive ? 'block' : 'check_circle_outline'}
+                              </span>
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })
@@ -478,6 +597,19 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
             </tbody>
           </table>
         </div>
+        )}
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredVariants.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
       </div>
 
       {/* Modal Interactivo de Add / Edit Variant */}

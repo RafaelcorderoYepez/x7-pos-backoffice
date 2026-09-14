@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import { QuickLaunchPanel } from '../../shared/QuickLaunchPanel';
 import { EmergencySupportModal } from '../../modals/QuickActionModals';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, getDensityPadding, type TableDensity } from '../../../shared/TableOptionsMenu';
 
 interface PurchaseOrder {
   id: number;
@@ -39,6 +40,20 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
   // Filtro de búsqueda por nombre
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All Status');
+
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    id: true,
+    name: true,
+    taxId: true,
+    contact: true,
+    linkedInventory: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Estados de Cajones y Modales
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
@@ -321,6 +336,54 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     return matchesSearch; // All Status
   });
 
+  const densityPadding = getDensityPadding(rowDensity);
+
+  const colSpan =
+    (visibleColumns.id ? 1 : 0) +
+    (visibleColumns.name ? 1 : 0) +
+    (visibleColumns.taxId ? 1 : 0) +
+    (visibleColumns.contact ? 1 : 0) +
+    (visibleColumns.linkedInventory ? 1 : 0) +
+    (visibleColumns.status ? 1 : 0) +
+    (visibleColumns.actions ? 1 : 0);
+
+  const totalPages = Math.ceil(filteredSuppliers.length / pageSize) || 1;
+  const paginatedSuppliers = filteredSuppliers.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  const handleExportCSV = () => {
+    const headers = ['ID', 'Supplier Enterprise Name', 'Tax Identification', 'Email', 'Phone', 'Products Count', 'Status'];
+    const rows = filteredSuppliers.map(s => [
+      s.id,
+      `"${s.name.replace(/"/g, '""')}"`,
+      `"${(s.tax_id || '').replace(/"/g, '""')}"`,
+      `"${(s.email || '').replace(/"/g, '""')}"`,
+      `"${(s.phone || '').replace(/"/g, '""')}"`,
+      s.products?.length || 0,
+      s.isActive !== false ? 'Active' : 'Inactive'
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `suppliers_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrintTable = () => {
+    window.print();
+  };
+
+  const handleCopySummary = () => {
+    const activeCount = filteredSuppliers.filter(s => s.isActive !== false).length;
+    const summary = `Suppliers Directory: Total Suppliers: ${filteredSuppliers.length}, Active: ${activeCount}, Inactive: ${filteredSuppliers.length - activeCount}`;
+    navigator.clipboard.writeText(summary);
+  };
+
   return (
     <div className="flex flex-col gap-6 font-sans relative">
       <div ref={topRef} />
@@ -339,14 +402,17 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
 
       {/* Título de Sección */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
-        <div>
+        <div className="flex items-center gap-2.5">
+          <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+            local_shipping
+          </span>
           <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
             Suppliers Directory
           </h2>
-          <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
-            Maintain your network of supplier partners, tax identification details, primary communication channels, and purchase contract links.
-          </p>
         </div>
+        <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
+          Maintain your network of supplier partners, tax identification details, primary communication channels, and purchase contract links.
+        </p>
       </div>
 
       {/* Barra de búsqueda y Filtros */}
@@ -359,14 +425,20 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
             type="text"
             placeholder="Search suppliers..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full pl-11 pr-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none text-body-md transition-all font-sans"
           />
         </div>
         <div className="flex items-center gap-4 w-full justify-start">
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none min-w-[140px] font-sans"
           >
             <option value="All Status">All Status</option>
@@ -393,94 +465,164 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
         </div>
       </div>
 
-      {/* Main Table Grid / Empty State */}
-      {isLoading ? (
-        <div className="bg-white border border-[#e8e2d8] rounded p-12 text-center text-secondary font-sans shadow-sm">
-          <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
-            sync
-          </span>
-          <p className="text-secondary text-body-md mt-2 font-sans">Loading supplier directory...</p>
-        </div>
-      ) : error ? (
-        /* Estado de Error */
-        <div className="bg-white border border-[#e8e2d8] rounded p-12 text-center text-secondary font-sans shadow-sm flex flex-col items-center justify-center gap-4 animate-fade-in">
-          <span className="material-symbols-outlined text-[#ae001a] text-6xl select-none">
-            warning
-          </span>
-          <h3 className="font-bold text-[#ba1a1a] uppercase tracking-wider text-sm">Failed to Load Suppliers</h3>
-          <p className="text-xs text-[#666666] max-w-md">
-            {error}
-          </p>
-          <button
-            onClick={fetchSuppliers}
-            className="px-4 py-2 bg-[#222222] text-white text-xs font-bold uppercase rounded hover:bg-[#ae001a] transition-all"
-          >
-            Retry
-          </button>
-        </div>
-      ) : suppliers.length === 0 ? (
-        /* Empty State de Inicialización: El grid desaparece por completo (AC 1) */
-        <div className="bg-white border border-[#e8e2d8] rounded p-12 text-center text-secondary font-sans shadow-sm flex flex-col items-center justify-center gap-4 animate-fade-in">
-          <span className="material-symbols-outlined text-[#ae001a] text-6xl select-none">
-            handshake
-          </span>
-          <h3 className="font-bold text-[#222222] uppercase tracking-wider text-sm">No suppliers configured yet for this company profile.</h3>
-          <p className="text-xs text-[#666666] max-w-md">
-            Click 'Add Supplier' to establish your business partners network.
-          </p>
-        </div>
-      ) : (
-        /* Tabla Principal Activa */
-        <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm animate-fade-in">
-          <div className="p-4 bg-[#222222] flex justify-between items-center">
-            <span className="text-label-caps font-bold text-white uppercase tracking-wider">
+      {/* Main Table Grid con Encabezado Oscuro Permanente */}
+      <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm animate-fade-in">
+        <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+          <div className="flex items-center gap-3">
+            <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
               SUPPLIER DIRECTORY
             </span>
-            <span className="material-symbols-outlined text-white text-sm cursor-pointer select-none">
-              more_vert
+            <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+              {paginatedSuppliers.length === filteredSuppliers.length
+                ? `${filteredSuppliers.length} supplier${filteredSuppliers.length === 1 ? '' : 's'}`
+                : `${paginatedSuppliers.length} / ${filteredSuppliers.length} suppliers`}
             </span>
           </div>
+
+          <TableOptionsMenu
+            onExportCSV={handleExportCSV}
+            onPrint={handlePrintTable}
+            onCopySummary={handleCopySummary}
+            onReload={fetchSuppliers}
+            columns={[
+              { key: 'id', label: 'ID' },
+              { key: 'name', label: 'Supplier Enterprise Name' },
+              { key: 'taxId', label: 'Tax Identification Number' },
+              { key: 'contact', label: 'Contact Matrix Channel' },
+              { key: 'linkedInventory', label: 'Active Linked Inventory' },
+              { key: 'status', label: 'Status' },
+              { key: 'actions', label: 'Actions' },
+            ]}
+            visibleColumns={visibleColumns}
+            onToggleColumn={(key) =>
+              setVisibleColumns((prev) => ({
+                ...prev,
+                [key]: !prev[key],
+              }))
+            }
+            rowDensity={rowDensity}
+            onChangeDensity={setRowDensity}
+            totalItems={filteredSuppliers.length}
+            pageSize={pageSize}
+            onChangePageSize={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+          />
+        </div>
+        {colSpan === 0 ? (
+          <NoColumnsEmptyState />
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
                 <tr>
-                  <th className="px-6 py-3 text-left text-label-caps font-bold text-[#5f5e5e]">ID</th>
-                  <th className="px-6 py-3 text-left text-label-caps font-bold text-[#5f5e5e]">Supplier Enterprise Name</th>
-                  <th className="px-6 py-3 text-left text-label-caps font-bold text-[#5f5e5e]">Tax Identification Number</th>
-                  <th className="px-6 py-3 text-left text-label-caps font-bold text-[#5f5e5e]">Contact Matrix Channel</th>
-                  <th className="px-6 py-3 text-center text-label-caps font-bold text-[#5f5e5e]">Active Linked Inventory</th>
-                  <th className="px-6 py-3 text-center text-label-caps font-bold text-[#5f5e5e]">Status</th>
-                  <th className="px-6 py-3 text-center text-label-caps font-bold text-[#5f5e5e] w-24">Actions</th>
+                  {visibleColumns.id && (
+                    <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e]`}>
+                      ID
+                    </th>
+                  )}
+                  {visibleColumns.name && (
+                    <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e]`}>
+                      Supplier Enterprise Name
+                    </th>
+                  )}
+                  {visibleColumns.taxId && (
+                    <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e]`}>
+                      Tax Identification Number
+                    </th>
+                  )}
+                  {visibleColumns.contact && (
+                    <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e]`}>
+                      Contact Matrix Channel
+                    </th>
+                  )}
+                  {visibleColumns.linkedInventory && (
+                    <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e]`}>
+                      Active Linked Inventory
+                    </th>
+                  )}
+                  {visibleColumns.status && (
+                    <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e]`}>
+                      Status
+                    </th>
+                  )}
+                  {visibleColumns.actions && (
+                    <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e] w-24`}>
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#e8e2d8]">
-                {filteredSuppliers.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-secondary font-sans bg-white">
-                      <span className="material-symbols-outlined text-secondary text-5xl block mb-2">
-                        search_off
-                      </span>
-                      <p className="font-bold text-[#222222] uppercase text-sm">No suppliers match your search filters.</p>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredSuppliers.map((supplier) => {
-                    const isInactive = supplier.isActive === false;
-                    return (
-                      <tr
-                        key={supplier.id}
-                        onClick={() => fetchSupplierDetail(supplier.id)}
-                        className={`group transition-colors cursor-pointer ${
-                          isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
-                        }`}
-                      >
-                        {/* ID */}
-                        <td className="px-6 py-4 font-mono text-[13px] text-secondary">
+            <tbody className="divide-y divide-[#e8e2d8]">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={colSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                    <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                      sync
+                    </span>
+                    <p className="text-secondary text-body-md mt-2 font-sans">
+                      Loading supplier directory...
+                    </p>
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={colSpan} className="px-6 py-12 text-center text-red-700 font-sans bg-red-50/50">
+                    <span className="material-symbols-outlined text-red-600 text-4xl block mb-2 mx-auto select-none">
+                      warning
+                    </span>
+                    <p className="font-bold text-[#ba1a1a] uppercase tracking-wider text-sm mt-2">
+                      Failed to Load Suppliers
+                    </p>
+                    <p className="text-xs text-[#666666] max-w-md mx-auto mt-1">
+                      {error}
+                    </p>
+                    <button
+                      onClick={fetchSuppliers}
+                      className="mt-3 px-4 py-1.5 bg-[#222222] text-white text-xs font-bold uppercase rounded hover:bg-[#ae001a] transition-all cursor-pointer"
+                    >
+                      Retry
+                    </button>
+                  </td>
+                </tr>
+              ) : filteredSuppliers.length === 0 ? (
+                <tr>
+                  <td colSpan={colSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                    <span className="material-symbols-outlined text-zinc-300 text-4xl block mb-2 mx-auto select-none">
+                      local_shipping
+                    </span>
+                    <p className="font-bold text-[#222222] uppercase tracking-wider text-sm">
+                      No suppliers found.
+                    </p>
+                    <p className="text-xs text-[#666666] max-w-md mx-auto mt-1">
+                      Click 'Add Supplier' to establish your business partners network.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                paginatedSuppliers.map((supplier) => {
+                  const isInactive = supplier.isActive === false;
+                  return (
+                    <tr
+                      key={supplier.id}
+                      onClick={() => fetchSupplierDetail(supplier.id)}
+                      className={`group transition-colors cursor-pointer ${
+                        isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
+                      }`}
+                    >
+                      {/* ID */}
+                      {visibleColumns.id && (
+                        <td className={`${densityPadding} font-mono text-[13px] text-secondary`}>
                           #{supplier.id}
                         </td>
-                        
-                        {/* Supplier Enterprise Name */}
-                        <td className="px-6 py-4">
+                      )}
+
+                      {/* Supplier Enterprise Name */}
+                      {visibleColumns.name && (
+                        <td className={`${densityPadding}`}>
                           <div className="flex items-center gap-3">
                             <div className={`w-1 h-8 rounded-full ${isInactive ? 'bg-[#5f5e5e]/40' : 'bg-[#ae001a]'}`}></div>
                             <div>
@@ -491,18 +633,22 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
                             </div>
                           </div>
                         </td>
-                        
-                        {/* Tax Identification Number */}
-                        <td className="px-6 py-4 text-xs text-secondary">
+                      )}
+
+                      {/* Tax Identification Number */}
+                      {visibleColumns.taxId && (
+                        <td className={`${densityPadding} text-xs text-secondary`}>
                           {supplier.tax_id ? (
                             <span className="font-medium text-[#1d1c17]">{supplier.tax_id}</span>
                           ) : (
                             <span className="text-secondary/60 italic font-normal">No Tax ID</span>
                           )}
                         </td>
-                        
-                        {/* Contact Matrix Channel */}
-                        <td className="px-6 py-4 text-xs text-secondary">
+                      )}
+
+                      {/* Contact Matrix Channel */}
+                      {visibleColumns.contact && (
+                        <td className={`${densityPadding} text-xs text-secondary`}>
                           <div className="flex flex-col gap-1">
                             {supplier.email ? (
                               <span className="flex items-center gap-1.5">
@@ -521,16 +667,20 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
                             )}
                           </div>
                         </td>
-                        
-                        {/* Active Linked Inventory */}
-                        <td className="px-6 py-4 text-center">
+                      )}
+
+                      {/* Active Linked Inventory */}
+                      {visibleColumns.linkedInventory && (
+                        <td className={`${densityPadding} text-center`}>
                           <span className="bg-[#ece8e0] px-3 py-1 rounded text-body-sm font-bold text-[#1d1c17]">
                             {supplier.products?.length || 0} Products
                           </span>
                         </td>
-                        
-                        {/* Status */}
-                        <td className="px-6 py-4 text-center">
+                      )}
+
+                      {/* Status */}
+                      {visibleColumns.status && (
+                        <td className={`${densityPadding} text-center`}>
                           <span
                             className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
                               !isInactive
@@ -541,9 +691,11 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
                             {!isInactive ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        
-                        {/* Actions */}
-                        <td className="px-6 py-4 text-center">
+                      )}
+
+                      {/* Actions */}
+                      {visibleColumns.actions && (
+                        <td className={`${densityPadding} text-center`}>
                           <div className="flex justify-center gap-3">
                             <button
                               type="button"
@@ -565,15 +717,28 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
                             </button>
                           </div>
                         </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                      )}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+        )}
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredSuppliers.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
+      </div>
 
       {/* Floating Action Button (FAB) */}
       <button

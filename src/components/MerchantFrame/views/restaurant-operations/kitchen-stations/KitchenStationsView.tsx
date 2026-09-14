@@ -4,7 +4,7 @@ import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storag
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { AppModal } from '../../../shared/AppModal';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
-import { TableOptionsMenu, NoColumnsEmptyState, TablePaginationFooter, getDensityPadding } from '../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, NoColumnsEmptyState, TableEmptyState, TablePaginationFooter, getDensityPadding } from '../../../../shared/TableOptionsMenu';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 
 export type KitchenStationType = 'HOT' | 'COLD' | 'BAR' | 'DESSERT' | 'PREP' | 'PACKING' | 'EXPO';
@@ -29,87 +29,6 @@ export interface KitchenStation {
 interface KitchenStationsViewProps {
   onNavigate?: (view: string) => void;
 }
-
-const MOCK_KITCHEN_STATIONS: KitchenStation[] = [
-  {
-    id: 101,
-    merchant_id: 1,
-    name: 'Hot Line & Grill Station',
-    station_type: 'HOT',
-    display_mode: 'AUTO',
-    display_order: 1,
-    printer_name: 'Kitchen Printer 1 (Grill)',
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-15T08:30:00Z',
-    updated_at: '2026-02-10T14:20:00Z',
-  },
-  {
-    id: 102,
-    merchant_id: 1,
-    name: 'Cold Prep & Salad Station',
-    station_type: 'COLD',
-    display_mode: 'AUTO',
-    display_order: 2,
-    printer_name: 'Kitchen Printer 2 (Cold)',
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-15T08:45:00Z',
-    updated_at: '2026-02-10T14:22:00Z',
-  },
-  {
-    id: 103,
-    merchant_id: 1,
-    name: 'Main Bar & Beverage Station',
-    station_type: 'BAR',
-    display_mode: 'MANUAL',
-    display_order: 3,
-    printer_name: 'Bar Receipt Printer',
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-16T10:00:00Z',
-    updated_at: '2026-02-11T09:15:00Z',
-  },
-  {
-    id: 104,
-    merchant_id: 1,
-    name: 'Desserts & Bakery Hub',
-    station_type: 'DESSERT',
-    display_mode: 'MANUAL',
-    display_order: 4,
-    printer_name: null,
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-20T11:15:00Z',
-    updated_at: '2026-02-12T16:00:00Z',
-  },
-  {
-    id: 105,
-    merchant_id: 1,
-    name: 'Expo & Final Quality Check',
-    station_type: 'EXPO',
-    display_mode: 'AUTO',
-    display_order: 5,
-    printer_name: 'Expo Master Ticket Printer',
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-22T09:00:00Z',
-    updated_at: '2026-02-15T12:00:00Z',
-  },
-  {
-    id: 106,
-    merchant_id: 1,
-    name: 'Prep Kitchen (Secondary)',
-    station_type: 'PREP',
-    display_mode: 'MANUAL',
-    display_order: 6,
-    printer_name: null,
-    is_active: false,
-    status: 'deleted',
-    created_at: '2026-01-05T07:00:00Z',
-    updated_at: '2026-02-01T18:00:00Z',
-  },
-];
 
 export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavigate }) => {
   const [stations, setStations] = useState<KitchenStation[]>([]);
@@ -144,7 +63,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     actions: true,
   });
   const [rowDensity, setRowDensity] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
-  const [pageSize, setPageSize] = useState<number>(10);
+  const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   useEffect(() => {
@@ -259,6 +178,8 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
 
     return matchesSearch && matchesType && matchesMode && matchesStatus;
   });
+
+  const activeColSpan = Object.values(visibleColumns).filter(Boolean).length;
 
   // Toggle interactivo is_active instantáneo (Real-Time Toggle)
   const handleToggleActive = async (station: KitchenStation) => {
@@ -508,19 +429,6 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     }
   };
 
-  const hasActiveFilters =
-    searchQuery.trim() !== '' ||
-    stationTypeFilter !== 'All' ||
-    displayModeFilter !== 'All' ||
-    statusFilter !== 'All';
-
-  const clearFilters = () => {
-    setSearchQuery('');
-    setStationTypeFilter('All');
-    setDisplayModeFilter('All');
-    setStatusFilter('All');
-  };
-
   // Métricas KPI en tiempo real
   const totalActiveCount = stations.filter(
     (s) => (s.is_active ?? s.isActive) && s.status === 'active'
@@ -716,42 +624,42 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
               <span className="material-symbols-outlined text-[18px]">add</span>
               ADD KITCHEN STATION
             </button>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="px-4 py-2 border border-[#e8e2d8] text-[#5f5e5e] text-[11px] font-bold uppercase tracking-widest hover:bg-[#f2ede5] transition-colors"
-              >
-                Clear Filters
-              </button>
-            )}
           </div>
         </div>
       </div>
 
       {/* 3. Core Workspace Grid (Table View vs Quick-Launch Cards Grid View) */}
-      {isLoading ? (
-        <div className="bg-white border border-[#e8e2d8] p-12 text-center rounded shadow-sm">
-          <span className="material-symbols-outlined text-[#ae001a] animate-spin text-4xl mb-2">
-            progress_activity
-          </span>
-          <p className="text-xs font-bold uppercase tracking-wider text-[#5f5e5e]">
-            Loading Kitchen Stations Directory...
-          </p>
-        </div>
-      ) : filteredStations.length === 0 ? (
-        <div className="bg-white border border-[#e8e2d8] p-12 text-center rounded shadow-sm space-y-3">
-          <span className="material-symbols-outlined text-4xl text-zinc-400">soup_kitchen</span>
-          <p className="text-body-md text-[#5f5e5e] font-bold uppercase tracking-wider">
-            No physical kitchen prep stations matched your search criteria.
-          </p>
-          <p className="text-xs text-zinc-500">
-            Try resetting your active search filters or click 'Add Kitchen Station' to define new prep routing targets.
-          </p>
-        </div>
-      ) : viewMode === 'cards' ? (
-        <div className="grid grid-cols-2 gap-3.5">
+      {viewMode === 'cards' ? (
+        isLoading ? (
+          <div className="bg-white border border-[#e8e2d8] p-12 text-center rounded shadow-sm">
+            <span className="material-symbols-outlined text-[#ae001a] animate-spin text-4xl mb-2">
+              sync
+            </span>
+            <p className="text-xs font-bold uppercase tracking-wider text-[#5f5e5e]">
+              Loading Kitchen Stations Directory...
+            </p>
+          </div>
+        ) : error ? (
+          <div className="bg-white border border-[#e8e2d8] p-12 text-center rounded shadow-sm space-y-3">
+            <span className="material-symbols-outlined text-4xl text-[#ba1a1a]">error</span>
+            <p className="font-bold text-[#ba1a1a]">{error}</p>
+            <button
+              type="button"
+              onClick={() => fetchStations()}
+              className="px-4 py-2 bg-[#222222] text-white font-bold text-xs uppercase hover:bg-[#ae001a] transition-all cursor-pointer"
+            >
+              Retry Connection
+            </button>
+          </div>
+        ) : filteredStations.length === 0 ? (
+          <TableEmptyState
+            asTableRow={false}
+            icon="soup_kitchen"
+            title="No kitchen stations found"
+            description="No physical kitchen prep stations matched your search criteria. Try resetting your active search filters or click 'Add Kitchen Station' to define new prep routing targets."
+          />
+        ) : (
+          <div className="grid grid-cols-2 gap-3.5">
           {filteredStations.map((station) => {
             const isInactive = !station.is_active;
             const isDeleted = station.status === 'deleted';
@@ -836,6 +744,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
             );
           })}
         </div>
+        )
       ) : (
         <div className="bg-white border border-[#e8e2d8] rounded shadow-sm relative">
           <HeaderQuickTabs
@@ -893,7 +802,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
               />
             }
           />
-          {!Object.values(visibleColumns).some(Boolean) ? (
+          {activeColSpan === 0 ? (
             <NoColumnsEmptyState />
           ) : (
             <>
@@ -901,21 +810,61 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
                 <table className="w-full text-left border-collapse text-xs font-sans">
                   <thead>
                     <tr className="bg-[#ece8e0] text-[#5f5e5e] uppercase text-[11px] tracking-wider font-bold border-b border-[#e8e2d8]">
-                      {visibleColumns.refDate && <th className="py-3.5 px-4 text-[#5f5e5e]">Station Ref & Date</th>}
-                      {visibleColumns.nameSequence && <th className="py-3.5 px-4 text-[#5f5e5e]">Station Name & Sequence</th>}
-                      {visibleColumns.stationType && <th className="py-3.5 px-4 text-[#5f5e5e]">Station Type Role</th>}
-                      {visibleColumns.displayMode && <th className="py-3.5 px-4 text-[#5f5e5e]">KDS Display Mode</th>}
-                      {visibleColumns.printer && <th className="py-3.5 px-4 text-[#5f5e5e]">Hardware Printer Binding</th>}
-                      {visibleColumns.activeRouting && <th className="py-3.5 px-4 text-center text-[#5f5e5e]">Active Routing</th>}
-                      {visibleColumns.status && <th className="py-3.5 px-4 text-center text-[#5f5e5e]">Lifecycle Status</th>}
-                      {visibleColumns.actions && <th className="py-3.5 px-4 text-right text-[#5f5e5e]">Actions</th>}
+                      {visibleColumns.refDate && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>Station Ref & Date</th>}
+                      {visibleColumns.nameSequence && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>Station Name & Sequence</th>}
+                      {visibleColumns.stationType && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>Station Type Role</th>}
+                      {visibleColumns.displayMode && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>KDS Display Mode</th>}
+                      {visibleColumns.printer && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>Hardware Printer Binding</th>}
+                      {visibleColumns.activeRouting && <th className={`${getDensityPadding(rowDensity)} text-center text-[#5f5e5e]`}>Active Routing</th>}
+                      {visibleColumns.status && <th className={`${getDensityPadding(rowDensity)} text-center text-[#5f5e5e]`}>Lifecycle Status</th>}
+                      {visibleColumns.actions && <th className={`${getDensityPadding(rowDensity)} text-right text-[#5f5e5e]`}>Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e8e2d8]">
-                    {(pageSize >= 9999
-                      ? filteredStations
-                      : filteredStations.slice((currentPage - 1) * pageSize, (currentPage - 1) * pageSize + pageSize)
-                    ).map((station) => {
+                    {isLoading ? (
+                      <tr>
+                        <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                          <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                            sync
+                          </span>
+                          <p className="text-secondary text-body-md mt-2 font-sans">Loading kitchen stations directory...</p>
+                        </td>
+                      </tr>
+                    ) : error ? (
+                      <tr>
+                        <td colSpan={activeColSpan} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
+                          <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                            error
+                          </span>
+                          <p className="font-bold">{error}</p>
+                          <button
+                            type="button"
+                            onClick={() => fetchStations()}
+                            className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-all font-sans cursor-pointer"
+                          >
+                            Retry Connection
+                          </button>
+                        </td>
+                      </tr>
+                    ) : stations.length === 0 ? (
+                      <TableEmptyState
+                        colSpan={activeColSpan}
+                        icon="soup_kitchen"
+                        title="No kitchen stations defined"
+                        description="Click 'Add Kitchen Station' to define new prep routing targets."
+                      />
+                    ) : filteredStations.length === 0 ? (
+                      <TableEmptyState
+                        colSpan={activeColSpan}
+                        icon="soup_kitchen"
+                        title="No kitchen stations found"
+                        description="No physical kitchen prep stations matched your search criteria. Try resetting your active search filters."
+                      />
+                    ) : (
+                      (pageSize >= 9999
+                        ? filteredStations
+                        : filteredStations.slice((currentPage - 1) * pageSize, (currentPage - 1) * pageSize + pageSize)
+                      ).map((station) => {
                       const isInactive = !station.is_active;
                       const isDeleted = station.status === 'deleted';
                       const densityPadding = getDensityPadding(rowDensity);
@@ -1049,7 +998,8 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
                           )}
                         </tr>
                       );
-                    })}
+                    })
+                  )}
                   </tbody>
                 </table>
               </div>
@@ -1094,13 +1044,13 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
           {
             id: 'kitchen-orders',
             label: 'KITCHEN ORDERS',
-            icon: 'dinner_dining',
+            icon: 'receipt_long',
             onClick: () => onNavigate?.('kitchen-orders'),
           },
           {
             id: 'kitchen-order-items',
             label: 'ORDER ITEMS',
-            icon: 'format_list_bulleted',
+            icon: 'lunch_dining',
             onClick: () => onNavigate?.('kitchen-order-items'),
           },
           {
@@ -1112,7 +1062,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
           {
             id: 'kitchen-analytics',
             label: 'KDS ANALYTICS',
-            icon: 'monitoring',
+            icon: 'bar_chart',
             onClick: () => onNavigate?.('kitchen-analytics'),
           },
         ]}

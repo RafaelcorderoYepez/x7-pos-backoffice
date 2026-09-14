@@ -135,14 +135,6 @@ export default function App() {
           }
         />
         <Route
-          path="/inventory/journal-lines"
-          element={
-            <ProtectedRoute>
-              <MerchantFrame />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/dashboard/company-profile"
           element={
             <ProtectedRoute>

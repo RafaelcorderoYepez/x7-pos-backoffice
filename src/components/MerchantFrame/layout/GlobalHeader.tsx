@@ -62,7 +62,6 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     { id: 'locations', name: 'Inventory Locations', categoryId: 'inventory', categoryName: 'Products & Inventory System' },
     { id: 'stock-movements', name: 'Stock & Inventory Control', categoryId: 'inventory', categoryName: 'Products & Inventory System' },
     { id: 'movements', name: 'Inventory Movements Log', categoryId: 'inventory', categoryName: 'Products & Inventory System' },
-    { id: 'inventory-journal-lines', name: 'Inventory Journal Lines', categoryId: 'inventory', categoryName: 'Products & Inventory System' },
     { id: 'kitchen-stations', name: 'Kitchen Stations routing', categoryId: 'restaurant-operations', categoryName: 'Restaurant Operations' },
     { id: 'kitchen-display-devices', name: 'KDS Display Devices Inventory', categoryId: 'restaurant-operations', categoryName: 'Restaurant Operations' },
     { id: 'floor-plans', name: 'Floor Plans Workspace', categoryId: 'restaurant-operations', categoryName: 'Restaurant Operations' },
@@ -169,7 +168,6 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     'movements',
     'locations',
     'purchase-orders',
-    'inventory-journal-lines',
   ];
 
   const accountsPayableTabs = [

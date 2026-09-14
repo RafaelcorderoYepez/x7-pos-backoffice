@@ -4,7 +4,7 @@ import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storag
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { AppModal } from '../../../shared/AppModal';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
-import { TableOptionsMenu, NoColumnsEmptyState, TablePaginationFooter, getDensityPadding } from '../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, NoColumnsEmptyState, TableEmptyState, TablePaginationFooter, getDensityPadding } from '../../../../shared/TableOptionsMenu';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 
 export type KitchenDisplayDeviceStatus = 'active' | 'deleted';
@@ -40,91 +40,11 @@ interface KitchenDisplayDevicesViewProps {
   onNavigate?: (view: string) => void;
 }
 
-const MOCK_KITCHEN_STATIONS: KitchenStationRef[] = [
-  { id: 1, name: 'Hot Line & Grill Station' },
-  { id: 2, name: 'Cold Prep & Salad Station' },
-  { id: 3, name: 'Main Bar & Beverage Station' },
-  { id: 4, name: 'Desserts & Bakery Hub' },
-  { id: 5, name: 'Expo & Final Quality Check' },
-];
-
-const MOCK_DEVICES: KitchenDisplayDevice[] = [
-  {
-    id: 1,
-    merchant_id: 1,
-    station_id: 1,
-    station: { id: 1, name: 'Hot Line & Grill Station' },
-    name: 'Main Grill Touch Terminal #1',
-    device_identifier: 'DEV-001-GRILL',
-    ip_address: '192.168.1.101',
-    is_online: true,
-    last_sync: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
-    status: 'active',
-    created_at: '2026-01-15T08:30:00Z',
-    updated_at: '2026-02-10T14:20:00Z',
-  },
-  {
-    id: 2,
-    merchant_id: 1,
-    station_id: 2,
-    station: { id: 2, name: 'Cold Prep & Salad Station' },
-    name: 'Salad & Cold Prep Display #2',
-    device_identifier: 'DEV-002-COLD',
-    ip_address: '192.168.1.102',
-    is_online: true,
-    last_sync: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    status: 'active',
-    created_at: '2026-01-15T08:45:00Z',
-    updated_at: '2026-02-10T14:22:00Z',
-  },
-  {
-    id: 3,
-    merchant_id: 1,
-    station_id: 3,
-    station: { id: 3, name: 'Main Bar & Beverage Station' },
-    name: 'Bar Order Ticket Screen #3',
-    device_identifier: 'DEV-003-BAR',
-    ip_address: '192.168.1.103',
-    is_online: false,
-    last_sync: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    status: 'active',
-    created_at: '2026-01-16T10:00:00Z',
-    updated_at: '2026-02-11T09:15:00Z',
-  },
-  {
-    id: 4,
-    merchant_id: 1,
-    station_id: null,
-    station: null,
-    name: 'Backup Floating Tablet #1',
-    device_identifier: 'DEV-004-FLOAT',
-    ip_address: '192.168.1.150',
-    is_online: true,
-    last_sync: new Date(Date.now() - 1000 * 30).toISOString(),
-    status: 'active',
-    created_at: '2026-01-20T11:15:00Z',
-    updated_at: '2026-02-12T16:00:00Z',
-  },
-  {
-    id: 5,
-    merchant_id: 1,
-    station_id: 5,
-    station: { id: 5, name: 'Expo & Final Quality Check' },
-    name: 'Expo Quality Assurance Screen',
-    device_identifier: 'DEV-005-EXPO',
-    ip_address: '192.168.1.105',
-    is_online: false,
-    last_sync: new Date(Date.now() - 1000 * 60 * 1440).toISOString(),
-    status: 'deleted',
-    created_at: '2026-01-22T09:00:00Z',
-    updated_at: '2026-02-15T12:00:00Z',
-  },
-];
-
 export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps> = ({ onNavigate }) => {
-  const [devices, setDevices] = useState<KitchenDisplayDevice[]>(MOCK_DEVICES);
-  const [stations, setStations] = useState<KitchenStationRef[]>(MOCK_KITCHEN_STATIONS);
+  const [devices, setDevices] = useState<KitchenDisplayDevice[]>([]);
+  const [stations, setStations] = useState<KitchenStationRef[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Filtros y vista
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -153,7 +73,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   });
 
   const [rowDensity, setRowDensity] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
-  const [pageSize, setPageSize] = useState<number>(10);
+  const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Reset de página al cambiar filtros o tamaño de página
@@ -202,23 +122,25 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       if (res.ok) {
         const json = await res.json();
         const rawList = Array.isArray(json) ? json : json.data || [];
-        if (rawList.length > 0) {
-          setStations(
-            rawList.map((s: any) => ({
-              id: s.id,
-              name: s.name,
-            }))
-          );
-        }
+        setStations(
+          rawList.map((s: any) => ({
+            id: s.id,
+            name: s.name,
+          }))
+        );
+      } else {
+        setStations([]);
       }
-    } catch {
-      // Usar MOCK_KITCHEN_STATIONS en caso de error de red
+    } catch (err) {
+      console.error('Error fetching kitchen stations from database:', err);
+      setStations([]);
     }
   };
 
-  // Fetch de Dispositivos KDS
+  // Fetch de Dispositivos KDS desde PostgreSQL
   const fetchDevices = async (silent = false) => {
     if (!silent) setIsLoading(true);
+    setError(null);
     try {
       const token = getAccessToken();
       const headers: Record<string, string> = {
@@ -237,13 +159,9 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       if (stationFilter === 'Unassigned') params.append('unassigned', 'true');
       else if (stationFilter !== 'All') params.append('stationId', stationFilter);
 
-      const res = await fetch(`${API_BASE}/kitchen-display-devices?${params.toString()}`, { headers });
+      params.append('limit', '100');
 
-      if (res.status === 401) {
-        // En entorno de desarrollo sin token JWT, mantener datos de demostración
-        setIsLoading(false);
-        return;
-      }
+      const res = await fetch(`${API_BASE}/kitchen-display-devices?${params.toString()}`, { headers });
 
       if (res.ok) {
         const json = await res.json();
@@ -262,12 +180,14 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           created_at: dev.created_at ?? dev.createdAt ?? new Date().toISOString(),
           updated_at: dev.updated_at ?? dev.updatedAt ?? new Date().toISOString(),
         }));
-        if (dataList.length > 0) {
-          setDevices(dataList);
-        }
+        setDevices(dataList);
+      } else {
+        setDevices([]);
       }
     } catch (err) {
-      console.warn('API error fetching KDS devices (using mock fallback):', err);
+      console.error('API error fetching KDS devices from database:', err);
+      setError('Failed to fetch KDS display devices from backend API.');
+      setDevices([]);
     } finally {
       setIsLoading(false);
     }
@@ -278,15 +198,6 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     fetchDevices();
   }, [statusFilter, connectivityFilter, stationFilter]);
 
-  // Limpiar Filtros
-  const clearFilters = () => {
-    setSearchQuery('');
-    setStationFilter('All');
-    setConnectivityFilter('All');
-    setStatusFilter('All');
-  };
-
-  const hasActiveFilters = searchQuery !== '' || stationFilter !== 'All' || connectivityFilter !== 'All' || statusFilter !== 'All';
 
   // Filtrado alfanumérico en memoria
   const filteredDevices = devices.filter((dev) => {
@@ -299,8 +210,9 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       if (!matchName && !matchIdentifier && !matchIp && !matchStation) return false;
     }
 
-    if (stationFilter === 'Unassigned' && dev.station_id !== null) return false;
-    if (stationFilter !== 'All' && stationFilter !== 'Unassigned' && String(dev.station_id) !== stationFilter) return false;
+    const effectiveStationId = dev.station_id ?? dev.stationId ?? dev.station?.id ?? null;
+    if (stationFilter === 'Unassigned' && effectiveStationId !== null) return false;
+    if (stationFilter !== 'All' && stationFilter !== 'Unassigned' && String(effectiveStationId) !== stationFilter) return false;
 
     if (connectivityFilter === 'Online' && !dev.is_online) return false;
     if (connectivityFilter === 'Offline' && dev.is_online) return false;
@@ -310,6 +222,8 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
     return true;
   });
+
+  const activeColSpan = Object.values(visibleColumns).filter(Boolean).length;
 
   // KPI Metrics
   const activeDevices = devices.filter((d) => d.status === 'active');
@@ -441,53 +355,11 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         fetchDevices(true);
       } else {
         const errJson = await res.json().catch(() => null);
-        if (errJson?.message) {
-          const msg = Array.isArray(errJson.message) ? errJson.message[0] : errJson.message;
-          setFormError(msg);
-          setIsSubmitting(false);
-          return;
-        }
-
-        // Fallback local optimista
-        if (drawerMode === 'add') {
-          const newDev: KitchenDisplayDevice = {
-            id: Date.now(),
-            merchant_id: 1,
-            station_id: isDeletedStatus ? null : (formStationId ? Number(formStationId) : null),
-            station: isDeletedStatus ? null : (stationObj ? { id: stationObj.id, name: stationObj.name } : null),
-            name: formName.trim(),
-            device_identifier: formDeviceIdentifier.trim(),
-            ip_address: formIpAddress.trim() || null,
-            is_online: isDeletedStatus ? false : formIsOnline,
-            last_sync: new Date().toISOString(),
-            status: formStatus,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-          setDevices((prev) => [newDev, ...prev]);
-        } else if (editingDevice) {
-          setDevices((prev) =>
-            prev.map((d) =>
-              d.id === editingDevice.id
-                ? {
-                    ...d,
-                    name: formName.trim(),
-                    device_identifier: formDeviceIdentifier.trim(),
-                    ip_address: formIpAddress.trim() || null,
-                    station_id: isDeletedStatus ? null : (formStationId ? Number(formStationId) : null),
-                    station: isDeletedStatus ? null : (stationObj ? { id: stationObj.id, name: stationObj.name } : null),
-                    is_online: isDeletedStatus ? false : formIsOnline,
-                    status: formStatus,
-                    updated_at: new Date().toISOString(),
-                  }
-                : d
-            )
-          );
-        }
-        setIsDrawerOpen(false);
+        const msg = Array.isArray(errJson?.message) ? errJson.message[0] : (errJson?.message || 'Failed to save device in database');
+        setFormError(msg);
       }
-    } catch {
-      setIsDrawerOpen(false);
+    } catch (err: any) {
+      setFormError(err.message || 'Network error saving device');
     } finally {
       setIsSubmitting(false);
     }
@@ -498,13 +370,9 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     const updatedStatus = !device.is_online;
     const nowIso = new Date().toISOString();
 
-    setDevices((prev) =>
-      prev.map((d) => (d.id === device.id ? { ...d, is_online: updatedStatus, last_sync: nowIso } : d))
-    );
-
     try {
       const token = getAccessToken();
-      await fetch(`${API_BASE}/kitchen-display-devices/${device.id}`, {
+      const res = await fetch(`${API_BASE}/kitchen-display-devices/${device.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -519,12 +387,15 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           lastSync: nowIso,
         }),
       });
-    } catch {
-      // Mantener cambio optimista
+      if (res.ok) {
+        fetchDevices(true);
+      }
+    } catch (err) {
+      console.error('Error toggling device status:', err);
     }
   };
 
-  // Eliminar Dispositivo (Soft Delete)
+  // Eliminar Dispositivo (Soft Delete en PostgreSQL DB)
   const handleConfirmDelete = async () => {
     if (!deviceToDelete) return;
     setIsDeleting(true);
@@ -538,12 +409,13 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       });
 
       if (res.ok) {
-        setDevices((prev) => prev.map((d) => (d.id === deviceToDelete.id ? { ...d, status: 'deleted', is_online: false } : d)));
+        fetchDevices(true);
       } else {
-        setDevices((prev) => prev.map((d) => (d.id === deviceToDelete.id ? { ...d, status: 'deleted', is_online: false } : d)));
+        const errJson = await res.json().catch(() => null);
+        alert(errJson?.message || 'Failed to delete device from database');
       }
-    } catch {
-      setDevices((prev) => prev.map((d) => (d.id === deviceToDelete.id ? { ...d, status: 'deleted', is_online: false } : d)));
+    } catch (err) {
+      console.error('Error deleting device:', err);
     } finally {
       setIsDeleting(false);
       setDeleteModalOpen(false);
@@ -570,13 +442,13 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       {/* 1.5 Real-Time Health Summary KPI Banner (Estrictamente 4 Cuadrados en 1 sola línea horizontal) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Registered Active Devices */}
-        <div className="bg-white hover:bg-[#fef9f1] border border-[#e8e2d8] hover:border-[#ae001a] p-4 rounded-xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex items-center justify-between min-w-0 group">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-zinc-100 group-hover:bg-[#ae001a] text-zinc-700 group-hover:text-white flex items-center justify-center border border-zinc-200 transition-all shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-zinc-100 text-zinc-700 flex items-center justify-center border border-zinc-200 shrink-0">
               <span className="material-symbols-outlined text-xl">desktop_windows</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] group-hover:text-[#ae001a] uppercase tracking-wider truncate transition-colors">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
                 Total Registered
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
@@ -590,13 +462,13 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
 
         {/* KPI 2: Online Devices Gauge */}
-        <div className="bg-white hover:bg-[#fef9f1] border border-[#e8e2d8] hover:border-emerald-500 p-4 rounded-xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex items-center justify-between min-w-0 group">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-emerald-50 group-hover:bg-emerald-500 text-emerald-700 group-hover:text-white flex items-center justify-center border border-emerald-200 transition-all shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
               <span className="material-symbols-outlined text-xl">wifi</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] group-hover:text-emerald-800 uppercase tracking-wider truncate transition-colors">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
                 Online Ratio
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
@@ -610,13 +482,13 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
 
         {/* KPI 3: Unassigned Floating Devices */}
-        <div className="bg-white hover:bg-[#fef9f1] border border-[#e8e2d8] hover:border-amber-500 p-4 rounded-xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex items-center justify-between min-w-0 group">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-amber-50 group-hover:bg-amber-500 text-amber-700 group-hover:text-white flex items-center justify-center border border-amber-200 transition-all shrink-0">
-              <span className="material-symbols-outlined text-xl">countertops</span>
+            <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shrink-0">
+              <span className="material-symbols-outlined text-xl">soup_kitchen</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] group-hover:text-amber-900 uppercase tracking-wider truncate transition-colors">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
                 Floating Units
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
@@ -630,15 +502,15 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
 
         {/* KPI 4: Out-of-Sync Warning Gauge */}
-        <div className="bg-white hover:bg-[#fef9f1] border border-[#e8e2d8] hover:border-amber-500 p-4 rounded-xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex items-center justify-between min-w-0 group">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className={`w-10 h-10 rounded-lg flex items-center justify-center border transition-all shrink-0 ${
-              outOfSyncCount > 0 ? 'bg-amber-50 group-hover:bg-amber-500 text-amber-700 group-hover:text-white border-amber-200' : 'bg-emerald-50 group-hover:bg-emerald-500 text-emerald-700 group-hover:text-white border-emerald-200'
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center border shrink-0 ${
+              outOfSyncCount > 0 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
             }`}>
               <span className="material-symbols-outlined text-xl">published_with_changes</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] group-hover:text-amber-900 uppercase tracking-wider truncate transition-colors">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
                 Sync Warnings
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
@@ -757,44 +629,39 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
               <span className="material-symbols-outlined text-[18px]">add</span>
               PAIR NEW DEVICE
             </button>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="px-4 py-2 border border-[#e8e2d8] text-[#5f5e5e] text-[11px] font-bold uppercase tracking-widest hover:bg-[#f2ede5] transition-colors cursor-pointer"
-              >
-                Clear Filters
-              </button>
-            )}
           </div>
         </div>
       </div>
 
       {/* 3. Main Data Workspace Grid */}
-      {isLoading ? (
-        <div className="p-12 text-center bg-white border border-[#e8e2d8] rounded">
-          <span className="material-symbols-outlined animate-spin text-3xl text-amber-600 mb-2">progress_activity</span>
-          <p className="text-xs font-bold text-[#5f5e5e]">Hydrating KDS hardware devices inventory...</p>
-        </div>
-      ) : filteredDevices.length === 0 ? (
-        <div className="p-12 text-center bg-white border border-[#e8e2d8] rounded">
-          <span className="material-symbols-outlined text-4xl text-[#5f5e5e] mb-2">desktop_access_disabled</span>
-          <p className="text-body-md font-bold text-[#1d1c17]">No KDS Devices Found</p>
-          <p className="text-body-sm text-[#5f5e5e] max-w-md mx-auto mt-1 mb-4">
-            No display hardware units match your current search criteria or filter matrix. Try resetting your search query or station filters.
-          </p>
-          <button
-            type="button"
-            onClick={clearFilters}
-            className="px-4 py-2 bg-[#f2ede5] hover:bg-[#e8e2d8] text-[#1d1c17] text-xs font-bold rounded transition-colors cursor-pointer"
-          >
-            Clear Filters Matrix
-          </button>
-        </div>
-      ) : viewMode === 'cards' ? (
-        /* Quick-Launch Cards Mode: Estrictamente 2 tarjetas por fila horizontal */
-        <div className="grid grid-cols-2 gap-3.5">
+      {viewMode === 'cards' ? (
+        isLoading ? (
+          <div className="p-12 text-center bg-white border border-[#e8e2d8] rounded">
+            <span className="material-symbols-outlined animate-spin text-3xl text-amber-600 mb-2">progress_activity</span>
+            <p className="text-xs font-bold text-[#5f5e5e]">Hydrating KDS hardware devices inventory...</p>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center bg-white border border-[#e8e2d8] rounded space-y-3">
+            <span className="material-symbols-outlined text-4xl text-[#ba1a1a]">error</span>
+            <p className="font-bold text-[#ba1a1a]">{error}</p>
+            <button
+              type="button"
+              onClick={() => fetchDevices()}
+              className="px-4 py-2 bg-[#222222] text-white font-bold text-xs uppercase hover:bg-[#ae001a] transition-all cursor-pointer"
+            >
+              Retry Connection
+            </button>
+          </div>
+        ) : filteredDevices.length === 0 ? (
+          <TableEmptyState
+            asTableRow={false}
+            icon="desktop_access_disabled"
+            title="No KDS Devices Found"
+            description="No display hardware units match your current search criteria or filter matrix. Try resetting your search query or station filters."
+          />
+        ) : (
+          /* Quick-Launch Cards Mode: Estrictamente 2 tarjetas por fila horizontal */
+          <div className="grid grid-cols-2 gap-3.5">
           {filteredDevices.map((device) => {
             const isInactive = device.status === 'deleted';
             return (
@@ -906,6 +773,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             );
           })}
         </div>
+        )
       ) : (
         /* Table View Mode */
         <div className="bg-white border border-[#e8e2d8] rounded shadow-sm relative">
@@ -969,7 +837,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             }
           />
 
-          {!Object.values(visibleColumns).some(Boolean) ? (
+          {activeColSpan === 0 ? (
             <NoColumnsEmptyState />
           ) : (
             <>
@@ -977,20 +845,60 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                 <table className="w-full text-left border-collapse text-xs font-sans">
                   <thead>
                     <tr className="bg-[#ece8e0] text-[#5f5e5e] uppercase text-[11px] tracking-wider font-bold border-b border-[#e8e2d8]">
-                      {visibleColumns.deviceIdentity && <th className="py-3.5 px-4 text-[#5f5e5e]">Device Identity & HW ID</th>}
-                      {visibleColumns.stationBinding && <th className="py-3.5 px-4 text-[#5f5e5e]">Mapped Kitchen Station</th>}
-                      {visibleColumns.ipAddress && <th className="py-3.5 px-4 text-[#5f5e5e]">Network IP Address</th>}
-                      {visibleColumns.connectivity && <th className="py-3.5 px-4 text-center text-[#5f5e5e]">Live Connectivity</th>}
-                      {visibleColumns.lastSync && <th className="py-3.5 px-4 text-[#5f5e5e]">Last Sync Timestamp</th>}
-                      {visibleColumns.status && <th className="py-3.5 px-4 text-center text-[#5f5e5e]">Lifecycle Status</th>}
-                      {visibleColumns.actions && <th className="py-3.5 px-4 text-right text-[#5f5e5e]">Actions</th>}
+                      {visibleColumns.deviceIdentity && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>Device Identity & HW ID</th>}
+                      {visibleColumns.stationBinding && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>Mapped Kitchen Station</th>}
+                      {visibleColumns.ipAddress && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>Network IP Address</th>}
+                      {visibleColumns.connectivity && <th className={`${getDensityPadding(rowDensity)} text-center text-[#5f5e5e]`}>Live Connectivity</th>}
+                      {visibleColumns.lastSync && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>Last Sync Timestamp</th>}
+                      {visibleColumns.status && <th className={`${getDensityPadding(rowDensity)} text-center text-[#5f5e5e]`}>Lifecycle Status</th>}
+                      {visibleColumns.actions && <th className={`${getDensityPadding(rowDensity)} text-right text-[#5f5e5e]`}>Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e8e2d8]">
-                    {(pageSize >= 9999
-                      ? filteredDevices
-                      : filteredDevices.slice((currentPage - 1) * pageSize, (currentPage - 1) * pageSize + pageSize)
-                    ).map((device) => {
+                    {isLoading ? (
+                      <tr>
+                        <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                          <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                            sync
+                          </span>
+                          <p className="text-secondary text-body-md mt-2 font-sans">Hydrating KDS hardware devices inventory...</p>
+                        </td>
+                      </tr>
+                    ) : error ? (
+                      <tr>
+                        <td colSpan={activeColSpan} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
+                          <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                            error
+                          </span>
+                          <p className="font-bold">{error}</p>
+                          <button
+                            type="button"
+                            onClick={() => fetchDevices()}
+                            className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-all font-sans cursor-pointer"
+                          >
+                            Retry Connection
+                          </button>
+                        </td>
+                      </tr>
+                    ) : devices.length === 0 ? (
+                      <TableEmptyState
+                        colSpan={activeColSpan}
+                        icon="desktop_access_disabled"
+                        title="No KDS Devices Found"
+                        description="Click 'Add KDS Device' to enroll a new display screen."
+                      />
+                    ) : filteredDevices.length === 0 ? (
+                      <TableEmptyState
+                        colSpan={activeColSpan}
+                        icon="desktop_access_disabled"
+                        title="No KDS Devices Found"
+                        description="No display hardware units match your current search criteria or filter matrix. Try resetting your search query or station filters."
+                      />
+                    ) : (
+                      (pageSize >= 9999
+                        ? filteredDevices
+                        : filteredDevices.slice((currentPage - 1) * pageSize, (currentPage - 1) * pageSize + pageSize)
+                      ).map((device) => {
                       const isInactive = device.status === 'deleted';
                       const densityPadding = getDensityPadding(rowDensity);
                       return (
@@ -1119,7 +1027,8 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                           )}
                         </tr>
                       );
-                    })}
+                    })
+                  )}
                   </tbody>
                 </table>
               </div>
@@ -1164,13 +1073,13 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           {
             id: 'kitchen-orders',
             label: 'KITCHEN ORDERS',
-            icon: 'dinner_dining',
+            icon: 'receipt_long',
             onClick: () => onNavigate?.('kitchen-orders'),
           },
           {
             id: 'kitchen-order-items',
             label: 'ORDER ITEMS',
-            icon: 'format_list_bulleted',
+            icon: 'lunch_dining',
             onClick: () => onNavigate?.('kitchen-order-items'),
           },
           {
@@ -1182,7 +1091,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           {
             id: 'kitchen-analytics',
             label: 'KDS ANALYTICS',
-            icon: 'monitoring',
+            icon: 'bar_chart',
             onClick: () => onNavigate?.('kitchen-analytics'),
           },
         ]}

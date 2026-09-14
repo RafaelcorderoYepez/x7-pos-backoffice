@@ -9,8 +9,7 @@ export type StockQuickLinkAnchorKey =
   | 'purchase-orders'
   | 'locations'
   | 'stock-movements'
-  | 'movements'
-  | 'journal-entries';
+  | 'movements';
 
 interface StockQuickLinksProps {
   current: StockQuickLinkAnchorKey;
@@ -73,13 +72,6 @@ const STOCK_ANCHORS: Array<{
     featureId: 'movements',
     icon: 'swap_vert',
   },
-  {
-    key: 'journal-entries',
-    label: 'JOURNAL ENTRIES',
-    route: '/inventory/journal-entries',
-    featureId: 'journal-entries',
-    icon: 'auto_stories',
-  },
 ];
 
 export const StockQuickLinks: React.FC<StockQuickLinksProps> = ({
@@ -106,7 +98,7 @@ export const StockQuickLinks: React.FC<StockQuickLinksProps> = ({
     <nav aria-label="Stock workspace quick links hub">
       <QuickLaunchPanel
         title="Quick Launch"
-        description="Transition smoothly between raw materials master data, recipes, stock balances, movements and accounting journal entries."
+        description="Transition smoothly between raw materials master data, recipes, stock balances, and movements."
         actions={actions}
       />
     </nav>

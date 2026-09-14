@@ -11,23 +11,30 @@ export interface NavHubItem {
 export interface NavHubBarProps {
   title?: string;
   titleIcon?: string;
+  subtitle?: string;
+  activeModuleId?: string;
   items: NavHubItem[];
   className?: string;
   isSidebarCollapsed?: boolean;
   onBackToDashboard?: () => void;
+  onBack?: () => void;
   backToDashboardLabel?: string;
 }
 
 export const NavHubBar: React.FC<NavHubBarProps> = ({
   title,
   titleIcon,
+  subtitle,
+  activeModuleId,
   items = [],
   className = '',
   isSidebarCollapsed: propIsSidebarCollapsed,
   onBackToDashboard,
+  onBack,
   backToDashboardLabel,
 }) => {
   const [collapsed, setCollapsed] = useState<boolean>(false);
+  const handleBack = onBackToDashboard || onBack;
 
   useEffect(() => {
     if (propIsSidebarCollapsed !== undefined) {
@@ -60,12 +67,12 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
     >
       <div className="w-full flex items-center justify-center relative min-h-[36px]">
         {/* Botón de Regreso a la izquierda (Solo Flecha Compacta) */}
-        {onBackToDashboard ? (
+        {handleBack ? (
           <button
             type="button"
             onClick={() => {
               window.scrollTo({ top: 0, behavior: 'smooth' });
-              onBackToDashboard();
+              handleBack();
             }}
             className="flex items-center justify-center w-8 h-8 bg-[#ae001a] hover:bg-[#900015] text-white rounded transition-all shadow-xs cursor-pointer absolute left-2 sm:left-4 select-none shrink-0"
             title={backToDashboardLabel || 'Return to Main Dashboard'}
@@ -85,23 +92,26 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
 
         {/* Arreglo de Botones de Navegación PERFECTAMENTE CENTRADOS */}
         <div className="flex items-center justify-center gap-1.5 flex-wrap">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={item.onClick}
-              className={`px-3 py-1.5 rounded text-xs font-bold transition-colors duration-200 flex items-center gap-1.5 cursor-pointer font-sans select-none whitespace-nowrap ${
-                item.active
-                  ? 'bg-[#ae001a] text-white shadow-xs'
-                  : 'text-zinc-300 hover:text-[#ae001a] hover:bg-zinc-800'
-              }`}
-            >
-              {item.icon && (
-                <span className="material-symbols-outlined text-sm">{item.icon}</span>
-              )}
-              <span>{item.label}</span>
-            </button>
-          ))}
+          {items.map((item) => {
+            const isActive = item.active || (activeModuleId ? item.id === activeModuleId : false);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={item.onClick}
+                className={`px-3 py-1.5 rounded text-xs font-bold transition-colors duration-200 flex items-center gap-1.5 cursor-pointer font-sans select-none whitespace-nowrap ${
+                  isActive
+                    ? 'bg-[#ae001a] text-white shadow-xs'
+                    : 'text-zinc-300 hover:text-[#ae001a] hover:bg-zinc-800'
+                }`}
+              >
+                {item.icon && (
+                  <span className="material-symbols-outlined text-sm">{item.icon}</span>
+                )}
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

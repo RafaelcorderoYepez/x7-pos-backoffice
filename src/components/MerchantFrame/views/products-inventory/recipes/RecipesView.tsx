@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -79,6 +80,52 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
 
   const [productFilter, setProductFilter] = useState<string>('ALL');
+
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    name: true,
+    product: true,
+    yield: true,
+    ingredients: true,
+    cost: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  const handleExportCSV = () => {
+    if (filteredRecipes.length === 0) return;
+    const headers = ['ID', 'Recipe Name', 'Product SKU', 'Batch Yield', 'Ingredients Count', 'Theoretical Cost', 'Status'];
+    const rows = filteredRecipes.map(r => {
+      const prod = r.finishedProduct || products.find((p) => p.id === r.finishedProductId);
+      return [
+        r.id,
+        `"${(r.name || prod?.name || `Recipe #${r.id}`).replace(/"/g, '""')}"`,
+        `"${prod?.sku || ''}"`,
+        r.yieldQuantity ?? 1,
+        (r.lines || []).length,
+        r.theoreticalCostCached || 0,
+        r.isActive !== false ? 'Active' : 'Inactive'
+      ];
+    });
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `recipes_formulas_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrintTable = () => { window.print(); };
+
+  const handleCopySummary = () => {
+    const active = filteredRecipes.filter(r => r.isActive !== false).length;
+    navigator.clipboard.writeText(`Recipes & BOM: ${filteredRecipes.length} total, ${active} active, ${filteredRecipes.length - active} inactive.`);
+  };
 
   // Drawer / Modal Interactivo para Crear / Editar Receta
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
@@ -431,6 +478,12 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     return matchesSearch && matchesProduct && matchesStatus;
   });
 
+  const totalPages = Math.ceil(filteredRecipes.length / pageSize) || 1;
+  const paginatedRecipes = filteredRecipes.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans">
       <div ref={topRef} />
@@ -438,9 +491,14 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div>
-          <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+              menu_book
+            </span>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
             Recipes Workspace
           </h2>
+          </div>
           <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
             Review production formulas, link ingredients to finished products or variants, monitor yield quantities and audit theoretical costs.
           </p>
@@ -513,15 +571,6 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
               ADD RECIPE
             </button>
 
-            <button
-              type="button"
-              onClick={fetchData}
-              className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
-              title="Reload recipes data"
-              aria-label="Reload table data"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
           </div>
         </div>
       </div>
@@ -530,178 +579,296 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
       {/* Grid de Datos Principal */}
       <div className="bg-white border border-[#e8e2d8] rounded-xl shadow-xs overflow-hidden">
-        {isLoading ? (
-          <div className="py-20 text-center text-secondary text-sm font-semibold flex flex-col items-center gap-2">
-            <span className="material-symbols-outlined text-3xl animate-spin text-[#ae001a]">
-              sync
-            </span>
-            Loading recipes dataset...
-          </div>
-        ) : filteredRecipes.length === 0 ? (
-          <div className="py-20 text-center px-4 flex flex-col items-center justify-center">
-            <span className="material-symbols-outlined text-5xl text-zinc-300 mb-3">
-              menu_book
-            </span>
-            <p className="text-base font-bold text-[#1d1c17]">No recipes found.</p>
-            <p className="text-body-sm text-secondary max-w-md mt-1">
-              Click 'Add Recipe' to define ingredients and cost formulas for menu items.
-            </p>
-            <button
-              onClick={handleOpenAdd}
-              className="mt-4 px-4 py-2 bg-[#ae001a] text-white text-xs font-bold uppercase rounded hover:bg-[#930015] cursor-pointer"
-            >
-              + Add Recipe
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="p-4 bg-[#222222] flex justify-between items-center">
-              <span className="text-label-caps font-bold text-white uppercase tracking-wider">
-                RECIPES & BOM FORMULAS
-              </span>
-              <span className="material-symbols-outlined text-white text-sm cursor-pointer select-none">
-                more_vert
-              </span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
-                  <tr>
-                    <th className="px-6 py-3.5 text-label-caps font-bold text-[#5f5e5e]">Recipe Name & ID</th>
-                    <th className="px-6 py-3.5 text-label-caps font-bold text-[#5f5e5e]">Linked Product / Variant</th>
-                    <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">Batch Yield</th>
-                    <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">Ingredients</th>
-                    <th className="px-6 py-3.5 text-right text-label-caps font-bold text-[#5f5e5e]">Theoretical Cost / Portion</th>
-                    <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">Status</th>
-                    <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">Actions</th>
-                  </tr>
-                </thead>
+        {(() => {
+          const densityPadding = getDensityPadding(rowDensity);
+          const activeColSpan =
+            (visibleColumns.name ? 1 : 0) +
+            (visibleColumns.product ? 1 : 0) +
+            (visibleColumns.yield ? 1 : 0) +
+            (visibleColumns.ingredients ? 1 : 0) +
+            (visibleColumns.cost ? 1 : 0) +
+            (visibleColumns.status ? 1 : 0) +
+            (visibleColumns.actions ? 1 : 0);
 
-              <tbody className="divide-y divide-[#e8e2d8] text-sm">
-                {filteredRecipes.map((rec) => {
-                  const prod = rec.finishedProduct || products.find((p) => p.id === rec.finishedProductId);
-                  const variant = rec.finishedVariant;
+          return (
+            <>
+              <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+                <div className="flex items-center gap-3">
+                  <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
+                    RECIPES & BOM FORMULAS
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+                    {filteredRecipes.length} {filteredRecipes.length === 1 ? 'recipe' : 'recipes'}
+                  </span>
+                </div>
 
-                  const recipeName = rec.name || prod?.name || `Recipe Formula #${rec.id}`;
-                  const yieldQty = rec.yieldQuantity ?? 1;
-                  const totalCost = Number(rec.theoreticalCostCached || 0);
-                  const portionCost = yieldQty > 0 ? totalCost / yieldQty : totalCost;
-                  const ingredientCount = (rec.lines || []).length;
-                  const recIsActive = rec.isActive !== false;
+                <TableOptionsMenu
+                  onExportCSV={handleExportCSV}
+                  onPrint={handlePrintTable}
+                  onCopySummary={handleCopySummary}
+                  onReload={fetchData}
+                  columns={[
+                    { key: 'name', label: 'Recipe Name & ID' },
+                    { key: 'product', label: 'Linked Product / Variant' },
+                    { key: 'yield', label: 'Batch Yield' },
+                    { key: 'ingredients', label: 'Ingredients' },
+                    { key: 'cost', label: 'Theoretical Cost' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'actions', label: 'Actions' },
+                  ]}
+                  visibleColumns={visibleColumns}
+                  onToggleColumn={(key) =>
+                    setVisibleColumns((prev) => ({
+                      ...prev,
+                      [key]: !prev[key as keyof typeof visibleColumns],
+                    }))
+                  }
+                  rowDensity={rowDensity}
+                  onChangeDensity={setRowDensity}
+                  totalItems={filteredRecipes.length}
+                  pageSize={pageSize}
+                  onChangePageSize={(size) => {
+                    setPageSize(size);
+                    setCurrentPage(1);
+                  }}
+                  currentPage={currentPage}
+                  onPageChange={setCurrentPage}
+                />
+              </div>
 
-                  return (
-                    <tr key={rec.id} className="hover:bg-[#f8f3eb] transition-colors">
-                      {/* Recipe Name & ID */}
-                      <td className="px-6 py-4">
-                        <p className="font-bold text-[#1d1c17]">{recipeName}</p>
-                        <span className="font-mono text-[11px] text-[#5f5e5e] bg-[#f2ede5] px-1.5 py-0.5 rounded">
-                          RCP-#{rec.id}
-                        </span>
-                      </td>
-
-                      {/* Linked Product / Variant */}
-                      <td className="px-6 py-4">
-                        {prod ? (
-                          <div className="flex flex-col gap-1 items-start">
-                            <span className="px-2.5 py-1 rounded-full bg-[#f2ede5] text-[#1d1c17] font-semibold text-xs border border-[#e8e2d8] inline-flex items-center gap-1.5">
-                              <span className="material-symbols-outlined text-[14px] text-[#ae001a]">
-                                restaurant
-                              </span>
-                              {prod.name}
-                            </span>
-                            {variant && (
-                              <span className="text-[11px] text-[#5f5e5e] italic font-mono pl-1">
-                                Variant: {variant.name}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-500 font-semibold text-xs italic">
-                            General Formula
-                          </span>
+              {activeColSpan === 0 ? (
+                <NoColumnsEmptyState />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
+                      <tr>
+                        {visibleColumns.name && (
+                          <th className={`text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Recipe Name & ID
+                          </th>
                         )}
-                      </td>
+                        {visibleColumns.product && (
+                          <th className={`text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Linked Product / Variant
+                          </th>
+                        )}
+                        {visibleColumns.yield && (
+                          <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Batch Yield
+                          </th>
+                        )}
+                        {visibleColumns.ingredients && (
+                          <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Ingredients
+                          </th>
+                        )}
+                        {visibleColumns.cost && (
+                          <th className={`text-right text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Theoretical Cost / Portion
+                          </th>
+                        )}
+                        {visibleColumns.status && (
+                          <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Status
+                          </th>
+                        )}
+                        {visibleColumns.actions && (
+                          <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Actions
+                          </th>
+                        )}
+                      </tr>
+                    </thead>
 
-                      {/* Batch Yield */}
-                      <td className="px-6 py-4 text-center">
-                        <span className="font-bold text-[#1d1c17] font-mono">
-                          {yieldQty} {yieldQty === 1 ? 'Portion' : 'Portions'}
-                        </span>
-                      </td>
-
-                      {/* Ingredient Count */}
-                      <td className="px-6 py-4 text-center">
-                        <span className="px-2 py-0.5 rounded-full bg-[#ece8e0] text-[#5f5e5e] font-semibold text-xs">
-                          {ingredientCount} {ingredientCount === 1 ? 'Ingredient' : 'Ingredients'}
-                        </span>
-                      </td>
-
-                      {/* Theoretical Cost & Portion Cost */}
-                      <td className="px-6 py-4 text-right">
-                        <p className="font-bold font-mono text-[#ae001a] text-sm">
-                          ${portionCost.toFixed(4)} <span className="text-[10px] font-normal text-secondary">/ portion</span>
-                        </p>
-                        <span className="text-[10px] font-mono text-secondary">
-                          Total: ${totalCost.toFixed(4)}
-                        </span>
-                      </td>
-
-                      {/* Status Badge */}
-                      <td className="px-6 py-4 text-center">
-                        <span
-                          className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
-                            recIsActive
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-zinc-100 text-zinc-600'
-                          }`}
-                        >
-                          {recIsActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-
-
-                      {/* Actions */}
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenView(rec)}
-                            className="p-1.5 text-[#5f5e5e] hover:text-[#ae001a] rounded hover:bg-[#f2ede5] transition-colors cursor-pointer"
-                            title="View Formula Lines"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">
-                              visibility
+                    <tbody className="divide-y divide-[#e8e2d8] text-sm font-sans">
+                      {isLoading ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className="py-12 px-6 text-center text-secondary font-sans bg-white">
+                            <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                              sync
                             </span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(rec)}
-                            className="p-1.5 text-[#5f5e5e] hover:text-[#ae001a] rounded hover:bg-[#f2ede5] transition-colors cursor-pointer"
-                            title="Edit Recipe"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">edit</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRecipe(rec.id)}
-                            className="p-1.5 text-[#5f5e5e] hover:text-[#ba1a1a] rounded hover:bg-red-50 transition-colors cursor-pointer"
-                            title="Delete Recipe"
-                          >
-                            <span className="material-symbols-outlined text-[18px]">
-                              delete
+                            <p className="text-secondary text-body-md mt-2 font-sans">Loading recipes dataset...</p>
+                          </td>
+                        </tr>
+                      ) : error ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className="py-12 px-6 text-center text-[#ba1a1a] font-sans bg-white">
+                            <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                              warning
                             </span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-    </div>
+                            <p className="font-bold">{error}</p>
+                          </td>
+                        </tr>
+                      ) : filteredRecipes.length === 0 ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className="py-12 px-6 text-center text-secondary font-sans bg-white">
+                            <span className="material-symbols-outlined text-secondary text-5xl block mb-2 mx-auto select-none">
+                              menu_book
+                            </span>
+                            <p className="font-bold text-[#222222] uppercase text-sm">No recipes found</p>
+                            <p className="text-xs text-[#666666] mt-1">No production recipes match the selected filter criteria.</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedRecipes.map((rec) => {
+                          const prod = rec.finishedProduct || products.find((p) => p.id === rec.finishedProductId);
+                          const variant = rec.finishedVariant;
+
+                          const recipeName = rec.name || prod?.name || `Recipe Formula #${rec.id}`;
+                          const yieldQty = rec.yieldQuantity ?? 1;
+                          const calculatedLinesCost = (rec.lines || []).reduce((sum, l) => {
+                            const mat = l.rawMaterial || supplies.find((s) => s.id === l.rawMaterialId || s.id === l.supplyProductId);
+                            const qty = Number(l.quantityPerSoldUnit || l.quantity || 0);
+                            const unitCost = Number(mat?.cost_per_unit || 0);
+                            return sum + (qty * unitCost);
+                          }, 0);
+                          const totalCost = calculatedLinesCost > 0 ? calculatedLinesCost : Number(rec.theoreticalCostCached || 0);
+                          const portionCost = yieldQty > 0 ? totalCost / yieldQty : totalCost;
+                          const ingredientCount = (rec.lines || []).length;
+                          const recIsActive = rec.isActive !== false;
+
+                          return (
+                            <tr key={rec.id} className="hover:bg-[#f8f3eb] transition-colors">
+                              {/* Recipe Name & ID */}
+                              {visibleColumns.name && (
+                                <td className={densityPadding}>
+                                  <p className="font-bold text-[#1d1c17]">{recipeName}</p>
+                                  <span className="font-mono text-[11px] text-[#5f5e5e] bg-[#f2ede5] px-1.5 py-0.5 rounded">
+                                    RCP-#{rec.id}
+                                  </span>
+                                </td>
+                              )}
+
+                              {/* Linked Product / Variant */}
+                              {visibleColumns.product && (
+                                <td className={densityPadding}>
+                                  {prod ? (
+                                    <div className="flex flex-col gap-1 items-start">
+                                      <span className="px-2.5 py-1 rounded-full bg-[#f2ede5] text-[#1d1c17] font-semibold text-xs border border-[#e8e2d8] inline-flex items-center gap-1.5">
+                                        <span className="material-symbols-outlined text-[14px] text-[#ae001a]">
+                                          restaurant
+                                        </span>
+                                        {prod.name}
+                                      </span>
+                                      {variant && (
+                                        <span className="text-[11px] text-[#5f5e5e] italic font-mono pl-1">
+                                          Variant: {variant.name}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="px-2.5 py-1 rounded-full bg-zinc-100 text-zinc-500 font-semibold text-xs italic">
+                                      General Formula
+                                    </span>
+                                  )}
+                                </td>
+                              )}
+
+                              {/* Batch Yield */}
+                              {visibleColumns.yield && (
+                                <td className={`text-center ${densityPadding}`}>
+                                  <span className="font-bold text-[#1d1c17] font-mono">
+                                    {yieldQty} {yieldQty === 1 ? 'Portion' : 'Portions'}
+                                  </span>
+                                </td>
+                              )}
+
+                              {/* Ingredient Count */}
+                              {visibleColumns.ingredients && (
+                                <td className={`text-center ${densityPadding}`}>
+                                  <span className="px-2 py-0.5 rounded-full bg-[#ece8e0] text-[#5f5e5e] font-semibold text-xs">
+                                    {ingredientCount} {ingredientCount === 1 ? 'Ingredient' : 'Ingredients'}
+                                  </span>
+                                </td>
+                              )}
+
+                              {/* Theoretical Cost & Portion Cost */}
+                              {visibleColumns.cost && (
+                                <td className={`text-right ${densityPadding}`}>
+                                  <p className="font-bold font-mono text-[#ae001a] text-sm">
+                                    ${portionCost.toFixed(4)} <span className="text-[10px] font-normal text-secondary">/ portion</span>
+                                  </p>
+                                  <span className="text-[10px] font-mono text-secondary">
+                                    Total: ${totalCost.toFixed(4)}
+                                  </span>
+                                </td>
+                              )}
+
+                              {/* Status Badge */}
+                              {visibleColumns.status && (
+                                <td className={`text-center ${densityPadding}`}>
+                                  <span
+                                    className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
+                                      recIsActive
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'bg-zinc-100 text-zinc-600'
+                                    }`}
+                                  >
+                                    {recIsActive ? 'Active' : 'Inactive'}
+                                  </span>
+                                </td>
+                              )}
+
+                              {/* Actions */}
+                              {visibleColumns.actions && (
+                                <td className={`text-center ${densityPadding}`}>
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenView(rec)}
+                                      className="p-1.5 text-[#5f5e5e] hover:text-[#ae001a] rounded hover:bg-[#f2ede5] transition-colors cursor-pointer"
+                                      title="View Formula Lines"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">
+                                        visibility
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEdit(rec)}
+                                      className="p-1.5 text-[#5f5e5e] hover:text-[#ae001a] rounded hover:bg-[#f2ede5] transition-colors cursor-pointer"
+                                      title="Edit Recipe"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">edit</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteRecipe(rec.id)}
+                                      className="p-1.5 text-[#5f5e5e] hover:text-[#ba1a1a] rounded hover:bg-red-50 transition-colors cursor-pointer"
+                                      title="Delete Recipe"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px]">
+                                        delete
+                                      </span>
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          );
+        })()}
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredRecipes.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
+      </div>
 
 
 
