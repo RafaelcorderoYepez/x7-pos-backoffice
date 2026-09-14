@@ -104,6 +104,16 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const [deviceToDelete, setDeviceToDelete] = useState<KitchenDisplayDevice | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
+  // Estado y Feedback de Resincronización
+  const [syncingDeviceId, setSyncingDeviceId] = useState<number | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'warning' | 'info' } | null>(null);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 3500);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
   const topRef = useRef<HTMLDivElement | null>(null);
   const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -391,9 +401,9 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     }
   };
 
-  // Toggle de Conectividad en tiempo real (Persistencia en PostgreSQL DB)
-  const handleToggleOnline = async (device: KitchenDisplayDevice) => {
-    const updatedStatus = !device.is_online;
+  // Resincronización de Dispositivo KDS en tiempo real (Ping y persistencia de lastSync en PostgreSQL)
+  const handleResyncDevice = async (device: KitchenDisplayDevice) => {
+    setSyncingDeviceId(device.id);
     const nowIso = new Date().toISOString();
 
     try {
@@ -409,15 +419,30 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           deviceIdentifier: device.device_identifier,
           ipAddress: device.ip_address,
           stationId: device.station_id,
-          isOnline: updatedStatus,
+          isOnline: true,
           lastSync: nowIso,
         }),
       });
       if (res.ok) {
-        fetchDevices(true);
+        await fetchDevices(true);
+        setToastMessage({
+          text: `Device "${device.name}" successfully resynchronized with KDS.`,
+          type: 'success',
+        });
+      } else {
+        setToastMessage({
+          text: `Failed to resynchronize device "${device.name}".`,
+          type: 'warning',
+        });
       }
-    } catch (err) {
-      console.error('Error toggling device status:', err);
+    } catch (err: any) {
+      console.error('Error resyncing device:', err);
+      setToastMessage({
+        text: `Network error resynchronizing "${device.name}".`,
+        type: 'warning',
+      });
+    } finally {
+      setSyncingDeviceId(null);
     }
   };
 
@@ -762,17 +787,19 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                 <div className="flex items-center justify-between border-t border-[#e8e2d8] pt-3 mt-3">
                   <button
                     type="button"
-                    onClick={() => handleToggleOnline(device)}
-                    disabled={isInactive}
-                    className={`py-1.5 px-2.5 rounded text-[11px] font-bold border transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-40 ${
-                      device.is_online
-                        ? 'bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100'
-                        : 'bg-emerald-50 border-emerald-200 text-emerald-900 hover:bg-emerald-100'
-                    }`}
-                    title="Simulate network connectivity state"
+                    onClick={() => handleResyncDevice(device)}
+                    disabled={isInactive || syncingDeviceId === device.id}
+                    className={`py-1.5 px-3 rounded text-[11px] font-bold border transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                      syncingDeviceId === device.id
+                        ? 'bg-amber-100 border-amber-300 text-amber-900 cursor-wait'
+                        : 'bg-[#fef9f1] border-amber-200 text-amber-900 hover:bg-amber-100 hover:border-amber-300'
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                    title={`Force network resynchronization for ${device.name}`}
                   >
-                    <span className="material-symbols-outlined text-xs">sync</span>
-                    <span>{device.is_online ? 'Mark Offline' : 'Mark Online'}</span>
+                    <span className={`material-symbols-outlined text-xs ${syncingDeviceId === device.id ? 'animate-spin text-amber-700' : 'text-amber-700'}`}>
+                      sync
+                    </span>
+                    <span>{syncingDeviceId === device.id ? 'Resyncing...' : 'Resync'}</span>
                   </button>
 
                   <div className="flex items-center gap-1">
@@ -996,9 +1023,24 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                           {/* Last Sync Timestamp */}
                           {visibleColumns.lastSync && (
                             <td className={`${densityPadding} whitespace-nowrap`}>
-                              <div className="font-semibold text-[#1d1c17] text-xs">{formatTimeAgo(device.last_sync)}</div>
-                              <div className="text-[10px] text-[#5f5e5e] font-mono">
-                                {device.last_sync ? new Date(device.last_sync).toLocaleString('en-US') : 'No sync recorded'}
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <div className="font-semibold text-[#1d1c17] text-xs">{formatTimeAgo(device.last_sync)}</div>
+                                  <div className="text-[10px] text-[#5f5e5e] font-mono">
+                                    {device.last_sync ? new Date(device.last_sync).toLocaleString('en-US') : 'No sync recorded'}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleResyncDevice(device)}
+                                  disabled={isInactive || syncingDeviceId === device.id}
+                                  className="p-1 rounded text-zinc-400 hover:text-amber-800 hover:bg-amber-100/60 border border-transparent hover:border-amber-200 transition-all cursor-pointer disabled:opacity-30"
+                                  title="Resync now"
+                                >
+                                  <span className={`material-symbols-outlined text-[15px] ${syncingDeviceId === device.id ? 'animate-spin text-amber-700' : ''}`}>
+                                    sync
+                                  </span>
+                                </button>
                               </div>
                             </td>
                           )}
@@ -1021,15 +1063,22 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                           {/* Actions */}
                           {visibleColumns.actions && (
                             <td className={`${densityPadding} text-right whitespace-nowrap`}>
-                              <div className="flex items-center justify-end gap-1">
+                              <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   type="button"
-                                  onClick={() => handleToggleOnline(device)}
-                                  disabled={isInactive}
-                                  className="p-1.5 text-zinc-600 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                                  title="Toggle connectivity state"
+                                  onClick={() => handleResyncDevice(device)}
+                                  disabled={isInactive || syncingDeviceId === device.id}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded border transition-all cursor-pointer shadow-2xs ${
+                                    syncingDeviceId === device.id
+                                      ? 'bg-amber-100 border-amber-300 text-amber-900 cursor-wait'
+                                      : 'bg-[#fef9f1] border-amber-200 text-amber-900 hover:bg-amber-100/90 hover:border-amber-300 hover:shadow-xs'
+                                  } disabled:opacity-30 disabled:cursor-not-allowed`}
+                                  title={`Force network resynchronization for ${device.name} with KDS server`}
                                 >
-                                  <span className="material-symbols-outlined text-[18px]">sync</span>
+                                  <span className={`material-symbols-outlined text-[15px] ${syncingDeviceId === device.id ? 'animate-spin text-amber-700' : 'text-amber-700'}`}>
+                                    sync
+                                  </span>
+                                  <span>{syncingDeviceId === device.id ? 'Resyncing...' : 'Resync'}</span>
                                 </button>
                                 <button
                                   type="button"
@@ -1335,6 +1384,32 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             </div>
           </div>
         </AppModal>
+      )}
+
+      {/* Floating Toast Alert */}
+      {toastMessage && (
+        <div className="fixed top-20 right-6 z-50 animate-bounce transition-all duration-300">
+          <div
+            className={`flex items-center gap-3 px-5 py-3 rounded-lg shadow-xl text-white text-sm font-semibold tracking-wide border ${
+              toastMessage.type === 'success'
+                ? 'bg-[#059669] border-emerald-400'
+                : toastMessage.type === 'warning'
+                ? 'bg-[#b91c1c] border-red-400'
+                : 'bg-[#1e293b] border-slate-600'
+            }`}
+          >
+            <span className="material-symbols-outlined text-lg">
+              {toastMessage.type === 'success' ? 'check_circle' : toastMessage.type === 'warning' ? 'block' : 'info'}
+            </span>
+            <span>{toastMessage.text}</span>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="ml-3 text-white/70 hover:text-white transition-colors cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

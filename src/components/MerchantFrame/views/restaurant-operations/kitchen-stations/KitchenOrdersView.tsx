@@ -172,9 +172,23 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [workspaceMode, setWorkspaceMode] = useState<'bump' | 'audit'>('bump');
 
   // Multi-Filter Matrix
-  const [selectedStationId, setSelectedStationId] = useState<number | 'ALL'>('ALL');
+  const [selectedStationId, setSelectedStationId] = useState<number | 'ALL'>(() => {
+    const saved = sessionStorage.getItem('kds_selected_station_filter');
+    if (saved) {
+      sessionStorage.removeItem('kds_selected_station_filter');
+      return saved === 'ALL' ? 'ALL' : Number(saved) || 'ALL';
+    }
+    return 'ALL';
+  });
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'pending' | 'started' | 'completed' | 'cancelled'>('ALL');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>(() => {
+    const saved = sessionStorage.getItem('kds_orders_search_query');
+    if (saved) {
+      sessionStorage.removeItem('kds_orders_search_query');
+      return saved;
+    }
+    return '';
+  });
   const [dateRangePreset, setDateRangePreset] = useState<'all' | 'today' | 'yesterday' | 'week' | 'custom'>('all');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');

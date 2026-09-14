@@ -105,8 +105,22 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
   // Multi-dimensional Filter Bar State
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedStationId, setSelectedStationId] = useState<number | 'ALL'>('ALL');
+  const [searchQuery, setSearchQuery] = useState<string>(() => {
+    const saved = sessionStorage.getItem('kds_logs_search_query');
+    if (saved) {
+      sessionStorage.removeItem('kds_logs_search_query');
+      return saved;
+    }
+    return '';
+  });
+  const [selectedStationId, setSelectedStationId] = useState<number | 'ALL'>(() => {
+    const saved = sessionStorage.getItem('kds_selected_station_filter');
+    if (saved) {
+      sessionStorage.removeItem('kds_selected_station_filter');
+      return saved === 'ALL' ? 'ALL' : Number(saved) || 'ALL';
+    }
+    return 'ALL';
+  });
   const [selectedUserId, setSelectedUserId] = useState<number | 'ALL'>('ALL');
   const [selectedEventTypes, setSelectedEventTypes] = useState<KitchenEventType[]>([]);
   const [datePreset, setDatePreset] = useState<'all' | 'today' | 'last24h' | 'last7d' | 'custom'>('all');
