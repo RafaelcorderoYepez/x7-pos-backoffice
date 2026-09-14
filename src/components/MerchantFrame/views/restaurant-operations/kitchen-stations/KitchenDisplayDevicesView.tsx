@@ -43,6 +43,9 @@ interface KitchenDisplayDevicesViewProps {
 export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps> = ({ onNavigate }) => {
   const [devices, setDevices] = useState<KitchenDisplayDevice[]>([]);
   const [stations, setStations] = useState<KitchenStationRef[]>([]);
+  const [deviceCountByStation, setDeviceCountByStation] = useState<Record<number, number>>({});
+  const [unassignedDevicesCount, setUnassignedDevicesCount] = useState<number>(0);
+  const [totalActiveDevicesCount, setTotalActiveDevicesCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,7 +113,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     }
   }, []);
 
-  // Cargar lista de estaciones de cocina para los selectores
+  // Cargar lista de estaciones de cocina para los selectores y calcular conteos
   const fetchStationsList = async () => {
     try {
       const token = getAccessToken();
@@ -118,9 +121,13 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
-      const res = await fetch(`${API_BASE}/kitchen-station?status=active`, { headers });
-      if (res.ok) {
-        const json = await res.json();
+      const [resStations, resDevices] = await Promise.all([
+        fetch(`${API_BASE}/kitchen-station?status=active`, { headers }),
+        fetch(`${API_BASE}/kitchen-display-devices?status=active&limit=100`, { headers }),
+      ]);
+
+      if (resStations.ok) {
+        const json = await resStations.json();
         const rawList = Array.isArray(json) ? json : json.data || [];
         setStations(
           rawList.map((s: any) => ({
@@ -130,6 +137,24 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         );
       } else {
         setStations([]);
+      }
+
+      if (resDevices.ok) {
+        const devJson = await resDevices.json();
+        const rawDevs = Array.isArray(devJson) ? devJson : devJson.data || [];
+        const countMap: Record<number, number> = {};
+        let unassigned = 0;
+        rawDevs.forEach((d: any) => {
+          const sId = d.station_id ?? d.stationId ?? d.station?.id;
+          if (sId) {
+            countMap[sId] = (countMap[sId] || 0) + 1;
+          } else {
+            unassigned++;
+          }
+        });
+        setDeviceCountByStation(countMap);
+        setUnassignedDevicesCount(unassigned);
+        setTotalActiveDevicesCount(rawDevs.length);
       }
     } catch (err) {
       console.error('Error fetching kitchen stations from database:', err);
@@ -353,6 +378,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       if (res.ok) {
         setIsDrawerOpen(false);
         fetchDevices(true);
+        fetchStationsList();
       } else {
         const errJson = await res.json().catch(() => null);
         const msg = Array.isArray(errJson?.message) ? errJson.message[0] : (errJson?.message || 'Failed to save device in database');
@@ -410,6 +436,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
       if (res.ok) {
         fetchDevices(true);
+        fetchStationsList();
       } else {
         const errJson = await res.json().catch(() => null);
         alert(errJson?.message || 'Failed to delete device from database');
@@ -585,13 +612,16 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
               className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] outline-none font-sans text-secondary cursor-pointer"
               aria-label="Filter by kitchen station"
             >
-              <option value="All">All Stations</option>
-              <option value="Unassigned">Unassigned / Floating Units</option>
-              {stations.map((s) => (
-                <option key={s.id} value={String(s.id)}>
-                  {s.name} (#KST-{s.id})
-                </option>
-              ))}
+              <option value="All">All Stations ({totalActiveDevicesCount} {totalActiveDevicesCount === 1 ? 'screen' : 'screens'})</option>
+              <option value="Unassigned">Unassigned / Floating Units {unassignedDevicesCount > 0 ? `(${unassignedDevicesCount})` : '(0)'}</option>
+              {stations.map((s) => {
+                const count = deviceCountByStation[s.id] || 0;
+                return (
+                  <option key={s.id} value={String(s.id)}>
+                    {s.name} (#KST-{s.id}) {count > 0 ? `(${count} ${count === 1 ? 'screen' : 'screens'})` : '(No screen)'}
+                  </option>
+                );
+              })}
             </select>
 
             {/* Connectivity Filter */}
