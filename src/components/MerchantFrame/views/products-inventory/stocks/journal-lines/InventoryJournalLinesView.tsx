@@ -64,96 +64,7 @@ export const MOVEMENT_TYPE_BADGES: Record<
   },
 };
 
-export const MOCK_INVENTORY_SEED_LINES: InventoryJournalLine[] = [
-  {
-    id: 1,
-    postingDate: '2026-08-20',
-    voucherNumber: 'INV-JE-1001',
-    referenceId: 'PO-2026-089',
-    movementType: 'PURCHASE_RECEIPT',
-    account: { id: 1100, code: '1100', name: 'Raw Material Inventory', category: 'ASSET' },
-    debit: 1250.00,
-    credit: 0.00,
-    memo: 'Stock receipt: 50.0 KG Flour 25kg bag via Purchase Order #PO-2026-089',
-  },
-  {
-    id: 2,
-    postingDate: '2026-08-20',
-    voucherNumber: 'INV-JE-1001',
-    referenceId: 'PO-2026-089',
-    movementType: 'PURCHASE_RECEIPT',
-    account: { id: 2100, code: '2100', name: 'Accounts Payable', category: 'LIABILITY' },
-    debit: 0.00,
-    credit: 1250.00,
-    memo: 'Supplier Accounts Payable liability for Purchase Order #PO-2026-089',
-  },
-  {
-    id: 3,
-    postingDate: '2026-08-19',
-    voucherNumber: 'INV-JE-1002',
-    referenceId: 'POS-BATCH-1088',
-    movementType: 'POS_DEPLETION',
-    account: { id: 5100, code: '5100', name: 'Cost of Goods Sold', category: 'EXPENSE' },
-    debit: 345.50,
-    credit: 0.00,
-    memo: 'Stock depletion: 15.5 KG Flour 25kg bag via POS Sales Order #1088',
-  },
-  {
-    id: 4,
-    postingDate: '2026-08-19',
-    voucherNumber: 'INV-JE-1002',
-    referenceId: 'POS-BATCH-1088',
-    movementType: 'POS_DEPLETION',
-    account: { id: 1100, code: '1100', name: 'Raw Material Inventory', category: 'ASSET' },
-    debit: 0.00,
-    credit: 345.50,
-    memo: 'Raw material inventory reduction via POS Sales Order #1088',
-  },
-  {
-    id: 5,
-    postingDate: '2026-08-18',
-    voucherNumber: 'INV-JE-1003',
-    referenceId: 'WASTE-REF-042',
-    movementType: 'WASTE',
-    account: { id: 5200, code: '5200', name: 'Waste & Shrinkage Expense', category: 'EXPENSE' },
-    debit: 88.00,
-    credit: 0.00,
-    memo: 'Inventory waste breakdown: 2.0 L Whole Milk (Expired batch)',
-  },
-  {
-    id: 6,
-    postingDate: '2026-08-18',
-    voucherNumber: 'INV-JE-1003',
-    referenceId: 'WASTE-REF-042',
-    movementType: 'WASTE',
-    account: { id: 1100, code: '1100', name: 'Raw Material Inventory', category: 'ASSET' },
-    debit: 0.00,
-    credit: 88.00,
-    memo: 'Raw material inventory write-off for expired batch #042',
-  },
-  {
-    id: 7,
-    postingDate: '2026-08-17',
-    voucherNumber: 'INV-JE-1004',
-    referenceId: 'ADJ-REF-015',
-    movementType: 'ADJUSTMENT',
-    account: { id: 1100, code: '1100', name: 'Raw Material Inventory', category: 'ASSET' },
-    debit: 150.00,
-    credit: 0.00,
-    memo: 'Physical count adjustment: System count 10 -> Actual count 15 (+5 units)',
-  },
-  {
-    id: 8,
-    postingDate: '2026-08-17',
-    voucherNumber: 'INV-JE-1004',
-    referenceId: 'ADJ-REF-015',
-    movementType: 'ADJUSTMENT',
-    account: { id: 5300, code: '5300', name: 'Inventory Adjustment Variance', category: 'EXPENSE' },
-    debit: 0.00,
-    credit: 150.00,
-    memo: 'Physical count variance adjustment gain credit',
-  },
-];
+
 
 export const InventoryJournalLinesView: React.FC<InventoryJournalLinesViewProps> = ({
   onNavigate,
@@ -185,16 +96,16 @@ export const InventoryJournalLinesView: React.FC<InventoryJournalLinesViewProps>
       }
 
       if (!res.ok) {
-        setLines(MOCK_INVENTORY_SEED_LINES);
+        setLines([]);
         return;
       }
 
       const json = await res.json();
       const loaded = json.data ?? json ?? [];
-      setLines(loaded.length > 0 ? loaded : MOCK_INVENTORY_SEED_LINES);
+      setLines(Array.isArray(loaded) ? loaded : []);
     } catch (err: any) {
-      console.error('Error loading inventory journal lines, loading seed lines:', err);
-      setLines(MOCK_INVENTORY_SEED_LINES);
+      console.error('Error loading inventory journal lines:', err);
+      setLines([]);
     } finally {
       setLoading(false);
     }

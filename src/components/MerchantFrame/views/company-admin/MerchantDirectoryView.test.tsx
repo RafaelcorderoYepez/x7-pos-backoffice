@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +12,7 @@ import {
 } from '../../../../api/merchants';
 import type { CompanyMerchant } from '../../../../types/merchant';
 
-vi.mock('../../../api/merchants', () => ({
+vi.mock('../../../../api/merchants', () => ({
   getCompanyMerchants: vi.fn(),
   createCompanyMerchant: vi.fn(),
   updateCompanyMerchant: vi.fn(),
@@ -106,7 +106,6 @@ describe('MerchantDirectoryView', () => {
   });
 
   it('creates a merchant and shows success banner', async () => {
-    const user = userEvent.setup();
     vi.mocked(createCompanyMerchant).mockResolvedValue(MOCK_MERCHANTS[0]);
 
     renderDirectory();
@@ -115,14 +114,14 @@ describe('MerchantDirectoryView', () => {
       expect(screen.getByText('ADD MERCHANT')).toBeInTheDocument();
     });
 
-    await user.click(screen.getAllByRole('button', { name: /add merchant/i })[0]);
-    await user.type(screen.getByLabelText(/Store Name/i), 'New Branch');
-    await user.type(screen.getByLabelText(/Tax Identification/i), '11-2233445');
-    await user.type(screen.getByLabelText(/^Address$/i), '100 Market Street');
-    await user.type(screen.getByLabelText(/^City$/i), 'Austin');
-    await user.type(screen.getByLabelText(/State\/Prov/i), 'Texas');
-    await user.type(screen.getByLabelText(/^Country$/i), 'USA');
-    await user.click(screen.getByRole('button', { name: /create merchant/i }));
+    fireEvent.click(screen.getAllByRole('button', { name: /add merchant/i })[0]);
+    fireEvent.change(screen.getByLabelText(/Store Name/i), { target: { value: 'New Branch' } });
+    fireEvent.change(screen.getByLabelText(/Tax Identification/i), { target: { value: '11-2233445' } });
+    fireEvent.change(screen.getByLabelText(/^Address$/i), { target: { value: '100 Market Street' } });
+    fireEvent.change(screen.getByLabelText(/^City$/i), { target: { value: 'Austin' } });
+    fireEvent.change(screen.getByLabelText(/State\/Prov/i), { target: { value: 'Texas' } });
+    fireEvent.change(screen.getByLabelText(/^Country$/i), { target: { value: 'USA' } });
+    fireEvent.click(screen.getByRole('button', { name: /create merchant/i }));
 
     await waitFor(() => {
       expect(createCompanyMerchant).toHaveBeenCalled();

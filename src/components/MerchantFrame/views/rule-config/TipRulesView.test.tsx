@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { TipRulesView } from './TipRulesView';
 import type { MerchantTipRule } from '../../../../types/configuration';
 
-vi.mock('../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', () => ({
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));

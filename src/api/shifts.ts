@@ -6,6 +6,17 @@ import type {
   ShiftTemplatePreset,
   ShiftSwapRequest,
   ShiftSwapStatus,
+  OpenShift,
+  OpenShiftAllocationMode,
+  OpenShiftPickupStatus,
+  OpenShiftPickupRequest,
+  CreateOpenShiftDto,
+  OpenShiftFilterParams,
+  DailyLaborForecast,
+  CollaboratorPayrollBreakdown,
+  LaborForecastingSummary,
+  LaborForecastingFilterParams,
+  UpdateLaborBudgetTargetsDto,
 } from '../types/shifts';
 import { getAccessToken } from '../lib/auth-storage';
 
@@ -489,9 +500,517 @@ export const INITIAL_SWAP_REQUESTS: ShiftSwapRequest[] = [
   },
 ];
 
+export const INITIAL_OPEN_SHIFTS: OpenShift[] = [
+  {
+    id: 'ops-201',
+    referenceId: 'OPS-201',
+    merchantId: 'merch-main-01',
+    collaboratorId: null,
+    collaboratorName: null,
+    role: 'Line Cook',
+    department: 'Kitchen (BOH)',
+    zone: 'Kitchen Station 1',
+    date: addDays(baseMon, 1),
+    startTime: '07:00 AM',
+    endTime: '03:00 PM',
+    hours: 8,
+    breakDuration: 30,
+    hourlyRate: 18.5,
+    estimatedGrossEarnings: 148.0,
+    allocationMode: 'FIRST_COME_FIRST_SERVED',
+    status: 'OPEN_FOR_PICKUP',
+    createdAt: '2026-08-28T08:00:00Z',
+    notes: 'Morning prep line coverage needed for breakfast rush.',
+  },
+  {
+    id: 'ops-202',
+    referenceId: 'OPS-202',
+    merchantId: 'merch-main-01',
+    collaboratorId: null,
+    collaboratorName: null,
+    role: 'Bartender',
+    department: 'Bar & Lounge',
+    zone: 'Main Bar',
+    date: addDays(baseMon, 2),
+    startTime: '06:00 PM',
+    endTime: '02:00 AM',
+    hours: 8,
+    breakDuration: 45,
+    hourlyRate: 22.0,
+    estimatedGrossEarnings: 176.0,
+    allocationMode: 'REQUIRES_APPROVAL',
+    status: 'OPEN_FOR_PICKUP',
+    createdAt: '2026-08-28T10:30:00Z',
+    notes: 'Peak dinner cocktail rush coverage.',
+    pickupRequests: [
+      {
+        id: 'REQ-501',
+        openShiftId: 'ops-202',
+        collaboratorId: 'emp-104',
+        collaboratorName: 'Valeria Gomez',
+        collaboratorRole: 'Bartender',
+        avatarUrl: INITIAL_COLLABORATORS[3].avatarUrl,
+        requestedAt: '2026-08-29T11:00:00Z',
+        status: 'PENDING',
+        notes: 'Available for evening cocktail shift pickup',
+      },
+    ],
+  },
+  {
+    id: 'ops-203',
+    referenceId: 'OPS-203',
+    merchantId: 'merch-main-01',
+    collaboratorId: null,
+    collaboratorName: null,
+    role: 'Waitstaff',
+    department: 'Dining Room',
+    zone: 'Patio Terrace',
+    date: addDays(baseMon, 3),
+    startTime: '11:00 AM',
+    endTime: '07:30 PM',
+    hours: 8.5,
+    breakDuration: 30,
+    hourlyRate: 16.0,
+    estimatedGrossEarnings: 136.0,
+    allocationMode: 'FIRST_COME_FIRST_SERVED',
+    status: 'OPEN_FOR_PICKUP',
+    createdAt: '2026-08-29T09:15:00Z',
+    notes: 'Lunch terrace floor section coverage.',
+  },
+  {
+    id: 'ops-204',
+    referenceId: 'OPS-204',
+    merchantId: 'merch-main-01',
+    collaboratorId: null,
+    collaboratorName: null,
+    role: 'Cashier',
+    department: 'Front Desk',
+    zone: 'Front Entrance Counter',
+    date: addDays(baseMon, 4),
+    startTime: '07:00 AM',
+    endTime: '03:00 PM',
+    hours: 8,
+    breakDuration: 30,
+    hourlyRate: 15.5,
+    estimatedGrossEarnings: 124.0,
+    allocationMode: 'REQUIRES_APPROVAL',
+    status: 'OPEN_FOR_PICKUP',
+    createdAt: '2026-08-29T14:00:00Z',
+    notes: 'Opening POS terminal cash management shift.',
+  },
+  {
+    id: 'ops-205',
+    referenceId: 'OPS-205',
+    merchantId: 'merch-main-01',
+    collaboratorId: null,
+    collaboratorName: null,
+    role: 'Supervisor',
+    department: 'Floor Management',
+    zone: 'Main Floor Overall',
+    date: addDays(baseMon, 5),
+    startTime: '04:00 PM',
+    endTime: '11:00 PM',
+    hours: 7,
+    breakDuration: 30,
+    hourlyRate: 24.0,
+    estimatedGrossEarnings: 168.0,
+    allocationMode: 'REQUIRES_APPROVAL',
+    status: 'OPEN_FOR_PICKUP',
+    createdAt: '2026-08-30T11:20:00Z',
+    notes: 'Weekend evening shift supervisor coverage.',
+  },
+];
+
 
 let localShiftsStore: ShiftAssignment[] = [...INITIAL_SHIFTS];
 let localSwapStore: ShiftSwapRequest[] = [...INITIAL_SWAP_REQUESTS];
+let localOpenShiftsStore: OpenShift[] = [...INITIAL_OPEN_SHIFTS];
+
+export async function fetchOpenShifts(
+  params?: OpenShiftFilterParams
+): Promise<OpenShift[]> {
+  const token = getAccessToken();
+  if (token) {
+    try {
+      const query = new URLSearchParams();
+      if (params?.merchant_id) query.set('merchant_id', params.merchant_id);
+      if (params?.role && params.role !== 'ALL') query.set('role', params.role);
+      if (params?.startDate) query.set('date_range_start', params.startDate);
+      if (params?.endDate) query.set('date_range_end', params.endDate);
+
+      const res = await fetch(`/api/v1/open-shifts?${query.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) return data;
+      }
+    } catch {
+      // Fallback to local store
+    }
+  }
+
+  return localOpenShiftsStore.filter((shift) => {
+    if (params?.merchant_id && shift.merchantId && shift.merchantId !== params.merchant_id)
+      return false;
+    if (params?.role && params.role !== 'ALL' && shift.role !== params.role)
+      return false;
+    if (params?.allocationMode && params.allocationMode !== 'ALL' && shift.allocationMode !== params.allocationMode)
+      return false;
+    if (params?.status && params.status !== 'ALL' && shift.status !== params.status)
+      return false;
+    if (params?.startDate && shift.date < params.startDate) return false;
+    if (params?.endDate && shift.date > params.endDate) return false;
+    if (params?.zone && params.zone !== 'ALL' && shift.zone !== params.zone)
+      return false;
+    if (params?.search) {
+      const q = params.search.toLowerCase().replace('#', '').trim();
+      const matchRef = shift.referenceId.toLowerCase().includes(q);
+      const matchRole = shift.role.toLowerCase().includes(q);
+      const matchDept = shift.department.toLowerCase().includes(q);
+      const matchZone = shift.zone.toLowerCase().includes(q);
+      const matchNotes = (shift.notes || '').toLowerCase().includes(q);
+      if (!matchRef && !matchRole && !matchDept && !matchZone && !matchNotes)
+        return false;
+    }
+    return true;
+  });
+}
+
+export async function publishOpenShift(
+  dto: CreateOpenShiftDto
+): Promise<OpenShift> {
+  const token = getAccessToken();
+  const estimatedGrossEarnings = dto.hours * dto.hourlyRate;
+  if (token) {
+    try {
+      const res = await fetch(`/api/v1/open-shifts`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...dto,
+          collaborator_id: null,
+          status: 'OPEN_FOR_PICKUP',
+          estimated_gross_earnings: estimatedGrossEarnings,
+        }),
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // Fallback to local store
+    }
+  }
+
+  const newNum = Math.floor(200 + Math.random() * 800);
+  const newShift: OpenShift = {
+    id: `ops-${newNum}`,
+    referenceId: `OPS-${newNum}`,
+    merchantId: dto.merchantId || 'merch-main-01',
+    collaboratorId: null,
+    collaboratorName: null,
+    role: dto.role,
+    department: dto.department,
+    zone: dto.zone,
+    date: dto.date,
+    startTime: dto.startTime,
+    endTime: dto.endTime,
+    presetName: dto.presetName || 'Custom Shift',
+    hours: dto.hours,
+    breakDuration: dto.breakDuration || 30,
+    hourlyRate: dto.hourlyRate,
+    estimatedGrossEarnings,
+    allocationMode: dto.allocationMode,
+    status: 'OPEN_FOR_PICKUP',
+    createdAt: new Date().toISOString(),
+    notes: dto.notes,
+    pickupRequests: [],
+  };
+
+  localOpenShiftsStore.unshift(newShift);
+  return newShift;
+}
+
+export async function claimOpenShift(
+  shiftId: string,
+  collaboratorId: string,
+  collaboratorName: string,
+  userRole: CollaboratorRole,
+  userWeeklyHours = 0,
+  userShifts: ShiftAssignment[] = []
+): Promise<{
+  openShift: OpenShift;
+  shiftAssignment?: ShiftAssignment;
+  overtimeTriggered: boolean;
+  message: string;
+}> {
+  const targetShift = localOpenShiftsStore.find((s) => s.id === shiftId);
+  if (!targetShift) throw new Error(`Open shift ${shiftId} not found.`);
+
+  // Guard 1: Role Skill Compliance Guard
+  if (userRole !== targetShift.role) {
+    throw new Error(
+      `Ineligible: Your active role tag (${userRole}) does not match the required functional role (${targetShift.role}).`
+    );
+  }
+
+  // Guard 2: Overlapping Schedule Guard
+  const effectiveShifts = userShifts.length > 0 ? userShifts : localShiftsStore;
+  const collision = findOverlappingShift(
+    effectiveShifts,
+    collaboratorId,
+    targetShift.date,
+    targetShift.startTime,
+    targetShift.endTime
+  );
+  if (collision) {
+    throw new Error(
+      `Conflict detected: You are already scheduled during this time window (#SFT-${collision.id}).`
+    );
+  }
+
+  // Guard 3: Overtime Policy Warning
+  const projectedWeeklyHours = userWeeklyHours + targetShift.hours;
+  const overtimeTriggered = projectedWeeklyHours > 40;
+
+  const token = getAccessToken();
+  if (token) {
+    try {
+      const res = await fetch(`/api/v1/open-shifts/${shiftId}/claim`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          collaborator_id: collaboratorId,
+          collaborator_name: collaboratorName,
+          user_role: userRole,
+          projected_weekly_hours: projectedWeeklyHours,
+        }),
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // Fallback
+    }
+  }
+
+  const shiftIdx = localOpenShiftsStore.findIndex((s) => s.id === shiftId);
+
+  if (targetShift.allocationMode === 'FIRST_COME_FIRST_SERVED') {
+    // Immediate assignment & roster sync
+    const collabInfo = INITIAL_COLLABORATORS.find((c) => c.id === collaboratorId);
+    const newAssignment: ShiftAssignment = {
+      id: `shift-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      collaboratorId,
+      collaboratorName,
+      role: targetShift.role,
+      department: targetShift.department,
+      avatarUrl: collabInfo?.avatarUrl,
+      date: targetShift.date,
+      startTime: targetShift.startTime,
+      endTime: targetShift.endTime,
+      presetName: targetShift.presetName || 'Open Shift Pickup',
+      status: 'confirmed',
+      hours: targetShift.hours,
+      breakDuration: targetShift.breakDuration || 30,
+      assignedRole: targetShift.role,
+      notes: `Claimed via Open Shifts Marketplace (#${targetShift.referenceId})`,
+    };
+
+    localShiftsStore.push(newAssignment);
+
+    // Update OpenShift status and assigned collaborator
+    localOpenShiftsStore[shiftIdx] = {
+      ...targetShift,
+      collaboratorId,
+      collaboratorName,
+      status: 'ASSIGNED',
+    };
+
+    return {
+      openShift: localOpenShiftsStore[shiftIdx],
+      shiftAssignment: newAssignment,
+      overtimeTriggered,
+      message: `Shift #${targetShift.referenceId} claimed successfully! Roster updated.${
+        overtimeTriggered ? ' Notice: Claim triggered overtime rates (>40h/week).' : ''
+      }`,
+    };
+  } else {
+    // REQUIRES_APPROVAL queue
+    const requests = targetShift.pickupRequests || [];
+    const existingReq = requests.find((r) => r.collaboratorId === collaboratorId);
+    if (existingReq) {
+      throw new Error(`You have already requested pickup for shift #${targetShift.referenceId}.`);
+    }
+
+    const newReq: OpenShiftPickupRequest = {
+      id: `REQ-${Math.floor(500 + Math.random() * 500)}`,
+      openShiftId: shiftId,
+      collaboratorId,
+      collaboratorName,
+      collaboratorRole: userRole,
+      avatarUrl: INITIAL_COLLABORATORS.find((c) => c.id === collaboratorId)?.avatarUrl,
+      requestedAt: new Date().toISOString(),
+      status: 'PENDING',
+      notes: overtimeTriggered
+        ? 'Pickup request submitted (triggers projected overtime hours).'
+        : 'Standard shift pickup request.',
+    };
+
+    localOpenShiftsStore[shiftIdx] = {
+      ...targetShift,
+      status: 'PENDING_SUPERVISOR_APPROVAL',
+      pickupRequests: [newReq, ...requests],
+    };
+
+    return {
+      openShift: localOpenShiftsStore[shiftIdx],
+      overtimeTriggered,
+      message: `Pickup request for shift #${targetShift.referenceId} submitted for supervisor approval.${
+        overtimeTriggered ? ' Overtime threshold warning flagged to manager.' : ''
+      }`,
+    };
+  }
+}
+
+export async function approveOpenShiftPickup(
+  shiftId: string,
+  requestId: string,
+  approvedBy = 'Carlos Mendoza (Supervisor)'
+): Promise<{ openShift: OpenShift; shiftAssignment: ShiftAssignment }> {
+  const token = getAccessToken();
+  if (token) {
+    try {
+      const res = await fetch(`/api/v1/open-shifts/${shiftId}/pickup-requests/${requestId}/approve`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ approved_by: approvedBy }),
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // Fallback
+    }
+  }
+
+  const shiftIdx = localOpenShiftsStore.findIndex((s) => s.id === shiftId);
+  if (shiftIdx === -1) throw new Error(`Open shift ${shiftId} not found.`);
+
+  const openShift = localOpenShiftsStore[shiftIdx];
+  const requests = openShift.pickupRequests || [];
+  const reqIdx = requests.findIndex((r) => r.id === requestId);
+  if (reqIdx === -1) throw new Error(`Pickup request ${requestId} not found.`);
+
+  const targetReq = requests[reqIdx];
+  const collabInfo = INITIAL_COLLABORATORS.find((c) => c.id === targetReq.collaboratorId);
+
+  // Sync with main roster
+  const newAssignment: ShiftAssignment = {
+    id: `shift-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    collaboratorId: targetReq.collaboratorId,
+    collaboratorName: targetReq.collaboratorName,
+    role: openShift.role,
+    department: openShift.department,
+    avatarUrl: targetReq.avatarUrl || collabInfo?.avatarUrl,
+    date: openShift.date,
+    startTime: openShift.startTime,
+    endTime: openShift.endTime,
+    presetName: openShift.presetName || 'Open Shift Pickup',
+    status: 'confirmed',
+    hours: openShift.hours,
+    breakDuration: openShift.breakDuration || 30,
+    assignedRole: openShift.role,
+    notes: `Approved by ${approvedBy} via Open Shifts Marketplace (#${openShift.referenceId})`,
+  };
+
+  localShiftsStore.push(newAssignment);
+
+  // Update pickup requests status
+  const updatedRequests: OpenShiftPickupRequest[] = requests.map((r) =>
+    r.id === requestId ? { ...r, status: 'APPROVED' } : { ...r, status: 'REJECTED' }
+  );
+
+  localOpenShiftsStore[shiftIdx] = {
+    ...openShift,
+    collaboratorId: targetReq.collaboratorId,
+    collaboratorName: targetReq.collaboratorName,
+    status: 'ASSIGNED',
+    pickupRequests: updatedRequests,
+  };
+
+  return {
+    openShift: localOpenShiftsStore[shiftIdx],
+    shiftAssignment: newAssignment,
+  };
+}
+
+export async function rejectOpenShiftPickup(
+  shiftId: string,
+  requestId: string,
+  reason: string,
+  rejectedBy = 'Carlos Mendoza (Supervisor)'
+): Promise<OpenShift> {
+  const token = getAccessToken();
+  if (token) {
+    try {
+      const res = await fetch(`/api/v1/open-shifts/${shiftId}/pickup-requests/${requestId}/reject`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason, rejected_by: rejectedBy }),
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // Fallback
+    }
+  }
+
+  const shiftIdx = localOpenShiftsStore.findIndex((s) => s.id === shiftId);
+  if (shiftIdx === -1) throw new Error(`Open shift ${shiftId} not found.`);
+
+  const openShift = localOpenShiftsStore[shiftIdx];
+  const requests = openShift.pickupRequests || [];
+  const updatedRequests = requests.map((r) =>
+    r.id === requestId ? { ...r, status: 'REJECTED' as const, notes: `Rejected by ${rejectedBy}: ${reason}` } : r
+  );
+
+  const hasPending = updatedRequests.some((r) => r.status === 'PENDING');
+
+  localOpenShiftsStore[shiftIdx] = {
+    ...openShift,
+    status: hasPending ? 'PENDING_SUPERVISOR_APPROVAL' : 'OPEN_FOR_PICKUP',
+    pickupRequests: updatedRequests,
+  };
+
+  return localOpenShiftsStore[shiftIdx];
+}
+
+export async function cancelOpenShift(shiftId: string): Promise<boolean> {
+  const token = getAccessToken();
+  if (token) {
+    try {
+      const res = await fetch(`/api/v1/open-shifts/${shiftId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) return true;
+    } catch {
+      // Fallback
+    }
+  }
+
+  localOpenShiftsStore = localOpenShiftsStore.filter((s) => s.id !== shiftId);
+  return true;
+}
 
 export async function fetchShiftAssignments(
   startDate?: string,
@@ -1076,5 +1595,181 @@ export function downloadICSFile(filename: string, content: string): void {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 }
+
+let storedTargetLaborCostPct = 22.0;
+let storedMaxWeeklyLaborBudget = 5000.0;
+
+export async function fetchLaborForecasting(
+  params?: LaborForecastingFilterParams
+): Promise<LaborForecastingSummary> {
+  const token = getAccessToken();
+  if (token) {
+    try {
+      const query = new URLSearchParams();
+      if (params?.merchantId) query.set('merchant_id', params.merchantId);
+      if (params?.startDate) query.set('start_date', params.startDate);
+      if (params?.endDate) query.set('end_date', params.endDate);
+
+      const res = await fetch(`/api/v1/labor-forecasting?${query.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.dailyForecasts) return data;
+      }
+    } catch {
+      // Fallback to predictive local engine
+    }
+  }
+
+  // Predictive Local Financial Engine Aggregation
+  const wageRates: Record<string, number> = {
+    'Supervisor': 24.0,
+    'Line Cook': 18.5,
+    'Bartender': 22.0,
+    'Waitstaff': 16.0,
+    'Cashier': 15.5,
+  };
+
+  const dailySalesMap: Record<number, number> = {
+    0: 2800.0, // Mon
+    1: 2900.0, // Tue
+    2: 3200.0, // Wed
+    3: 3400.0, // Thu
+    4: 4500.0, // Fri
+    5: 4800.0, // Sat
+    6: 3100.0, // Sun
+  };
+
+  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  // Aggregate Payroll Breakdown per Collaborator
+  const payrollBreakdown: CollaboratorPayrollBreakdown[] = INITIAL_COLLABORATORS.map((collab) => {
+    const collabShifts = localShiftsStore.filter((s) => s.collaboratorId === collab.id);
+    const totalHours = collabShifts.reduce((acc, s) => acc + (s.hours || 0), 0);
+    const regularHours = Math.min(40, totalHours);
+    const overtimeHours = Math.max(0, totalHours - 40);
+
+    const wage = wageRates[collab.role] || 18.0;
+    const regularPay = regularHours * wage;
+    const overtimePay = overtimeHours * wage * 1.5;
+    const totalProjectedPay = regularPay + overtimePay;
+
+    return {
+      collaboratorId: collab.id,
+      collaboratorName: collab.name,
+      role: collab.role,
+      department: collab.department,
+      hourlyWage: wage,
+      regularHours,
+      overtimeHours,
+      totalHours,
+      regularPay,
+      overtimePay,
+      totalProjectedPay,
+      overtimeCapWarning: totalHours >= 38,
+    };
+  });
+
+  const projectedLaborCostTotal = payrollBreakdown.reduce(
+    (sum, p) => sum + p.totalProjectedPay,
+    0
+  );
+
+  // Daily Forecast Matrix Calculation across 7 days
+  const dailyForecasts: DailyLaborForecast[] = dayNames.map((dayName, idx) => {
+    const targetDateStr = addDays(baseMon, idx);
+    const dayShifts = localShiftsStore.filter((s) => s.date === targetDateStr);
+    const daySales = dailySalesMap[idx] || 3000.0;
+
+    let fohCost = 0;
+    let bohCost = 0;
+    let totalHours = 0;
+
+    dayShifts.forEach((s) => {
+      const wage = wageRates[s.role] || 18.0;
+      const cost = s.hours * wage;
+      totalHours += s.hours;
+
+      if (s.role === 'Line Cook') {
+        bohCost += cost;
+      } else {
+        fohCost += cost;
+      }
+    });
+
+    const dayLaborCost = fohCost + bohCost;
+    const dayLaborCostPct = daySales > 0 ? (dayLaborCost / daySales) * 100 : 0;
+
+    const hourlySalesProjections = [
+      { hour: '11:00 AM', sales: Math.round(daySales * 0.15), laborCost: Math.round(dayLaborCost * 0.12) },
+      { hour: '01:00 PM', sales: Math.round(daySales * 0.25), laborCost: Math.round(dayLaborCost * 0.22) },
+      { hour: '04:00 PM', sales: Math.round(daySales * 0.15), laborCost: Math.round(dayLaborCost * 0.18) },
+      { hour: '07:00 PM', sales: Math.round(daySales * 0.30), laborCost: Math.round(dayLaborCost * 0.32) },
+      { hour: '10:00 PM', sales: Math.round(daySales * 0.15), laborCost: Math.round(dayLaborCost * 0.16) },
+    ];
+
+    return {
+      date: targetDateStr,
+      dayName,
+      projectedSales: daySales,
+      scheduledLaborCost: dayLaborCost,
+      fohLaborCost: fohCost,
+      bohLaborCost: bohCost,
+      totalScheduledHours: totalHours,
+      laborCostPercentage: dayLaborCostPct,
+      hourlySalesProjections,
+    };
+  });
+
+  const forecastedSalesRevenue = dailyForecasts.reduce(
+    (sum, d) => sum + d.projectedSales,
+    0
+  );
+
+  const projectedLaborCostPercentage =
+    forecastedSalesRevenue > 0
+      ? (projectedLaborCostTotal / forecastedSalesRevenue) * 100
+      : 0;
+
+  const targetVariance = projectedLaborCostPercentage - storedTargetLaborCostPct;
+  const budgetVarianceAmount = projectedLaborCostTotal - storedMaxWeeklyLaborBudget;
+  const isOverBudget = budgetVarianceAmount > 0 || targetVariance > 0;
+
+  return {
+    merchantId: params?.merchantId || 'merch-main-01',
+    startDate: params?.startDate || addDays(baseMon, 0),
+    endDate: params?.endDate || addDays(baseMon, 6),
+    targetLaborCostPercentage: storedTargetLaborCostPct,
+    maxWeeklyLaborBudget: storedMaxWeeklyLaborBudget,
+    projectedLaborCostTotal,
+    forecastedSalesRevenue,
+    projectedLaborCostPercentage,
+    targetVariance,
+    budgetVarianceAmount,
+    isOverBudget,
+    dailyForecasts,
+    payrollBreakdown,
+  };
+}
+
+export async function updateLaborBudgetTargets(
+  dto: UpdateLaborBudgetTargetsDto
+): Promise<{ targetLaborCostPercentage: number; maxWeeklyLaborBudget: number }> {
+  if (dto.targetLaborCostPercentage !== undefined) {
+    storedTargetLaborCostPct = dto.targetLaborCostPercentage;
+  }
+  if (dto.maxWeeklyLaborBudget !== undefined) {
+    storedMaxWeeklyLaborBudget = dto.maxWeeklyLaborBudget;
+  }
+  return {
+    targetLaborCostPercentage: storedTargetLaborCostPct,
+    maxWeeklyLaborBudget: storedMaxWeeklyLaborBudget,
+  };
+}
+
 
 

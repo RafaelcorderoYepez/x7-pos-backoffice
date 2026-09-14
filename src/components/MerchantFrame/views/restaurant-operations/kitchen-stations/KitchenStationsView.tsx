@@ -30,86 +30,7 @@ interface KitchenStationsViewProps {
   onNavigate?: (view: string) => void;
 }
 
-const MOCK_KITCHEN_STATIONS: KitchenStation[] = [
-  {
-    id: 101,
-    merchant_id: 1,
-    name: 'Hot Line & Grill Station',
-    station_type: 'HOT',
-    display_mode: 'AUTO',
-    display_order: 1,
-    printer_name: 'Kitchen Printer 1 (Grill)',
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-15T08:30:00Z',
-    updated_at: '2026-02-10T14:20:00Z',
-  },
-  {
-    id: 102,
-    merchant_id: 1,
-    name: 'Cold Prep & Salad Station',
-    station_type: 'COLD',
-    display_mode: 'AUTO',
-    display_order: 2,
-    printer_name: 'Kitchen Printer 2 (Cold)',
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-15T08:45:00Z',
-    updated_at: '2026-02-10T14:22:00Z',
-  },
-  {
-    id: 103,
-    merchant_id: 1,
-    name: 'Main Bar & Beverage Station',
-    station_type: 'BAR',
-    display_mode: 'MANUAL',
-    display_order: 3,
-    printer_name: 'Bar Receipt Printer',
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-16T10:00:00Z',
-    updated_at: '2026-02-11T09:15:00Z',
-  },
-  {
-    id: 104,
-    merchant_id: 1,
-    name: 'Desserts & Bakery Hub',
-    station_type: 'DESSERT',
-    display_mode: 'MANUAL',
-    display_order: 4,
-    printer_name: null,
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-20T11:15:00Z',
-    updated_at: '2026-02-12T16:00:00Z',
-  },
-  {
-    id: 105,
-    merchant_id: 1,
-    name: 'Expo & Final Quality Check',
-    station_type: 'EXPO',
-    display_mode: 'AUTO',
-    display_order: 5,
-    printer_name: 'Expo Master Ticket Printer',
-    is_active: true,
-    status: 'active',
-    created_at: '2026-01-22T09:00:00Z',
-    updated_at: '2026-02-15T12:00:00Z',
-  },
-  {
-    id: 106,
-    merchant_id: 1,
-    name: 'Prep Kitchen (Secondary)',
-    station_type: 'PREP',
-    display_mode: 'MANUAL',
-    display_order: 6,
-    printer_name: null,
-    is_active: false,
-    status: 'deleted',
-    created_at: '2026-01-05T07:00:00Z',
-    updated_at: '2026-02-01T18:00:00Z',
-  },
-];
+
 
 export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavigate }) => {
   const [stations, setStations] = useState<KitchenStation[]>([]);
@@ -1121,8 +1042,8 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
       {/* Portal: Drawer Modal (Creación y Edición de Estación KDS) */}
       {isDrawerOpen &&
         createPortal(
-          <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-6 md:pb-12 backdrop-blur-xs font-sans">
-            <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md overflow-hidden animate-fade-in max-h-[90vh] flex flex-col">
+          <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-6 md:pb-12 backdrop-blur-sm font-sans">
+            <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[450px] overflow-hidden animate-fade-in max-h-[90vh] flex flex-col">
               {/* Drawer Header */}
               <div className="p-4 bg-[#222222] text-white flex justify-between items-center">
                 <div className="flex items-center gap-2">

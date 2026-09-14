@@ -201,7 +201,6 @@ export async function fetchTips(params: FetchTipsParams): Promise<Tip[]> {
 
     return tips.map(normalizeTip);
   } catch (err) {
-    // Fallback for development / mock offline environment
     return filterMockTips(params);
   }
 }
@@ -225,7 +224,6 @@ export async function fetchPaymentOptionsForOrder(orderId: number): Promise<Paym
     const json = await response.json();
     return Array.isArray(json) ? json : json.data ?? [];
   } catch (err) {
-    // Mock fallback options for development/testing
     return [
       { id: 8841, reference: '#PAY-8841', method: 'CARD', amount: 45.0 },
       { id: 8842, reference: '#PAY-8842', method: 'CARD', amount: 62.5 },
@@ -264,7 +262,6 @@ export async function updateTip(id: number, payload: Partial<Tip>): Promise<Tip>
     if (err.message && err.message.includes('Settled tips cannot be edited')) {
       throw err;
     }
-    // Development / offline mock update fallback
     return updateMockTip(id, payload);
   }
 }

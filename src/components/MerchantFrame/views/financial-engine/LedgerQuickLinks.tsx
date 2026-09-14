@@ -28,7 +28,7 @@ export const LedgerQuickLinks: React.FC<LedgerQuickLinksProps> = ({
     id: anchor.key,
     label: anchor.label,
     icon: anchor.icon,
-    active: anchor.target === current,
+    active: anchor.target === current || anchor.key === current,
     onClick: () => onNavigate?.(anchor.target),
   }));
 

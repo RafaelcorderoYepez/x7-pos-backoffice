@@ -803,7 +803,7 @@ const InspectorDrawer: React.FC<InspectorDrawerProps> = ({
   };
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-end backdrop-blur-xs font-['Poppins',sans-serif]">
+    <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-end backdrop-blur-sm font-['Poppins',sans-serif]">
       <div className="bg-white w-full max-w-md h-full shadow-2xl flex flex-col justify-between overflow-hidden animate-slide-in text-left">
         {/* Drawer Header */}
         <div className="bg-[#222222] p-5 text-white flex justify-between items-center">

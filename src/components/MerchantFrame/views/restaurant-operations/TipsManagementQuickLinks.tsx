@@ -45,7 +45,7 @@ export const TIP_SHORTCUT_ANCHORS: TipShortcutAnchor[] = [
     key: 'tips-pool-members',
     route: '/tips/pool-members',
     label: 'POOL MEMBERS',
-    icon: 'badge',
+    icon: 'person_add',
   },
   {
     key: 'tips-allocations',
@@ -91,14 +91,41 @@ export const TipsManagementQuickLinks: React.FC<TipsManagementQuickLinksProps> =
 
   return (
     <nav
-      aria-label="Tips management contextual shortcuts"
-      className="mt-8 border-t border-[#e8e2d8] pt-6"
+      aria-label="Tips management navigation hub bar"
+      className="sticky bottom-0 z-40 w-full bg-white/95 backdrop-blur-md border-t border-[#e8e2d8] shadow-lg py-3 px-6 font-poppins transition-all"
     >
-      <QuickLaunchPanel
-        title="Tips & Gratuities Operations Shortcuts"
-        description="Fluidly navigate across Tips Directory Ledger, Tip Pools, Member Layouts, Allocation Formulas, Settlement Engine, and Cash Movements."
-        actions={actions}
-      />
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs font-bold text-[#8a7a68] uppercase tracking-wider font-poppins">
+          <span className="material-symbols-outlined text-base text-[#ae001a]">payments</span>
+          <span>Tips Navigation Hub</span>
+        </div>
+        
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {TIP_SHORTCUT_ANCHORS.map((anchor) => {
+            const isActive =
+              activeModule === anchor.key ||
+              activeModule === anchor.route ||
+              (activeModule === 'tips-ledger' && anchor.key === 'tips-ledger') ||
+              ((activeModule === 'merchant-tips-rules' || activeModule === 'tips-rules') && anchor.key === 'tips-pools');
+
+            return (
+              <button
+                key={anchor.key}
+                type="button"
+                onClick={() => onNavigate?.(anchor.route)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold font-poppins transition-colors duration-200 ${
+                  isActive
+                    ? 'bg-[#ae001a] text-white shadow-sm'
+                    : 'bg-[#fbf9f5] border border-[#e8e2d8] text-[#1c1b1f] hover:text-[#ae001a] hover:bg-[#f3eee7]'
+                }`}
+              >
+                <span className="material-symbols-outlined text-sm">{anchor.icon}</span>
+                <span>{anchor.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </nav>
   );
 };
