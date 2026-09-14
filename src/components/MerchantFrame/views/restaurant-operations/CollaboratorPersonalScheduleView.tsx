@@ -131,9 +131,9 @@ const ShiftTradeModal: React.FC<ShiftTradeModalProps> = ({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
       <div
-        className="w-full max-w-lg bg-white border border-[#e8e2d8] rounded-xl shadow-2xl overflow-hidden flex flex-col text-left font-['Poppins',sans-serif]"
+        className="w-full max-w-lg min-w-[320px] sm:min-w-[480px] bg-white border border-[#e8e2d8] rounded-xl shadow-2xl overflow-hidden flex flex-col text-left font-['Poppins',sans-serif]"
         style={{ fontFamily: 'Poppins, sans-serif' }}
       >
         {/* Modal Header */}
@@ -344,9 +344,9 @@ const TimeOffNoticeModal: React.FC<TimeOffNoticeModalProps> = ({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
       <div
-        className="w-full max-w-lg bg-white border border-[#e8e2d8] rounded-xl shadow-2xl overflow-hidden flex flex-col text-left font-['Poppins',sans-serif]"
+        className="w-full max-w-lg min-w-[320px] sm:min-w-[480px] bg-white border border-[#e8e2d8] rounded-xl shadow-2xl overflow-hidden flex flex-col text-left font-['Poppins',sans-serif]"
         style={{ fontFamily: 'Poppins, sans-serif' }}
       >
         {/* Modal Header */}
@@ -1101,8 +1101,8 @@ export const CollaboratorPersonalScheduleView: React.FC<CollaboratorPersonalSche
 
       {/* 4. Focused Shift Drawer / Modal (When clicking shift dot in Monthly View) */}
       {focusedShift && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="w-full max-w-md bg-white border border-[#e8e2d8] rounded-xl shadow-2xl overflow-hidden p-6 space-y-4 text-left">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="w-full max-w-md min-w-[320px] sm:min-w-[450px] bg-white border border-[#e8e2d8] rounded-xl shadow-2xl overflow-hidden p-6 space-y-4 text-left">
             <div className="flex items-center justify-between border-b border-[#e8e2d8] pb-3">
               <h3 className="font-bold text-sm text-[#222222] uppercase tracking-wide">
                 Shift Details (#{focusedShift.id})

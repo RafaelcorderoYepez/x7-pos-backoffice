@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,7 +6,7 @@ import { CompanyProfileView } from './CompanyProfileView';
 import { getCompanyProfile, updateCompanyProfile } from '../../../../api/companies';
 import type { CompanyProfile } from '../../../../types/company';
 
-vi.mock('../../../api/companies', () => ({
+vi.mock('../../../../api/companies', () => ({
   getCompanyProfile: vi.fn(),
   updateCompanyProfile: vi.fn(),
 }));
@@ -105,7 +105,6 @@ describe('CompanyProfileView', () => {
   });
 
   it('saves profile updates and shows success banner', async () => {
-    const user = userEvent.setup();
     vi.mocked(updateCompanyProfile).mockResolvedValue({
       ...MOCK_PROFILE,
       name: 'Acme Global',
@@ -117,11 +116,10 @@ describe('CompanyProfileView', () => {
       expect(screen.getByRole('button', { name: /edit profile/i })).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: /edit profile/i }));
+    fireEvent.click(screen.getByRole('button', { name: /edit profile/i }));
     const nameInput = screen.getByLabelText(/Corporate Name/i);
-    await user.clear(nameInput);
-    await user.type(nameInput, 'Acme Global');
-    await user.click(screen.getByRole('button', { name: /save changes/i }));
+    fireEvent.change(nameInput, { target: { value: 'Acme Global' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
 
     await waitFor(() => {
       expect(updateCompanyProfile).toHaveBeenCalledWith(

@@ -348,9 +348,9 @@ describe('JournalEntryLinesView — create line', () => {
     expect(screen.getByRole('dialog', { name: /add line item/i })).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText(/journal entry/i));
 
-    expect(screen.getByRole('option', { name: 'JE-2024-0003' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'JE-2024-0001' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'JE-2024-0002' })).not.toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /JE-2024-0003/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /JE-2024-0001/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /JE-2024-0002/ })).not.toBeInTheDocument();
   });
 
   it('lists only leaf accounts in the ledger account combobox', async () => {
@@ -385,8 +385,7 @@ describe('JournalEntryLinesView — create line', () => {
     await screen.findByRole('button', { name: /add line item/i });
 
     await userEvent.click(screen.getByRole('button', { name: /add line item/i }));
-    await userEvent.click(screen.getByLabelText(/journal entry/i));
-    await userEvent.click(screen.getByRole('option', { name: 'JE-2024-0003' }));
+    await userEvent.selectOptions(screen.getByLabelText(/journal entry/i), '3');
     await userEvent.click(screen.getByLabelText(/ledger account/i));
     await userEvent.click((await screen.findAllByRole('option'))[0]);
 
@@ -419,8 +418,7 @@ describe('JournalEntryLinesView — create line', () => {
     await screen.findByRole('button', { name: /add line item/i });
 
     await userEvent.click(screen.getByRole('button', { name: /add line item/i }));
-    await userEvent.click(screen.getByLabelText(/journal entry/i));
-    await userEvent.click(screen.getByRole('option', { name: 'JE-2024-0003' }));
+    await userEvent.selectOptions(screen.getByLabelText(/journal entry/i), '3');
     await userEvent.click(screen.getByLabelText(/ledger account/i));
     await userEvent.click(screen.getByRole('option', { name: /1000 — Cash/i }));
     await userEvent.type(screen.getByLabelText(/^debit$/i), '100');
@@ -486,8 +484,7 @@ describe('JournalEntryLinesView — create line', () => {
     await screen.findByRole('button', { name: /add line item/i });
 
     await userEvent.click(screen.getByRole('button', { name: /add line item/i }));
-    await userEvent.click(screen.getByLabelText(/journal entry/i));
-    await userEvent.click(screen.getByRole('option', { name: 'JE-2024-0003' }));
+    await userEvent.selectOptions(screen.getByLabelText(/journal entry/i), '3');
     await userEvent.click(screen.getByLabelText(/ledger account/i));
     await userEvent.click(screen.getByRole('option', { name: /1000 — Cash/i }));
     await userEvent.type(screen.getByLabelText(/^debit$/i), '100');

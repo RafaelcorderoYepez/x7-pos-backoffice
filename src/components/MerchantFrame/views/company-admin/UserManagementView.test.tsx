@@ -14,7 +14,7 @@ import {
 } from '../../../../api/users';
 import type { MerchantUser } from '../../../../types/user';
 
-vi.mock('../../../api/users', () => ({
+vi.mock('../../../../api/users', () => ({
   getMerchantUsers: vi.fn(),
   getCurrentMerchantId: vi.fn(),
   createUser: vi.fn(),

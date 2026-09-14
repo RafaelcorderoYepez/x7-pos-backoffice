@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { OvertimeRulesView } from './OvertimeRulesView';
 import type { MerchantOvertimeRule } from '../../../../types/configuration';
 
-vi.mock('../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', () => ({
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));

@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { PayrollRulesView } from './PayrollRulesView';
 import type { MerchantPayrollRule } from '../../../../types/configuration';
 
-vi.mock('../../../lib/auth-storage', () => ({
+
+vi.mock('../../../../lib/auth-storage', () => ({
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -103,7 +104,7 @@ describe('PayrollRulesView — data fetch', () => {
   });
 
   it('shows a loading indicator while fetching', () => {
-    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => { })));
     render(<PayrollRulesView />);
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
