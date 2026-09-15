@@ -4,6 +4,7 @@ import { getAccessToken, clearAuthSession, getStoredUser } from '../../../../../
 import { QuickLaunchPanel } from '../../../shared/QuickLaunchPanel';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
 
 interface Category {
   id: number;
@@ -26,6 +27,43 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
   // Filtros
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
+
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    name: true,
+    description: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  const handleExportCSV = () => {
+    if (filteredCategories.length === 0) return;
+    const headers = ['ID', 'Name', 'Description', 'Status'];
+    const rows = filteredCategories.map(c => [
+      c.id,
+      `"${c.name.replace(/"/g, '""')}"`,
+      `"${(c.description || '').replace(/"/g, '""')}"`,
+      c.isActive ? 'Active' : 'Inactive'
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `raw_material_categories_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrintTable = () => { window.print(); };
+
+  const handleCopySummary = () => {
+    const active = filteredCategories.filter(c => c.isActive).length;
+    navigator.clipboard.writeText(`Raw Material Categories: ${filteredCategories.length} total, ${active} active, ${filteredCategories.length - active} inactive.`);
+  };
 
 
   // Drawer
@@ -223,13 +261,24 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
     return matchSearch;
   });
 
+  const totalPages = Math.ceil(filteredCategories.length / pageSize) || 1;
+  const paginatedCategories = filteredCategories.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
-    <div ref={topRef} className="space-y-6 text-left p-6 font-sans">
+    <div ref={topRef} className="flex flex-col gap-6 text-left font-sans">
       {/* Header */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
-        <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+        <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+              folder_special
+            </span>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
           RAW MATERIAL CATEGORIES
         </h2>
+          </div>
         <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
           Manage raw material categories scoped independently from POS sales menu categories.
         </p>
@@ -276,13 +325,6 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
               </button>
             )}
 
-            <button
-              onClick={() => fetchData()}
-              className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
-              title="Reload categories data"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
           </div>
         </div>
       </div>
@@ -291,78 +333,182 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
 
       {/* Tabla */}
       <div className="bg-white border border-[#e8e2d8] rounded overflow-hidden shadow-sm">
-        {isLoading ? (
-          <div className="py-20 text-center space-y-3">
-            <div className="w-8 h-8 border-4 border-gray-300 border-t-[#d51f2c] rounded-full animate-spin mx-auto"></div>
-            <p className="text-sm text-gray-500 font-medium">Loading raw material categories...</p>
-          </div>
-        ) : error ? (
-          <div className="py-16 text-center text-red-600 space-y-2">
-            <span className="material-symbols-outlined text-4xl">warning</span>
-            <p className="text-sm font-semibold">{error}</p>
-          </div>
-        ) : filteredCategories.length === 0 ? (
-          <div className="py-20 text-center space-y-4">
-            <span className="material-symbols-outlined text-5xl text-gray-300">category</span>
-            <h3 className="text-lg font-black text-[#222222] uppercase tracking-tight">No categories found.</h3>
-            <p className="text-sm text-[#666666] max-w-md mx-auto">
-              Register categories specifically scoped for raw materials (Meat, Dairy, Packaging, etc.).
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-[#222222] text-white border-b border-[#222222]">
-                  <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-wider">Category Name</th>
-                  <th className="px-6 py-4 text-left text-xs font-black uppercase tracking-wider">Description</th>
-                  <th className="px-6 py-4 text-center text-xs font-black uppercase tracking-wider">Status Badge</th>
-                  <th className="px-6 py-4 text-center text-xs font-black uppercase tracking-wider">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#e8e2d8]">
-                {filteredCategories.map((c) => (
-                  <tr key={c.id} className="hover:bg-[#fcfbf9] transition-all">
-                    <td className="px-6 py-4 font-bold text-[#1d1c17] text-sm">{c.name}</td>
-                    <td className="px-6 py-4 text-sm text-[#666666]">{c.description || 'No description'}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span
-                        className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
-                          c.isActive
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-zinc-100 text-zinc-600'
-                        }`}
-                      >
-                        {c.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
+        {(() => {
+          const densityPadding = getDensityPadding(rowDensity);
+          const activeColSpan =
+            (visibleColumns.name ? 1 : 0) +
+            (visibleColumns.description ? 1 : 0) +
+            (visibleColumns.status ? 1 : 0) +
+            (visibleColumns.actions ? 1 : 0);
 
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex justify-center gap-2.5">
-                        <button
-                          onClick={(e) => handleOpenEdit(e, c)}
-                          className="p-1 text-gray-500 hover:text-[#ae001a] transition-all cursor-pointer"
-                          title="Edit category"
-                        >
-                          <span className="material-symbols-outlined text-lg">edit</span>
-                        </button>
-                        <button
-                          onClick={(e) => handleOpenToggleActive(e, c)}
-                          className="p-1 text-gray-500 hover:text-[#ae001a] transition-all cursor-pointer"
-                          title={c.isActive ? 'Deactivate category' : 'Activate category'}
-                        >
-                          <span className="material-symbols-outlined text-lg">
-                            {c.isActive ? 'block' : 'check_circle'}
-                          </span>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+          return (
+            <>
+              <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+                <div className="flex items-center gap-3">
+                  <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
+                    RAW MATERIAL CATEGORIES DIRECTORY
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+                    {filteredCategories.length} {filteredCategories.length === 1 ? 'category' : 'categories'}
+                  </span>
+                </div>
+
+                <TableOptionsMenu
+                  onExportCSV={handleExportCSV}
+                  onPrint={handlePrintTable}
+                  onCopySummary={handleCopySummary}
+                  onReload={fetchData}
+                  columns={[
+                    { key: 'name', label: 'Category Name' },
+                    { key: 'description', label: 'Description' },
+                    { key: 'status', label: 'Status Badge' },
+                    { key: 'actions', label: 'Actions' },
+                  ]}
+                  visibleColumns={visibleColumns}
+                  onToggleColumn={(key) =>
+                    setVisibleColumns((prev) => ({
+                      ...prev,
+                      [key]: !prev[key as keyof typeof visibleColumns],
+                    }))
+                  }
+                  rowDensity={rowDensity}
+                  onChangeDensity={setRowDensity}
+                  totalItems={filteredCategories.length}
+                  pageSize={pageSize}
+                  onChangePageSize={(size) => {
+                    setPageSize(size);
+                    setCurrentPage(1);
+                  }}
+                  currentPage={currentPage}
+                  onPageChange={setCurrentPage}
+                />
+              </div>
+
+              {activeColSpan === 0 ? (
+                <NoColumnsEmptyState />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
+                      <tr>
+                        {visibleColumns.name && (
+                          <th className={`text-left text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Category Name
+                          </th>
+                        )}
+                        {visibleColumns.description && (
+                          <th className={`text-left text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Description
+                          </th>
+                        )}
+                        {visibleColumns.status && (
+                          <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Status Badge
+                          </th>
+                        )}
+                        {visibleColumns.actions && (
+                          <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Actions
+                          </th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#e8e2d8]">
+                      {isLoading ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className="py-12 px-6 text-center text-secondary font-sans bg-white">
+                            <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                              sync
+                            </span>
+                            <p className="text-secondary text-body-md mt-2 font-sans">Loading raw material categories...</p>
+                          </td>
+                        </tr>
+                      ) : error ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className="py-12 px-6 text-center text-[#ba1a1a] font-sans bg-white">
+                            <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                              warning
+                            </span>
+                            <p className="font-bold">{error}</p>
+                          </td>
+                        </tr>
+                      ) : filteredCategories.length === 0 ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className="py-12 px-6 text-center text-secondary font-sans bg-white">
+                            <span className="material-symbols-outlined text-secondary text-5xl block mb-2 mx-auto select-none">
+                              category
+                            </span>
+                            <p className="font-bold text-[#222222] uppercase text-sm">No categories found</p>
+                            <p className="text-xs text-[#666666] mt-1">No raw material categories match the selected filter criteria.</p>
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedCategories.map((c) => (
+                          <tr key={c.id} className="hover:bg-[#fcfbf9] transition-all font-sans">
+                            {visibleColumns.name && (
+                              <td className={`font-bold text-[#1d1c17] text-sm ${densityPadding}`}>{c.name}</td>
+                            )}
+                            {visibleColumns.description && (
+                              <td className={`text-sm text-[#666666] ${densityPadding}`}>{c.description || 'No description'}</td>
+                            )}
+                            {visibleColumns.status && (
+                              <td className={`text-center ${densityPadding}`}>
+                                <span
+                                  className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
+                                    c.isActive
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-zinc-100 text-zinc-600'
+                                  }`}
+                                >
+                                  {c.isActive ? 'Active' : 'Inactive'}
+                                </span>
+                              </td>
+                            )}
+
+                            {visibleColumns.actions && (
+                              <td className={`text-center ${densityPadding}`}>
+                                <div className="flex justify-center gap-2.5">
+                                  <button
+                                    onClick={(e) => handleOpenEdit(e, c)}
+                                    className="p-1 text-gray-500 hover:text-[#ae001a] transition-all cursor-pointer"
+                                    title="Edit category"
+                                  >
+                                    <span className="material-symbols-outlined text-lg">edit</span>
+                                  </button>
+                                  <button
+                                    onClick={(e) => handleOpenToggleActive(e, c)}
+                                    className="p-1 text-gray-500 hover:text-[#ae001a] transition-all cursor-pointer"
+                                    title={c.isActive ? 'Deactivate category' : 'Activate category'}
+                                  >
+                                    <span className="material-symbols-outlined text-lg">
+                                      {c.isActive ? 'block' : 'check_circle'}
+                                    </span>
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          );
+        })()}
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredCategories.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
       </div>
 
 

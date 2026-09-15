@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { QuickLaunchPanel } from '../../../shared/QuickLaunchPanel';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
-import { TableOptionsMenu } from '../../../../shared/TableOptionsMenu';
 
 interface Category {
   id: number;
@@ -76,12 +76,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   const topRef = useRef<HTMLDivElement | null>(null);
 
   // Estado para Personalizar Columnas
-  const [visibleColumns, setVisibleColumns] = useState<{
-    category: boolean;
-    basePrice: boolean;
-    status: boolean;
-    actions: boolean;
-  }>({
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    product: true,
     category: true,
     basePrice: true,
     status: true,
@@ -89,8 +85,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   });
 
   // Estado para Densidad de la Fila (Padding) y Límite de Registros Visibles
-  const [rowDensity, setRowDensity] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
-  const [pageSize, setPageSize] = useState<number>(10);
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Auto-scroll al inicio al montar la vista
   useEffect(() => {
@@ -356,21 +353,20 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   };
 
   // Helpers para tabla dinámica
-  const displayedProducts = pageSize === 9999 ? filteredProducts : filteredProducts.slice(0, pageSize);
+  const densityPadding = getDensityPadding(rowDensity);
+  const totalPages = Math.ceil(filteredProducts.length / pageSize) || 1;
+  const paginatedProducts = filteredProducts.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
   
-  const activeColSpan = 2 + (visibleColumns.category ? 1 : 0) + (visibleColumns.basePrice ? 1 : 0) + (visibleColumns.status ? 1 : 0) + (visibleColumns.actions ? 1 : 0);
-
-  const getDensityPadding = () => {
-    switch (rowDensity) {
-      case 'compact':
-        return 'py-2 px-6 text-xs';
-      case 'spacious':
-        return 'py-5 px-6 text-base';
-      case 'comfortable':
-      default:
-        return 'py-3.5 px-6 text-sm';
-    }
-  };
+  const dataColumnsCount =
+    (visibleColumns.product ? 1 : 0) +
+    (visibleColumns.category ? 1 : 0) +
+    (visibleColumns.basePrice ? 1 : 0) +
+    (visibleColumns.status ? 1 : 0) +
+    (visibleColumns.actions ? 1 : 0);
+  const activeColSpan = 1 + dataColumnsCount;
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans">
@@ -378,13 +374,18 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
 
       {/* Título de Sección */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
-        <div>
-          <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
-            Products & Catalog Master List
-          </h2>
-          <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
-            Manage your global catalog items, configure base prices, establish SKU references and assign item variants.
-          </p>
+        <div className="flex items-center gap-3">
+          <span className="material-symbols-outlined text-[#ae001a] text-2xl">
+            inventory_2
+          </span>
+          <div>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+              Products & Catalog Master List
+            </h2>
+            <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
+              Manage your global catalog items, configure base prices, establish SKU references and assign item variants.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -441,6 +442,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
               <span className="material-symbols-outlined text-[18px]">add</span>
               ADD PRODUCT
             </button>
+
           </div>
         </div>
       </div>
@@ -454,9 +456,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
               PRODUCT DIRECTORY
             </span>
             <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
-              {displayedProducts.length === filteredProducts.length
+              {paginatedProducts.length === filteredProducts.length
                 ? `${filteredProducts.length} product${filteredProducts.length === 1 ? '' : 's'}`
-                : `${displayedProducts.length} / ${filteredProducts.length} products`}
+                : `${paginatedProducts.length} / ${filteredProducts.length} products`}
             </span>
           </div>
 
@@ -466,6 +468,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
             onCopySummary={handleCopySummary}
             onReload={fetchAllData}
             columns={[
+              { key: 'product', label: 'Product Name & SKU' },
               { key: 'category', label: 'Category' },
               { key: 'basePrice', label: 'Base Price' },
               { key: 'status', label: 'Status' },
@@ -482,168 +485,178 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
             onChangeDensity={setRowDensity}
             totalItems={filteredProducts.length}
             pageSize={pageSize}
-            onChangePageSize={setPageSize}
+            onChangePageSize={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
           />
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
-              <tr>
-                <th className="w-10 px-4 py-3 text-left"></th>
-                <th className="px-6 py-3 text-left text-label-caps font-bold text-text-muted font-sans">
-                  Product Name
-                </th>
-                {visibleColumns.category && (
-                  <th className="px-6 py-3 text-left text-label-caps font-bold text-text-muted font-sans">
-                    Category
-                  </th>
-                )}
-                {visibleColumns.basePrice && (
-                  <th className="px-6 py-3 text-right text-label-caps font-bold text-text-muted font-sans">
-                    Base Price
-                  </th>
-                )}
-                {visibleColumns.status && (
-                  <th className="px-6 py-3 text-center text-label-caps font-bold text-text-muted font-sans">
-                    Status
-                  </th>
-                )}
-                {visibleColumns.actions && (
-                  <th className="px-6 py-3 text-center text-label-caps font-bold text-text-muted font-sans">
-                    Actions
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e8e2d8]">
-              {isLoading ? (
+        {dataColumnsCount === 0 ? (
+          <NoColumnsEmptyState />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
                 <tr>
-                  <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
-                    <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
-                      sync
-                    </span>
-                    <p className="text-secondary text-body-md mt-2 font-sans">Loading product catalog...</p>
-                  </td>
+                  <th className={`w-10 text-left ${densityPadding}`}></th>
+                  {visibleColumns.product && (
+                    <th className={`text-left text-label-caps font-bold text-text-muted font-sans ${densityPadding}`}>
+                      Product Name
+                    </th>
+                  )}
+                  {visibleColumns.category && (
+                    <th className={`text-left text-label-caps font-bold text-text-muted font-sans ${densityPadding}`}>
+                      Category
+                    </th>
+                  )}
+                  {visibleColumns.basePrice && (
+                    <th className={`text-right text-label-caps font-bold text-text-muted font-sans ${densityPadding}`}>
+                      Base Price
+                    </th>
+                  )}
+                  {visibleColumns.status && (
+                    <th className={`text-center text-label-caps font-bold text-text-muted font-sans ${densityPadding}`}>
+                      Status
+                    </th>
+                  )}
+                  {visibleColumns.actions && (
+                    <th className={`text-center text-label-caps font-bold text-text-muted font-sans ${densityPadding}`}>
+                      Actions
+                    </th>
+                  )}
                 </tr>
-              ) : error ? (
-                <tr>
-                  <td colSpan={activeColSpan} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
-                    <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
-                      error
-                    </span>
-                    <p className="font-bold">{error}</p>
-                    <button
-                      onClick={fetchAllData}
-                      className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-all font-sans cursor-pointer"
-                    >
-                      Retry Connection
-                    </button>
-                  </td>
-                </tr>
-              ) : products.length === 0 ? (
-                <tr>
-                  <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
-                    <span className="material-symbols-outlined text-secondary text-5xl block mb-2 mx-auto select-none">
-                      inventory_2
-                    </span>
-                    <p className="font-bold text-[#222222] uppercase text-sm">No products found</p>
-                    <p className="text-xs text-[#666666] mt-1">Click 'Add Product' to start building your catalog.</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredProducts.length === 0 ? (
+              </thead>
+              <tbody className="divide-y divide-[#e8e2d8]">
+                {isLoading ? (
                   <tr>
-                    <td colSpan={activeColSpan} className="px-6 py-8 text-center text-secondary italic font-sans bg-white">
-                      No products match the selected filters.
+                    <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                      <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                        sync
+                      </span>
+                      <p className="text-secondary text-body-md mt-2 font-sans">Loading product catalog...</p>
                     </td>
                   </tr>
+                ) : error ? (
+                  <tr>
+                    <td colSpan={activeColSpan} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
+                      <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                        error
+                      </span>
+                      <p className="font-bold">{error}</p>
+                      <button
+                        onClick={fetchAllData}
+                        className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-all font-sans cursor-pointer"
+                      >
+                        Retry Connection
+                      </button>
+                    </td>
+                  </tr>
+                ) : products.length === 0 ? (
+                  <TableEmptyState
+                    colSpan={activeColSpan}
+                    icon="inventory_2"
+                    title="No products found"
+                    description="Click 'Add Product' to start building your catalog."
+                  />
                 ) : (
-                  displayedProducts.map((product) => {
-                    const isInactive = !product.isActive;
-                    const isExpanded = !!expandedProducts[product.id];
-                    return (
-                      <React.Fragment key={product.id}>
-                        <tr
-                          className={`category-row group transition-colors ${
-                            isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
-                          }`}
-                        >
-                          <td className="px-4 py-4 text-center">
-                            <button
-                              onClick={() => setExpandedProducts(prev => ({
-                                ...prev,
-                                [product.id]: !prev[product.id]
-                              }))}
-                              className="text-secondary hover:text-[#ae001a] transition-colors cursor-pointer"
-                              title={isExpanded ? 'Colapsar detalles' : 'Expandir variantes y modificadores'}
-                            >
-                              <span className="material-symbols-outlined text-[20px] align-middle select-none">
-                                {isExpanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right'}
-                              </span>
-                            </button>
-                          </td>
-                          <td className={`${getDensityPadding()} flex items-center gap-3`}>
-                            <div className={`w-1 h-8 rounded-full ${isInactive ? 'bg-zinc-400' : 'bg-[#ae001a]'}`}></div>
-                            <div>
-                              <p className={`font-bold text-[#1d1c17] font-sans ${isInactive ? 'line-through' : ''}`}>
-                                {product.name}
-                              </p>
-                              <p className={`text-[11px] text-secondary font-mono tracking-wider ${isInactive ? 'line-through' : ''}`}>
-                                SKU: {product.sku}
-                              </p>
-                            </div>
-                          </td>
-
-                          {visibleColumns.category && (
-                            <td className={`${getDensityPadding()} text-body-md text-[#1d1c17] font-sans ${isInactive ? 'line-through' : ''}`}>
-                              {product.category ? product.category.name : 'No Category'}
-                            </td>
-                          )}
-
-                          {visibleColumns.basePrice && (
-                            <td className={`${getDensityPadding()} text-right font-mono font-bold text-[#1d1c17] ${isInactive ? 'line-through' : ''}`}>
-                              {formatPrice(product.basePrice)}
-                            </td>
-                          )}
-
-                          {visibleColumns.status && (
-                            <td className={`${getDensityPadding()} text-center`}>
-                              <span
-                                className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase font-sans ${
-                                  product.isActive
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : 'bg-zinc-200 text-[#5f5e5e]'
-                                }`}
+                  filteredProducts.length === 0 ? (
+                    <TableEmptyState
+                      colSpan={activeColSpan}
+                      icon="inventory_2"
+                      title="No products found"
+                      description="No products match the selected filter criteria."
+                    />
+                  ) : (
+                    paginatedProducts.map((product) => {
+                      const isInactive = !product.isActive;
+                      const isExpanded = !!expandedProducts[product.id];
+                      return (
+                        <React.Fragment key={product.id}>
+                          <tr
+                            className={`category-row group transition-colors ${
+                              isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
+                            }`}
+                          >
+                            <td className={`w-10 text-center ${densityPadding}`}>
+                              <button
+                                onClick={() => setExpandedProducts(prev => ({
+                                  ...prev,
+                                  [product.id]: !prev[product.id]
+                                }))}
+                                className="text-secondary hover:text-[#ae001a] transition-colors cursor-pointer"
+                                title={isExpanded ? 'Colapsar detalles' : 'Expandir variantes y modificadores'}
                               >
-                                {product.isActive ? 'Active' : 'Inactive'}
-                              </span>
+                                <span className="material-symbols-outlined text-[20px] align-middle select-none">
+                                  {isExpanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right'}
+                                </span>
+                              </button>
                             </td>
-                          )}
+                            {visibleColumns.product && (
+                              <td className={`flex items-center gap-3 ${densityPadding}`}>
+                                <div className={`w-1 h-8 rounded-full ${isInactive ? 'bg-zinc-400' : 'bg-[#ae001a]'}`}></div>
+                                <div>
+                                  <p className={`font-bold text-[#1d1c17] font-sans ${isInactive ? 'line-through' : ''}`}>
+                                    {product.name}
+                                  </p>
+                                  <p className={`text-[11px] text-secondary font-mono tracking-wider ${isInactive ? 'line-through' : ''}`}>
+                                    SKU: {product.sku}
+                                  </p>
+                                </div>
+                              </td>
+                            )}
 
-                          {visibleColumns.actions && (
-                            <td className={`${getDensityPadding()} text-center`}>
-                              <div className="flex justify-center gap-3">
-                                <button
-                                  onClick={() => handleOpenEditModal(product)}
-                                  className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                                  title="Editar producto"
+                            {visibleColumns.category && (
+                              <td className={`text-body-md text-[#1d1c17] font-sans ${densityPadding} ${isInactive ? 'line-through' : ''}`}>
+                                {product.category ? product.category.name : 'No Category'}
+                              </td>
+                            )}
+
+                            {visibleColumns.basePrice && (
+                              <td className={`text-right font-mono font-bold text-[#1d1c17] ${densityPadding} ${isInactive ? 'line-through' : ''}`}>
+                                {formatPrice(product.basePrice)}
+                              </td>
+                            )}
+
+                            {visibleColumns.status && (
+                              <td className={`text-center ${densityPadding}`}>
+                                <span
+                                  className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase font-sans ${
+                                    product.isActive
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-zinc-200 text-[#5f5e5e]'
+                                  }`}
                                 >
-                                  <span className="material-symbols-outlined text-[20px]">edit</span>
-                                </button>
-                                <button
-                                  onClick={() => void handleToggleActive(product)}
-                                  className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                                  title={product.isActive ? "Desactivar producto" : "Activar producto"}
-                                >
-                                  <span className="material-symbols-outlined text-[20px]">
-                                    {product.isActive ? 'block' : 'check_circle_outline'}
-                                  </span>
-                                </button>
-                              </div>
-                            </td>
-                          )}
-                        </tr>
+                                  {product.isActive ? 'Active' : 'Inactive'}
+                                </span>
+                              </td>
+                            )}
+
+                            {visibleColumns.actions && (
+                              <td className={`text-center ${densityPadding}`}>
+                                <div className="flex justify-center gap-3">
+                                  <button
+                                    onClick={() => handleOpenEditModal(product)}
+                                    className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
+                                    title="Editar producto"
+                                  >
+                                    <span className="material-symbols-outlined text-[20px]">edit</span>
+                                  </button>
+                                  <button
+                                    onClick={() => void handleToggleActive(product)}
+                                    className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
+                                    title={product.isActive ? "Desactivar producto" : "Activar producto"}
+                                  >
+                                    <span className="material-symbols-outlined text-[20px]">
+                                      {product.isActive ? 'block' : 'check_circle_outline'}
+                                    </span>
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
 
                         {isExpanded && (
                           <tr className="bg-[#fcfbfa]/80">
@@ -730,53 +743,19 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
             </tbody>
           </table>
         </div>
+      )}
 
-        {/* Pie de Tabla (Sólo si hay paginación activa) */}
-        {filteredProducts.length > pageSize && pageSize < 9999 && (
-          <div className="p-4 bg-[#fcfbfa] border-t border-[#e8e2d8] flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-secondary font-sans">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-[#1d1c17]">
-                Showing {displayedProducts.length} of {filteredProducts.length} products
-              </span>
-              <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-300 font-mono font-bold">
-                Limit: {pageSize} per page
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider">Rows per page:</span>
-              <div className="flex items-center gap-1 bg-[#f2ede5] p-0.5 rounded border border-[#e8e2d8]">
-                {[5, 10, 25, 50]
-                  .filter(t => t <= filteredProducts.length || t === 5)
-                  .map((limit) => (
-                    <button
-                      key={limit}
-                      type="button"
-                      onClick={() => setPageSize(limit)}
-                      className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
-                        pageSize === limit && pageSize < filteredProducts.length
-                          ? 'bg-white text-[#ae001a] shadow-xs border border-[#e8e2d8]'
-                          : 'text-[#5f5e5e] hover:text-[#1c1b16]'
-                      }`}
-                    >
-                      {limit}
-                    </button>
-                  ))}
-                <button
-                  type="button"
-                  onClick={() => setPageSize(9999)}
-                  className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
-                    pageSize >= filteredProducts.length || pageSize === 9999
-                      ? 'bg-white text-[#ae001a] shadow-xs border border-[#e8e2d8]'
-                      : 'text-[#5f5e5e] hover:text-[#1c1b16]'
-                  }`}
-                >
-                  All
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredProducts.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
       </div>
 
       {/* Modal Interactivo de Add / Edit Product */}

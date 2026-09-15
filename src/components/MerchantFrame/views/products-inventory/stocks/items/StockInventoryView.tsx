@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { getAccessToken, getStoredUser } from '../../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../StockQuickLinks';
 import { EmergencySupportModal } from '../../../../modals/QuickActionModals';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../../shared/TableOptionsMenu';
 
 interface Product {
   id: number;
@@ -84,6 +85,20 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [locationFilter, setLocationFilter] = useState<string>('All');
   const [outOfStockOnly, setOutOfStockOnly] = useState<boolean>(false);
+
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    entity: true,
+    itemsCount: true,
+    currentStock: true,
+    allocatedNet: true,
+    valuation: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
 
 
@@ -522,6 +537,53 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   }
 
 
+  const densityPadding = getDensityPadding(rowDensity);
+
+  const colSpan =
+    (visibleColumns.entity ? 1 : 0) +
+    (visibleColumns.itemsCount ? 1 : 0) +
+    (visibleColumns.currentStock ? 1 : 0) +
+    (visibleColumns.allocatedNet ? 1 : 0) +
+    (visibleColumns.valuation ? 1 : 0) +
+    (visibleColumns.status ? 1 : 0) +
+    (visibleColumns.actions ? 1 : 0);
+
+  const totalPages = Math.ceil(groupedItems.length / pageSize) || 1;
+  const paginatedGroups = groupedItems.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  const handleExportCSV = () => {
+    const headers = ['Group', 'Code', 'Items Count', 'Current Stock', 'Allocated Stock', 'Net Available', 'Valuation'];
+    const rows = groupedItems.map(g => [
+      `"${g.title.replace(/"/g, '""')}"`,
+      `"${(g.code || '').replace(/"/g, '""')}"`,
+      g.items.length,
+      g.totalStock.toFixed(2),
+      g.totalAllocated.toFixed(2),
+      g.totalNetAvailable.toFixed(2),
+      g.totalValuation.toFixed(2)
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `stock_inventory_${viewMode}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrintTable = () => {
+    window.print();
+  };
+
+  const handleCopySummary = () => {
+    const summary = `Stock Inventory (${viewMode}): Total Groups: ${groupedItems.length}, Total Stock: ${groupedItems.reduce((acc, g) => acc + g.totalStock, 0).toFixed(2)}, Total Valuation: $${groupedItems.reduce((acc, g) => acc + g.totalValuation, 0).toFixed(2)}`;
+    navigator.clipboard.writeText(summary);
+  };
+
   return (
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans relative">
       <div ref={topRef} />
@@ -529,57 +591,73 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       {/* 1. Header Card Workspace */}
       <div className="bg-white border border-[#e8e2d8] rounded-xl p-6 shadow-xs text-left flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
-            STOCK LOCATIONS & BALANCES WORKSPACE
-          </h2>
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+              warehouse
+            </span>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+              STOCK LOCATIONS & BALANCES WORKSPACE
+            </h2>
+          </div>
           <p className="text-body-sm text-[#5f5e5e] mt-1 font-sans">
             Manage physical storage areas (RawMaterialLocation), inspect current stock levels (RawMaterialItem), track allocated production reserves and identify primary storage hubs.
           </p>
-        </div>
-
-        {/* Toggle de Modo de Vista: By Location vs By Material */}
-        <div className="flex items-center bg-[#fef9f1] p-1 border border-[#e8e2d8] rounded-lg shrink-0">
-          <button
-            type="button"
-            onClick={() => setViewMode('by-location')}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              viewMode === 'by-location'
-                ? 'bg-[#ae001a] text-white shadow-xs'
-                : 'text-[#5f5e5e] hover:text-[#ae001a]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[16px]">warehouse</span>
-            BY LOCATION
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('by-material')}
-            className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              viewMode === 'by-material'
-                ? 'bg-[#ae001a] text-white shadow-xs'
-                : 'text-[#5f5e5e] hover:text-[#ae001a]'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[16px]">inventory_2</span>
-            BY MATERIAL
-          </button>
         </div>
       </div>
 
       {/* 2. Toolbar Multicriterio (Búsqueda + Filtros) */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Bar de Búsqueda Alfanumérica al 100% */}
-        <div className="relative w-full">
-          <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary font-sans">
-            search
-          </span>
-          <input
-            type="text"
-            placeholder="Search location, code, or material..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-11 pr-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none text-body-md transition-all font-sans"
-          />
+        {/* Fila 1: Búsqueda a la izquierda y View Switcher a la derecha en la MISMA línea horizontal */}
+        <div className="flex flex-row items-center justify-between gap-3 w-full">
+          <div className="relative flex-1 min-w-0">
+            <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary font-sans">
+              search
+            </span>
+            <input
+              type="text"
+              placeholder="Search location, code, or material..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-11 pr-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none text-body-md transition-all font-sans"
+            />
+          </div>
+
+          {/* Toggle de Modo de Vista: By Location vs By Material (Estilo idéntico a Devices) */}
+          <div className="flex items-center bg-[#f2ede5] p-1 rounded border border-[#e8e2d8] shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('by-location');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'by-location'
+                  ? 'bg-white text-[#1d1c17] shadow-xs border border-[#e8e2d8]'
+                  : 'text-[#5f5e5e] hover:text-[#ae001a]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">warehouse</span>
+              BY LOCATION
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('by-material');
+                setCurrentPage(1);
+              }}
+              className={`px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'by-material'
+                  ? 'bg-white text-[#1d1c17] shadow-xs border border-[#e8e2d8]'
+                  : 'text-[#5f5e5e] hover:text-[#ae001a]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+              BY MATERIAL
+            </button>
+          </div>
         </div>
 
         {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
@@ -588,7 +666,10 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
             {/* Selector de Ubicación Específica */}
             <select
               value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
+              onChange={(e) => {
+                setLocationFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none min-w-[150px] font-sans text-secondary cursor-pointer"
             >
               <option value="All">All Locations</option>
@@ -604,7 +685,10 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
               <input
                 type="checkbox"
                 checked={outOfStockOnly}
-                onChange={(e) => setOutOfStockOnly(e.target.checked)}
+                onChange={(e) => {
+                  setOutOfStockOnly(e.target.checked);
+                  setCurrentPage(1);
+                }}
                 className="sr-only peer"
               />
               <div className="relative w-9 h-5 bg-zinc-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#ae001a]" />
@@ -627,119 +711,148 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
               </button>
             )}
 
-            {/* Botón de Recarga */}
-            <button
-              type="button"
-              onClick={() => fetchInitialData()}
-              className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
-              title="Reload stock data"
-              aria-label="Reload table data"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
           </div>
         </div>
       </div>
 
-      {/* 3. Data Grid Principal / Estados */}
-      {error ? (
-        <div className="bg-red-50 border border-red-200 p-8 text-center rounded-xl shadow-xs">
-          <span className="material-symbols-outlined text-red-700 text-5xl">
-            error
-          </span>
-          <p className="text-body-md text-red-800 font-bold uppercase tracking-wider mt-4">
-            {error}
-          </p>
-        </div>
-      ) : !isLoading && stockItems.length === 0 ? (
-        /* Estado Vacío Cumpliendo Acceptance Criteria 1 */
-        <div className="bg-white border border-[#e8e2d8] p-16 text-center rounded-xl shadow-xs flex flex-col items-center justify-center gap-6">
-          <div className="w-20 h-20 bg-zinc-50 border border-zinc-100 rounded-full flex items-center justify-center shadow-inner">
-            <span className="material-symbols-outlined text-zinc-400 text-4xl">
-              warehouse
-            </span>
-          </div>
-          <div className="max-w-md">
-            <h3 className="font-bold text-[#222222] uppercase tracking-wider text-sm">
-              No stock locations found. Click 'Add Location' to set up storage hubs like Main Warehouse or Kitchen Fridge.
-            </h3>
-            <p className="text-body-md text-secondary leading-relaxed mt-2">
-              Configure physical storage hubs or receive purchase orders to initialize data tracking across your active branch network.
-            </p>
-          </div>
-        </div>
-      ) : (
-        /* Data Grid de Almacenes y Saldos */
-        <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded-xl shadow-xs">
-          <div className="p-4 bg-[#222222] flex justify-between items-center">
-            <span className="text-label-caps font-bold text-white uppercase tracking-wider">
+      {/* 3. Data Grid Principal con Encabezado Oscuro Permanente */}
+      <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded-xl shadow-xs">
+        <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+          <div className="flex items-center gap-3">
+            <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
               {viewMode === 'by-location' ? 'STORAGE LOCATIONS & BALANCES LEDGER' : 'RAW MATERIAL STOCK DISTRIBUTION LEDGER'}
             </span>
-            <span className="material-symbols-outlined text-white text-sm cursor-pointer select-none">
-              more_vert
+            <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+              {paginatedGroups.length === groupedItems.length
+                ? `${groupedItems.length} group${groupedItems.length === 1 ? '' : 's'}`
+                : `${paginatedGroups.length} / ${groupedItems.length} groups`}
             </span>
           </div>
+
+          <TableOptionsMenu
+            onExportCSV={handleExportCSV}
+            onPrint={handlePrintTable}
+            onCopySummary={handleCopySummary}
+            onReload={fetchInitialData}
+            columns={[
+              { key: 'entity', label: viewMode === 'by-location' ? 'Storage Location Node' : 'Raw Material Item' },
+              { key: 'itemsCount', label: viewMode === 'by-location' ? 'Items Count' : 'Storage Locations Hub' },
+              { key: 'currentStock', label: 'Current Stock' },
+              { key: 'allocatedNet', label: 'Allocated & Net Available' },
+              { key: 'valuation', label: 'Stock Valuation' },
+              { key: 'status', label: 'Status' },
+              { key: 'actions', label: 'Actions' },
+            ]}
+            visibleColumns={visibleColumns}
+            onToggleColumn={(key) =>
+              setVisibleColumns((prev) => ({
+                ...prev,
+                [key]: !prev[key],
+              }))
+            }
+            rowDensity={rowDensity}
+            onChangeDensity={setRowDensity}
+            totalItems={groupedItems.length}
+            pageSize={pageSize}
+            onChangePageSize={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+          />
+        </div>
+        {colSpan === 0 ? (
+          <NoColumnsEmptyState />
+        ) : (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
                 <tr>
-                  <th className="px-6 py-3.5 text-label-caps font-bold text-[#5f5e5e]">
-                    {viewMode === 'by-location' ? 'Storage Location Node' : 'Raw Material Item'}
-                  </th>
-                  <th className="px-6 py-3.5 text-label-caps font-bold text-[#5f5e5e]">
-                    {viewMode === 'by-location' ? 'Raw Material Items' : 'Assigned Storage Locations'}
-                  </th>
-                  <th className="px-6 py-3.5 text-right text-label-caps font-bold text-[#5f5e5e]">
-                    Current Stock
-                  </th>
-                  <th className="px-6 py-3.5 text-right text-label-caps font-bold text-[#5f5e5e]">
-                    Allocated & Net Available
-                  </th>
-                  <th className="px-6 py-3.5 text-right text-label-caps font-bold text-[#5f5e5e]">
-                    Stock Valuation
-                  </th>
-                  <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">
-                    Status
-                  </th>
-                  <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">
-                    Actions
-                  </th>
+                  {visibleColumns.entity && (
+                    <th className={`${densityPadding} text-label-caps font-bold text-[#5f5e5e]`}>
+                      {viewMode === 'by-location' ? 'Storage Location Node' : 'Raw Material Item'}
+                    </th>
+                  )}
+                  {visibleColumns.itemsCount && (
+                    <th className={`${densityPadding} text-label-caps font-bold text-[#5f5e5e]`}>
+                      {viewMode === 'by-location' ? 'Raw Material Items' : 'Assigned Storage Locations'}
+                    </th>
+                  )}
+                  {visibleColumns.currentStock && (
+                    <th className={`${densityPadding} text-right text-label-caps font-bold text-[#5f5e5e]`}>
+                      Current Stock
+                    </th>
+                  )}
+                  {visibleColumns.allocatedNet && (
+                    <th className={`${densityPadding} text-right text-label-caps font-bold text-[#5f5e5e]`}>
+                      Allocated & Net Available
+                    </th>
+                  )}
+                  {visibleColumns.valuation && (
+                    <th className={`${densityPadding} text-right text-label-caps font-bold text-[#5f5e5e]`}>
+                      Stock Valuation
+                    </th>
+                  )}
+                  {visibleColumns.status && (
+                    <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e]`}>
+                      Status
+                    </th>
+                  )}
+                  {visibleColumns.actions && (
+                    <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e]`}>
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#e8e2d8] text-sm">
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-secondary font-sans bg-white">
-                      <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
-                        sync
-                      </span>
-                      <p className="text-secondary text-body-md mt-2 font-sans font-bold uppercase tracking-wider">
-                        Hydrating stock locations and balances...
-                      </p>
-                    </td>
-                  </tr>
-                ) : groupedItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-secondary italic bg-white">
-                      No stock locations or items match the selected filter criteria.
-                    </td>
-                  </tr>
-                ) : (
-                  groupedItems.map((group) => {
-                    const isExpanded = expandedGroups.has(group.key);
-                    const hasMultipleSubItems = group.items.length > 1;
+            <tbody className="divide-y divide-[#e8e2d8] text-sm">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={colSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                    <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                      sync
+                    </span>
+                    <p className="text-secondary text-body-md mt-2 font-sans font-bold uppercase tracking-wider">
+                      Hydrating stock locations and balances...
+                    </p>
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={colSpan} className="px-6 py-12 text-center text-red-700 font-sans bg-red-50/50">
+                    <span className="material-symbols-outlined text-red-600 text-4xl block mb-2 mx-auto select-none">
+                      error
+                    </span>
+                    <p className="text-body-md font-bold uppercase tracking-wider">
+                      {error}
+                    </p>
+                  </td>
+                </tr>
+              ) : groupedItems.length === 0 ? (
+                <TableEmptyState
+                  colSpan={colSpan}
+                  icon="warehouse"
+                  title="No inventory items found"
+                  description="No stock locations or items match the selected filter criteria."
+                />
+              ) : (
+                paginatedGroups.map((group) => {
+                  const isExpanded = expandedGroups.has(group.key);
+                  const hasMultipleSubItems = group.items.length > 1;
 
-                    return (
-                      <React.Fragment key={group.key}>
-                        {/* Fila Principal de Grupo */}
-                        <tr
-                          className={`group transition-colors cursor-pointer ${
-                            isExpanded ? 'bg-[#fef9f1]' : 'hover:bg-[#f8f3eb]'
-                          }`}
-                          onClick={() => toggleGroup(group.key)}
-                        >
-                          {/* Columna 1: Nombre de Ubicación / Insumo + Badge Código + Star Indicator Main Storage + Warning Icon */}
-                          <td className="px-6 py-4">
+                  return (
+                    <React.Fragment key={group.key}>
+                      {/* Fila Principal de Grupo */}
+                      <tr
+                        className={`group transition-colors cursor-pointer ${
+                          isExpanded ? 'bg-[#fef9f1]' : 'hover:bg-[#f8f3eb]'
+                        }`}
+                        onClick={() => toggleGroup(group.key)}
+                      >
+                        {/* Columna 1: Nombre de Ubicación / Insumo */}
+                        {visibleColumns.entity && (
+                          <td className={`${densityPadding}`}>
                             <div className="flex items-center gap-3">
                               <span
                                 className={`material-symbols-outlined text-[16px] text-[#5f5e5e] transition-transform duration-200 ${
@@ -756,7 +869,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                                       {group.code}
                                     </span>
                                   )}
-                                  {/* Indicator Star Main Storage */}
                                   {group.isMainStorage && (
                                     <span
                                       className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-300 whitespace-nowrap shrink-0"
@@ -765,7 +877,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                                       ⭐ Main Storage
                                     </span>
                                   )}
-                                  {/* Warning Icon for Low Stock Alert */}
                                   {group.hasAlert && (
                                     <span
                                       className="material-symbols-outlined text-amber-600 animate-pulse text-base shrink-0"
@@ -781,55 +892,65 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                               </div>
                             </div>
                           </td>
+                        )}
 
-                          {/* Columna 2: Recuento o Insumo */}
-                          <td className="px-6 py-4 font-semibold text-secondary">
+                        {/* Columna 2: Recuento o Insumo */}
+                        {visibleColumns.itemsCount && (
+                          <td className={`${densityPadding} font-semibold text-secondary`}>
                             {viewMode === 'by-location' ? (
                               <span>{group.items.length} Material{group.items.length === 1 ? '' : 's'} Stored</span>
                             ) : (
                               <span>{group.items.length} Location Hub{group.items.length === 1 ? '' : 's'}</span>
                             )}
                           </td>
+                        )}
 
-                          {/* Columna 3: Current Stock (Resaltado en rojo si hay alerta) */}
-                          <td className={`px-6 py-4 text-right font-mono font-bold ${group.hasAlert ? 'text-red-600 font-black' : 'text-[#1d1c17]'}`}>
+                        {/* Columna 3: Current Stock */}
+                        {visibleColumns.currentStock && (
+                          <td className={`${densityPadding} text-right font-mono font-bold text-sm ${
+                            group.hasAlert ? 'text-red-600 font-black' : 'text-[#1d1c17]'
+                          }`}>
                             {group.totalStock.toFixed(2)}
                           </td>
+                        )}
 
-                          {/* Columna 4: Allocated Stock & Net Available */}
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex flex-col items-end">
-                              <span className="font-mono text-xs text-amber-700 font-bold">
-                                Reserved: {group.totalAllocated.toFixed(2)}
-                              </span>
-                              <span className="font-mono text-xs font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 mt-0.5">
-                                Net Avail: {group.totalNetAvailable.toFixed(2)}
-                              </span>
-                            </div>
+                        {/* Columna 4: Allocated & Net Available */}
+                        {visibleColumns.allocatedNet && (
+                          <td className={`${densityPadding} text-right font-mono text-xs`}>
+                            <span className="text-emerald-700 font-bold">
+                              {group.totalNetAvailable.toFixed(2)} avail
+                            </span>{' '}
+                            <span className="text-secondary text-[11px]">
+                              ({group.totalAllocated.toFixed(2)} res)
+                            </span>
                           </td>
+                        )}
 
-                          {/* Columna 5: Stock Valuation */}
-                          <td className="px-6 py-4 text-right font-mono font-bold text-[#ae001a]">
+                        {/* Columna 5: Valuation */}
+                        {visibleColumns.valuation && (
+                          <td className={`${densityPadding} text-right font-mono font-bold text-sm text-[#ae001a]`}>
                             ${group.totalValuation.toFixed(2)}
                           </td>
+                        )}
 
-                          {/* Columna 6: Status Badge Estandarizado de Salud de Stock */}
-                          <td className="px-6 py-4 text-center">
+                        {/* Columna 6: Status Badge */}
+                        {visibleColumns.status && (
+                          <td className={`${densityPadding} text-center`}>
                             {group.hasAlert ? (
-                              <span className="text-[10px] px-2.5 py-0.5 font-bold rounded uppercase bg-red-100 text-red-700 border border-red-200 whitespace-nowrap inline-block">
-                                Low Stock
+                              <span className="text-[10px] px-2.5 py-0.5 font-bold rounded uppercase bg-red-100 text-red-700 border border-red-200">
+                                Low Stock Alert
                               </span>
                             ) : (
-
-                              <span className="text-[10px] px-2.5 py-0.5 font-bold rounded uppercase bg-emerald-100 text-emerald-700 whitespace-nowrap inline-block">
-                                Healthy
+                              <span className="text-[10px] px-2.5 py-0.5 font-bold rounded uppercase bg-emerald-100 text-emerald-700">
+                                In Stock
                               </span>
                             )}
                           </td>
+                        )}
 
-
-                          {/* Columna 7: Acciones */}
-                          <td className="px-6 py-4 text-center">
+                        {/* Columna 7: Acciones */}
+                        {visibleColumns.actions && (
+                          <td className={`${densityPadding} text-center`}>
                             {group.items.length === 1 ? (
                               <div className="flex items-center justify-center gap-2">
                                 <button
@@ -868,31 +989,32 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                               </span>
                             )}
                           </td>
-                        </tr>
+                        )}
+                      </tr>
 
-                        {/* Sub-filas desglosadas al expandir */}
-                        {isExpanded &&
-                          group.items.map((subItem) => {
-                            const currentStock = Number(subItem.currentQty || 0);
-                            const allocatedStock = Number(subItem.allocatedQty || 0);
-                            const netAvailable = Math.max(0, currentStock - allocatedStock);
-                            const avgCost = getItemUnitCost(subItem);
-                            const itemValuation = currentStock * avgCost;
+                      {/* Sub-filas desglosadas al expandir */}
+                      {isExpanded &&
+                        group.items.map((subItem) => {
+                          const currentStock = Number(subItem.currentQty || 0);
+                          const allocatedStock = Number(subItem.allocatedQty || 0);
+                          const netAvailable = Math.max(0, currentStock - allocatedStock);
+                          const avgCost = getItemUnitCost(subItem);
+                          const itemValuation = currentStock * avgCost;
 
-                            const minThreshold = Number(subItem.minimumQty ?? subItem.supply?.min_stock_threshold ?? 0);
-                            const isSubItemLowStock = minThreshold > 0 ? currentStock < minThreshold : false;
+                          const minThreshold = Number(subItem.minimumQty ?? subItem.supply?.min_stock_threshold ?? 0);
+                          const isSubItemLowStock = minThreshold > 0 ? currentStock < minThreshold : false;
 
-
-                            return (
-                              <tr
-                                key={subItem.id}
-                                className={`hover:bg-[#fef9f1] border-l-4 transition-colors ${
-                                  isSubItemLowStock
-                                    ? 'bg-red-50/70 border-red-500'
-                                    : 'bg-zinc-50/80 border-[#ae001a]/40'
-                                }`}
-                              >
-                                <td className="px-6 py-2.5 pl-12">
+                          return (
+                            <tr
+                              key={subItem.id}
+                              className={`hover:bg-[#fef9f1] border-l-4 transition-colors ${
+                                isSubItemLowStock
+                                  ? 'bg-red-50/70 border-red-500'
+                                  : 'bg-zinc-50/80 border-[#ae001a]/40'
+                              }`}
+                            >
+                              {visibleColumns.entity && (
+                                <td className={`${densityPadding} pl-12`}>
                                   <span className="flex items-center gap-1.5 text-xs text-zinc-700 font-bold">
                                     <span className="material-symbols-outlined text-[14px] text-zinc-400">
                                       subdirectory_arrow_right
@@ -902,17 +1024,23 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                                       : subItem.location?.name || 'Storage Location Hub'}
                                   </span>
                                 </td>
-                                <td className="px-6 py-2.5 text-xs text-secondary font-mono">
+                              )}
+                              {visibleColumns.itemsCount && (
+                                <td className={`${densityPadding} text-xs text-secondary font-mono`}>
                                   {viewMode === 'by-location'
                                     ? `Unit: ${subItem.supply?.consumption_unit || subItem.supply?.unit || 'Units'}`
                                     : subItem.location?.code || 'N/A'}
                                 </td>
-                                <td className={`px-6 py-2.5 text-right font-mono font-bold text-xs ${
+                              )}
+                              {visibleColumns.currentStock && (
+                                <td className={`${densityPadding} text-right font-mono font-bold text-xs ${
                                   isSubItemLowStock ? 'text-red-600 font-black' : 'text-[#1d1c17]'
                                 }`}>
                                   {currentStock.toFixed(2)}
                                 </td>
-                                <td className="px-6 py-2.5 text-right font-mono text-xs">
+                              )}
+                              {visibleColumns.allocatedNet && (
+                                <td className={`${densityPadding} text-right font-mono text-xs`}>
                                   <span className="text-emerald-700 font-bold">
                                     {netAvailable.toFixed(2)} avail
                                   </span>{' '}
@@ -920,10 +1048,14 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                                     ({allocatedStock.toFixed(2)} res)
                                   </span>
                                 </td>
-                                <td className="px-6 py-2.5 text-right font-mono font-bold text-xs text-[#ae001a]">
+                              )}
+                              {visibleColumns.valuation && (
+                                <td className={`${densityPadding} text-right font-mono font-bold text-xs text-[#ae001a]`}>
                                   ${itemValuation.toFixed(2)}
                                 </td>
-                                <td className="px-6 py-2.5 text-center">
+                              )}
+                              {visibleColumns.status && (
+                                <td className={`${densityPadding} text-center`}>
                                   {isSubItemLowStock ? (
                                     <span className="text-[9px] px-2 py-0.5 font-bold rounded uppercase bg-red-100 text-red-700 border border-red-200 whitespace-nowrap inline-block">
                                       {currentStock <= 0 ? 'Out of Stock' : 'Low Stock'}
@@ -934,7 +1066,9 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                                     </span>
                                   )}
                                 </td>
-                                <td className="px-6 py-2.5 text-center">
+                              )}
+                              {visibleColumns.actions && (
+                                <td className={`${densityPadding} text-center`}>
                                   <div className="flex items-center justify-center gap-2">
                                     <button
                                       disabled={!isAdministrator}
@@ -967,19 +1101,31 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                                     </button>
                                   </div>
                                 </td>
-                              </tr>
-                            );
-                          })}
-                      </React.Fragment>
-                    );
-                  })
-                )}
-
-              </tbody>
-            </table>
-          </div>
+                              )}
+                            </tr>
+                          );
+                        })}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+        )}
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={groupedItems.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
+      </div>
 
 
 
@@ -1057,9 +1203,12 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                   <span>{historyError}</span>
                 </div>
               ) : historyMovements.length === 0 ? (
-                <div className="py-12 text-center text-secondary italic">
-                  No movements have been registered for this stock item yet.
-                </div>
+                <TableEmptyState
+                  asTableRow={false}
+                  icon="swap_horiz"
+                  title="No movements found"
+                  description="No movements have been registered for this stock item yet."
+                />
               ) : (
                 <div className="space-y-4">
                   <h4 className="text-[10px] font-bold uppercase tracking-widest text-[#ae001a] mb-2">

@@ -69,7 +69,6 @@ import { LaborCostForecastingView } from './views/restaurant-operations/LaborCos
 import { LedgerAccountsView } from './views/financial-engine/LedgerAccountsView';
 import { JournalEntriesView } from './views/financial-engine/JournalEntriesView';
 import { JournalEntryLinesView } from './views/financial-engine/JournalEntryLinesView';
-import { InventoryJournalLinesView } from './views/products-inventory/stocks/journal-lines/InventoryJournalLinesView';
 import type { JournalEntry } from '../../types/accounting';
 import { SuppliersView } from './views/accounts-payable/SuppliersView';
 import { SupplierInvoicesView } from './views/accounts-payable/SupplierInvoicesView';
@@ -100,6 +99,10 @@ import { RecipesView } from './views/products-inventory/recipes/RecipesView';
 import { KitchenStationsView } from './views/restaurant-operations/kitchen-stations/KitchenStationsView';
 import { KitchenKDSHubView } from './views/restaurant-operations/kitchen-stations/KitchenKDSHubView';
 import { KitchenDisplayDevicesView } from './views/restaurant-operations/kitchen-stations/KitchenDisplayDevicesView';
+import { KitchenOrdersView } from './views/restaurant-operations/kitchen-stations/KitchenOrdersView';
+import { KitchenOrderItemsView } from './views/restaurant-operations/kitchen-stations/KitchenOrderItemsView';
+import { KitchenEventLogView } from './views/restaurant-operations/kitchen-stations/KitchenEventLogView';
+import { KitchenAnalyticsView } from './views/restaurant-operations/kitchen-stations/KitchenAnalyticsView';
 import { clearAuthSession } from '../../lib/auth-storage';
 import { getCurrentMerchantId } from '../../api/users';
 
@@ -258,9 +261,6 @@ export const MerchantFrame: React.FC = () => {
     } else if (path === '/inventory/movements') {
       setActiveCategory('inventory');
       setActiveTab('movements');
-    } else if (path === '/inventory/journal-entries' || path === '/inventory/journal-lines') {
-      setActiveCategory('inventory');
-      setActiveTab('journal-entries');
     } else if (path === '/dashboard') {
       const stateTab = location.state?.activeTab;
       const stateCategory = location.state?.activeCategory;
@@ -786,14 +786,7 @@ export const MerchantFrame: React.FC = () => {
       return <LedgerAccountsView onNavigate={(view) => setActiveTab(view)} />;
     }
 
-    if (activeTab === 'inventory-journal-lines') {
-      return <InventoryJournalLinesView onNavigate={(view) => setActiveTab(view)} />;
-    }
-
     if (activeTab === 'journal-entries') {
-      if (activeCategory === 'inventory') {
-        return <InventoryJournalLinesView onNavigate={(view) => setActiveTab(view)} />;
-      }
       return (
         <JournalEntriesView
           onNavigate={(view) => setActiveTab(view)}
@@ -1036,6 +1029,22 @@ export const MerchantFrame: React.FC = () => {
 
     if (activeTab === 'kitchen-display-devices') {
       return <KitchenDisplayDevicesView onNavigate={(view) => setActiveTab(view)} />;
+    }
+
+    if (activeTab === 'kitchen-orders') {
+      return <KitchenOrdersView onNavigate={(view) => setActiveTab(view)} />;
+    }
+
+    if (activeTab === 'kitchen-order-items') {
+      return <KitchenOrderItemsView onNavigate={(view) => setActiveTab(view)} />;
+    }
+
+    if (activeTab === 'kitchen-event-log') {
+      return <KitchenEventLogView onNavigate={(view) => setActiveTab(view)} />;
+    }
+
+    if (activeTab === 'kitchen-analytics') {
+      return <KitchenAnalyticsView onNavigate={(view) => setActiveTab(view)} />;
     }
 
 

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../StockQuickLinks';
 import { EmergencySupportModal } from '../../../../modals/QuickActionModals';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../../shared/TableOptionsMenu';
 
 interface StockItem {
   id: number;
@@ -33,6 +34,18 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
   // Filtros locales
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
+
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    name: true,
+    address: true,
+    isMainStorage: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Estados de Cajones Laterales (Drawers)
   const [isFormDrawerOpen, setIsFormDrawerOpen] = useState<boolean>(false);
@@ -355,9 +368,14 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
       {/* 1. Header Card Workspace */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded-xl shadow-xs">
         <div>
-          <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+              location_on
+            </span>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
             STORAGE LOCATIONS & PHYSICAL HUBS WORKSPACE
           </h2>
+          </div>
           <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
             Manage physical storage areas (RawMaterialLocation), set up primary storage hubs (isMainStorage), and control active operational statuses.
           </p>
@@ -406,172 +424,260 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
               ADD LOCATION
             </button>
 
-            <button
-              type="button"
-              onClick={() => fetchLocations()}
-              className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
-              title="Reload locations"
-              aria-label="Reload table data"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
           </div>
         </div>
       </div>
 
       {/* 3. Grid / Tabla de Ubicaciones */}
-      {isLoading ? (
-        <div className="bg-white border border-[#e8e2d8] p-12 text-center rounded-xl shadow-xs">
-          <span className="material-symbols-outlined text-secondary animate-spin text-5xl">
-            sync
-          </span>
-          <p className="text-body-md text-secondary font-bold uppercase tracking-wider mt-4">
-            Loading storage locations...
-          </p>
-        </div>
-      ) : error ? (
-        <div className="bg-red-50 border border-red-200 p-8 text-center rounded-xl shadow-xs">
-          <span className="material-symbols-outlined text-red-700 text-5xl">
-            error
-          </span>
-          <p className="text-body-md text-red-800 font-bold uppercase tracking-wider mt-4">
-            {error}
-          </p>
-        </div>
-      ) : locations.length === 0 ? (
-        /* Empty State */
-        <div className="bg-white border border-[#e8e2d8] p-16 text-center rounded-xl shadow-xs flex flex-col items-center justify-center gap-6">
-          <div className="w-20 h-20 bg-zinc-50 border border-zinc-100 rounded-full flex items-center justify-center shadow-inner">
-            <span className="material-symbols-outlined text-zinc-400 text-4xl">
-              warehouse
-            </span>
-          </div>
-          <div className="max-w-md">
-            <h3 className="font-bold text-[#222222] uppercase tracking-wider text-sm">
-              No stock locations found. Click 'Add Location' to set up storage hubs like Main Warehouse or Kitchen Fridge.
-            </h3>
-            <p className="text-body-md text-secondary leading-relaxed mt-2">
-              Configure physical storage hubs or branch inventories to organize your stock points.
-            </p>
-          </div>
-        </div>
-      ) : (
-        /* Tabla Data Grid de Ubicaciones */
-        <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded-xl shadow-xs">
-          <div className="p-4 bg-[#222222] flex justify-between items-center">
-            <span className="text-label-caps font-bold text-white uppercase tracking-wider">
-              STORAGE LOCATIONS DIRECTORY
-            </span>
-            <span className="material-symbols-outlined text-white text-sm cursor-pointer select-none">
-              more_vert
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
-                <tr>
-                  <th className="px-6 py-3.5 text-left text-label-caps font-bold text-[#5f5e5e]">
-                    Location Designation & Code
-                  </th>
-                  <th className="px-6 py-3.5 text-left text-label-caps font-bold text-[#5f5e5e]">
-                    Physical Address
-                  </th>
-                  <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">
-                    Primary Storage Hub
-                  </th>
-                  <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">
-                    Status
-                  </th>
-                  <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#e8e2d8] text-sm">
-                {filteredLocations.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-secondary italic bg-white">
-                      No storage locations match the selected filter criteria.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredLocations.map((loc) => {
-                    const isInactive = loc.isActive === false;
-                    return (
-                      <tr
-                        key={loc.id}
-                        onClick={() => handleOpenDetailDrawer(loc)}
-                        className={`group transition-colors cursor-pointer ${
-                          isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
-                        }`}
-                      >
-                        <td className="px-6 py-4 flex items-center gap-3">
-                          <div className={`w-1 h-8 rounded-full ${loc.isMainStorage ? 'bg-amber-500' : 'bg-[#ae001a]'}`} />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className={`font-bold text-[#1d1c17] ${isInactive ? 'line-through' : ''}`}>{loc.name}</p>
-                              {loc.code && (
-                                <span className="font-mono text-[10px] font-bold bg-[#f2ede5] text-[#5f5e5e] px-1.5 py-0.5 rounded border border-[#e8e2d8]">
-                                  {loc.code}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-secondary">
-                          {loc.address || 'N/A'}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          {loc.isMainStorage ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full border border-amber-300">
-                              ⭐ Main Storage
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-zinc-400 font-mono italic">Secondary</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span
-                            className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
-                              loc.isActive !== false
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-zinc-200 text-[#5f5e5e]'
-                            }`}
-                          >
-                            {loc.isActive !== false ? 'Active' : 'Inactive'}
+      {(() => {
+        const activeColSpan =
+          (visibleColumns.name ? 1 : 0) +
+          (visibleColumns.address ? 1 : 0) +
+          (visibleColumns.isMainStorage ? 1 : 0) +
+          (visibleColumns.status ? 1 : 0) +
+          (visibleColumns.actions ? 1 : 0);
+
+        const densityPadding = getDensityPadding(rowDensity);
+        const totalPages = Math.ceil(filteredLocations.length / pageSize) || 1;
+        const paginatedLocations =
+          pageSize === 9999
+            ? filteredLocations
+            : filteredLocations.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+        return (
+          <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded-xl shadow-xs">
+            <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+              <div className="flex items-center gap-3">
+                <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
+                  STORAGE LOCATIONS DIRECTORY
+                </span>
+                <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+                  {filteredLocations.length} {filteredLocations.length === 1 ? 'location' : 'locations'}
+                </span>
+              </div>
+
+              <TableOptionsMenu
+                columns={[
+                  { key: 'name', label: 'Location Designation & Code' },
+                  { key: 'address', label: 'Physical Address' },
+                  { key: 'isMainStorage', label: 'Primary Storage Hub' },
+                  { key: 'status', label: 'Status' },
+                  { key: 'actions', label: 'Actions' },
+                ]}
+                visibleColumns={visibleColumns}
+                onToggleColumn={(key) =>
+                  setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }))
+                }
+                rowDensity={rowDensity}
+                onChangeDensity={setRowDensity}
+                totalItems={filteredLocations.length}
+                pageSize={pageSize}
+                onChangePageSize={(s) => {
+                  setPageSize(s);
+                  setCurrentPage(1);
+                }}
+                currentPage={currentPage}
+                onPageChange={setCurrentPage}
+                onReload={() => fetchLocations()}
+                onExportCSV={() => {
+                  if (filteredLocations.length === 0) return;
+                  const headers = ['Name', 'Code', 'Address', 'Main Storage', 'Status'];
+                  const rows = filteredLocations.map((loc) => [
+                    `"${(loc.name || '').replace(/"/g, '""')}"`,
+                    `"${(loc.code || '').replace(/"/g, '""')}"`,
+                    `"${(loc.address || '').replace(/"/g, '""')}"`,
+                    loc.isMainStorage ? 'Yes' : 'No',
+                    loc.isActive !== false ? 'Active' : 'Inactive'
+                  ]);
+                  const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+                  const encodedUri = encodeURI(csvContent);
+                  const link = document.createElement('a');
+                  link.setAttribute('href', encodedUri);
+                  link.setAttribute('download', `storage_locations_${new Date().toISOString().slice(0, 10)}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                onPrint={() => window.print()}
+                onCopySummary={() => {
+                  const text = `Total Storage Locations: ${filteredLocations.length}`;
+                  navigator.clipboard.writeText(text);
+                }}
+              />
+            </div>
+
+            {activeColSpan === 0 ? (
+              <NoColumnsEmptyState />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
+                    <tr>
+                      {visibleColumns.name && (
+                        <th className={`text-left text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                          Location Designation & Code
+                        </th>
+                      )}
+                      {visibleColumns.address && (
+                        <th className={`text-left text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                          Physical Address
+                        </th>
+                      )}
+                      {visibleColumns.isMainStorage && (
+                        <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                          Primary Storage Hub
+                        </th>
+                      )}
+                      {visibleColumns.status && (
+                        <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                          Status
+                        </th>
+                      )}
+                      {visibleColumns.actions && (
+                        <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                          Actions
+                        </th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#e8e2d8] text-sm">
+                    {isLoading ? (
+                      <tr>
+                        <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                          <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                            sync
                           </span>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <div className="flex justify-center gap-3">
-                            <button
-                              type="button"
-                              onClick={(e) => handleOpenEditDrawer(e, loc)}
-                              className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors duration-200 cursor-pointer"
-                              title="Edit Location"
-                            >
-                              <span className="material-symbols-outlined text-[20px]">edit</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => handleOpenConfirmToggle(e, loc)}
-                              className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors duration-200 cursor-pointer"
-                              title={loc.isActive !== false ? 'Deactivate Location' : 'Activate Location'}
-                            >
-                              <span className="material-symbols-outlined text-[20px]">
-                                {loc.isActive !== false ? 'block' : 'check_circle_outline'}
-                              </span>
-                            </button>
-                          </div>
+                          <p className="text-secondary text-body-md mt-2 font-sans">Loading storage locations...</p>
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                    ) : error ? (
+                      <tr>
+                        <td colSpan={activeColSpan} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
+                          <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                            error
+                          </span>
+                          <p className="font-bold">{error}</p>
+                          <button
+                            onClick={() => fetchLocations()}
+                            className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-all font-sans cursor-pointer"
+                          >
+                            Retry Connection
+                          </button>
+                        </td>
+                      </tr>
+                    ) : filteredLocations.length === 0 ? (
+                      <TableEmptyState
+                        colSpan={activeColSpan}
+                        icon="warehouse"
+                        title="No storage locations found"
+                        description={
+                          searchQuery || statusFilter !== 'All'
+                            ? 'No storage locations match your search criteria.'
+                            : "Click 'Add Location' to set up storage hubs like Main Warehouse or Kitchen Fridge."
+                        }
+                      />
+                    ) : (
+                      paginatedLocations.map((loc) => {
+                        const isInactive = loc.isActive === false;
+                        return (
+                          <tr
+                            key={loc.id}
+                            onClick={() => handleOpenDetailDrawer(loc)}
+                            className={`group transition-colors cursor-pointer ${
+                              isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
+                            }`}
+                          >
+                            {visibleColumns.name && (
+                              <td className={`${densityPadding} flex items-center gap-3`}>
+                                <div className={`w-1 h-8 rounded-full ${loc.isMainStorage ? 'bg-amber-500' : 'bg-[#ae001a]'}`} />
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <p className={`font-bold text-[#1d1c17] ${isInactive ? 'line-through' : ''}`}>{loc.name}</p>
+                                    {loc.code && (
+                                      <span className="font-mono text-[10px] font-bold bg-[#f2ede5] text-[#5f5e5e] px-1.5 py-0.5 rounded border border-[#e8e2d8]">
+                                        {loc.code}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            )}
+                            {visibleColumns.address && (
+                              <td className={`${densityPadding} text-secondary`}>
+                                {loc.address || 'N/A'}
+                              </td>
+                            )}
+                            {visibleColumns.isMainStorage && (
+                              <td className={`${densityPadding} text-center`}>
+                                {loc.isMainStorage ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-1 rounded-full border border-amber-300">
+                                    ⭐ Main Storage
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-zinc-400 font-mono italic">Secondary</span>
+                                )}
+                              </td>
+                            )}
+                            {visibleColumns.status && (
+                              <td className={`${densityPadding} text-center`}>
+                                <span
+                                  className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
+                                    loc.isActive !== false
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-zinc-200 text-[#5f5e5e]'
+                                  }`}
+                                >
+                                  {loc.isActive !== false ? 'Active' : 'Inactive'}
+                                </span>
+                              </td>
+                            )}
+                            {visibleColumns.actions && (
+                              <td className={`${densityPadding} text-center`}>
+                                <div className="flex justify-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleOpenEditDrawer(e, loc)}
+                                    className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors duration-200 cursor-pointer"
+                                    title="Edit Location"
+                                  >
+                                    <span className="material-symbols-outlined text-[20px]">edit</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleToggleLocationActive(e, loc)}
+                                    className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors duration-200 cursor-pointer"
+                                    title={loc.isActive !== false ? 'Deactivate Location' : 'Activate Location'}
+                                  >
+                                    <span className="material-symbols-outlined text-[20px]">
+                                      {loc.isActive !== false ? 'block' : 'check_circle'}
+                                    </span>
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <TablePaginationFooter
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={filteredLocations.length}
+              onPageChange={setCurrentPage}
+              onChangePageSize={(s) => {
+                setPageSize(s);
+                setCurrentPage(1);
+              }}
+            />
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Floating Action Button (FAB) */}
       <button

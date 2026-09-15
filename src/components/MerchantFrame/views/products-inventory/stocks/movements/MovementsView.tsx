@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StockQuickLinks } from '../StockQuickLinks';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession, getStoredUser } from '../../../../../../lib/auth-storage';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../../shared/TableOptionsMenu';
 
 interface StockItemOption {
   id: number;
@@ -46,9 +47,22 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Paginación y Filtros
+  // Table options & Paginación y Filtros
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    id: true,
+    dateTime: true,
+    type: true,
+    material: true,
+    sourceLoc: true,
+    destLoc: true,
+    quantity: true,
+    unitCost: true,
+    totalValue: true,
+    operator: true,
+  });
   const [page, setPage] = useState<number>(1);
-  const [limit] = useState<number>(15);
+  const [pageSize, setPageSize] = useState<number>(5);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [itemNameFilter, setItemNameFilter] = useState<string>('');
   const [movementTypeFilter, setMovementTypeFilter] = useState<string>('ALL');
@@ -104,7 +118,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
   useEffect(() => {
     fetchMovements();
     fetchStockItems();
-  }, [page, itemNameFilter, itemIdFilter, movementTypeFilter]);
+  }, [page, pageSize, itemNameFilter, itemIdFilter, movementTypeFilter]);
 
   const fetchStockItems = async () => {
     try {
@@ -138,7 +152,8 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       };
 
-      let url = `${API_BASE}/v1/raw-material-stock/movements?page=${page}&limit=${limit}`;
+      const limitParam = pageSize === 9999 ? 500 : pageSize;
+      let url = `${API_BASE}/v1/raw-material-stock/movements?page=${page}&limit=${limitParam}`;
       if (itemIdFilter) {
         url += `&itemId=${encodeURIComponent(itemIdFilter)}`;
       } else if (itemNameFilter.trim()) {
@@ -150,7 +165,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
 
       let res = await fetch(url, { headers });
       if (!res.ok || res.status === 404) {
-        url = `${API_BASE}/movements?page=${page}&limit=${limit}`;
+        url = `${API_BASE}/movements?page=${page}&limit=${limitParam}`;
         if (itemIdFilter) url += `&itemId=${encodeURIComponent(itemIdFilter)}`;
         else if (itemNameFilter.trim()) url += `&itemName=${encodeURIComponent(itemNameFilter)}`;
         res = await fetch(url, { headers });
@@ -318,9 +333,14 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans pb-24">
       {/* Título de Sección */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
-        <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+        <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+              swap_horiz
+            </span>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
           STOCK MOVEMENTS LOG
         </h2>
+          </div>
         <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
           Audit trail of all inventory entries, exits, transfers, sales depletions, and adjustments across all active storage locations.
         </p>
@@ -392,15 +412,6 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
               <span>NEW MOVEMENT / ADJUSTMENT</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => fetchMovements()}
-              className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
-              title="Reload table data"
-              aria-label="Reload table data"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
 
             <button
               onClick={() => {
@@ -418,136 +429,265 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
 
 
       {/* Tabla Audit Trail Grid */}
-      {isLoading ? (
-        <div className="py-20 text-center bg-white border border-[#e8e2d8] rounded">
-          <span className="material-symbols-outlined text-secondary animate-spin text-4xl">sync</span>
-          <p className="text-secondary text-body-sm mt-3 uppercase tracking-wider font-bold">
-            Loading stock movement ledger...
-          </p>
-        </div>
-      ) : error ? (
-        <div className="p-6 bg-red-50 border border-red-200 text-red-800 text-body-md rounded-lg">
-          {error}
-        </div>
-      ) : (
-        <div className="bg-white border border-[#e8e2d8] rounded shadow-sm overflow-hidden">
-          <div className="p-4 bg-[#222222] flex justify-between items-center">
-            <span className="text-label-caps font-bold text-white uppercase tracking-wider">
-              STOCK MOVEMENTS LEDGER AUDIT TRAIL
-            </span>
-            <span className="material-symbols-outlined text-white text-sm cursor-pointer select-none">
-              more_vert
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left text-xs font-sans">
-              <thead className="bg-[#222222] text-white border-b border-[#222222]">
-                <tr>
-                  <th className="px-4 py-3 font-bold uppercase">Movement ID</th>
-                  <th className="px-4 py-3 font-bold uppercase">Date & Time</th>
-                  <th className="px-4 py-3 font-bold uppercase text-center">Movement Type</th>
-                  <th className="px-4 py-3 font-bold uppercase">Raw Material</th>
-                  <th className="px-4 py-3 font-bold uppercase">Source Location</th>
-                  <th className="px-4 py-3 font-bold uppercase">Destination Location</th>
-                  <th className="px-4 py-3 font-bold uppercase text-right">Quantity</th>
-                  <th className="px-4 py-3 font-bold uppercase text-right">Unit Cost</th>
-                  <th className="px-4 py-3 font-bold uppercase text-right">Total Value</th>
-                  <th className="px-4 py-3 font-bold uppercase">Operator</th>
-                </tr>
-              </thead>
+      {(() => {
+        const activeColSpan =
+          (visibleColumns.id ? 1 : 0) +
+          (visibleColumns.dateTime ? 1 : 0) +
+          (visibleColumns.type ? 1 : 0) +
+          (visibleColumns.material ? 1 : 0) +
+          (visibleColumns.sourceLoc ? 1 : 0) +
+          (visibleColumns.destLoc ? 1 : 0) +
+          (visibleColumns.quantity ? 1 : 0) +
+          (visibleColumns.unitCost ? 1 : 0) +
+          (visibleColumns.totalValue ? 1 : 0) +
+          (visibleColumns.operator ? 1 : 0);
 
-              <tbody className="divide-y divide-[#e8e2d8]">
-                {movements.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-6 py-8 text-center text-secondary italic bg-white">
-                      No stock movements recorded in ledger.
-                    </td>
-                  </tr>
-                ) : (
-                  movements.map((mv) => {
-                    const typeCode = mv.movementType || mv.type;
-                    const isEntry = mv.type === 'IN' || ['PURCHASE_RECEIPT', 'RETURN', 'PURCHASE_ENTRY'].includes(mv.movementType || '');
-                    const materialName = mv.item?.supply?.name || mv.item?.product?.name || 'Raw Material';
-                    const srcLocName = mv.sourceLocationName || mv.item?.location?.name || '—';
-                    const destLocName = mv.destinationLocationName || '—';
-                    const costVal = Number(mv.unitCost || 0);
-                    const totalVal = costVal * Number(mv.quantity || 0);
+        const densityPadding = getDensityPadding(rowDensity);
 
-                    return (
-                      <tr key={mv.id} className="hover:bg-[#f8f3eb] transition-colors">
-                        <td className="px-4 py-3 font-mono font-bold text-zinc-900">
-                          MV-#{mv.id}
-                        </td>
-                        <td className="px-4 py-3 text-zinc-700 whitespace-nowrap">
-                          {new Date(mv.createdAt).toLocaleDateString()} {new Date(mv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </td>
-                        <td className="px-4 py-3 text-center whitespace-nowrap">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                            typeCode === 'ADJUSTMENT' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
-                            typeCode === 'TRANSFER' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
-                            typeCode === 'WASTE' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
-                            typeCode === 'POS_DEPLETION' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
-                            isEntry ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 
-                            'bg-red-100 text-red-800 border border-red-300'
-                          }`}>
-                            {typeCode}
+        return (
+          <div className="bg-white border border-[#e8e2d8] rounded shadow-sm overflow-hidden">
+            <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+              <div className="flex items-center gap-3">
+                <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
+                  STOCK MOVEMENTS LEDGER AUDIT TRAIL
+                </span>
+                <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+                  {movements.length} {movements.length === 1 ? 'record' : 'records'}
+                </span>
+              </div>
+
+              <TableOptionsMenu
+                columns={[
+                  { key: 'id', label: 'Movement ID' },
+                  { key: 'dateTime', label: 'Date & Time' },
+                  { key: 'type', label: 'Movement Type' },
+                  { key: 'material', label: 'Raw Material' },
+                  { key: 'sourceLoc', label: 'Source Location' },
+                  { key: 'destLoc', label: 'Destination Location' },
+                  { key: 'quantity', label: 'Quantity' },
+                  { key: 'unitCost', label: 'Unit Cost' },
+                  { key: 'totalValue', label: 'Total Value' },
+                  { key: 'operator', label: 'Operator' },
+                ]}
+                visibleColumns={visibleColumns}
+                onToggleColumn={(key) =>
+                  setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }))
+                }
+                rowDensity={rowDensity}
+                onChangeDensity={setRowDensity}
+                totalItems={movements.length}
+                pageSize={pageSize}
+                onChangePageSize={(s) => {
+                  setPageSize(s);
+                  setPage(1);
+                }}
+                currentPage={page}
+                onPageChange={setPage}
+                onReload={() => fetchMovements()}
+                onExportCSV={() => {
+                  if (movements.length === 0) return;
+                  const headers = ['ID', 'Date', 'Type', 'Material', 'Source', 'Destination', 'Quantity', 'Unit Cost', 'Total Value', 'Operator'];
+                  const rows = movements.map((mv) => [
+                    `MV-#${mv.id}`,
+                    new Date(mv.createdAt).toISOString(),
+                    mv.movementType || mv.type,
+                    `"${(mv.item?.supply?.name || mv.item?.product?.name || '').replace(/"/g, '""')}"`,
+                    `"${(mv.sourceLocationName || mv.item?.location?.name || '').replace(/"/g, '""')}"`,
+                    `"${(mv.destinationLocationName || '').replace(/"/g, '""')}"`,
+                    mv.quantity,
+                    mv.unitCost || 0,
+                    (Number(mv.unitCost || 0) * Number(mv.quantity || 0)).toFixed(2),
+                    `"${(mv.createdBy || '').replace(/"/g, '""')}"`
+                  ]);
+                  const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+                  const encodedUri = encodeURI(csvContent);
+                  const link = document.createElement('a');
+                  link.setAttribute('href', encodedUri);
+                  link.setAttribute('download', `stock_movements_${new Date().toISOString().slice(0, 10)}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                onPrint={() => window.print()}
+                onCopySummary={() => {
+                  const text = `Total Stock Movements: ${movements.length}`;
+                  navigator.clipboard.writeText(text);
+                }}
+              />
+            </div>
+
+            {activeColSpan === 0 ? (
+              <NoColumnsEmptyState />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs font-sans">
+                  <thead className="bg-[#ece8e0] border-b border-[#e8e2d8] text-[#5f5e5e]">
+                    <tr>
+                      {visibleColumns.id && (
+                        <th className={`text-label-caps font-bold ${densityPadding}`}>Movement ID</th>
+                      )}
+                      {visibleColumns.dateTime && (
+                        <th className={`text-label-caps font-bold ${densityPadding}`}>Date & Time</th>
+                      )}
+                      {visibleColumns.type && (
+                        <th className={`text-label-caps font-bold text-center ${densityPadding}`}>Movement Type</th>
+                      )}
+                      {visibleColumns.material && (
+                        <th className={`text-label-caps font-bold ${densityPadding}`}>Raw Material</th>
+                      )}
+                      {visibleColumns.sourceLoc && (
+                        <th className={`text-label-caps font-bold ${densityPadding}`}>Source Location</th>
+                      )}
+                      {visibleColumns.destLoc && (
+                        <th className={`text-label-caps font-bold ${densityPadding}`}>Destination Location</th>
+                      )}
+                      {visibleColumns.quantity && (
+                        <th className={`text-label-caps font-bold text-right ${densityPadding}`}>Quantity</th>
+                      )}
+                      {visibleColumns.unitCost && (
+                        <th className={`text-label-caps font-bold text-right ${densityPadding}`}>Unit Cost</th>
+                      )}
+                      {visibleColumns.totalValue && (
+                        <th className={`text-label-caps font-bold text-right ${densityPadding}`}>Total Value</th>
+                      )}
+                      {visibleColumns.operator && (
+                        <th className={`text-label-caps font-bold ${densityPadding}`}>Operator</th>
+                      )}
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-[#e8e2d8]">
+                    {isLoading ? (
+                      <tr>
+                        <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                          <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                            sync
                           </span>
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-zinc-900">
-                          {materialName}
-                        </td>
-                        <td className="px-4 py-3 text-zinc-700">
-                          {srcLocName}
-                        </td>
-                        <td className="px-4 py-3 text-zinc-700">
-                          {destLocName}
-                        </td>
-                        <td className={`px-4 py-3 font-mono font-bold text-right ${
-                          isEntry ? 'text-emerald-700' : 'text-red-700'
-                        }`}>
-                          {isEntry ? '+' : '-'}{mv.quantity}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-right text-zinc-700">
-                          {costVal > 0 ? `$${costVal.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 font-mono font-bold text-right text-zinc-900">
-                          {totalVal > 0 ? `$${totalVal.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-zinc-600 font-medium">
-                          {mv.createdBy || 'System'}
+                          <p className="text-secondary text-body-md mt-2 font-sans">Loading stock movements ledger...</p>
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                    ) : error ? (
+                      <tr>
+                        <td colSpan={activeColSpan} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
+                          <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                            error
+                          </span>
+                          <p className="font-bold">{error}</p>
+                          <button
+                            onClick={() => fetchMovements()}
+                            className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-all font-sans cursor-pointer"
+                          >
+                            Retry Connection
+                          </button>
+                        </td>
+                      </tr>
+                    ) : movements.length === 0 ? (
+                      <TableEmptyState
+                        colSpan={activeColSpan}
+                        icon="swap_horiz"
+                        title="No stock movements found"
+                        description={
+                          itemNameFilter || movementTypeFilter !== 'ALL' || itemIdFilter
+                            ? 'No stock movements match your search filters.'
+                            : 'No stock movements recorded in the ledger yet.'
+                        }
+                      />
+                    ) : (
+                      movements.map((mv) => {
+                        const typeCode = mv.movementType || mv.type;
+                        const isEntry = mv.type === 'IN' || ['PURCHASE_RECEIPT', 'RETURN', 'PURCHASE_ENTRY'].includes(mv.movementType || '');
+                        const materialName = mv.item?.supply?.name || mv.item?.product?.name || 'Raw Material';
+                        const srcLocName = mv.sourceLocationName || mv.item?.location?.name || '—';
+                        const destLocName = mv.destinationLocationName || '—';
+                        const costVal = Number(mv.unitCost || 0);
+                        const totalVal = costVal * Number(mv.quantity || 0);
 
-          {/* Paginación */}
-          {totalPages > 1 && (
-            <div className="bg-[#fef9f1] px-6 py-4 border-t border-[#e8e2d8] flex justify-between items-center">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage(prev => Math.max(1, prev - 1))}
-                className="px-4 py-2 border border-[#e8e2d8] rounded font-bold text-xs uppercase tracking-wider hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer bg-white"
-              >
-                Previous
-              </button>
-              <span className="text-body-xs font-semibold text-zinc-600">
-                Page {page} of {totalPages}
-              </span>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
-                className="px-4 py-2 border border-[#e8e2d8] rounded font-bold text-xs uppercase tracking-wider hover:bg-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer bg-white"
-              >
-                Next
-              </button>
+                        return (
+                          <tr key={mv.id} className="hover:bg-[#f8f3eb] transition-colors">
+                            {visibleColumns.id && (
+                              <td className={`${densityPadding} font-mono font-bold text-zinc-900`}>
+                                MV-#{mv.id}
+                              </td>
+                            )}
+                          {visibleColumns.dateTime && (
+                            <td className={`${densityPadding} text-zinc-700 whitespace-nowrap`}>
+                              {new Date(mv.createdAt).toLocaleDateString()} {new Date(mv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                          )}
+                          {visibleColumns.type && (
+                            <td className={`${densityPadding} text-center whitespace-nowrap`}>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                                typeCode === 'ADJUSTMENT' ? 'bg-purple-100 text-purple-800 border border-purple-300' :
+                                typeCode === 'TRANSFER' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
+                                typeCode === 'WASTE' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                                typeCode === 'POS_DEPLETION' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
+                                isEntry ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 
+                                'bg-red-100 text-red-800 border border-red-300'
+                              }`}>
+                                {typeCode}
+                              </span>
+                            </td>
+                          )}
+                          {visibleColumns.material && (
+                            <td className={`${densityPadding} font-semibold text-zinc-900`}>
+                              {materialName}
+                            </td>
+                          )}
+                          {visibleColumns.sourceLoc && (
+                            <td className={`${densityPadding} text-zinc-700`}>
+                              {srcLocName}
+                            </td>
+                          )}
+                          {visibleColumns.destLoc && (
+                            <td className={`${densityPadding} text-zinc-700`}>
+                              {destLocName}
+                            </td>
+                          )}
+                          {visibleColumns.quantity && (
+                            <td className={`${densityPadding} font-mono font-bold text-right ${
+                              isEntry ? 'text-emerald-700' : 'text-red-700'
+                            }`}>
+                              {isEntry ? '+' : '-'}{mv.quantity}
+                            </td>
+                          )}
+                          {visibleColumns.unitCost && (
+                            <td className={`${densityPadding} font-mono text-right text-zinc-700`}>
+                              {costVal > 0 ? `$${costVal.toFixed(2)}` : '—'}
+                            </td>
+                          )}
+                          {visibleColumns.totalValue && (
+                            <td className={`${densityPadding} font-mono font-bold text-right text-zinc-900`}>
+                              {totalVal > 0 ? `$${totalVal.toFixed(2)}` : '—'}
+                            </td>
+                          )}
+                          {visibleColumns.operator && (
+                            <td className={`${densityPadding} text-zinc-600 font-medium`}>
+                              {mv.createdBy || 'System'}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
-        </div>
-      )}
+
+            <TablePaginationFooter
+              currentPage={page}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={movements.length}
+              onPageChange={setPage}
+              onChangePageSize={(s) => {
+                setPageSize(s);
+                setPage(1);
+              }}
+            />
+          </div>
+        );
+      })()}
 
       {/* Portal Modal + RECORD MOVEMENT */}
       {isRecordOpen && createPortal(
