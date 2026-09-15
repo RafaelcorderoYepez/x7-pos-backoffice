@@ -19,23 +19,7 @@ import { LedgerQuickLinks } from './LedgerQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-export const MOCK_SEED_ACCOUNTS: LedgerAccount[] = [
-  { id: 1, code: '1000', name: 'Assets', type: 'ASSET', is_active: true, parent_account_id: null },
-  { id: 2, code: '1100', name: 'Raw Material Inventory', type: 'ASSET', is_active: true, parent_account_id: 1 },
-  { id: 3, code: '1200', name: 'Finished Goods Inventory', type: 'ASSET', is_active: true, parent_account_id: 1 },
-  { id: 4, code: '1300', name: 'Cash & Bank Accounts', type: 'ASSET', is_active: true, parent_account_id: 1 },
-  { id: 5, code: '2000', name: 'Liabilities', type: 'LIABILITY', is_active: true, parent_account_id: null },
-  { id: 6, code: '2100', name: 'Accounts Payable', type: 'LIABILITY', is_active: true, parent_account_id: 5 },
-  { id: 7, code: '2200', name: 'Tax Payable', type: 'LIABILITY', is_active: true, parent_account_id: 5 },
-  { id: 8, code: '3000', name: 'Equity', type: 'EQUITY', is_active: true, parent_account_id: null },
-  { id: 9, code: '3100', name: 'Owner Capital', type: 'EQUITY', is_active: true, parent_account_id: 8 },
-  { id: 10, code: '4000', name: 'Revenue', type: 'REVENUE', is_active: true, parent_account_id: null },
-  { id: 11, code: '4100', name: 'POS Food & Beverage Sales', type: 'REVENUE', is_active: true, parent_account_id: 10 },
-  { id: 12, code: '5000', name: 'Expenses', type: 'EXPENSE', is_active: true, parent_account_id: null },
-  { id: 13, code: '5100', name: 'Cost of Goods Sold', type: 'EXPENSE', is_active: true, parent_account_id: 12 },
-  { id: 14, code: '5200', name: 'Waste & Shrinkage Expense', type: 'EXPENSE', is_active: true, parent_account_id: 12 },
-  { id: 15, code: '5300', name: 'Inventory Adjustment Variance', type: 'EXPENSE', is_active: true, parent_account_id: 12 },
-];
+
 
 interface LedgerAccountFormDrawerProps {
   mode: 'create' | 'edit';
@@ -391,16 +375,16 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
       }
 
       if (!res.ok) {
-        setAccounts(MOCK_SEED_ACCOUNTS);
+        setError(`Failed to load ledger accounts. Server returned status ${res.status}`);
         return;
       }
 
       const json = await res.json();
       const loaded = json.data ?? [];
-      setAccounts(loaded.length > 0 ? loaded : MOCK_SEED_ACCOUNTS);
-    } catch (err) {
-      console.error('Error fetching ledger accounts, loading seed accounts:', err);
-      setAccounts(MOCK_SEED_ACCOUNTS);
+      setAccounts(loaded);
+    } catch (err: any) {
+      console.error('Error fetching ledger accounts:', err);
+      setError(err?.message || 'Failed to load ledger accounts');
     } finally {
       setLoading(false);
     }
@@ -839,7 +823,7 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
         </div>
       )}
 
-      <LedgerQuickLinks onNavigate={onNavigate} />
+      <LedgerQuickLinks current="ledger-accounts" onNavigate={onNavigate} />
 
       <button
         type="button"

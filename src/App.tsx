@@ -12,7 +12,6 @@ import { OnboardingRoutes } from './pages/onboarding/OnboardingRoutes';
 import { SubscriptionStepPage } from './pages/onboarding/SubscriptionStepPage';
 import { UserStepPage } from './pages/onboarding/UserStepPage';
 import { isAuthenticated } from './lib/auth-storage';
-import { ErrorBoundary } from './components/shared/ErrorBoundary';
 
 function RootRedirect() {
   return (
@@ -208,6 +207,30 @@ export default function App() {
         />
         <Route
           path="/staff-management/schedule/swaps"
+          element={
+            <ProtectedRoute>
+              <MerchantFrame />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/staff-management/schedule/marketplace"
+          element={
+            <ProtectedRoute>
+              <MerchantFrame />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/staff-management/schedule/open-shifts"
+          element={
+            <ProtectedRoute>
+              <MerchantFrame />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/staff-management/schedule/labor-forecasting"
           element={
             <ProtectedRoute>
               <MerchantFrame />

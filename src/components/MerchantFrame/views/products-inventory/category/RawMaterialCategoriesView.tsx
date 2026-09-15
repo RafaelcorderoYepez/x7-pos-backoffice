@@ -516,7 +516,7 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
       {/* Drawer */}
       {isDrawerOpen && createPortal(
         <div className="fixed inset-0 z-[999] flex justify-end">
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setIsDrawerOpen(false)} />
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsDrawerOpen(false)} />
           <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col border-l border-[#e8e2d8] animate-slide-in">
             <div className="bg-[#222222] p-6 text-white flex justify-between items-center shrink-0">
               <div>
@@ -605,8 +605,8 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
       {/* Modal Toggle Active (Soft Delete) */}
       {isToggleModalOpen && toggleTarget && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 font-sans">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setIsToggleModalOpen(false)} />
-          <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-zinc-200 animate-scale-in text-left">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsToggleModalOpen(false)} />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[420px] p-6 border border-zinc-200 animate-scale-in text-left">
             <div className="flex items-start gap-4">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
                 toggleTarget.isActive 

@@ -771,7 +771,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
         <div className="fixed inset-0 z-[999] flex justify-end">
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity duration-300"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300"
             onClick={() => setIsDrawerOpen(false)}
           />
 
@@ -1013,8 +1013,8 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
       {/* Modal de Advertencia de Impacto de Conversion (Recipes Warning) */}
       {isWarningModalOpen && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 font-sans">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setIsWarningModalOpen(false)} />
-          <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-zinc-200 animate-scale-in text-left">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsWarningModalOpen(false)} />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[420px] p-6 border border-zinc-200 animate-scale-in text-left">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 bg-amber-50 border border-amber-100 text-amber-600">
                 <span className="material-symbols-outlined text-2xl">warning</span>
@@ -1055,8 +1055,8 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
       {/* Modal de Confirmación de Toggle Estatus (Soft Deactivate) */}
       {isToggleModalOpen && toggleTarget && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 font-sans">
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-xs" onClick={() => setIsToggleModalOpen(false)} />
-          <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-zinc-200 animate-scale-in text-left">
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsToggleModalOpen(false)} />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[420px] p-6 border border-zinc-200 animate-scale-in text-left">
             <div className="flex items-start gap-4">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
                 toggleTarget.isActive 

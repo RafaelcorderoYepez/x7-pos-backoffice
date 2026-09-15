@@ -8,8 +8,7 @@ import type {
   LedgerAccount,
   UpdateJournalEntryLineDto,
 } from '../../../../types/accounting';
-import { formatCurrency, formatEntryDate, STATUS_BADGE_CLASSES, MOCK_SEED_ENTRIES, saveStoredEntries, getStoredEntries } from './JournalEntriesView';
-import { MOCK_SEED_ACCOUNTS } from './LedgerAccountsView';
+import { formatCurrency, formatEntryDate, STATUS_BADGE_CLASSES } from './JournalEntriesView';
 import { LedgerQuickLinks } from './LedgerQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -279,7 +278,7 @@ const JournalEntryLineFormDrawer: React.FC<JournalEntryLineFormDrawerProps> = ({
               </label>
               {lockedEntry ? (
                 <div className="px-3 py-2 border border-[#e8e2d8] rounded text-sm bg-[#f8f3eb] text-[#1d1c17] flex items-center justify-between">
-                  <span className="font-semibold text-xs">
+                  <span className="font-semibold text-xs" data-testid="line-form-locked-entry">
                     {targetEntry
                       ? `${targetEntry.entry_number} — ${targetEntry.description || 'Active Draft Entry'}`
                       : 'JE-2026-004 — Active Draft Entry'}
@@ -549,16 +548,16 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
       }
 
       if (!res.ok) {
-        setEntries(MOCK_SEED_ENTRIES);
+        setError(`Failed to load journal entry lines. Server returned status ${res.status}`);
         return;
       }
 
       const json = await res.json();
       const loaded = json.data ?? [];
-      setEntries(loaded.length > 0 ? loaded : MOCK_SEED_ENTRIES);
-    } catch (err) {
-      console.error('Error fetching journal entry lines, loading seed entries:', err);
-      setEntries(MOCK_SEED_ENTRIES);
+      setEntries(loaded);
+    } catch (err: any) {
+      console.error('Error fetching journal entry lines:', err);
+      setError(err?.message || 'Failed to load journal entry lines');
     } finally {
       setLoading(false);
     }
@@ -573,16 +572,14 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
       const res = await fetch(`${API_BASE}/ledger-accounts?limit=100`, { headers });
       if (res.ok) {
         const json = await res.json();
-        const active = ((json.data ?? []) as LedgerAccount[]).filter((a) => a.is_active);
-        if (active.length > 0) {
-          setLedgerAccounts(active);
-          return;
-        }
+        const active = ((json.data ?? []) as LedgerAccount[]).filter((a) => a.is_active !== false);
+        setLedgerAccounts(active);
+        return;
       }
-      setLedgerAccounts(MOCK_SEED_ACCOUNTS);
+      setLedgerAccounts([]);
     } catch (err) {
-      console.error('Error fetching ledger accounts, loading seed accounts:', err);
-      setLedgerAccounts(MOCK_SEED_ACCOUNTS);
+      console.error('Error fetching ledger accounts:', err);
+      setLedgerAccounts([]);
     }
   };
 
@@ -691,11 +688,7 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
             },
           ],
         };
-        setEntries((prev) => {
-          const updated = [newDraftEntry, ...prev];
-          saveStoredEntries(updated);
-          return updated;
-        });
+        setEntries((prev) => [newDraftEntry, ...prev]);
         setFormDrawer(null);
         setToast({ message: `Created new draft entry ${newEntryNumber} with line item`, type: 'success' });
         return;
@@ -718,57 +711,18 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
         return;
       }
 
+      const errJson = res ? await res.json().catch(() => ({})) : {};
       if (!res || !res.ok) {
-        // Local fallback update for seamless testing
-        setEntries((prev) => {
-          const updated = prev.map((e) => {
-            if (e.id !== entryId) return e;
-            let updatedLines: JournalEntryLine[];
-            if (isEdit && formDrawer.mode === 'edit') {
-              updatedLines = e.lines.map((l) =>
-                l.id === formDrawer.item.line.id
-                  ? {
-                      ...l,
-                      account: leafAccounts.find((a) => a.id === dto.account_id) || l.account,
-                      debit: dto.debit,
-                      credit: dto.credit,
-                      description: dto.description ?? l.description,
-                    }
-                  : l,
-              );
-            } else {
-              const newLine: JournalEntryLine = {
-                id: Date.now(),
-                account: leafAccounts.find((a) => a.id === dto.account_id) || {
-                  id: dto.account_id,
-                  code: '1100',
-                  name: 'Raw Material Inventory',
-                },
-                debit: dto.debit,
-                credit: dto.credit,
-                description: dto.description || '',
-              };
-              updatedLines = [...e.lines, newLine];
-            }
-            const totalDebit = updatedLines.reduce((acc, l) => acc + (Number(l.debit) || 0), 0);
-            const totalCredit = updatedLines.reduce((acc, l) => acc + (Number(l.credit) || 0), 0);
-            return {
-              ...e,
-              lines: updatedLines,
-              total_debit: totalDebit,
-              total_credit: totalCredit,
-              is_balanced: Math.abs(totalDebit - totalCredit) < 0.01,
-            };
-          });
-          saveStoredEntries(updated);
-          return updated;
-        });
-      } else {
-        await fetchJournalEntries();
+        setFormError(errJson.message || 'Failed to submit journal entry line');
+        return;
       }
 
+      await fetchJournalEntries();
       setFormDrawer(null);
-      setToast({ message: `Journal entry line ${isEdit ? 'updated' : 'created'} successfully`, type: 'success' });
+      setToast({
+        message: isEdit ? 'Journal entry line updated successfully' : 'Journal entry line created successfully',
+        type: 'success',
+      });
     } catch (err: any) {
       setFormError(err.message || 'Failed to save journal entry line');
     } finally {

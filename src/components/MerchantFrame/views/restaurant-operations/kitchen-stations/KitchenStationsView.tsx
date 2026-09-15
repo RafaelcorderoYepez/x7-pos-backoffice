@@ -30,6 +30,8 @@ interface KitchenStationsViewProps {
   onNavigate?: (view: string) => void;
 }
 
+
+
 export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavigate }) => {
   const [stations, setStations] = useState<KitchenStation[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -1071,8 +1073,8 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
       {/* Portal: Drawer Modal (Creación y Edición de Estación KDS) */}
       {isDrawerOpen &&
         createPortal(
-          <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-6 md:pb-12 backdrop-blur-xs font-sans">
-            <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md overflow-hidden animate-fade-in max-h-[90vh] flex flex-col">
+          <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-6 md:pb-12 backdrop-blur-sm font-sans">
+            <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[450px] overflow-hidden animate-fade-in max-h-[90vh] flex flex-col">
               {/* Drawer Header */}
               <div className="p-4 bg-[#222222] text-white flex justify-between items-center">
                 <div className="flex items-center gap-2">

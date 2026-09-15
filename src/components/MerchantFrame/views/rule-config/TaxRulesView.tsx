@@ -32,6 +32,7 @@ interface TaxRuleFormModalProps {
   mode: 'create' | 'edit';
   initialRule?: MerchantTaxRule;
   submitting: boolean;
+  formError?: string | null;
   onCancel: () => void;
   onSubmit: (dto: CreateTaxRuleDto | UpdateTaxRuleDto) => void;
 }
@@ -40,6 +41,7 @@ const TaxRuleFormModal: React.FC<TaxRuleFormModalProps> = ({
   mode,
   initialRule,
   submitting,
+  formError,
   onCancel,
   onSubmit,
 }) => {
@@ -106,6 +108,11 @@ const TaxRuleFormModal: React.FC<TaxRuleFormModalProps> = ({
         </div>
         <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
           <div className="p-6 space-y-4 overflow-y-auto flex-1">
+            {formError && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded font-medium">
+                {formError}
+              </div>
+            )}
             <div className="flex flex-col gap-1.5">
               <label htmlFor="tax-rule-name" className="text-[11px] font-bold text-[#5f5e5e] uppercase">
                 Rule Name
@@ -342,109 +349,6 @@ const ConfirmStatusDialog: React.FC<ConfirmStatusDialogProps> = ({
   );
 };
 
-export const MOCK_SEED_TAX_RULES: MerchantTaxRule[] = [
-  {
-    id: 1,
-    name: 'IVA General Standard Sales Tax (19%)',
-    description: 'Standard 19% national value added sales tax applicable to POS items',
-    taxType: 'percentage',
-    rate: 0.19,
-    appliesToTips: false,
-    appliesToOvertime: false,
-    status: 'active',
-    externalTaxCode: 'TAX-IVA-19',
-    createdAt: '2026-08-01T10:00:00Z',
-    updatedAt: '2026-08-01T10:00:00Z',
-  },
-  {
-    id: 2,
-    name: 'Impuesto al Consumo ICO F&B (8%)',
-    description: 'National 8% food & beverage consumption tax rate for restaurant sales',
-    taxType: 'percentage',
-    rate: 0.08,
-    appliesToTips: false,
-    appliesToOvertime: false,
-    status: 'active',
-    externalTaxCode: 'TAX-ICO-08',
-    createdAt: '2026-08-01T10:00:00Z',
-    updatedAt: '2026-08-01T10:00:00Z',
-  },
-  {
-    id: 3,
-    name: 'Impuesto Municipal de Licores (5%)',
-    description: 'Compound 5% luxury liquor tax surcharge calculated on subtotal',
-    taxType: 'compound',
-    rate: 0.05,
-    appliesToTips: false,
-    appliesToOvertime: false,
-    status: 'active',
-    externalTaxCode: 'TAX-LIC-05',
-    createdAt: '2026-08-01T10:00:00Z',
-    updatedAt: '2026-08-01T10:00:00Z',
-  },
-  {
-    id: 4,
-    name: 'Tasa Fija por Bolsa Plástica Ecológica ($0.25)',
-    description: 'Fixed $0.25 environmental bag surcharge fee per order transaction',
-    taxType: 'fixed',
-    rate: 0.25,
-    appliesToTips: false,
-    appliesToOvertime: false,
-    status: 'active',
-    externalTaxCode: 'TAX-BAG-025',
-    createdAt: '2026-08-01T10:00:00Z',
-    updatedAt: '2026-08-01T10:00:00Z',
-  },
-  {
-    id: 5,
-    name: 'Retención de Impuesto sobre Propinas (10%)',
-    description: 'Special 10% tax retention rule applying directly to voluntary customer tips',
-    taxType: 'percentage',
-    rate: 0.10,
-    appliesToTips: true,
-    appliesToOvertime: false,
-    status: 'inactive',
-    externalTaxCode: 'TAX-TIP-10',
-    createdAt: '2026-08-01T10:00:00Z',
-    updatedAt: '2026-08-01T10:00:00Z',
-  },
-];
-
-const STORAGE_KEY = 'x7_merchant_tax_rules_v1';
-
-export function getStoredTaxRules(): MerchantTaxRule[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((r: any) => ({
-          ...r,
-          id: r?.id ?? Math.random(),
-          name: r?.name || 'Tax Rule',
-          description: r?.description || '',
-          taxType: r?.taxType || 'percentage',
-          rate: typeof r?.rate === 'number' ? r.rate : 0,
-          appliesToTips: Boolean(r?.appliesToTips),
-          appliesToOvertime: Boolean(r?.appliesToOvertime),
-          status: r?.status || 'active',
-        }));
-      }
-    }
-  } catch (e) {
-    // fallback
-  }
-  return MOCK_SEED_TAX_RULES;
-}
-
-export function saveStoredTaxRules(rules: MerchantTaxRule[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(rules));
-  } catch (e) {
-    // ignore
-  }
-}
-
 interface TaxRulesViewProps {
   onNavigate?: (view: string) => void;
 }
@@ -462,6 +366,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
   const [formModalOpen, setFormModalOpen] = useState<null | { mode: 'create' | 'edit'; rule?: MerchantTaxRule }>(null);
   const [formSubmitting, setFormSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [detailRule, setDetailRule] = useState<MerchantTaxRule | null>(null);
   const [togglingRule, setTogglingRule] = useState<MerchantTaxRule | null>(null);
@@ -492,19 +397,16 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
       }
 
       if (!res || !res.ok) {
-        const stored = getStoredTaxRules();
-        setRules(stored);
+        setError('Failed to load tax rules. Server returned an error.');
         return;
       }
 
       const json = await res.json();
       const loaded = json.data ?? [];
-      const finalRules = loaded.length > 0 ? loaded : getStoredTaxRules();
-      setRules(finalRules);
-      saveStoredTaxRules(finalRules);
-    } catch (err) {
-      console.error('Error fetching tax rules, loading stored rules:', err);
-      setRules(getStoredTaxRules());
+      setRules(loaded);
+    } catch (err: any) {
+      console.error('Error fetching tax rules:', err);
+      setError(err?.message || 'Failed to load tax rules');
     } finally {
       setLoading(false);
     }
@@ -534,34 +436,15 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
       }
 
       const json = res ? await res.json().catch(() => ({})) : {};
+      setFormModalOpen(null);
+
       if (!res || !res.ok) {
-        const newRule: MerchantTaxRule = {
-          id: Date.now(),
-          name: dto.name,
-          description: dto.description,
-          taxType: dto.taxType,
-          rate: dto.rate,
-          appliesToTips: dto.appliesToTips ?? false,
-          appliesToOvertime: dto.appliesToOvertime ?? false,
-          status: 'active',
-          externalTaxCode: dto.externalTaxCode,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        setRules((prev) => {
-          const updated = [newRule, ...prev];
-          saveStoredTaxRules(updated);
-          return updated;
-        });
-      } else {
-        setRules((prev) => {
-          const updated = [json.data, ...prev];
-          saveStoredTaxRules(updated);
-          return updated;
-        });
+        setToast({ message: json.message || 'Failed to create tax rule', type: 'error' });
+        return;
       }
 
-      setFormModalOpen(null);
+      setRules((prev) => [json.data, ...prev]);
+
       setToast({ message: 'Tax rule created successfully', type: 'success' });
     } catch (err: any) {
       setFormModalOpen(null);
@@ -591,29 +474,15 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
       }
 
       const json = res ? await res.json().catch(() => ({})) : {};
+      setFormModalOpen(null);
+
       if (!res || !res.ok) {
-        setRules((prev) => {
-          const updated = prev.map((r) =>
-            r.id === ruleId
-              ? {
-                  ...r,
-                  ...dto,
-                  updatedAt: new Date().toISOString(),
-                }
-              : r,
-          );
-          saveStoredTaxRules(updated);
-          return updated;
-        });
-      } else {
-        setRules((prev) => {
-          const updated = prev.map((r) => (r.id === json.data.id ? json.data : r));
-          saveStoredTaxRules(updated);
-          return updated;
-        });
+        setToast({ message: json.message || 'Failed to update tax rule', type: 'error' });
+        return;
       }
 
-      setFormModalOpen(null);
+      setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
+
       setToast({ message: 'Tax rule updated successfully', type: 'success' });
     } catch (err: any) {
       setFormModalOpen(null);
@@ -646,21 +515,15 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       const json = res ? await res.json().catch(() => ({})) : {};
       if (!res || !res.ok) {
-        setRules((prev) => {
-          const updated = prev.map((r) =>
+        setRules((prev) =>
+          prev.map((r) =>
             r.id === togglingRule.id
               ? { ...r, status: nextStatus, updatedAt: new Date().toISOString() }
               : r,
-          );
-          saveStoredTaxRules(updated);
-          return updated;
-        });
+          ),
+        );
       } else {
-        setRules((prev) => {
-          const updated = prev.map((r) => (r.id === json.data.id ? json.data : r));
-          saveStoredTaxRules(updated);
-          return updated;
-        });
+        setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
       }
 
       setTogglingRule(null);
@@ -1071,7 +934,11 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
           mode={formModalOpen.mode}
           initialRule={formModalOpen.rule}
           submitting={formSubmitting}
-          onCancel={() => setFormModalOpen(null)}
+          formError={formError}
+          onCancel={() => {
+            setFormModalOpen(null);
+            setFormError(null);
+          }}
           onSubmit={(dto) =>
             formModalOpen.mode === 'create'
               ? handleCreateSubmit(dto as CreateTaxRuleDto)

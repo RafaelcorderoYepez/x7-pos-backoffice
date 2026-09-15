@@ -1,10 +1,10 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { TaxRulesView } from './TaxRulesView';
 import type { MerchantTaxRule } from '../../../../types/configuration';
 
-vi.mock('../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', () => ({
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -311,7 +311,7 @@ describe('TaxRulesView — create tax rule', () => {
     await screen.findByText('State Sales Tax');
     await user.click(screen.getByRole('button', { name: /add tax rule/i }));
 
-    await user.type(screen.getByLabelText('Rule Name'), 'a'.repeat(51));
+    fireEvent.change(screen.getByLabelText('Rule Name'), { target: { value: 'a'.repeat(51) } });
     await user.type(screen.getByLabelText('Description'), 'valid description');
     await user.type(screen.getByLabelText('Rate'), '0.1');
 
@@ -325,7 +325,7 @@ describe('TaxRulesView — create tax rule', () => {
     await user.click(screen.getByRole('button', { name: /add tax rule/i }));
 
     await user.type(screen.getByLabelText('Rule Name'), 'Valid name');
-    await user.type(screen.getByLabelText('Description'), 'a'.repeat(201));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'a'.repeat(201) } });
     await user.type(screen.getByLabelText('Rate'), '0.1');
 
     expect(screen.getByRole('button', { name: /save tax rule/i })).toBeDisabled();

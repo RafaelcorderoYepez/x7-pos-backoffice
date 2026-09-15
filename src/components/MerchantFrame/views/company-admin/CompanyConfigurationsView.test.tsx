@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CompanyConfigurationsView } from './CompanyConfigurationsView';
 import { getCompanyConfigurations } from '../../../../api/companies';
 
-vi.mock('../../../api/companies', () => ({
+vi.mock('../../../../api/companies', () => ({
   getCompanyConfigurations: vi.fn(),
 }));
 

@@ -58,6 +58,18 @@ export const STAFF_SHORTCUT_ANCHORS: StaffShortcutAnchor[] = [
     icon: 'swap_horiz',
   },
   {
+    key: 'open-shifts',
+    route: '/staff-management/schedule/marketplace',
+    label: 'OPEN SHIFTS MARKETPLACE',
+    icon: 'storefront',
+  },
+  {
+    key: 'labor-forecasting',
+    route: '/staff-management/schedule/labor-forecasting',
+    label: 'LABOR COST FORECASTING',
+    icon: 'query_stats',
+  },
+  {
     key: 'ledger',
     route: '/staff-management/attendance/ledger',
     label: 'ATTENDANCE LEDGER',
@@ -90,6 +102,8 @@ export const StaffManagementQuickLinks: React.FC<StaffManagementQuickLinksProps>
       ((activeModule === 'shift-assignment' || activeModule === 'assignments' || activeModule === 'shifts' || activeModule === 'weekly') && anchor.key === 'shifts') ||
       ((activeModule === 'daily-timeline' || activeModule === 'daily' || activeModule === 'timeline') && anchor.key === 'daily-timeline') ||
       ((activeModule === 'staff-swaps' || activeModule === 'swaps') && anchor.key === 'swaps') ||
+      ((activeModule === 'open-shifts' || activeModule === 'marketplace' || activeModule === '/staff-management/schedule/marketplace') && anchor.key === 'open-shifts') ||
+      ((activeModule === 'labor-forecasting' || activeModule === 'forecasting' || activeModule === '/staff-management/schedule/labor-forecasting') && anchor.key === 'labor-forecasting') ||
       ((activeModule === 'collaborators-time-entries' || activeModule === 'time-entries' || activeModule === 'ledger' || activeModule === 'attendance-ledger') && anchor.key === 'ledger') ||
       ((activeModule === 'tips-ledger' || activeModule === 'tips') && anchor.key === 'tips-ledger') ||
       ((activeModule === 'time-clock-kiosk' || activeModule === 'time-clock' || activeModule === 'kiosk') && anchor.key === 'kiosk');
