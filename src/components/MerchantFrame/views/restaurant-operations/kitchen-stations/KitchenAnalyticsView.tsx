@@ -131,7 +131,40 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [selectedStationId, setSelectedStationId] = useState<number | 'ALL'>('ALL');
-  const [targetSlaMinutes, setTargetSlaMinutes] = useState<number>(10);
+
+  // SLA Thresholds & Configuration Drawer State (Historia X7P-4206)
+  const DEFAULT_STATION_SLA: Record<string, number> = {
+    HOT: 12,
+    COLD: 6,
+    BAR: 4,
+    DESSERT: 5,
+    EXPO: 3,
+    PREP: 8,
+  };
+
+  const [isSlaDrawerOpen, setIsSlaDrawerOpen] = useState<boolean>(false);
+  const [targetSlaMinutes, setTargetSlaMinutes] = useState<number>(() => {
+    const saved = localStorage.getItem('x7_kds_target_sla_mins');
+    return saved ? Number(saved) : 10;
+  });
+  const [criticalSlaMinutes, setCriticalSlaMinutes] = useState<number>(() => {
+    const saved = localStorage.getItem('x7_kds_critical_sla_mins');
+    return saved ? Number(saved) : 15;
+  });
+  const [stationSlaTargets, setStationSlaTargets] = useState<Record<string, number>>(() => {
+    const saved = localStorage.getItem('x7_kds_station_sla_targets');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {}
+    }
+    return DEFAULT_STATION_SLA;
+  });
+
+  // Drawer Form Transient States
+  const [formTargetSla, setFormTargetSla] = useState<number>(targetSlaMinutes);
+  const [formCriticalSla, setFormCriticalSla] = useState<number>(criticalSlaMinutes);
+  const [formStationSla, setFormStationSla] = useState<Record<string, number>>(stationSlaTargets);
 
   // Table options for Station Efficiency Table
   const [rowDensity, setRowDensity] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
@@ -383,10 +416,28 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
     fetchAnalytics();
   }, [selectedPreset, startDate, endDate, selectedStationId, targetSlaMinutes]);
 
-  // Station Efficiency comparison list
+  // Station Efficiency comparison list with Live SLA Threshold Reactivity (Historia X7P-4206)
   const efficiencyList = useMemo(() => {
-    return data?.stationEfficiencyMatrix || [];
-  }, [data]);
+    const base = data?.stationEfficiencyMatrix || [];
+    return base.map((st) => {
+      const targetMins = stationSlaTargets[st.stationType?.toUpperCase()] || targetSlaMinutes;
+      const targetSecs = targetMins * 60;
+      const criticalSecs = criticalSlaMinutes * 60;
+      const avgSec = st.avgPrepTimeSeconds;
+
+      let dynamicRating: StationEfficiencyRating = 'optimal';
+      if (avgSec > criticalSecs || st.peakQueueCapacity > 15) {
+        dynamicRating = 'critical';
+      } else if (avgSec > targetSecs || st.peakQueueCapacity > 8) {
+        dynamicRating = 'warning';
+      }
+
+      return {
+        ...st,
+        efficiencyRating: dynamicRating,
+      };
+    });
+  }, [data, targetSlaMinutes, criticalSlaMinutes, stationSlaTargets]);
 
   // Bottlenecks list
   const bottleneckList = useMemo(() => {
@@ -405,6 +456,28 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
   }, [efficiencyList, currentPage, pageSize]);
 
   const activeColSpan = Object.values(visibleColumns).filter(Boolean).length;
+
+  // Save SLA Configuration (Historia X7P-4206)
+  const handleSaveSlaSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    setTargetSlaMinutes(formTargetSla);
+    setCriticalSlaMinutes(formCriticalSla);
+    setStationSlaTargets(formStationSla);
+
+    localStorage.setItem('x7_kds_target_sla_mins', String(formTargetSla));
+    localStorage.setItem('x7_kds_critical_sla_mins', String(formCriticalSla));
+    localStorage.setItem('x7_kds_station_sla_targets', JSON.stringify(formStationSla));
+
+    setIsSlaDrawerOpen(false);
+    showToast('SLA threshold targets updated and applied across dashboards.', 'success');
+  };
+
+  // Reset SLA Defaults (Historia X7P-4206)
+  const handleResetSlaDefaults = () => {
+    setFormTargetSla(10);
+    setFormCriticalSla(15);
+    setFormStationSla(DEFAULT_STATION_SLA);
+  };
 
   // Open Interactive Drill-Down for Station
   const handleStationDrillDown = (st: StationEfficiencyItem) => {
@@ -450,31 +523,271 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
     });
   };
 
-  // Export Analytics to CSV
+  // Executive Report Export Engine: CSV Dataset (Historia X7P-4206)
   const exportToCSV = () => {
-    if (!efficiencyList.length) return;
-    const headers = ['Station ID', 'Station Name', 'Station Type', 'Total Items Prepared', 'Avg Prep Time (Sec)', 'Avg Prep Time Formatted', 'Peak Queue Capacity', 'Efficiency Rating'];
-    const rows = efficiencyList.map((s) => [
-      s.stationId,
-      `"${s.stationName.replace(/"/g, '""')}"`,
-      s.stationType,
-      s.totalItemsPrepared,
-      s.avgPrepTimeSeconds,
-      `"${s.avgPrepTimeFormatted}"`,
-      s.peakQueueCapacity,
-      s.efficiencyRating,
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    if (!data) return;
+
+    const lines: string[] = [];
+    lines.push('=== X7POS KDS EXECUTIVE ANALYTICS REPORT ===');
+    lines.push(`Report Generated,${new Date().toISOString()}`);
+    lines.push(`Date Range Preset,${selectedPreset.toUpperCase()}`);
+    lines.push(`Date Filter Range,${startDate || 'All Time'} to ${endDate || 'Now'}`);
+    lines.push(`Station Scope,${selectedStationId === 'ALL' ? 'All Stations' : `Station #${selectedStationId}`}`);
+    lines.push(`Global Target SLA Window,${targetSlaMinutes} Minutes`);
+    lines.push(`Critical Delay Threshold,${criticalSlaMinutes} Minutes`);
+    lines.push('');
+
+    lines.push('=== 1. EXECUTIVE SUMMARY KPIS ===');
+    lines.push('Metric,Value');
+    lines.push(`Total Orders Processed,${data.totalOrdersProcessed}`);
+    lines.push(`Completed Orders,${data.completedOrders}`);
+    lines.push(`Started In-Preparation,${data.startedOrders}`);
+    lines.push(`Pending in Queue,${data.pendingOrders}`);
+    lines.push(`Cancelled Orders,${data.cancelledOrders}`);
+    lines.push(`Cancellation Rate,${data.cancellationRate}%`);
+    lines.push(`Mean Kitchen SOS Speed,${data.avgPrepTimeFormatted}`);
+    lines.push(`SLA Compliance Rate,${data.slaComplianceRate}%`);
+    lines.push(`Total Bottleneck Dishes,${bottleneckList.length}`);
+    lines.push('');
+
+    lines.push('=== 2. STATION PERFORMANCE COMPARISON MATRIX ===');
+    lines.push('Station ID,Station Name,Role Discipline,Custom Target (Min),Total Items Prepared,Avg Prep Seconds,Avg Prep Formatted,Peak Queue Tickets,Efficiency Rating');
+    efficiencyList.forEach((s) => {
+      const target = stationSlaTargets[s.stationType?.toUpperCase()] || targetSlaMinutes;
+      lines.push([
+        s.stationId,
+        `"${s.stationName.replace(/"/g, '""')}"`,
+        s.stationType,
+        target,
+        s.totalItemsPrepared,
+        s.avgPrepTimeSeconds,
+        `"${s.avgPrepTimeFormatted}"`,
+        s.peakQueueCapacity,
+        s.efficiencyRating.toUpperCase(),
+      ].join(','));
+    });
+    lines.push('');
+
+    lines.push('=== 3. TOP PREP BOTTLENECK DISHES ===');
+    lines.push('Product ID,Product Name,Variant Name,Quantity Prepared,Avg Prep Seconds,Avg Prep Formatted,Standard Recipe Sec,Standard Recipe Formatted,Variance Delay Sec,Variance Delay Formatted,Is Bottleneck');
+    bottleneckList.forEach((b) => {
+      lines.push([
+        b.productId,
+        `"${b.productName.replace(/"/g, '""')}"`,
+        `"${(b.variantName || 'Standard').replace(/"/g, '""')}"`,
+        b.totalQuantityPrepared,
+        b.avgPrepTimeSeconds,
+        `"${b.avgPrepTimeFormatted}"`,
+        b.standardCookingTimeSeconds,
+        `"${b.standardCookingTimeFormatted}"`,
+        b.varianceSeconds,
+        `"${b.varianceFormatted}"`,
+        b.isBottleneck ? 'YES' : 'NO',
+      ].join(','));
+    });
+    lines.push('');
+
+    lines.push('=== 4. HOURLY SPEED OF SERVICE (SOS) TRENDS ===');
+    lines.push('Hour Label,Orders Completed,Avg Prep Minutes,Is Peak Rush');
+    (data.hourlyHeatmap || []).forEach((h) => {
+      lines.push([
+        `"${h.label}"`,
+        h.orderCount,
+        h.avgPrepTimeMinutes,
+        h.isPeakRush ? 'YES' : 'NO',
+      ].join(','));
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + lines.join('\n');
     const link = document.createElement('a');
     link.setAttribute('href', encodeURI(csvContent));
-    link.setAttribute('download', `kds_station_efficiency_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `kds_executive_report_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('Matriz de Eficiencia de Estaciones exportada a CSV', 'success');
+    showToast('Executive CSV dataset downloaded successfully.', 'success');
   };
 
-  // Export Analytics to JSON
+  // Executive Report Export Engine: PDF Generation (Historia X7P-4206)
+  const exportToPDF = () => {
+    if (!data) return;
+
+    const reportWindow = window.open('', '_blank');
+    if (!reportWindow) {
+      showToast('Popup blocked. Please allow popups to view and download executive PDF reports.', 'warning');
+      return;
+    }
+
+    const dateFilterLabel =
+      selectedPreset === 'custom'
+        ? `${startDate || 'Start'} to ${endDate || 'Now'}`
+        : selectedPreset.toUpperCase();
+
+    const stationFilterLabel =
+      selectedStationId === 'ALL'
+        ? 'All Kitchen Stations'
+        : stations.find((s) => s.id === selectedStationId)?.name || `Station #${selectedStationId}`;
+
+    const totalItemsCount = efficiencyList.reduce((acc, s) => acc + s.totalItemsPrepared, 0);
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>X7POS - Executive Kitchen Analytics Report (${new Date().toISOString().slice(0, 10)})</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Poppins', sans-serif; background: #ffffff; color: #1d1c17; padding: 32px; font-size: 12px; }
+          .header { border-bottom: 3px solid #ae001a; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-end; }
+          .logo { font-size: 24px; font-weight: 800; color: #ae001a; letter-spacing: -0.5px; }
+          .subtitle { font-size: 11px; color: #5f5e5e; font-weight: 600; text-transform: uppercase; margin-top: 4px; }
+          .meta { font-size: 10px; color: #5f5e5e; text-align: right; line-height: 1.5; }
+          .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+          .kpi-card { border: 1px solid #e8e2d8; border-radius: 8px; padding: 12px; background: #faf8f5; }
+          .kpi-title { font-size: 9px; font-weight: 700; color: #5f5e5e; text-transform: uppercase; letter-spacing: 0.5px; }
+          .kpi-val { font-size: 20px; font-weight: 800; color: #1d1c17; margin-top: 4px; }
+          .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #1d1c17; border-bottom: 1px solid #e8e2d8; padding-bottom: 6px; margin: 24px 0 12px 0; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }
+          th { background: #f2ede5; color: #5f5e5e; font-weight: 700; text-transform: uppercase; font-size: 9px; padding: 8px 10px; text-align: left; border-bottom: 2px solid #e8e2d8; }
+          td { padding: 8px 10px; border-bottom: 1px solid #f0ede6; }
+          .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+          .badge-opt { background: #dcfce7; color: #166534; }
+          .badge-warn { background: #fef3c7; color: #92400e; }
+          .badge-crit { background: #fee2e2; color: #991b1b; }
+          .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e8e2d8; display: flex; justify-content: space-between; font-size: 10px; color: #73726c; }
+          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; }
+          .sig-line { border-top: 1px dashed #73726c; padding-top: 6px; text-align: center; font-size: 10px; font-weight: 600; color: #5f5e5e; }
+          @media print {
+            body { padding: 0; }
+            button { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <div class="logo">X7POS <span style="font-weight: 400; color: #1d1c17; font-size: 18px;">| Executive Kitchen Intelligence</span></div>
+            <div class="subtitle">Speed of Service, Station Throughput &amp; SLA Audit Report</div>
+          </div>
+          <div class="meta">
+            <div><strong>Generated:</strong> ${new Date().toLocaleString('en-US')}</div>
+            <div><strong>Period:</strong> ${dateFilterLabel}</div>
+            <div><strong>Scope:</strong> ${stationFilterLabel}</div>
+            <div><strong>SLA Target:</strong> ${targetSlaMinutes} Mins Window</div>
+          </div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi-card">
+            <div class="kpi-title">Items Prepared</div>
+            <div class="kpi-val">${totalItemsCount} items</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Mean Prep Speed</div>
+            <div class="kpi-val">${data.avgPrepTimeFormatted || 'N/A'}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">SLA Compliance</div>
+            <div class="kpi-val" style="color: ${data.slaComplianceRate >= 90 ? '#166534' : '#991b1b'};">${data.slaComplianceRate}%</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Top Bottlenecks</div>
+            <div class="kpi-val" style="color: #ae001a;">${top5Bottlenecks.length} dishes</div>
+          </div>
+        </div>
+
+        <div class="section-title">1. Station Performance Comparison Matrix</div>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Station Name</th>
+              <th>Discipline</th>
+              <th>Target Window</th>
+              <th>Items Prepared</th>
+              <th>Avg Prep Time</th>
+              <th>Peak Queue</th>
+              <th>Efficiency Rating</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${efficiencyList.map((st) => {
+              const target = stationSlaTargets[st.stationType?.toUpperCase()] || targetSlaMinutes;
+              const badgeClass = st.efficiencyRating === 'optimal' ? 'badge-opt' : st.efficiencyRating === 'warning' ? 'badge-warn' : 'badge-crit';
+              return `
+                <tr>
+                  <td>#KST-${st.stationId}</td>
+                  <td><strong>${st.stationName}</strong></td>
+                  <td>${st.stationType}</td>
+                  <td>${target} mins</td>
+                  <td>${st.totalItemsPrepared}</td>
+                  <td>${st.avgPrepTimeFormatted}</td>
+                  <td>${st.peakQueueCapacity} tickets</td>
+                  <td><span class="badge ${badgeClass}">${st.efficiencyRating.toUpperCase()}</span></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+
+        <div class="section-title">2. Top 5 Item Prep Bottlenecks</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Dish Name</th>
+              <th>Variant</th>
+              <th>Prepared Qty</th>
+              <th>Mean Cooking Time</th>
+              <th>Standard Recipe</th>
+              <th>Variance Delay</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${top5Bottlenecks.map((b) => `
+              <tr>
+                <td><strong>${b.productName}</strong></td>
+                <td>${b.variantName || 'Standard'}</td>
+                <td>${b.totalQuantityPrepared} units</td>
+                <td style="color: #ae001a; font-weight: 700;">${b.avgPrepTimeFormatted}</td>
+                <td>${b.standardCookingTimeFormatted}</td>
+                <td style="color: ${b.varianceSeconds > 0 ? '#b91c1c' : '#166534'}; font-weight: 700;">${b.varianceFormatted}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div class="signatures">
+          <div>
+            <div class="sig-line">Executive Chef / Kitchen Manager Signature</div>
+          </div>
+          <div>
+            <div class="sig-line">Store Operations Director / Store Administrator Sign-off</div>
+          </div>
+        </div>
+
+        <div class="footer">
+          <div>Confidential — For Internal Executive &amp; Audit Use Only — X7POS System</div>
+          <div>Page 1 of 1</div>
+        </div>
+
+        <script>
+          window.onload = function() {
+            setTimeout(function() { window.print(); }, 400);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    reportWindow.document.open();
+    reportWindow.document.write(htmlContent);
+    reportWindow.document.close();
+    showToast('Executive PDF Report window opened for printing / download.', 'success');
+  };
+
+  // Export Analytics to JSON (Developer / Diagnostic Backup)
   const exportToJSON = () => {
     if (!data) return;
     const jsonStr = JSON.stringify(data, null, 2);
@@ -487,7 +800,7 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showToast('Reporte analítico exportado a JSON exitosamente', 'success');
+    showToast('Analytics dataset exported to JSON successfully.', 'success');
   };
 
   // Badge Color Mapper for Station Type
@@ -551,7 +864,46 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* 1. SLA Configuration Drawer Trigger (Story X7P-4206) */}
+            <button
+              type="button"
+              onClick={() => {
+                setFormTargetSla(targetSlaMinutes);
+                setFormCriticalSla(criticalSlaMinutes);
+                setFormStationSla(stationSlaTargets);
+                setIsSlaDrawerOpen(true);
+              }}
+              className="bg-white border border-[#e8e2d8] text-[#1d1c17] hover:border-[#ae001a] hover:text-[#ae001a] font-bold text-xs px-3.5 py-2 rounded transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer uppercase"
+              title="Configure Target SLA Windows & Alert Thresholds"
+            >
+              <span className="material-symbols-outlined text-base text-amber-700">tune</span>
+              <span>SLA Settings</span>
+            </button>
+
+            {/* 2. Executive Report Export Engine: PDF (Story X7P-4206) */}
+            <button
+              type="button"
+              onClick={exportToPDF}
+              className="bg-white border border-[#e8e2d8] text-[#1d1c17] hover:border-[#ae001a] hover:text-[#ae001a] font-bold text-xs px-3.5 py-2 rounded transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer uppercase"
+              title="Export Executive PDF Kitchen Report"
+            >
+              <span className="material-symbols-outlined text-base text-[#ae001a]">picture_as_pdf</span>
+              <span>Export PDF</span>
+            </button>
+
+            {/* 3. Executive Report Export Engine: CSV (Story X7P-4206) */}
+            <button
+              type="button"
+              onClick={exportToCSV}
+              className="bg-white border border-[#e8e2d8] text-[#1d1c17] hover:border-[#ae001a] hover:text-[#ae001a] font-bold text-xs px-3.5 py-2 rounded transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer uppercase"
+              title="Export Comprehensive CSV Dataset"
+            >
+              <span className="material-symbols-outlined text-base text-emerald-700">download</span>
+              <span>Export CSV</span>
+            </button>
+
+            {/* 4. Refresh / Sync Telemetry */}
             <button
               type="button"
               onClick={() => fetchAnalytics(false)}
@@ -1425,6 +1777,201 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
                 >
                   Close Drill-Down
                 </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* 5. KITCHEN SLA THRESHOLDS CONFIGURATION DRAWER (Story X7P-4206) */}
+      {isSlaDrawerOpen &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-end items-stretch backdrop-blur-xs font-sans animate-fade-in">
+            <div className="bg-white border-l border-[#e8e2d8] shadow-2xl w-full max-w-lg h-full overflow-y-auto flex flex-col justify-between animate-slide-in-right">
+              {/* Drawer Header */}
+              <div>
+                <div className="p-5 bg-[#222222] text-white flex justify-between items-center">
+                  <div className="flex items-center gap-2.5">
+                    <span className="material-symbols-outlined text-[#ae001a] text-2xl">
+                      tune
+                    </span>
+                    <div>
+                      <h3 className="font-bold text-sm tracking-wider uppercase">
+                        KITCHEN SLA THRESHOLDS CONFIGURATION
+                      </h3>
+                      <span className="text-[10px] text-zinc-400 font-mono">
+                        Target Prep Windows &amp; Real-Time Warning Thresholds
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsSlaDrawerOpen(false)}
+                    className="text-zinc-400 hover:text-white p-1 rounded transition-colors cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-xl">close</span>
+                  </button>
+                </div>
+
+                {/* Form Body */}
+                <form id="sla-config-form" onSubmit={handleSaveSlaSettings} className="p-6 space-y-6 text-left">
+                  {/* Parameter 1: Target Prep Time per Ticket */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#1d1c17] uppercase tracking-wider">
+                        Target Prep Time per Ticket
+                      </label>
+                      <span className="px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono font-bold text-xs border border-emerald-200">
+                        {formTargetSla} Mins Window
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#5f5e5e] leading-relaxed">
+                      Target limit in minutes. Orders prepared within this window achieve full SLA compliance.
+                    </p>
+                    <input
+                      type="range"
+                      min={4}
+                      max={25}
+                      step={1}
+                      value={formTargetSla}
+                      onChange={(e) => setFormTargetSla(Number(e.target.value))}
+                      className="w-full accent-[#ae001a] cursor-pointer"
+                    />
+                    <div className="flex items-center gap-2 pt-1">
+                      {[8, 10, 12, 15].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setFormTargetSla(val)}
+                          className={`px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
+                            formTargetSla === val
+                              ? 'bg-[#1d1c17] text-white shadow-xs'
+                              : 'bg-[#f5f2eb] text-[#5f5e5e] hover:bg-[#e8e2d8]'
+                          }`}
+                        >
+                          {val}m Target
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Parameter 2: Critical Delay Alert Threshold */}
+                  <div className="space-y-2 border-t border-[#e8e2d8] pt-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-[#1d1c17] uppercase tracking-wider">
+                        Critical Delay Alert Threshold
+                      </label>
+                      <span className="px-2.5 py-0.5 rounded bg-red-100 text-[#ae001a] font-mono font-bold text-xs border border-red-200">
+                        {formCriticalSla} Mins Ceiling
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[#5f5e5e] leading-relaxed">
+                      Severe delay ceiling. Stations or tickets exceeding this duration trigger critical red warnings.
+                    </p>
+                    <input
+                      type="range"
+                      min={10}
+                      max={35}
+                      step={1}
+                      value={formCriticalSla}
+                      onChange={(e) => setFormCriticalSla(Number(e.target.value))}
+                      className="w-full accent-[#ae001a] cursor-pointer"
+                    />
+                    <div className="flex items-center gap-2 pt-1">
+                      {[12, 15, 18, 20].map((val) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setFormCriticalSla(val)}
+                          className={`px-3 py-1 rounded text-xs font-bold transition-colors cursor-pointer ${
+                            formCriticalSla === val
+                              ? 'bg-[#ae001a] text-white shadow-xs'
+                              : 'bg-[#f5f2eb] text-[#5f5e5e] hover:bg-[#e8e2d8]'
+                          }`}
+                        >
+                          {val}m Alert
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Parameter 3: Station Target Times by Discipline */}
+                  <div className="space-y-3 border-t border-[#e8e2d8] pt-4">
+                    <div>
+                      <label className="text-xs font-bold text-[#1d1c17] uppercase tracking-wider block">
+                        Station Target Times by Discipline
+                      </label>
+                      <p className="text-[11px] text-[#5f5e5e] mt-0.5 leading-relaxed">
+                        Fine-tune target preparation times by physical cooking discipline (e.g. Cold Station: 6 mins, Hot Station: 12 mins).
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { type: 'HOT', label: 'Hot Line & Grill', icon: 'local_fire_department', color: 'text-red-700' },
+                        { type: 'COLD', label: 'Cold Prep & Salad', icon: 'ac_unit', color: 'text-blue-700' },
+                        { type: 'BAR', label: 'Beverage & Bar', icon: 'local_bar', color: 'text-purple-700' },
+                        { type: 'DESSERT', label: 'Bakery & Dessert', icon: 'cake', color: 'text-pink-700' },
+                        { type: 'EXPO', label: 'Expo & Final QA', icon: 'verified', color: 'text-emerald-700' },
+                        { type: 'PREP', label: 'Prep & Batch Line', icon: 'soup_kitchen', color: 'text-amber-700' },
+                      ].map((item) => (
+                        <div key={item.type} className="p-3 bg-[#faf8f5] border border-[#e8e2d8] rounded-lg">
+                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                            <span className="text-[10px] font-bold text-[#5f5e5e] uppercase truncate">
+                              {item.label}
+                            </span>
+                            <span className={`material-symbols-outlined text-sm ${item.color}`}>
+                              {item.icon}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              max={60}
+                              value={formStationSla[item.type] ?? 10}
+                              onChange={(e) =>
+                                setFormStationSla({
+                                  ...formStationSla,
+                                  [item.type]: Math.max(1, Number(e.target.value) || 1),
+                                })
+                              }
+                              className="w-full px-2 py-1 bg-white border border-[#e8e2d8] rounded text-xs font-mono font-bold text-[#1d1c17] focus:outline-none focus:border-[#ae001a]"
+                            />
+                            <span className="text-xs font-bold text-[#5f5e5e]">min</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </form>
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="p-4 bg-[#f8f6f0] border-t border-[#e8e2d8] flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={handleResetSlaDefaults}
+                  className="px-3 py-2 text-xs font-bold text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
+                >
+                  Reset Defaults
+                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSlaDrawerOpen(false)}
+                    className="px-4 py-2 border border-[#e8e2d8] text-[#5f5e5e] text-xs font-bold uppercase rounded hover:bg-zinc-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    form="sla-config-form"
+                    className="px-5 py-2 bg-[#ae001a] hover:bg-[#c4001d] text-white text-xs font-bold uppercase rounded transition-colors shadow-xs cursor-pointer font-bold"
+                  >
+                    Save &amp; Apply SLA Targets
+                  </button>
+                </div>
               </div>
             </div>
           </div>,
