@@ -172,6 +172,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const [formIpAddress, setFormIpAddress] = useState<string>('');
   const [formStationId, setFormStationId] = useState<string>('');
   const [formIsOnline, setFormIsOnline] = useState<boolean>(true);
+  const [formStatus, setFormStatus] = useState<KitchenDisplayDeviceStatus>('active');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -228,6 +229,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       const params = new URLSearchParams();
       if (statusFilter === 'Deleted') params.append('status', 'deleted');
       else if (statusFilter === 'Active') params.append('status', 'active');
+      else if (statusFilter === 'All') params.append('status', 'all');
 
       if (connectivityFilter === 'Online') params.append('isOnline', 'true');
       else if (connectivityFilter === 'Offline') params.append('isOnline', 'false');
@@ -310,9 +312,17 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   });
 
   // KPI Metrics
-  const onlineCount = devices.filter((d) => d.is_online && d.status === 'active').length;
-  const offlineCount = devices.filter((d) => !d.is_online && d.status === 'active').length;
-  const unassignedCount = devices.filter((d) => !d.station_id && d.status === 'active').length;
+  const activeDevices = devices.filter((d) => d.status === 'active');
+  const totalActiveCount = activeDevices.length;
+  const onlineCount = activeDevices.filter((d) => d.is_online).length;
+  const unassignedCount = activeDevices.filter((d) => !d.station_id).length;
+
+  const FIVE_MINS_MS = 5 * 60 * 1000;
+  const outOfSyncCount = activeDevices.filter((d) => {
+    if (!d.last_sync) return true;
+    const syncTime = new Date(d.last_sync).getTime();
+    return Date.now() - syncTime > FIVE_MINS_MS;
+  }).length;
 
   // Calculador de tiempo relativo ("2 mins ago", "1 hr ago", etc.)
   const formatTimeAgo = (isoString: string | null) => {
@@ -343,10 +353,11 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     setDrawerMode('add');
     setEditingDevice(null);
     setFormName('');
-    setFormDeviceIdentifier(`DEV-00${devices.length + 1}-KDS`);
-    setFormIpAddress(`192.168.1.${100 + devices.length + 1}`);
+    setFormDeviceIdentifier('');
+    setFormIpAddress('');
     setFormStationId('');
     setFormIsOnline(true);
+    setFormStatus('active');
     setFormError(null);
     setIsDrawerOpen(true);
   };
@@ -360,6 +371,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     setFormIpAddress(device.ip_address || '');
     setFormStationId(device.station_id ? String(device.station_id) : '');
     setFormIsOnline(device.is_online);
+    setFormStatus(device.status);
     setFormError(null);
     setIsDrawerOpen(true);
   };
@@ -376,10 +388,32 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       return;
     }
 
+    // 1. Validacion IPv4
+    if (formIpAddress.trim()) {
+      const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+      if (!ipv4Regex.test(formIpAddress.trim())) {
+        setFormError('Please enter a valid IPv4 address (e.g. 192.168.1.100)');
+        return;
+      }
+    }
+
+    // 2. Guard del Identificador Unico por Merchant
+    const duplicate = devices.find(
+      (d) =>
+        d.device_identifier.toLowerCase().trim() === formDeviceIdentifier.toLowerCase().trim() &&
+        d.id !== editingDevice?.id &&
+        d.status === 'active'
+    );
+    if (duplicate) {
+      setFormError(`A device with identifier '${formDeviceIdentifier.trim()}' is already paired in this store.`);
+      return;
+    }
+
     setIsSubmitting(true);
     setFormError(null);
 
     const stationObj = formStationId ? stations.find((s) => s.id === Number(formStationId)) : null;
+    const isDeletedStatus = formStatus === 'deleted';
 
     try {
       const token = getAccessToken();
@@ -392,8 +426,9 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         name: formName.trim(),
         deviceIdentifier: formDeviceIdentifier.trim(),
         ipAddress: formIpAddress.trim() || null,
-        stationId: formStationId ? Number(formStationId) : null,
-        isOnline: formIsOnline,
+        stationId: isDeletedStatus ? null : (formStationId ? Number(formStationId) : null),
+        isOnline: isDeletedStatus ? false : formIsOnline,
+        status: formStatus,
       };
 
       const url = drawerMode === 'add' ? `${API_BASE}/kitchen-display-devices` : `${API_BASE}/kitchen-display-devices/${editingDevice?.id}`;
@@ -405,19 +440,27 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         setIsDrawerOpen(false);
         fetchDevices(true);
       } else {
-        // Fallback local
+        const errJson = await res.json().catch(() => null);
+        if (errJson?.message) {
+          const msg = Array.isArray(errJson.message) ? errJson.message[0] : errJson.message;
+          setFormError(msg);
+          setIsSubmitting(false);
+          return;
+        }
+
+        // Fallback local optimista
         if (drawerMode === 'add') {
           const newDev: KitchenDisplayDevice = {
             id: Date.now(),
             merchant_id: 1,
-            station_id: formStationId ? Number(formStationId) : null,
-            station: stationObj ? { id: stationObj.id, name: stationObj.name } : null,
+            station_id: isDeletedStatus ? null : (formStationId ? Number(formStationId) : null),
+            station: isDeletedStatus ? null : (stationObj ? { id: stationObj.id, name: stationObj.name } : null),
             name: formName.trim(),
             device_identifier: formDeviceIdentifier.trim(),
             ip_address: formIpAddress.trim() || null,
-            is_online: formIsOnline,
+            is_online: isDeletedStatus ? false : formIsOnline,
             last_sync: new Date().toISOString(),
-            status: 'active',
+            status: formStatus,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
@@ -431,9 +474,10 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                     name: formName.trim(),
                     device_identifier: formDeviceIdentifier.trim(),
                     ip_address: formIpAddress.trim() || null,
-                    station_id: formStationId ? Number(formStationId) : null,
-                    station: stationObj ? { id: stationObj.id, name: stationObj.name } : null,
-                    is_online: formIsOnline,
+                    station_id: isDeletedStatus ? null : (formStationId ? Number(formStationId) : null),
+                    station: isDeletedStatus ? null : (stationObj ? { id: stationObj.id, name: stationObj.name } : null),
+                    is_online: isDeletedStatus ? false : formIsOnline,
+                    status: formStatus,
                     updated_at: new Date().toISOString(),
                   }
                 : d
@@ -523,20 +567,40 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
       </div>
 
-      {/* 1.5 Real-Time KPI Strip (3 Cuadrados alineados en 1 sola línea horizontal) */}
-      <div className="grid grid-cols-3 gap-4 w-full">
-        {/* KPI 1: Online Devices */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+      {/* 1.5 Real-Time Health Summary KPI Banner (Estrictamente 4 Cuadrados en 1 sola línea horizontal) */}
+      <div className="grid grid-cols-4 gap-4 w-full">
+        {/* KPI 1: Total Registered Active Devices */}
+        <div className="bg-white hover:bg-[#fef9f1] border border-[#e8e2d8] hover:border-[#ae001a] p-4 rounded-xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex items-center justify-between min-w-0 group">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
+            <div className="w-10 h-10 rounded-lg bg-zinc-100 group-hover:bg-[#ae001a] text-zinc-700 group-hover:text-white flex items-center justify-center border border-zinc-200 transition-all shrink-0">
               <span className="material-symbols-outlined text-xl">desktop_windows</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
-                Online Devices
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] group-hover:text-[#ae001a] uppercase tracking-wider truncate transition-colors">
+                Total Registered
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
-                {onlineCount}
+                {totalActiveCount}
+              </div>
+            </div>
+          </div>
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-zinc-100 text-zinc-800 border border-zinc-300 shrink-0">
+            ACTIVE
+          </span>
+        </div>
+
+        {/* KPI 2: Online Devices Gauge */}
+        <div className="bg-white hover:bg-[#fef9f1] border border-[#e8e2d8] hover:border-emerald-500 p-4 rounded-xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex items-center justify-between min-w-0 group">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 group-hover:bg-emerald-500 text-emerald-700 group-hover:text-white flex items-center justify-center border border-emerald-200 transition-all shrink-0">
+              <span className="material-symbols-outlined text-xl">wifi</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] group-hover:text-emerald-800 uppercase tracking-wider truncate transition-colors">
+                Online Ratio
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {onlineCount} <span className="text-xs text-[#5f5e5e] font-normal">/ {totalActiveCount}</span>
               </div>
             </div>
           </div>
@@ -545,43 +609,47 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           </span>
         </div>
 
-        {/* KPI 2: Offline Devices */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        {/* KPI 3: Unassigned Floating Devices */}
+        <div className="bg-white hover:bg-[#fef9f1] border border-[#e8e2d8] hover:border-amber-500 p-4 rounded-xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex items-center justify-between min-w-0 group">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-red-50 text-red-700 flex items-center justify-center border border-red-200 shrink-0">
-              <span className="material-symbols-outlined text-xl">wifi_off</span>
+            <div className="w-10 h-10 rounded-lg bg-amber-50 group-hover:bg-amber-500 text-amber-700 group-hover:text-white flex items-center justify-center border border-amber-200 transition-all shrink-0">
+              <span className="material-symbols-outlined text-xl">countertops</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
-                Offline Devices
-              </div>
-              <div className="text-2xl font-extrabold text-[#1d1c17]">
-                {offlineCount}
-              </div>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-200 shrink-0">
-            OFFLINE
-          </span>
-        </div>
-
-        {/* KPI 3: Unassigned Floating Tablets */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shrink-0">
-              <span className="material-symbols-outlined text-xl">devices_other</span>
-            </div>
-            <div className="min-w-0">
-              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
-                Floating / Unassigned
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] group-hover:text-amber-900 uppercase tracking-wider truncate transition-colors">
+                Floating Units
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
                 {unassignedCount}
               </div>
             </div>
           </div>
-          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
             UNASSIGNED
+          </span>
+        </div>
+
+        {/* KPI 4: Out-of-Sync Warning Gauge */}
+        <div className="bg-white hover:bg-[#fef9f1] border border-[#e8e2d8] hover:border-amber-500 p-4 rounded-xl shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer flex items-center justify-between min-w-0 group">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center border transition-all shrink-0 ${
+              outOfSyncCount > 0 ? 'bg-amber-50 group-hover:bg-amber-500 text-amber-700 group-hover:text-white border-amber-200' : 'bg-emerald-50 group-hover:bg-emerald-500 text-emerald-700 group-hover:text-white border-emerald-200'
+            }`}>
+              <span className="material-symbols-outlined text-xl">published_with_changes</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] group-hover:text-amber-900 uppercase tracking-wider truncate transition-colors">
+                Sync Warnings
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {outOfSyncCount}
+              </div>
+            </div>
+          </div>
+          <span className={`px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase border shrink-0 ${
+            outOfSyncCount > 0 ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+          }`}>
+            {outOfSyncCount > 0 ? '> 5M DELAY' : 'HEALTHY'}
           </span>
         </div>
       </div>
@@ -687,7 +755,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
               className="bg-[#ae001a] text-white font-bold text-label-caps px-6 py-2.5 rounded hover:bg-[#d2272f] transition-colors flex items-center gap-2 font-sans cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">add</span>
-              REGISTER KDS DEVICE
+              PAIR NEW DEVICE
             </button>
 
             {hasActiveFilters && (
@@ -909,13 +977,13 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                 <table className="w-full text-left border-collapse text-xs font-sans">
                   <thead>
                     <tr className="bg-[#ece8e0] text-[#5f5e5e] uppercase text-[11px] tracking-wider font-bold border-b border-[#e8e2d8]">
-                      {visibleColumns.deviceIdentity && <th className="py-3.5 px-4 text-[#5f5e5e] w-[26%]">Device Identity & HW ID</th>}
-                      {visibleColumns.stationBinding && <th className="py-3.5 px-4 text-[#5f5e5e] w-[24%]">Mapped Kitchen Station</th>}
-                      {visibleColumns.ipAddress && <th className="py-3.5 px-4 text-[#5f5e5e] w-[15%]">Network IP Address</th>}
-                      {visibleColumns.connectivity && <th className="py-3.5 px-4 text-center text-[#5f5e5e] w-[12%]">Live Connectivity</th>}
-                      {visibleColumns.lastSync && <th className="py-3.5 px-4 text-[#5f5e5e] w-[13%]">Last Sync Timestamp</th>}
-                      {visibleColumns.status && <th className="py-3.5 px-4 text-center text-[#5f5e5e] w-[5%]">Status</th>}
-                      {visibleColumns.actions && <th className="py-3.5 px-4 text-right text-[#5f5e5e] w-[5%]">Actions</th>}
+                      {visibleColumns.deviceIdentity && <th className="py-3.5 px-4 text-[#5f5e5e]">Device Identity & HW ID</th>}
+                      {visibleColumns.stationBinding && <th className="py-3.5 px-4 text-[#5f5e5e]">Mapped Kitchen Station</th>}
+                      {visibleColumns.ipAddress && <th className="py-3.5 px-4 text-[#5f5e5e]">Network IP Address</th>}
+                      {visibleColumns.connectivity && <th className="py-3.5 px-4 text-center text-[#5f5e5e]">Live Connectivity</th>}
+                      {visibleColumns.lastSync && <th className="py-3.5 px-4 text-[#5f5e5e]">Last Sync Timestamp</th>}
+                      {visibleColumns.status && <th className="py-3.5 px-4 text-center text-[#5f5e5e]">Lifecycle Status</th>}
+                      {visibleColumns.actions && <th className="py-3.5 px-4 text-right text-[#5f5e5e]">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e8e2d8]">
@@ -935,7 +1003,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                           {/* Device Identity Block */}
                           {visibleColumns.deviceIdentity && (
                             <td className={densityPadding}>
-                              <div className="font-bold text-[#1d1c17] text-sm leading-tight">{device.name}</div>
+                              <div className="font-bold text-[#1d1c17] text-sm leading-snug max-w-[220px]">{device.name}</div>
                               <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#f2ede5] text-[#5f5e5e] border border-[#e8e2d8] inline-block mt-0.5">
                                 {device.device_identifier}
                               </span>
@@ -946,14 +1014,14 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                           {visibleColumns.stationBinding && (
                             <td className={densityPadding}>
                               {device.station ? (
-                                <div className="flex flex-wrap items-center gap-1">
-                                  <span className="font-bold text-[#1d1c17] text-xs">{device.station.name}</span>
+                                <div className="flex flex-wrap items-center gap-1.5 max-w-[220px]">
+                                  <span className="font-bold text-[#1d1c17] text-xs leading-snug">{device.station.name}</span>
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
                                     #KST-{device.station.id}
                                   </span>
                                 </div>
                               ) : (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#f2ede5] text-[#5f5e5e] border border-[#e8e2d8] inline-block">
+                                <span className="px-2.5 py-0.5 rounded text-[10px] font-bold bg-[#f2ede5] text-[#5f5e5e] border border-[#e8e2d8] inline-block">
                                   Unassigned / Floating
                                 </span>
                               )}
@@ -962,9 +1030,9 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
                           {/* Network IP Address */}
                           {visibleColumns.ipAddress && (
-                            <td className={densityPadding}>
-                              <div className="flex items-center gap-1 font-mono text-xs text-[#1d1c17] font-semibold">
-                                <span className="material-symbols-outlined text-[15px] text-[#5f5e5e] shrink-0">router</span>
+                            <td className={`${densityPadding} whitespace-nowrap`}>
+                              <div className="flex items-center gap-1.5 font-mono text-xs text-[#1d1c17] font-semibold">
+                                <span className="material-symbols-outlined text-[16px] text-[#5f5e5e]">router</span>
                                 {device.ip_address || '0.0.0.0 (DHCP)'}
                               </div>
                             </td>
@@ -972,15 +1040,15 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
                           {/* Live Connectivity Status */}
                           {visibleColumns.connectivity && (
-                            <td className={`${densityPadding} text-center`}>
+                            <td className={`${densityPadding} text-center whitespace-nowrap`}>
                               {device.is_online ? (
-                                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold">
-                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-bold">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                                   <span>ONLINE</span>
                                 </div>
                               ) : (
-                                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-50 border border-red-200 text-red-800 text-[10px] font-bold">
-                                  <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-red-800 text-[10px] font-bold">
+                                  <span className="w-2 h-2 rounded-full bg-red-500" />
                                   <span>OFFLINE</span>
                                 </div>
                               )}
@@ -989,9 +1057,9 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
                           {/* Last Sync Timestamp */}
                           {visibleColumns.lastSync && (
-                            <td className={densityPadding}>
+                            <td className={`${densityPadding} whitespace-nowrap`}>
                               <div className="font-semibold text-[#1d1c17] text-xs">{formatTimeAgo(device.last_sync)}</div>
-                              <div className="text-[10px] text-[#5f5e5e] font-mono leading-tight">
+                              <div className="text-[10px] text-[#5f5e5e] font-mono">
                                 {device.last_sync ? new Date(device.last_sync).toLocaleString('en-US') : 'No sync recorded'}
                               </div>
                             </td>
@@ -999,13 +1067,13 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
                           {/* Lifecycle Status */}
                           {visibleColumns.status && (
-                            <td className={`${densityPadding} text-center`}>
+                            <td className={`${densityPadding} text-center whitespace-nowrap`}>
                               {isInactive ? (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-zinc-200 text-zinc-600 border border-zinc-300">
+                                <span className="px-2.5 py-1 rounded text-[10px] font-bold uppercase bg-zinc-200 text-zinc-600 border border-zinc-300">
                                   DELETED
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                <span className="px-2.5 py-1 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
                                   ACTIVE
                                 </span>
                               )}
@@ -1014,25 +1082,25 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
                           {/* Actions */}
                           {visibleColumns.actions && (
-                            <td className={`${densityPadding} text-right`}>
-                              <div className="flex items-center justify-end gap-0.5">
+                            <td className={`${densityPadding} text-right whitespace-nowrap`}>
+                              <div className="flex items-center justify-end gap-1">
                                 <button
                                   type="button"
                                   onClick={() => handleToggleOnline(device)}
                                   disabled={isInactive}
-                                  className="p-1 text-zinc-600 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                  className="p-1.5 text-zinc-600 hover:text-amber-700 hover:bg-amber-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                                   title="Toggle connectivity state"
                                 >
-                                  <span className="material-symbols-outlined text-[16px]">sync</span>
+                                  <span className="material-symbols-outlined text-[18px]">sync</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditDrawer(device)}
                                   disabled={isInactive}
-                                  className="p-1 text-zinc-600 hover:text-[#ae001a] hover:bg-[#fef9f1] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                                  className="p-1.5 text-zinc-600 hover:text-[#ae001a] hover:bg-[#fef9f1] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                                   title="Edit device"
                                 >
-                                  <span className="material-symbols-outlined text-[16px]">edit</span>
+                                  <span className="material-symbols-outlined text-[18px]">edit</span>
                                 </button>
                                 <button
                                   type="button"
@@ -1077,6 +1145,8 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       <NavHubBar
         title="KDS Ecosystem Nav Hub"
         titleIcon="space_dashboard"
+        onBackToDashboard={() => onNavigate?.('kitchen-kds-hub')}
+        backToDashboardLabel="KDS COMMAND HUB"
         items={[
           {
             id: 'kitchen-stations',
@@ -1109,92 +1179,106 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             icon: 'history',
             onClick: () => onNavigate?.('kitchen-event-log'),
           },
+          {
+            id: 'kitchen-analytics',
+            label: 'KDS ANALYTICS',
+            icon: 'monitoring',
+            onClick: () => onNavigate?.('kitchen-analytics'),
+          },
         ]}
       />
 
       {/* Drawer Slide-over para Agregar / Editar Dispositivo KDS */}
       {isDrawerOpen &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs animate-fade-in font-sans">
-            <div className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto">
-              <div>
-                {/* Header Drawer */}
-                <div className="p-4 bg-[#1c1b16] text-white flex items-center justify-between border-b-4 border-[#ae001a]">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-amber-500">
-                      {drawerMode === 'add' ? 'add_to_queue' : 'edit'}
-                    </span>
-                    <h2 className="text-base font-bold uppercase tracking-wider">
-                      {drawerMode === 'add' ? 'Register New KDS Device' : 'Edit KDS Device'}
-                    </h2>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsDrawerOpen(false)}
-                    className="text-zinc-400 hover:text-white p-1 rounded-full transition-colors cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-lg">close</span>
-                  </button>
+          <div className="fixed inset-0 z-50 flex justify-end font-sans">
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setIsDrawerOpen(false)} />
+            <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col border-l border-[#e8e2d8] animate-slide-in">
+              {/* Header Drawer (Estilo Raw Materials 1:1) */}
+              <div className="bg-[#222222] p-6 text-white flex justify-between items-center shrink-0">
+                <div>
+                  <span className="text-[10px] text-white/50 font-bold uppercase tracking-widest block mb-0.5">
+                    KDS Hardware Device
+                  </span>
+                  <h3 className="font-black text-lg text-white uppercase tracking-tight font-sans">
+                    {drawerMode === 'add' ? 'Pair New Device' : 'Edit Device'}
+                  </h3>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDrawerOpen(false)}
+                  className="text-white/70 hover:text-white transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
 
-                {/* Body Form */}
-                <form id="kds-device-form" onSubmit={handleSubmitForm} className="p-5 space-y-4 text-xs font-sans">
+              {/* Body Form */}
+              <form id="kds-device-form" onSubmit={handleSubmitForm} className="flex-1 flex flex-col min-h-0">
+                <div className="flex-1 overflow-y-auto p-6 space-y-5">
                   {formError && (
-                    <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded font-semibold">
+                    <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded font-semibold text-xs">
                       {formError}
                     </div>
                   )}
 
                   {/* Device Name */}
-                  <div>
-                    <label className="block text-[#1d1c17] font-bold mb-1">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
                       Device Name <span className="text-[#ae001a]">*</span>
                     </label>
                     <input
                       type="text"
+                      maxLength={100}
                       value={formName}
                       onChange={(e) => setFormName(e.target.value)}
                       placeholder="e.g. Main Grill Display Terminal"
-                      className="w-full p-2.5 bg-[#fef9f1] border border-[#e8e2d8] rounded text-xs font-semibold focus:outline-none focus:border-[#ae001a]"
+                      className="bg-white text-[#1d1c17] px-3.5 py-2 border border-[#e8e2d8] rounded text-body-md focus:border-[#ae001a] outline-none w-full"
                       required
                     />
                   </div>
 
-                  {/* Device Identifier (Serial / MAC) */}
-                  <div>
-                    <label className="block text-[#1d1c17] font-bold mb-1">
+                  {/* Hardware Identifier (Serial / MAC) */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
                       Hardware Identifier (Serial / MAC) <span className="text-[#ae001a]">*</span>
                     </label>
                     <input
                       type="text"
+                      maxLength={100}
                       value={formDeviceIdentifier}
                       onChange={(e) => setFormDeviceIdentifier(e.target.value)}
                       placeholder="e.g. DEV-001-GRILL"
-                      className="w-full p-2.5 bg-[#fef9f1] border border-[#e8e2d8] rounded text-xs font-mono font-bold focus:outline-none focus:border-[#ae001a]"
+                      className="bg-white text-[#1d1c17] px-3.5 py-2 border border-[#e8e2d8] rounded text-body-md font-mono focus:border-[#ae001a] outline-none w-full"
                       required
                     />
                   </div>
 
                   {/* Network IP Address */}
-                  <div>
-                    <label className="block text-[#1d1c17] font-bold mb-1">Network IP Address Assignment</label>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
+                      Network IP Address Assignment
+                    </label>
                     <input
                       type="text"
+                      maxLength={50}
                       value={formIpAddress}
                       onChange={(e) => setFormIpAddress(e.target.value)}
                       placeholder="e.g. 192.168.1.101"
-                      className="w-full p-2.5 bg-[#fef9f1] border border-[#e8e2d8] rounded text-xs font-mono font-semibold focus:outline-none focus:border-[#ae001a]"
+                      className="bg-white text-[#1d1c17] px-3.5 py-2 border border-[#e8e2d8] rounded text-body-md font-mono focus:border-[#ae001a] outline-none w-full"
                     />
-                    <p className="text-[10px] text-[#5f5e5e] mt-1">Leave blank if using automatic DHCP IP assignment.</p>
+                    <p className="text-[10px] text-[#5f5e5e]">Leave blank if using automatic DHCP IP assignment.</p>
                   </div>
 
                   {/* Mapped Kitchen Station */}
-                  <div>
-                    <label className="block text-[#1d1c17] font-bold mb-1">Mapped Kitchen Station</label>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
+                      Mapped Kitchen Station
+                    </label>
                     <select
                       value={formStationId}
                       onChange={(e) => setFormStationId(e.target.value)}
-                      className="w-full p-2.5 bg-[#fef9f1] border border-[#e8e2d8] rounded text-xs font-semibold focus:outline-none focus:border-[#ae001a] cursor-pointer"
+                      className="bg-white text-[#1d1c17] px-3.5 py-2 border border-[#e8e2d8] rounded text-body-md focus:border-[#ae001a] outline-none w-full cursor-pointer"
                     >
                       <option value="">-- Unassigned / Floating Unit --</option>
                       {stations.map((s) => (
@@ -1205,13 +1289,28 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                     </select>
                   </div>
 
+                  {/* Lifecycle Status */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
+                      Lifecycle Status <span className="text-[#ae001a]">*</span>
+                    </label>
+                    <select
+                      value={formStatus}
+                      onChange={(e) => setFormStatus(e.target.value as KitchenDisplayDeviceStatus)}
+                      className="bg-white text-[#1d1c17] px-3.5 py-2 border border-[#e8e2d8] rounded text-body-md focus:border-[#ae001a] outline-none w-full cursor-pointer"
+                    >
+                      <option value="active">ACTIVE</option>
+                      <option value="deleted">DELETED (Archived)</option>
+                    </select>
+                  </div>
+
                   {/* Initial Online Network State */}
-                  <div className="flex items-center justify-between p-3 bg-[#f8f3eb]/50 border border-[#e8e2d8] rounded">
+                  <div className="flex justify-between items-center bg-[#fcfbf9] border border-[#e8e2d8] p-4 rounded-lg">
                     <div>
-                      <span className="font-bold text-[#1d1c17] block">Initial Connectivity State</span>
-                      <span className="text-[10px] text-[#5f5e5e]">Simulate network ping connectivity</span>
+                      <span className="font-bold text-sm text-[#222222] block">Initial Connectivity State</span>
+                      <span className="text-xs text-gray-500">Simulate network ping connectivity state</span>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
+                    <label className="relative inline-flex items-center cursor-pointer select-none">
                       <input
                         type="checkbox"
                         checked={formIsOnline}
@@ -1221,43 +1320,42 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                       <div className="w-11 h-6 bg-zinc-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#ae001a]" />
                     </label>
                   </div>
-                </form>
-              </div>
+                </div>
 
-              {/* Footer Actions */}
-              <div className="p-4 bg-[#f8f3eb]/60 border-t border-[#e8e2d8] flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsDrawerOpen(false)}
-                  className="px-4 py-2 bg-white border border-[#e8e2d8] rounded text-[#1d1c17] font-bold hover:bg-[#fef9f1] transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  form="kds-device-form"
-                  disabled={isSubmitting}
-                  className="px-4 py-2 bg-[#ae001a] hover:bg-[#900015] text-white font-bold rounded transition-colors shadow disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
-                      <span>Saving...</span>
-                    </>
-                  ) : (
-                    <span>{drawerMode === 'add' ? 'Register Device' : 'Save Changes'}</span>
-                  )}
-                </button>
-              </div>
+                {/* Footer Actions */}
+                <div className="bg-[#fcfbf9] border-t border-[#e8e2d8] p-6 flex justify-end gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className="px-5 py-2.5 bg-white border border-[#e8e2d8] rounded text-[#1d1c17] font-bold text-xs hover:bg-[#f2ede5] transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="px-6 py-2.5 bg-[#ae001a] hover:bg-[#900015] text-white font-bold text-xs rounded transition-colors shadow disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <span>{drawerMode === 'add' ? 'Pair Device' : 'Save Changes'}</span>
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>,
           document.body
-        )}
+        )
+      }
 
       {/* Modal Confirmación de Eliminación Lógica */}
       {deleteModalOpen && deviceToDelete && (
         <AppModal
-          isOpen={deleteModalOpen}
           onClose={() => setDeleteModalOpen(false)}
           title="Archive KDS Hardware Device"
           subtitle={`Are you sure you want to archive "${deviceToDelete.name}" (${deviceToDelete.device_identifier})?`}

@@ -59,8 +59,13 @@ import { CashDrawerHistoryView } from './views/restaurant-operations/CashDrawerH
 import { CollaboratorPersonalScheduleView } from './views/restaurant-operations/CollaboratorPersonalScheduleView';
 import { ShiftAssignmentView } from './views/restaurant-operations/ShiftAssignmentView';
 import { TimeClockKioskView } from './views/restaurant-operations/TimeClockKioskView';
-import { TimeEntriesView } from './views/restaurant-operations/TimeEntriesView';
+import { TimeEntriesView as RestaurantTimeEntriesView } from './views/restaurant-operations/TimeEntriesView';
 import { TipsLedgerView } from './views/restaurant-operations/TipsLedgerView';
+import { TipPoolsView } from './views/restaurant-operations/TipPoolsView';
+import { TipPoolMembersView } from './views/restaurant-operations/TipPoolMembersView';
+import { TipAllocationsView } from './views/restaurant-operations/TipAllocationsView';
+import { OpenShiftsMarketplaceView } from './views/restaurant-operations/OpenShiftsMarketplaceView';
+import { LaborCostForecastingView } from './views/restaurant-operations/LaborCostForecastingView';
 import { LedgerAccountsView } from './views/financial-engine/LedgerAccountsView';
 import { JournalEntriesView } from './views/financial-engine/JournalEntriesView';
 import { JournalEntryLinesView } from './views/financial-engine/JournalEntryLinesView';
@@ -213,6 +218,12 @@ export const MerchantFrame: React.FC = () => {
     } else if (path === '/staff-management/schedule/swaps') {
       setActiveCategory('restaurant-operations');
       setActiveTab('staff-swaps');
+    } else if (path === '/staff-management/schedule/marketplace' || path === '/staff-management/schedule/open-shifts') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('open-shifts');
+    } else if (path === '/staff-management/schedule/labor-forecasting' || path === '/staff-management/schedule/forecasting') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('labor-forecasting');
     } else if (path === '/staff-management/attendance/ledger') {
       setActiveCategory('restaurant-operations');
       setActiveTab('collaborators-time-entries');
@@ -229,6 +240,18 @@ export const MerchantFrame: React.FC = () => {
     } else if (path === '/store-operations/tips-ledger' || path === '/tips/ledger') {
       setActiveCategory('restaurant-operations');
       setActiveTab('tips-ledger');
+    } else if (path === '/store-operations/tips-allocations' || path === '/tips/allocations') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-allocations');
+    } else if (path === '/store-operations/tips-pools' || path === '/store-operations/tip-pools' || path === '/tips/pools') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-pools');
+    } else if (path === '/store-operations/tips-pool-members' || path === '/store-operations/tip-pool-members' || path === '/tips/pool-members') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-pool-members');
+    } else if (path === '/tips/cash-movements' || path === '/store-operations/cash-movements') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('cash-movements');
     } else if (path === '/dashboard/raw-materials' || path === '/inventory/raw-materials') {
       setActiveCategory('inventory');
       setActiveTab('raw-materials');
@@ -651,6 +674,12 @@ export const MerchantFrame: React.FC = () => {
       } else if (target === '/staff-management/schedule/swaps' || target === 'staff-swaps' || target === 'swaps') {
         setActiveTab('staff-swaps');
         try { navigate('/staff-management/schedule/swaps'); } catch (e) {}
+      } else if (target === '/staff-management/schedule/marketplace' || target === '/staff-management/schedule/open-shifts' || target === 'open-shifts' || target === 'marketplace') {
+        setActiveTab('open-shifts');
+        try { navigate('/staff-management/schedule/marketplace'); } catch (e) {}
+      } else if (target === '/staff-management/schedule/labor-forecasting' || target === 'labor-forecasting' || target === 'forecasting') {
+        setActiveTab('labor-forecasting');
+        try { navigate('/staff-management/schedule/labor-forecasting'); } catch (e) {}
       } else if (target === '/staff-management/attendance/ledger' || target === 'collaborators-time-entries' || target === 'time-entries' || target === 'ledger') {
         setActiveTab('collaborators-time-entries');
         try { navigate('/staff-management/attendance/ledger'); } catch (e) {}
@@ -661,27 +690,43 @@ export const MerchantFrame: React.FC = () => {
         target === '/store-operations/tips-ledger' ||
         target === '/tips/ledger' ||
         target === 'tips-ledger' ||
-        target === 'tips' ||
-        target === '/tips/allocations' ||
-        target === 'tips-allocations' ||
-        target === '/tips/settlements' ||
-        target === 'tips-settlements'
+        target === 'tips'
       ) {
         setActiveCategory('restaurant-operations');
         setActiveTab('tips-ledger');
         try { navigate('/store-operations/tips-ledger'); } catch (e) {}
       } else if (
+        target === '/store-operations/tips-allocations' ||
+        target === '/tips/allocations' ||
+        target === 'tips-allocations' ||
+        target === 'tip-allocations'
+      ) {
+        setActiveCategory('restaurant-operations');
+        setActiveTab('tips-allocations');
+        try { navigate('/tips/allocations'); } catch (e) {}
+      } else if (
         target === '/tips/pools' ||
         target === 'tips-pools' ||
+        target === '/store-operations/tips-pools' ||
+        target === '/store-operations/tip-pools'
+      ) {
+        setActiveCategory('restaurant-operations');
+        setActiveTab('tips-pools');
+        try { navigate('/tips/pools'); } catch (e) {}
+      } else if (
         target === '/tips/pool-members' ||
         target === 'tips-pool-members' ||
-        target === 'merchant-tips-rules'
+        target === 'pool-members' ||
+        target === '/store-operations/tips-pool-members' ||
+        target === '/store-operations/tip-pool-members'
       ) {
-        setActiveTab('merchant-tips-rules');
-        try { navigate('/dashboard', { state: { activeTab: 'merchant-tips-rules', activeCategory: 'core' } }); } catch (e) {}
+        setActiveCategory('restaurant-operations');
+        setActiveTab('tips-pool-members');
+        try { navigate('/tips/pool-members'); } catch (e) {}
       } else if (target === '/tips/cash-movements' || target === 'tips-cash-movements' || target === 'cash-movements') {
+        setActiveCategory('restaurant-operations');
         setActiveTab('cash-movements');
-        try { navigate('/dashboard', { state: { activeTab: 'cash-movements', activeCategory: 'finance' } }); } catch (e) {}
+        try { navigate('/tips/cash-movements'); } catch (e) {}
       } else {
         setActiveTab(target);
       }
@@ -707,12 +752,36 @@ export const MerchantFrame: React.FC = () => {
       return <ShiftAssignmentView initialViewMode="swaps" onNavigate={handleStaffNavigate} />;
     }
 
-    if (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries' || activeTab === 'attendance-ledger' || activeTab === 'ledger') {
-      return <TimeEntriesView onNavigate={handleStaffNavigate} />;
+    if (activeTab === 'open-shifts' || activeTab === 'marketplace' || activeTab === '/staff-management/schedule/marketplace' || activeTab === '/staff-management/schedule/open-shifts') {
+      return <OpenShiftsMarketplaceView onNavigate={handleStaffNavigate} />;
+    }
+
+    if (activeTab === 'labor-forecasting' || activeTab === 'forecasting' || activeTab === '/staff-management/schedule/labor-forecasting') {
+      return <LaborCostForecastingView onNavigate={handleStaffNavigate} />;
+    }
+
+    if (
+      (activeCategory === 'restaurant-operations' && (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries')) ||
+      activeTab === 'attendance-ledger' ||
+      activeTab === 'ledger'
+    ) {
+      return <RestaurantTimeEntriesView onNavigate={handleStaffNavigate} />;
     }
 
     if (activeTab === 'tips-ledger' || activeTab === 'tips' || activeTab === '/store-operations/tips-ledger') {
       return <TipsLedgerView onNavigate={handleStaffNavigate} />;
+    }
+
+    if (activeTab === 'tips-pools' || activeTab === 'tip-pools' || activeTab === '/tips/pools' || activeTab === '/store-operations/tips-pools' || activeTab === '/store-operations/tip-pools') {
+      return <TipPoolsView onNavigate={handleStaffNavigate} />;
+    }
+
+    if (activeTab === 'tips-pool-members' || activeTab === 'tip-pool-members' || activeTab === 'pool-members' || activeTab === '/tips/pool-members' || activeTab === '/store-operations/tips-pool-members' || activeTab === '/store-operations/tip-pool-members') {
+      return <TipPoolMembersView onNavigate={handleStaffNavigate} />;
+    }
+
+    if (activeTab === 'tips-allocations' || activeTab === 'tip-allocations' || activeTab === '/tips/allocations' || activeTab === '/store-operations/tips-allocations') {
+      return <TipAllocationsView onNavigate={handleStaffNavigate} />;
     }
 
     if (activeTab === 'time-clock' || activeTab === 'time-clock-kiosk' || activeTab === 'kiosk') {
@@ -884,12 +953,7 @@ export const MerchantFrame: React.FC = () => {
       );
     }
 
-    // INALCANZABLE: la rama de arriba ya captura 'collaborators-time-entries' y gana por
-    // orden. Se conserva (y el import se renombra) porque decidir cuál de las dos vistas de
-    // fichajes debe quedarse no es una llamada que corresponda a esta historia; sin el alias
-    // el módulo ni siquiera parsea — `TimeEntriesView` estaba importado dos veces, lo que
-    // impedía arrancar el servidor de desarrollo entero.
-    if (activeTab === 'collaborators-time-entries') {
+    if (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries') {
       return (
         <HrTimeEntriesView
           onNavigate={(view) => setActiveTab(view)}

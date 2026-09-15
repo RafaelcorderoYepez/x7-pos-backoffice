@@ -97,21 +97,24 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   };
 
   return (
-    <div className="fixed inset-0 bg-[#16171d] z-50 flex flex-col font-sans text-white">
+    <div className="fixed inset-0 bg-[#14151a] z-50 flex flex-col font-sans text-white">
       {/* KDS Header */}
-      <header className="h-16 bg-[#222222] border-b border-white/10 px-6 flex justify-between items-center">
+      <header className="h-16 bg-[#1f2026] border-b border-white/15 px-6 flex justify-between items-center shrink-0">
         <div className="flex items-center gap-3">
           <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></span>
-          <h1 className="font-sans text-lg font-black tracking-wider text-white flex items-center gap-2">
-            KITCHEN DISPLAY STATION <span className="text-[#d51f2c]">/</span> LIVE KDS
+          <h1 className="font-sans text-lg font-black tracking-wider flex items-center gap-2" style={{ color: '#ffffff' }}>
+            <span>KITCHEN DISPLAY STATION</span>
+            <span className="text-[#ae001a] font-black">/</span>
+            <span style={{ color: '#ffffff' }}>LIVE KDS MONITOR</span>
           </h1>
         </div>
         <button
           onClick={onBackToDashboard}
-          className="px-4 py-2 bg-[#d51f2c] text-white font-bold text-label-caps hover:bg-[#b01a24] transition-all flex items-center gap-2"
+          className="px-5 py-2.5 bg-[#ae001a] hover:bg-[#900015] text-white font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 cursor-pointer shadow-md"
+          style={{ color: '#ffffff' }}
         >
-          <span className="material-symbols-outlined text-sm">arrow_back</span>
-          Back to Dashboard
+          <span className="material-symbols-outlined text-base">arrow_back</span>
+          <span>BACK TO DASHBOARD</span>
         </button>
       </header>
 
@@ -121,14 +124,15 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-center">
             <span className="material-symbols-outlined text-emerald-500 text-6xl">check_circle</span>
             <div>
-              <h2 className="text-xl font-bold">All Orders Cleared!</h2>
-              <p className="text-white/50 text-sm mt-1">Excellent performance. Kitchen is at 100% preparation rate.</p>
+              <h2 className="text-xl font-bold" style={{ color: '#ffffff' }}>All Orders Cleared!</h2>
+              <p className="text-zinc-400 text-sm mt-1">Excellent performance. Kitchen is at 100% preparation rate.</p>
             </div>
             <button
               onClick={onBackToDashboard}
-              className="mt-2 px-4 py-2 bg-white/10 text-white font-bold text-label-caps hover:bg-white/20 transition-all"
+              className="mt-2 px-5 py-2.5 bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider rounded transition-all cursor-pointer"
+              style={{ color: '#ffffff' }}
             >
-              Regresar al Backoffice
+              Back to Dashboard
             </button>
           </div>
         ) : (
@@ -137,42 +141,42 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             return (
               <div
                 key={ticket.id}
-                className={`w-80 bg-[#222222] border-t-4 ${pColors.border} rounded-sm flex flex-col max-h-[90%] shadow-2xl flex-shrink-0`}
+                className={`w-84 bg-[#1f2026] border-t-4 ${pColors.border} border-x border-b border-zinc-700/60 rounded flex flex-col max-h-[90%] shadow-2xl flex-shrink-0`}
               >
                 {/* Ticket Header */}
-                <div className="p-4 border-b border-white/10 flex justify-between items-start">
+                <div className="p-4 border-b border-zinc-700/60 flex justify-between items-start bg-[#262730]">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h2 className="font-bold text-base text-white">{ticket.table}</h2>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-black uppercase ${pColors.badge}`}>
+                      <h2 className="font-black text-base" style={{ color: '#ffffff' }}>{ticket.table}</h2>
+                      <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase ${pColors.badge}`}>
                         {ticket.priority}
                       </span>
                     </div>
-                    <p className="text-[11px] text-white/50 mt-1">
+                    <p className="text-xs font-bold mt-1" style={{ color: '#d4d4d8' }}>
                       ID: {ticket.id} • Server: {ticket.server}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className={`font-black text-sm ${ticket.timeElapsed >= 10 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                    <p className={`font-black text-base ${ticket.timeElapsed >= 10 ? 'text-red-400 animate-pulse' : 'text-emerald-400'}`}>
                       {ticket.timeElapsed}m
                     </p>
-                    <p className="text-[9px] text-white/40 uppercase font-bold tracking-wider">Elapsed</p>
+                    <p className="text-[10px] uppercase font-extrabold tracking-wider" style={{ color: '#a1a1aa' }}>ELAPSED</p>
                   </div>
                 </div>
 
                 {/* Ticket Items List */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-[#1f2026]">
                   {ticket.items.map((item, idx) => (
                     <div key={idx} className="flex gap-3 items-start">
-                      <span className="w-6 h-6 bg-white/10 rounded flex items-center justify-center font-bold text-sm text-[#d51f2c] flex-shrink-0">
+                      <span className="w-6 h-6 bg-red-500/20 text-[#ae001a] border border-red-500/40 rounded flex items-center justify-center font-black text-sm flex-shrink-0">
                         {item.qty}
                       </span>
                       <div className="flex-1">
-                        <p className="text-body-sm font-semibold text-white leading-tight">
+                        <p className="text-sm font-extrabold leading-snug" style={{ color: '#ffffff' }}>
                           {item.name}
                         </p>
                         {item.notes && (
-                          <p className="text-[11px] text-yellow-400/90 font-medium mt-1 italic">
+                          <p className="text-xs font-bold mt-1 italic" style={{ color: '#fcd34d' }}>
                             * {item.notes}
                           </p>
                         )}
@@ -184,10 +188,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 {/* Action button */}
                 <button
                   onClick={() => handleCompleteTicket(ticket.id)}
-                  className="w-full py-3 bg-[#333333] hover:bg-emerald-600 text-white font-bold text-xs uppercase tracking-widest transition-colors border-t border-white/10 flex items-center justify-center gap-2"
+                  className="w-full py-3.5 bg-[#2a2b34] hover:bg-emerald-600 text-white font-extrabold text-xs uppercase tracking-widest transition-colors border-t border-zinc-700/60 flex items-center justify-center gap-2 cursor-pointer shadow-inner"
+                  style={{ color: '#ffffff' }}
                 >
-                  <span className="material-symbols-outlined text-sm">done</span>
-                  Done &amp; Serve
+                  <span className="material-symbols-outlined text-base">done</span>
+                  <span>DONE &amp; SERVE</span>
                 </button>
               </div>
             );
