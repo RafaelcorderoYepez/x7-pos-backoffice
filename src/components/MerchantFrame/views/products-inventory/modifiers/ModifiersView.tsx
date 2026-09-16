@@ -4,6 +4,7 @@ import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storag
 import { QuickLaunchPanel } from '../../../shared/QuickLaunchPanel';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
 
 interface Product {
   id: number;
@@ -30,7 +31,20 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
 
   // Filtros locales
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [productFilter, setProductFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All Status');
+
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    name: true,
+    product: true,
+    priceDelta: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Estados del Modal
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -90,8 +104,12 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
       const modifiersJson = await modifiersRes.json();
       const productsJson = await productsRes.json();
 
-      const modifiersData = modifiersJson.data || [];
-      const productsData = productsJson.data || [];
+      const modifiersData = Array.isArray(modifiersJson)
+        ? modifiersJson
+        : (modifiersJson.data || modifiersJson.items || []);
+      const productsData = Array.isArray(productsJson)
+        ? productsJson
+        : (productsJson.data || productsJson.items || []);
 
       // Mapear modificadores
       const mappedModifiers = modifiersData.map((m: any) => ({
@@ -122,18 +140,48 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
     fetchAllData();
   }, []);
 
+  const handleExportCSV = () => {
+    if (filteredModifiers.length === 0) return;
+    const headers = ['ID', 'Name', 'Price Delta', 'Associated Product', 'Status'];
+    const rows = filteredModifiers.map(m => [m.id, `"${m.name.replace(/"/g, '""')}"`, m.priceDelta, `"${m.product?.name || 'None'}"`, m.isActive ? 'Active' : 'Inactive']);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const link = document.createElement('a');
+    link.setAttribute('href', encodeURI(csvContent));
+    link.setAttribute('download', `modifiers_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  const handlePrintTable = () => { window.print(); };
+
+  const handleCopySummary = () => {
+    const active = filteredModifiers.filter(m => m.isActive).length;
+    navigator.clipboard.writeText(`Modifiers & Toppings: ${filteredModifiers.length} total, ${active} active, ${filteredModifiers.length - active} inactive.`);
+  };
+
   const filteredModifiers = modifiers.filter((m) => {
     const matchesSearch =
       m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (m.product?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     const matchesStatus =
+      statusFilter === 'All' ||
       statusFilter === 'All Status' ||
       (statusFilter === 'Active' && m.isActive) ||
       (statusFilter === 'Inactive' && !m.isActive);
 
-    return matchesSearch && matchesStatus;
+    const matchesProduct =
+      productFilter === 'All' ||
+      productFilter === 'All Products' ||
+      (m.product && String(m.product.id) === productFilter) ||
+      (!m.product && productFilter === 'None');
+
+    return matchesSearch && matchesStatus && matchesProduct;
   });
+
+  const totalPages = Math.ceil(filteredModifiers.length / pageSize) || 1;
+  const paginatedModifiers = pageSize === 9999
+    ? filteredModifiers
+    : filteredModifiers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const formatPrice = (price: number | string) => {
     const num = typeof price === 'number' ? price : parseFloat(price);
@@ -267,19 +315,28 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
     }
   };
 
+  // Cálculo de columnas visibles para colSpan
+  const visibleColumnsCount = Object.values(visibleColumns).filter(Boolean).length;
+  const densityPadding = getDensityPadding(rowDensity);
+
   return (
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans">
       <div ref={topRef} />
 
       {/* Título de Sección */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
-        <div>
-          <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
-            Product Modifiers & Extra Add-ons
-          </h2>
-          <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
-            Configure custom options, extra ingredients, and price modifiers linked directly to master catalog products.
-          </p>
+        <div className="flex items-center gap-3">
+          <span className="material-symbols-outlined text-[#ae001a] text-2xl">
+            tune
+          </span>
+          <div>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+              Product Modifiers & Extra Add-ons
+            </h2>
+            <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
+              Configure custom options, extra ingredients, and price modifiers linked directly to master catalog products.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -293,7 +350,10 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
             className="w-full pl-11 pr-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none text-body-md transition-all font-sans"
             placeholder="Search modifiers by name or product..."
           />
@@ -302,15 +362,35 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
+            {/* Filtro por Producto */}
+            <select
+              value={productFilter}
+              onChange={(e) => {
+                setProductFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none min-w-[150px] font-sans text-secondary"
+            >
+              <option value="All">All Products</option>
+              {products.map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+
             {/* Filtro por Estado */}
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none min-w-[130px] font-sans text-secondary"
             >
-              <option>All Status</option>
-              <option>Active</option>
-              <option>Inactive</option>
+              <option value="All Status">All Status</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
             </select>
           </div>
 
@@ -323,13 +403,6 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
               ADD MODIFIER
             </button>
 
-            <button
-              onClick={() => fetchAllData()}
-              className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
-              title="Reload modifiers"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
           </div>
         </div>
       </div>
@@ -337,39 +410,84 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
       {/* Tabla del Directorio de Modificadores */}
       <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm">
         {/* Header Oscuro #222222 */}
-        <div className="p-4 bg-[#222222] flex justify-between items-center">
-          <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
-            MODIFIERS DIRECTORY
-          </span>
-          <span className="material-symbols-outlined text-white text-sm cursor-pointer">
-            more_vert
-          </span>
+        <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+          <div className="flex items-center gap-3">
+            <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
+              MODIFIERS DIRECTORY
+            </span>
+            <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+              {filteredModifiers.length} {filteredModifiers.length === 1 ? 'modifier' : 'modifiers'}
+            </span>
+          </div>
+
+          <TableOptionsMenu
+            onExportCSV={handleExportCSV}
+            onPrint={handlePrintTable}
+            onCopySummary={handleCopySummary}
+            onReload={fetchAllData}
+            columns={[
+              { key: 'name', label: 'Modifier Name' },
+              { key: 'product', label: 'Associated Product' },
+              { key: 'priceDelta', label: 'Delta Price' },
+              { key: 'status', label: 'Status' },
+              { key: 'actions', label: 'Actions' },
+            ]}
+            visibleColumns={visibleColumns}
+            onToggleColumn={(key) =>
+              setVisibleColumns((prev) => ({
+                ...prev,
+                [key]: !prev[key as keyof typeof visibleColumns],
+              }))
+            }
+            rowDensity={rowDensity}
+            onChangeDensity={setRowDensity}
+            totalItems={filteredModifiers.length}
+            pageSize={pageSize}
+            onChangePageSize={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+          />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
               <tr>
-                <th className="px-6 py-3 text-left text-label-caps font-bold text-text-muted font-sans">
-                  Modifier Name
-                </th>
-                <th className="px-6 py-3 text-left text-label-caps font-bold text-text-muted font-sans">
-                  Associated Product
-                </th>
-                <th className="px-6 py-3 text-right text-label-caps font-bold text-text-muted font-sans">
-                  Delta Price
-                </th>
-                <th className="px-6 py-3 text-center text-label-caps font-bold text-text-muted font-sans">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-center text-label-caps font-bold text-text-muted font-sans">
-                  Actions
-                </th>
+                {visibleColumns.name && (
+                  <th className={`${densityPadding} text-left text-label-caps font-bold text-text-muted font-sans`}>
+                    Modifier Name
+                  </th>
+                )}
+                {visibleColumns.product && (
+                  <th className={`${densityPadding} text-left text-label-caps font-bold text-text-muted font-sans`}>
+                    Associated Product
+                  </th>
+                )}
+                {visibleColumns.priceDelta && (
+                  <th className={`${densityPadding} text-right text-label-caps font-bold text-text-muted font-sans`}>
+                    Delta Price
+                  </th>
+                )}
+                {visibleColumns.status && (
+                  <th className={`${densityPadding} text-center text-label-caps font-bold text-text-muted font-sans`}>
+                    Status
+                  </th>
+                )}
+                {visibleColumns.actions && (
+                  <th className={`${densityPadding} text-center text-label-caps font-bold text-text-muted font-sans`}>
+                    Actions
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e8e2d8]">
-              {isLoading ? (
+              {visibleColumnsCount === 0 ? (
+                <NoColumnsEmptyState colSpan={5} />
+              ) : isLoading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                  <td colSpan={visibleColumnsCount} className="px-6 py-12 text-center text-secondary font-sans bg-white">
                     <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
                       sync
                     </span>
@@ -378,7 +496,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
+                  <td colSpan={visibleColumnsCount} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
                     <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
                       error
                     </span>
@@ -392,23 +510,21 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
                   </td>
                 </tr>
               ) : modifiers.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-secondary font-sans bg-white">
-                    <span className="material-symbols-outlined text-secondary text-5xl block mb-2 mx-auto select-none">
-                      tune
-                    </span>
-                    <p className="font-bold text-[#222222] uppercase text-sm">No modifiers found</p>
-                    <p className="text-xs text-[#666666] mt-1">Click 'Add Modifier' to start building your modifiers catalog.</p>
-                  </td>
-                </tr>
+                <TableEmptyState
+                  colSpan={visibleColumnsCount}
+                  icon="tune"
+                  title="No modifiers found"
+                  description="Click 'Add Modifier' to start building your modifiers catalog."
+                />
               ) : filteredModifiers.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-secondary italic font-sans bg-white">
-                    No modifiers match the selected filters.
-                  </td>
-                </tr>
+                <TableEmptyState
+                  colSpan={visibleColumnsCount}
+                  icon="tune"
+                  title="No modifiers found"
+                  description="No modifiers match the selected filter criteria."
+                />
               ) : (
-                filteredModifiers.map((modifier) => {
+                paginatedModifiers.map((modifier) => {
                   const isInactive = !modifier.isActive;
                   return (
                     <tr
@@ -417,47 +533,59 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
                         isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
                       }`}
                     >
-                      <td className="px-6 py-4 flex items-center gap-3">
-                        <div className={`w-1 h-8 rounded-full ${isInactive ? 'bg-zinc-400' : 'bg-[#ae001a]'}`}></div>
-                        <p className={`font-bold text-[#1d1c17] font-sans ${isInactive ? 'line-through' : ''}`}>{modifier.name}</p>
-                      </td>
-                      <td className="px-6 py-4 text-body-md text-[#1d1c17] font-sans">
-                        {modifier.product ? modifier.product.name : 'No Product'}
-                      </td>
-                      <td className="px-6 py-4 text-right font-mono font-bold text-emerald-700">
-                        +{formatPrice(modifier.priceDelta)}
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span
-                          className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase font-sans ${
-                            modifier.isActive
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-zinc-200 text-[#5f5e5e]'
-                          }`}
-                        >
-                          {modifier.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex justify-center gap-3">
-                          <button
-                            onClick={() => handleOpenEditModal(modifier)}
-                            className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                            title="Editar modificador"
+                      {visibleColumns.name && (
+                        <td className={densityPadding}>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-1 h-8 rounded-full ${isInactive ? 'bg-zinc-400' : 'bg-[#ae001a]'}`}></div>
+                            <p className={`font-bold text-[#1d1c17] font-sans ${isInactive ? 'line-through' : ''}`}>{modifier.name}</p>
+                          </div>
+                        </td>
+                      )}
+                      {visibleColumns.product && (
+                        <td className={`${densityPadding} text-body-md text-[#1d1c17] font-sans`}>
+                          {modifier.product ? modifier.product.name : 'No Product'}
+                        </td>
+                      )}
+                      {visibleColumns.priceDelta && (
+                        <td className={`${densityPadding} text-right font-mono font-bold text-emerald-700`}>
+                          +{formatPrice(modifier.priceDelta)}
+                        </td>
+                      )}
+                      {visibleColumns.status && (
+                        <td className={`${densityPadding} text-center`}>
+                          <span
+                            className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase font-sans ${
+                              modifier.isActive
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-zinc-200 text-[#5f5e5e]'
+                            }`}
                           >
-                            <span className="material-symbols-outlined text-[20px]">edit</span>
-                          </button>
-                          <button
-                            onClick={() => void handleToggleActive(modifier)}
-                            className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                            title={modifier.isActive ? "Desactivar modificador" : "Activar modificador"}
-                          >
-                            <span className="material-symbols-outlined text-[20px]">
-                              {modifier.isActive ? 'block' : 'check_circle_outline'}
-                            </span>
-                          </button>
-                        </div>
-                      </td>
+                            {modifier.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                      )}
+                      {visibleColumns.actions && (
+                        <td className={`${densityPadding} text-center`}>
+                          <div className="flex justify-center gap-3">
+                            <button
+                              onClick={() => handleOpenEditModal(modifier)}
+                              className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
+                              title="Editar modificador"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">edit</span>
+                            </button>
+                            <button
+                              onClick={() => void handleToggleActive(modifier)}
+                              className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
+                              title={modifier.isActive ? "Desactivar modificador" : "Activar modificador"}
+                            >
+                              <span className="material-symbols-outlined text-[20px]">
+                                {modifier.isActive ? 'block' : 'check_circle_outline'}
+                              </span>
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })
@@ -465,6 +593,19 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Footer */}
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredModifiers.length}
+          onPageChange={setCurrentPage}
+          onChangePageSize={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
       </div>
 
       {/* Modal Interactivo de Add / Edit Modifier */}
@@ -484,56 +625,55 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
             </div>
             <form onSubmit={handleSaveModifier} className="flex-1 flex flex-col min-h-0">
               <div className="p-6 space-y-4 overflow-y-auto flex-1">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
-                  Modifier Name
-                </label>
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="bg-white text-[#1d1c17] px-3 py-2 border border-[#e8e2d8] rounded text-body-md focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none w-full font-sans"
-                  placeholder="e.g., Extra Cheese, No Onions, Gluten Free"
-                  required
-                />
-              </div>
-
-              {modalMode === 'add' && (
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
-                    Associated Product
+                    Modifier Name
                   </label>
-                  <select
-                    value={formProduct}
-                    onChange={(e) => setFormProduct(e.target.value)}
+                  <input
+                    type="text"
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
                     className="bg-white text-[#1d1c17] px-3 py-2 border border-[#e8e2d8] rounded text-body-md focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none w-full font-sans"
-                  >
-                    <option value="NULL" disabled>Select a product...</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="e.g., Extra Cheese, No Onions, Gluten Free"
+                    required
+                  />
                 </div>
-              )}
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
-                  Price Delta ($)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formPriceDelta}
-                  onChange={(e) => setFormPriceDelta(e.target.value)}
-                  className="bg-white text-[#1d1c17] px-3 py-2 border border-[#e8e2d8] rounded text-body-md focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none w-full font-mono"
-                  placeholder="e.g., 1.50"
-                  required
-                  min="0"
-                />
-              </div>
+                {modalMode === 'add' && (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
+                      Associated Product
+                    </label>
+                    <select
+                      value={formProduct}
+                      onChange={(e) => setFormProduct(e.target.value)}
+                      className="bg-white text-[#1d1c17] px-3 py-2 border border-[#e8e2d8] rounded text-body-md focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none w-full font-sans"
+                    >
+                      <option value="NULL" disabled>Select a product...</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
+                    Price Delta ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formPriceDelta}
+                    onChange={(e) => setFormPriceDelta(e.target.value)}
+                    className="bg-white text-[#1d1c17] px-3 py-2 border border-[#e8e2d8] rounded text-body-md focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none w-full font-mono"
+                    placeholder="e.g., 1.50"
+                    required
+                    min="0"
+                  />
+                </div>
               </div>
               <div className="p-6 pt-4 border-t border-[#e8e2d8] flex justify-end gap-3 shrink-0 bg-[#fefbf6]">
                 <button
@@ -555,7 +695,6 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         </div>,
         document.body
       )}
-
 
       <EmergencySupportModal
         isOpen={isSupportOpen}

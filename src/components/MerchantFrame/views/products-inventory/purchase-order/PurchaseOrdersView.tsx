@@ -4,6 +4,7 @@ import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storag
 import { QuickLaunchPanel } from '../../../shared/QuickLaunchPanel';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
 
 interface Supplier {
   id: number;
@@ -80,6 +81,20 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [supplierFilter, setSupplierFilter] = useState<string>('All');
+
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    orderCode: true,
+    supplier: true,
+    orderDate: true,
+    totalAmount: true,
+    progress: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Campos de creación/edición (Master)
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
@@ -916,13 +931,18 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
 
       {/* Título de Sección */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
-        <div>
-          <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
-            Procurement & Purchase Orders
-          </h2>
-          <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
-            Create, track, and fulfill replenishment purchase orders, distribute stock to multiple warehouses, and verify supplier invoices.
-          </p>
+        <div className="flex items-center gap-3">
+          <span className="material-symbols-outlined text-[#ae001a] text-2xl">
+            receipt_long
+          </span>
+          <div>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+              Procurement & Purchase Orders
+            </h2>
+            <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
+              Create, track, and fulfill replenishment purchase orders, distribute stock to multiple warehouses, and verify supplier invoices.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -939,7 +959,10 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                 type="text"
                 placeholder="Search by PO code or supplier name..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full pl-11 pr-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none text-body-md transition-all font-sans"
               />
             </div>
@@ -950,7 +973,10 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                 {/* Filtro por Proveedor */}
                 <select
                   value={supplierFilter}
-                  onChange={(e) => setSupplierFilter(e.target.value)}
+                  onChange={(e) => {
+                    setSupplierFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none min-w-[150px] font-sans text-secondary cursor-pointer"
                 >
                   <option value="All">All Suppliers</option>
@@ -962,7 +988,10 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                 {/* Filtro por Estado */}
                 <select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setCurrentPage(1);
+                  }}
                   className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none min-w-[130px] font-sans text-secondary cursor-pointer"
                 >
                   <option value="All">All Status</option>
@@ -983,217 +1012,318 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                   ADD PURCHASE ORDER
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => fetchPurchaseOrders()}
-                  className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
-                  title="Reload purchase orders"
-                  aria-label="Reload table data"
-                >
-                  <span className="material-symbols-outlined text-[18px]">refresh</span>
-                </button>
               </div>
             </div>
           </div>
 
           {/* Directorio de Órdenes de Compra */}
-          {isLoading ? (
-            <div className="bg-white border border-[#e8e2d8] p-12 text-center rounded shadow-sm">
-              <span className="material-symbols-outlined text-secondary animate-spin text-5xl">
-                sync
-              </span>
-              <p className="text-body-md text-secondary font-bold uppercase tracking-wider mt-4">
-                Loading purchase orders...
-              </p>
-            </div>
-          ) : error ? (
-            <div className="bg-red-50 border border-red-200 p-8 text-center rounded shadow-sm">
-              <span className="material-symbols-outlined text-red-700 text-5xl">
-                error
-              </span>
-              <p className="text-body-md text-red-800 font-bold uppercase tracking-wider mt-4">
-                {error}
-              </p>
-            </div>
-          ) : purchaseOrders.length === 0 ? (
-            /* Empty State */
-            <div className="bg-white border border-[#e8e2d8] p-16 text-center rounded shadow-sm flex flex-col items-center justify-center gap-6">
-              <div className="w-20 h-20 bg-zinc-50 border border-zinc-100 rounded-full flex items-center justify-center shadow-inner">
-                <span className="material-symbols-outlined text-zinc-400 text-4xl">
-                  receipt_long
-                </span>
-              </div>
-              <div className="max-w-md">
-                <h3 className="font-bold text-[#222222] uppercase tracking-wider text-sm">
-                  No purchase orders recorded yet for this merchant context.
-                </h3>
-                <p className="text-body-md text-secondary leading-relaxed mt-2">
-                  Click 'New Purchase Order' to generate your first supplier procurement request.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm">
-              <div className="p-4 bg-[#222222] flex justify-between items-center">
-                <span className="text-label-caps font-bold text-white uppercase tracking-wider">
-                  PURCHASE ORDERS DIRECTORY
-                </span>
-                <span className="material-symbols-outlined text-white text-sm cursor-pointer">
-                  more_vert
-                </span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left">
-                  <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
-                    <tr>
-                      <th className="px-6 py-3.5 text-label-caps font-bold text-[#5f5e5e]">
-                        Order Reference Code
-                      </th>
-                      <th className="px-6 py-3.5 text-label-caps font-bold text-[#5f5e5e]">
-                        Supplier Entity
-                      </th>
-                      <th className="px-6 py-3.5 text-label-caps font-bold text-[#5f5e5e]">
-                        Creation Timestamp
-                      </th>
-                      <th className="px-6 py-3.5 text-right text-label-caps font-bold text-[#5f5e5e] w-32">
-                        Total Gross Amount
-                      </th>
-                      <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e] w-40">
-                        Fulfillment Progress
-                      </th>
-                      <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e] w-36">
-                        Fulfillment Status
-                      </th>
-                      <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e] w-24">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
+          {(() => {
+            const activeColSpan =
+              (visibleColumns.orderCode ? 1 : 0) +
+              (visibleColumns.supplier ? 1 : 0) +
+              (visibleColumns.orderDate ? 1 : 0) +
+              (visibleColumns.totalAmount ? 1 : 0) +
+              (visibleColumns.progress ? 1 : 0) +
+              (visibleColumns.status ? 1 : 0) +
+              (visibleColumns.actions ? 1 : 0);
 
-                  <tbody className="divide-y divide-[#e8e2d8]">
-                    {filteredOrders.length === 0 ? (
+            const densityPadding = getDensityPadding(rowDensity);
+            const totalPages = Math.ceil(filteredOrders.length / pageSize) || 1;
+            const paginatedOrders =
+              pageSize === 9999
+                ? filteredOrders
+                : filteredOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+            return (
+              <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm">
+                <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+                  <div className="flex items-center gap-3">
+                    <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
+                      PURCHASE ORDERS DIRECTORY
+                    </span>
+                    <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+                      {filteredOrders.length} {filteredOrders.length === 1 ? 'order' : 'orders'}
+                    </span>
+                  </div>
+
+                  <TableOptionsMenu
+                    columns={[
+                      { key: 'orderCode', label: 'Order Reference Code' },
+                      { key: 'supplier', label: 'Supplier Entity' },
+                      { key: 'orderDate', label: 'Order Date' },
+                      { key: 'totalAmount', label: 'Total Gross Amount' },
+                      { key: 'progress', label: 'Fulfillment Progress' },
+                      { key: 'status', label: 'Fulfillment Status' },
+                      { key: 'actions', label: 'Actions' },
+                    ]}
+                    visibleColumns={visibleColumns}
+                    onToggleColumn={(key) =>
+                      setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }))
+                    }
+                    rowDensity={rowDensity}
+                    onChangeDensity={setRowDensity}
+                    totalItems={filteredOrders.length}
+                    pageSize={pageSize}
+                    onChangePageSize={(s) => {
+                      setPageSize(s);
+                      setCurrentPage(1);
+                    }}
+                    currentPage={currentPage}
+                    onPageChange={setCurrentPage}
+                    onReload={fetchPurchaseOrders}
+                    onExportCSV={() => {
+                      if (filteredOrders.length === 0) return;
+                      const headers = ['Order Code', 'Supplier', 'Order Date', 'Total Amount', 'Status'];
+                      const rows = filteredOrders.map((po) => [
+                        `PO-#${String(po.id).padStart(4, '0')}`,
+                        `"${(po.supplier?.name || '').replace(/"/g, '""')}"`,
+                        po.orderDate || '',
+                        po.totalAmount,
+                        po.status
+                      ]);
+                      const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+                      const encodedUri = encodeURI(csvContent);
+                      const link = document.createElement('a');
+                      link.setAttribute('href', encodedUri);
+                      link.setAttribute('download', `purchase_orders_${new Date().toISOString().slice(0, 10)}.csv`);
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                    onPrint={() => window.print()}
+                    onCopySummary={() => {
+                      const text = `Total Purchase Orders: ${filteredOrders.length}`;
+                      navigator.clipboard.writeText(text);
+                    }}
+                  />
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left">
+                    <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
                       <tr>
-                        <td colSpan={7} className="px-6 py-8 text-center text-secondary italic bg-white">
-                          No purchase orders match the selected filters.
-                        </td>
+                        {visibleColumns.orderCode && (
+                          <th className={`${densityPadding} text-label-caps font-bold text-[#5f5e5e]`}>
+                            Order Reference Code
+                          </th>
+                        )}
+                        {visibleColumns.supplier && (
+                          <th className={`${densityPadding} text-label-caps font-bold text-[#5f5e5e]`}>
+                            Supplier Entity
+                          </th>
+                        )}
+                        {visibleColumns.orderDate && (
+                          <th className={`${densityPadding} text-label-caps font-bold text-[#5f5e5e]`}>
+                            Creation Date
+                          </th>
+                        )}
+                        {visibleColumns.totalAmount && (
+                          <th className={`${densityPadding} text-right text-label-caps font-bold text-[#5f5e5e] w-32`}>
+                            Total Gross Amount
+                          </th>
+                        )}
+                        {visibleColumns.progress && (
+                          <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e] w-40`}>
+                            Fulfillment Progress
+                          </th>
+                        )}
+                        {visibleColumns.status && (
+                          <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e] w-36`}>
+                            Fulfillment Status
+                          </th>
+                        )}
+                        {visibleColumns.actions && (
+                          <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e] w-24`}>
+                            Actions
+                          </th>
+                        )}
                       </tr>
-                    ) : (
-                      filteredOrders.map((po) => {
-                        const formattedId = `PO-#${String(po.id).padStart(4, '0')}`;
-                        const dateObj = po.orderDate ? new Date(po.orderDate) : null;
-                        const formattedDate = (dateObj && !isNaN(dateObj.getTime()))
-                          ? dateObj.toISOString().split('T')[0]
-                          : 'N/A';
-                        const formattedAmount = new Intl.NumberFormat('en-US', {
-                          style: 'currency',
-                          currency: 'USD'
-                        }).format(po.totalAmount);
+                    </thead>
 
-                        // Mapear estilos según la especificación
-                        const uStatus = po.status.toUpperCase();
-                        let badgeStyle = 'bg-blue-100 text-blue-800 border border-blue-200';
-                        if (uStatus === 'DRAFT') {
-                          badgeStyle = 'bg-zinc-100 text-zinc-700 border border-zinc-300';
-                        } else if (uStatus === 'SENT') {
-                          badgeStyle = 'bg-blue-100 text-blue-800 border border-blue-200';
-                        } else if (uStatus === 'PENDING') {
-                          badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
-                        } else if (uStatus === 'APPROVED' || uStatus === 'COMPLETED' || uStatus === 'RECEIVED') {
-                          badgeStyle = 'bg-emerald-100 text-emerald-800 border border-emerald-200';
-                        } else if (uStatus === 'CANCELLED') {
-                          badgeStyle = 'bg-red-100 text-red-800 border border-red-200';
-                        } else if (uStatus === 'PARTIALLY_RECEIVED') {
-                          badgeStyle = 'bg-indigo-100 text-indigo-800 border border-indigo-200';
-                        }
+                    <tbody className="divide-y divide-[#e8e2d8]">
+                      {activeColSpan === 0 ? (
+                        <NoColumnsEmptyState colSpan={7} />
+                      ) : isLoading ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                            <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                              sync
+                            </span>
+                            <p className="text-secondary text-body-md mt-2 font-sans">Loading purchase orders...</p>
+                          </td>
+                        </tr>
+                      ) : error ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
+                            <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                              error
+                            </span>
+                            <p className="font-bold">{error}</p>
+                            <button
+                              onClick={() => fetchPurchaseOrders()}
+                              className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-all font-sans cursor-pointer"
+                            >
+                              Retry Connection
+                            </button>
+                          </td>
+                        </tr>
+                      ) : filteredOrders.length === 0 ? (
+                        <TableEmptyState
+                          colSpan={activeColSpan}
+                          icon="receipt_long"
+                          title="No purchase orders found"
+                          description={
+                            searchQuery || statusFilter !== 'All' || supplierFilter !== 'All'
+                              ? 'No purchase orders match your current filter criteria.'
+                              : 'No purchase orders recorded yet for this merchant context.'
+                          }
+                        />
+                      ) : (
+                        paginatedOrders.map((po) => {
+                          const formattedId = `PO-#${String(po.id).padStart(4, '0')}`;
+                          const dateObj = po.orderDate ? new Date(po.orderDate) : null;
+                          const formattedDate = (dateObj && !isNaN(dateObj.getTime()))
+                            ? dateObj.toISOString().split('T')[0]
+                            : 'N/A';
+                          const formattedAmount = new Intl.NumberFormat('en-US', {
+                            style: 'currency',
+                            currency: 'USD'
+                          }).format(po.totalAmount);
 
-                        // Calcular progreso de recepción (usar quantityOrdered para insumos)
-                        let fulfillmentText = '0%';
-                        let totalQtyRequested = 0;
-                        let totalQtyReceived = 0;
-                        if (po.purchaseOrderItems && po.purchaseOrderItems.length > 0) {
-                          po.purchaseOrderItems.forEach(item => {
-                            totalQtyRequested += Number(item.quantityOrdered ?? item.quantity) || 0;
-                            totalQtyReceived += Number(item.receivedQuantity) || 0;
-                          });
-                        }
+                          // Mapear estilos según la especificación
+                          const uStatus = po.status.toUpperCase();
+                          let badgeStyle = 'bg-blue-100 text-blue-800 border border-blue-200';
+                          if (uStatus === 'DRAFT') {
+                            badgeStyle = 'bg-zinc-100 text-zinc-700 border border-zinc-300';
+                          } else if (uStatus === 'SENT') {
+                            badgeStyle = 'bg-blue-100 text-blue-800 border border-blue-200';
+                          } else if (uStatus === 'PENDING') {
+                            badgeStyle = 'bg-amber-100 text-amber-800 border border-amber-200';
+                          } else if (uStatus === 'APPROVED' || uStatus === 'COMPLETED' || uStatus === 'RECEIVED') {
+                            badgeStyle = 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+                          } else if (uStatus === 'CANCELLED') {
+                            badgeStyle = 'bg-red-100 text-red-800 border border-red-200';
+                          } else if (uStatus === 'PARTIALLY_RECEIVED') {
+                            badgeStyle = 'bg-indigo-100 text-indigo-800 border border-indigo-200';
+                          }
 
-                        if (po.status === 'RECEIVED' || po.status === 'COMPLETED') {
-                          fulfillmentText = '100% (Completed)';
-                        } else if (po.status === 'DRAFT') {
-                          fulfillmentText = 'Draft';
-                        } else if (po.status === 'SENT') {
-                          fulfillmentText = '0% (Sent)';
-                        } else if (po.status === 'PENDING') {
-                          fulfillmentText = '0% (Awaiting)';
-                        } else if (po.status === 'CANCELLED') {
-                          fulfillmentText = 'Cancelled';
-                        } else if (totalQtyRequested > 0) {
-                          const pct = Math.round((totalQtyReceived / totalQtyRequested) * 100);
-                          const pending = (totalQtyRequested - totalQtyReceived).toFixed(2);
-                          fulfillmentText = `${pct}% (${pending} pending)`;
-                        }
+                          // Calcular progreso de recepción
+                          let fulfillmentText = '0%';
+                          let totalQtyRequested = 0;
+                          let totalQtyReceived = 0;
+                          if (po.purchaseOrderItems && po.purchaseOrderItems.length > 0) {
+                            po.purchaseOrderItems.forEach(item => {
+                              totalQtyRequested += Number(item.quantityOrdered ?? item.quantity) || 0;
+                              totalQtyReceived += Number(item.receivedQuantity) || 0;
+                            });
+                          }
 
+                          if (po.status === 'RECEIVED' || po.status === 'COMPLETED') {
+                            fulfillmentText = '100% (Completed)';
+                          } else if (po.status === 'DRAFT') {
+                            fulfillmentText = 'Draft';
+                          } else if (po.status === 'SENT') {
+                            fulfillmentText = '0% (Sent)';
+                          } else if (po.status === 'PENDING') {
+                            fulfillmentText = '0% (Awaiting)';
+                          } else if (po.status === 'CANCELLED') {
+                            fulfillmentText = 'Cancelled';
+                          } else if (totalQtyRequested > 0) {
+                            const pct = Math.round((totalQtyReceived / totalQtyRequested) * 100);
+                            const pending = (totalQtyRequested - totalQtyReceived).toFixed(2);
+                            fulfillmentText = `${pct}% (${pending} pending)`;
+                          }
 
-                        return (
-                          <tr
-                            key={po.id}
-                            onClick={() => handleInspectOrder(po)}
-                            className="category-row group transition-colors hover:bg-[#f8f3eb] cursor-pointer"
-                          >
-                            <td className="px-6 py-4 flex items-center gap-3">
-                              <div className="w-1 h-8 bg-[#ae001a] rounded-full"></div>
-                              <div>
-                                <p className="font-bold text-[#1d1c17] font-mono">
-                                  {formattedId}
-                                </p>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-[#1d1c17] font-semibold">
-                              {po.supplier?.name || 'Unassigned Supplier'}
-                            </td>
-                            <td className="px-6 py-4 font-sans text-secondary text-sm">
-                              {formattedDate}
-                            </td>
-                            <td className="px-6 py-4 text-right font-mono font-bold text-[#ae001a]">
-                              {formattedAmount}
-                            </td>
-                            <td className="px-6 py-4 text-center font-sans text-xs font-bold text-secondary">
-                              {fulfillmentText}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              <span
-                                className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase tracking-wider ${badgeStyle}`}
-                              >
-                                {po.status}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-center flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={() => handleInspectOrder(po)}
-                                className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors duration-200 cursor-pointer"
-                                title="Inspect order details"
-                              >
-                                <span className="material-symbols-outlined text-[20px]">visibility</span>
-                              </button>
+                          return (
+                            <tr
+                              key={po.id}
+                              onClick={() => handleInspectOrder(po)}
+                              className="category-row group transition-colors hover:bg-[#f8f3eb] cursor-pointer"
+                            >
+                              {visibleColumns.orderCode && (
+                                <td className={densityPadding}>
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-1 h-8 bg-[#ae001a] rounded-full"></div>
+                                    <div>
+                                      <p className="font-bold text-[#1d1c17] font-mono">
+                                        {formattedId}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                              )}
+                              {visibleColumns.supplier && (
+                                <td className={`${densityPadding} text-[#1d1c17] font-semibold`}>
+                                  {po.supplier?.name || 'Unassigned Supplier'}
+                                </td>
+                              )}
+                              {visibleColumns.orderDate && (
+                                <td className={`${densityPadding} font-sans text-secondary text-sm`}>
+                                  {formattedDate}
+                                </td>
+                              )}
+                              {visibleColumns.totalAmount && (
+                                <td className={`${densityPadding} text-right font-mono font-bold text-[#ae001a]`}>
+                                  {formattedAmount}
+                                </td>
+                              )}
+                              {visibleColumns.progress && (
+                                <td className={`${densityPadding} text-center font-sans text-xs font-bold text-secondary`}>
+                                  {fulfillmentText}
+                                </td>
+                              )}
+                              {visibleColumns.status && (
+                                <td className={`${densityPadding} text-center`}>
+                                  <span
+                                    className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase tracking-wider ${badgeStyle}`}
+                                  >
+                                    {po.status}
+                                  </span>
+                                </td>
+                              )}
+                              {visibleColumns.actions && (
+                                <td className={`${densityPadding} text-center`} onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button
+                                      onClick={() => handleInspectOrder(po)}
+                                      className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors duration-200 cursor-pointer"
+                                      title="Inspect order details"
+                                    >
+                                      <span className="material-symbols-outlined text-[20px]">visibility</span>
+                                    </button>
 
-                              <button
-                                onClick={() => handleOpenDeleteConfirm(po)}
-                                className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-all duration-200 cursor-pointer"
-                                title="Delete purchase order"
-                              >
-                                <span className="material-symbols-outlined text-[20px]">delete</span>
-                              </button>
-                            </td>
+                                    <button
+                                      onClick={() => handleOpenDeleteConfirm(po)}
+                                      className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-all duration-200 cursor-pointer"
+                                      title="Delete purchase order"
+                                    >
+                                      <span className="material-symbols-outlined text-[20px]">delete</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                <TablePaginationFooter
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  pageSize={pageSize}
+                  totalItems={filteredOrders.length}
+                  onPageChange={setCurrentPage}
+                  onChangePageSize={(s) => {
+                    setPageSize(s);
+                    setCurrentPage(1);
+                  }}
+                />
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Floating Action Button (FAB) */}
           <button

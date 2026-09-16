@@ -11,7 +11,8 @@ export type KitchenQuickLinkAnchorKey =
   | 'kitchen-analytics';
 
 interface KitchenQuickLinksProps {
-  current: KitchenQuickLinkAnchorKey;
+  current?: KitchenQuickLinkAnchorKey;
+  activeTab?: KitchenQuickLinkAnchorKey;
   onNavigate?: (view: string) => void;
 }
 
@@ -41,14 +42,14 @@ const KITCHEN_ANCHORS: Array<{
     label: 'KITCHEN ORDERS',
     route: '/kds/orders',
     featureId: 'kitchen-orders',
-    icon: 'dinner_dining',
+    icon: 'receipt_long',
   },
   {
     key: 'kitchen-order-items',
     label: 'ORDER ITEMS',
     route: '/kds/order-items',
     featureId: 'kitchen-order-items',
-    icon: 'format_list_bulleted',
+    icon: 'lunch_dining',
   },
   {
     key: 'kitchen-event-log',
@@ -62,21 +63,23 @@ const KITCHEN_ANCHORS: Array<{
     label: 'KDS ANALYTICS',
     route: '/kds/analytics',
     featureId: 'kitchen-analytics',
-    icon: 'monitoring',
+    icon: 'bar_chart',
   },
 ];
 
 export const KitchenQuickLinks: React.FC<KitchenQuickLinksProps> = ({
   current,
+  activeTab,
   onNavigate,
 }) => {
   const navigate = useNavigate();
+  const effectiveCurrent = current || activeTab;
 
   const actions: QuickLaunchAction[] = KITCHEN_ANCHORS.map((anchor) => ({
     id: anchor.featureId,
     label: anchor.label,
     icon: anchor.icon,
-    active: anchor.key === current,
+    active: anchor.key === effectiveCurrent,
     onClick: () => {
       if (onNavigate) {
         onNavigate(anchor.featureId);

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession, getStoredUser } from '../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
 
 interface Category {
   id: number;
@@ -49,8 +50,52 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
   const [consumptionUnitFilter, setConsumptionUnitFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All');
 
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    name: true,
+    category: true,
+    conversion: true,
+    costing: true,
+    minStock: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
+  const handleExportCSV = () => {
+    if (filteredMaterials.length === 0) return;
+    const headers = ['ID', 'Name', 'SKU', 'Category', 'Purchase Unit', 'Consumption Unit', 'Conversion Factor', 'Cost per Unit', 'Current Stock', 'Min Stock', 'Status'];
+    const rows = filteredMaterials.map(m => [
+      m.id,
+      `"${m.name.replace(/"/g, '""')}"`,
+      `"${m.sku || ''}"`,
+      `"${m.category?.name || ''}"`,
+      `"${m.purchase_unit || ''}"`,
+      `"${m.consumption_unit || ''}"`,
+      m.conversion_factor,
+      m.cost_per_unit || 0,
+      m.currentQty || 0,
+      m.minimumQty || 0,
+      m.isActive ? 'Active' : 'Inactive'
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `raw_materials_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
+  const handlePrintTable = () => { window.print(); };
+
+  const handleCopySummary = () => {
+    const active = filteredMaterials.filter(m => m.isActive).length;
+    navigator.clipboard.writeText(`Raw Materials: ${filteredMaterials.length} total, ${active} active, ${filteredMaterials.length - active} inactive.`);
+  };
 
 
 
@@ -384,13 +429,26 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
     return true;
   });
 
+  const totalPages = Math.ceil(filteredMaterials.length / pageSize) || 1;
+  const paginatedMaterials = filteredMaterials.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+  const densityPadding = getDensityPadding(rowDensity);
+  const activeColSpan = Object.values(visibleColumns).filter(Boolean).length;
+
   return (
-    <div ref={topRef} className="space-y-6 text-left p-6 font-sans">
+    <div ref={topRef} className="flex flex-col gap-6 text-left font-sans">
       {/* Header */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
-        <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+        <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+              inventory_2
+            </span>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
           RAW MATERIALS WORKSPACE
         </h2>
+          </div>
         <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
           Track supply master data, conversion ratios, average costs, and stock levels.
         </p>
@@ -475,15 +533,6 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => fetchData()}
-              className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
-              title="Reload raw materials data"
-              aria-label="Reload table data"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
           </div>
         </div>
       </div>
@@ -492,52 +541,98 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
 
 
       {/* Contenedor de la Tabla */}
-
       <div className="bg-white border border-[#e8e2d8] rounded overflow-hidden shadow-sm">
-        {isLoading ? (
-          <div className="py-20 text-center space-y-3">
-            <div className="w-8 h-8 border-4 border-gray-300 border-t-[#d51f2c] rounded-full animate-spin mx-auto"></div>
-            <p className="text-sm text-gray-500 font-medium">Loading raw materials workspace...</p>
+        <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+          <div className="flex items-center gap-3">
+            <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
+              RAW MATERIALS MASTER DIRECTORY
+            </span>
+            <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+              {filteredMaterials.length} {filteredMaterials.length === 1 ? 'item' : 'items'}
+            </span>
           </div>
-        ) : error ? (
-          <div className="py-16 text-center text-red-600 space-y-2">
-            <span className="material-symbols-outlined text-4xl">warning</span>
-            <p className="text-sm font-semibold">{error}</p>
-          </div>
-        ) : filteredMaterials.length === 0 ? (
-          <div className="py-20 text-center space-y-4">
-            <span className="material-symbols-outlined text-5xl text-gray-300">inventory_2</span>
-            <h3 className="text-lg font-black text-[#222222] uppercase tracking-tight">No raw materials found.</h3>
-            <p className="text-sm text-[#666666] max-w-md mx-auto">
-              No raw materials found. Click 'Add Raw Material' to register new supply items for recipe costing.
-            </p>
-          </div>
-        ) : (
-          <>
-            <div className="p-4 bg-[#222222] flex justify-between items-center">
-              <span className="text-label-caps font-bold text-white uppercase tracking-wider">
-                RAW MATERIALS MASTER DIRECTORY
-              </span>
-              <span className="material-symbols-outlined text-white text-sm cursor-pointer select-none">
-                more_vert
-              </span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
-                  <tr>
-                    <th className="px-6 py-3.5 text-left text-label-caps font-bold text-[#5f5e5e]">Raw Material & SKU</th>
-                    <th className="px-6 py-3.5 text-left text-label-caps font-bold text-[#5f5e5e]">Category Tag</th>
-                    <th className="px-6 py-3.5 text-left text-label-caps font-bold text-[#5f5e5e]">Unit Conversion Matrix</th>
-                    <th className="px-6 py-3.5 text-right text-label-caps font-bold text-[#5f5e5e]">Costing Metrics</th>
-                    <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">Min Stock Threshold</th>
-                    <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">Status Badge</th>
-                    <th className="px-6 py-3.5 text-center text-label-caps font-bold text-[#5f5e5e]">Actions</th>
-                  </tr>
-                </thead>
 
-              <tbody className="divide-y divide-[#e8e2d8]">
-                {filteredMaterials.map((m) => {
+          <TableOptionsMenu
+            onExportCSV={handleExportCSV}
+            onPrint={handlePrintTable}
+            onCopySummary={handleCopySummary}
+            onReload={fetchData}
+            columns={[
+              { key: 'name', label: 'Raw Material & SKU' },
+              { key: 'category', label: 'Category Tag' },
+              { key: 'conversion', label: 'Unit Conversion Matrix' },
+              { key: 'costing', label: 'Costing Metrics' },
+              { key: 'minStock', label: 'Min Stock Threshold' },
+              { key: 'status', label: 'Status Badge' },
+              { key: 'actions', label: 'Actions' },
+            ]}
+            visibleColumns={visibleColumns}
+            onToggleColumn={(key) =>
+              setVisibleColumns((prev) => ({
+                ...prev,
+                [key]: !prev[key as keyof typeof visibleColumns],
+              }))
+            }
+            rowDensity={rowDensity}
+            onChangeDensity={setRowDensity}
+            totalItems={filteredMaterials.length}
+            pageSize={pageSize}
+            onChangePageSize={(size) => {
+              setPageSize(size);
+              setCurrentPage(1);
+            }}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+          />
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
+              <tr>
+                {visibleColumns.name && <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e]`}>Raw Material & SKU</th>}
+                {visibleColumns.category && <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e]`}>Category Tag</th>}
+                {visibleColumns.conversion && <th className={`${densityPadding} text-left text-label-caps font-bold text-[#5f5e5e]`}>Unit Conversion Matrix</th>}
+                {visibleColumns.costing && <th className={`${densityPadding} text-right text-label-caps font-bold text-[#5f5e5e]`}>Costing Metrics</th>}
+                {visibleColumns.minStock && <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e]`}>Min Stock Threshold</th>}
+                {visibleColumns.status && <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e]`}>Status Badge</th>}
+                {visibleColumns.actions && <th className={`${densityPadding} text-center text-label-caps font-bold text-[#5f5e5e]`}>Actions</th>}
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-[#e8e2d8]">
+              {activeColSpan === 0 ? (
+                <NoColumnsEmptyState colSpan={7} />
+              ) : isLoading ? (
+                <tr>
+                  <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                    <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                      sync
+                    </span>
+                    <p className="text-secondary text-body-md mt-2 font-sans">Loading raw materials workspace...</p>
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={activeColSpan} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
+                    <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                      warning
+                    </span>
+                    <p className="font-bold">{error}</p>
+                  </td>
+                </tr>
+              ) : filteredMaterials.length === 0 ? (
+                <tr>
+                  <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
+                    <span className="material-symbols-outlined text-secondary text-5xl block mb-2 mx-auto select-none">
+                      inventory_2
+                    </span>
+                    <p className="font-bold text-[#222222] uppercase text-sm">No raw materials found</p>
+                    <p className="text-xs text-[#666666] mt-1">No raw materials match the selected filter criteria.</p>
+                  </td>
+                </tr>
+              ) : (
+                paginatedMaterials.map((m) => {
                   const isLowStock = m.minimumQty != null && (m.currentQty || 0) < m.minimumQty;
                   const isInactive = m.isActive === false;
 
@@ -549,99 +644,122 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
                         isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
                       }`}
                     >
-                      <td className="px-6 py-4">
-                        <div className={`font-sans font-bold text-gray-900 text-sm ${isInactive ? 'line-through' : ''}`}>{m.name}</div>
-                        {m.sku && (
-                          <span className="inline-block bg-[#f0ebd9] text-[#222222] text-[10px] font-black uppercase px-2 py-0.5 mt-1 rounded tracking-wider">
-                            {m.sku}
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4">
-                        {m.category ? (
-                          <span className="inline-block bg-[#f0ebd9] text-[#222222] text-xs font-bold px-3 py-1 rounded-full">
-                            {m.category.name}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-400 italic">No Category</span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4 text-sm text-[#222222] font-semibold">
-                        {m.purchase_unit && m.consumption_unit ? (
-                          <span>
-                            1 {m.purchase_unit} = {m.conversion_factor} {m.consumption_unit}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400">Not defined</span>
-                        )}
-                      </td>
-
-                      <td className="px-6 py-4 text-right space-y-1">
-                        <div className="text-sm font-black text-[#222222]">
-                          LPC: {m.cost_per_unit != null ? `$${m.cost_per_unit.toFixed(2)}` : 'N/A'}
-                        </div>
-                        <div className="text-xs text-gray-500 font-bold">
-                          WACC: {m.weightedAverageUnitCost != null ? `$${Number(m.weightedAverageUnitCost).toFixed(2)}` : 'N/A'}
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4 text-center">
-                        <div className="inline-flex items-center gap-1.5 justify-center">
-                          <span className="text-sm font-bold text-[#222222]">
-                            Qty: {m.currentQty || 0} / Min: {m.minimumQty ?? '-'}
-                          </span>
-                          {isLowStock && (
-                            <span className="material-symbols-outlined text-red-600 text-lg animate-pulse" title="Stock alert: Under minimum threshold!">
-                              warning
+                      {visibleColumns.name && (
+                        <td className={densityPadding}>
+                          <div className={`font-sans font-bold text-gray-900 text-sm ${isInactive ? 'line-through' : ''}`}>{m.name}</div>
+                          {m.sku && (
+                            <span className="inline-block bg-[#f0ebd9] text-[#222222] text-[10px] font-black uppercase px-2 py-0.5 mt-1 rounded tracking-wider">
+                              {m.sku}
                             </span>
                           )}
-                        </div>
-                      </td>
+                        </td>
+                      )}
 
-                      <td className="px-6 py-4 text-center">
-                        <span
-                          className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
-                            m.isActive
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-zinc-100 text-zinc-600'
-                          }`}
-                        >
-                          {m.isActive ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-
-
-                      <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-center gap-2.5">
-                          <button
-                            onClick={() => handleOpenEdit(m)}
-                            className="p-1 text-gray-500 hover:text-[#ae001a] transition-all cursor-pointer"
-                            title="Edit raw material"
-                          >
-                            <span className="material-symbols-outlined text-lg">edit</span>
-                          </button>
-                          <button
-                            onClick={(e) => handleOpenToggleActive(e, m)}
-                            className="p-1 text-gray-500 hover:text-[#ae001a] transition-all cursor-pointer"
-                            title={m.isActive ? 'Deactivate raw material' : 'Activate raw material'}
-                          >
-                            <span className="material-symbols-outlined text-lg">
-                              {m.isActive ? 'block' : 'check_circle'}
+                      {visibleColumns.category && (
+                        <td className={densityPadding}>
+                          {m.category ? (
+                            <span className="inline-block bg-[#f0ebd9] text-[#222222] text-xs font-bold px-3 py-1 rounded-full">
+                              {m.category.name}
                             </span>
-                          </button>
-                        </div>
-                      </td>
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">No Category</span>
+                          )}
+                        </td>
+                      )}
+
+                      {visibleColumns.conversion && (
+                        <td className={`${densityPadding} text-sm text-[#222222] font-semibold`}>
+                          {m.purchase_unit && m.consumption_unit ? (
+                            <span>
+                              1 {m.purchase_unit} = {m.conversion_factor} {m.consumption_unit}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">Not defined</span>
+                          )}
+                        </td>
+                      )}
+
+                      {visibleColumns.costing && (
+                        <td className={`${densityPadding} text-right space-y-1`}>
+                          <div className="text-sm font-black text-[#222222]">
+                            LPC: {m.cost_per_unit != null ? `$${m.cost_per_unit.toFixed(2)}` : 'N/A'}
+                          </div>
+                          <div className="text-xs text-gray-500 font-bold">
+                            WACC: {m.weightedAverageUnitCost != null ? `$${Number(m.weightedAverageUnitCost).toFixed(2)}` : 'N/A'}
+                          </div>
+                        </td>
+                      )}
+
+                      {visibleColumns.minStock && (
+                        <td className={`${densityPadding} text-center`}>
+                          <div className="inline-flex items-center gap-1.5 justify-center">
+                            <span className="text-sm font-bold text-[#222222]">
+                              Qty: {m.currentQty || 0} / Min: {m.minimumQty ?? '-'}
+                            </span>
+                            {isLowStock && (
+                              <span className="material-symbols-outlined text-red-600 text-lg animate-pulse" title="Stock alert: Under minimum threshold!">
+                                warning
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+
+                      {visibleColumns.status && (
+                        <td className={`${densityPadding} text-center`}>
+                          <span
+                            className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
+                              m.isActive
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-zinc-100 text-zinc-600'
+                            }`}
+                          >
+                            {m.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                      )}
+
+                      {visibleColumns.actions && (
+                        <td className={`${densityPadding} text-center`} onClick={(e) => e.stopPropagation()}>
+                          <div className="flex justify-center gap-2.5">
+                            <button
+                              onClick={() => handleOpenEdit(m)}
+                              className="p-1 text-gray-500 hover:text-[#ae001a] transition-all cursor-pointer"
+                              title="Edit raw material"
+                            >
+                              <span className="material-symbols-outlined text-lg">edit</span>
+                            </button>
+                            <button
+                              onClick={(e) => handleOpenToggleActive(e, m)}
+                              className="p-1 text-gray-500 hover:text-[#ae001a] transition-all cursor-pointer"
+                              title={m.isActive ? 'Deactivate raw material' : 'Activate raw material'}
+                            >
+                              <span className="material-symbols-outlined text-lg">
+                                {m.isActive ? 'block' : 'check_circle'}
+                              </span>
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
-                })}
+                }))}
               </tbody>
             </table>
           </div>
-        </>
-      )}
-    </div>
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredMaterials.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
+      </div>
 
 
       {/* Quick Links Hub Persistente (Sprint 25 Story 4114) */}
@@ -800,7 +918,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
                     </label>
                     <input
                       type="number"
-                      step="0.01"
+                      step="any"
                       min="0"
                       value={formCostPerUnit}
                       onChange={(e) => setFormCostPerUnit(e.target.value)}

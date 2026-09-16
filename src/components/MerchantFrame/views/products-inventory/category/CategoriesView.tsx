@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { QuickLaunchPanel } from '../../../shared/QuickLaunchPanel';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
 
 interface Category {
@@ -23,11 +24,22 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Estados de filtros y búsqueda
+  // Estados  // Filters state
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All Status');
+  const [typeFilter, setTypeFilter] = useState<string>('All Types');
 
-  // Estados del Modal
+  // Table options state
+  const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    name: true,
+    parent: true,
+    products: true,
+    status: true,
+    actions: true,
+  });
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
@@ -120,6 +132,24 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     fetchCategories();
   }, []);
 
+  const handleExportCSV = () => {
+    if (filteredCategories.length === 0) return;
+    const headers = ['ID', 'Name', 'Type', 'Parent ID', 'Linked Products', 'Status'];
+    const rows = filteredCategories.map(c => [c.id, `"${c.name.replace(/"/g, '""')}"`, c.type, c.parentId, c.linkedProducts, c.status]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const link = document.createElement('a');
+    link.setAttribute('href', encodeURI(csvContent));
+    link.setAttribute('download', `categories_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  const handlePrintTable = () => { window.print(); };
+
+  const handleCopySummary = () => {
+    const active = filteredCategories.filter(c => c.status === 'Active').length;
+    navigator.clipboard.writeText(`Product Categories: ${filteredCategories.length} total, ${active} active, ${filteredCategories.length - active} inactive.`);
+  };
+
   // Filtrado reactivo de la lista
   const filteredCategories = categories.filter((cat) => {
     const matchesSearch = cat.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -129,6 +159,12 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     
     return matchesSearch && matchesStatus;
   });
+
+  const totalPages = Math.ceil(filteredCategories.length / pageSize) || 1;
+  const paginatedCategories = filteredCategories.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
   // Abrir modal para añadir
   const handleOpenAddModal = () => {
@@ -256,9 +292,14 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
       {/* Título de Sección */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div>
-          <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+          <div className="flex items-center gap-2.5">
+            <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+              category
+            </span>
+            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
             Product Categories Hierarchy
           </h2>
+          </div>
           <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
             Organize products into parent and sub-categories to optimize menu layouts, POS sales, and tax tracking.
           </p>
@@ -305,161 +346,236 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
               ADD CATEGORY
             </button>
 
-            <button
-              onClick={() => fetchCategories()}
-              className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer font-sans"
-              title="Reload categories"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
           </div>
         </div>
       </div>
 
       {/* Tabla Principal */}
       <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm">
-        <div className="p-4 bg-[#222222] flex justify-between items-center">
-          <span className="text-label-caps font-bold text-white uppercase tracking-wider">
-            CATEGORY HIERARCHY
-          </span>
-          <span className="material-symbols-outlined text-white text-sm cursor-pointer">
-            more_vert
-          </span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
-              <tr>
-                <th className="px-6 py-3 text-left text-label-caps font-bold text-[#5f5e5e]">
-                  Category Name
-                </th>
-                <th className="px-6 py-3 text-left text-label-caps font-bold text-[#5f5e5e]">
-                  Parent ID
-                </th>
-                <th className="px-6 py-3 text-center text-label-caps font-bold text-[#5f5e5e]">
-                  Linked Products
-                </th>
-                <th className="px-6 py-3 text-center text-label-caps font-bold text-[#5f5e5e]">
-                  Status
-                </th>
-                <th className="px-6 py-3 text-center text-label-caps font-bold text-[#5f5e5e]">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e8e2d8]">
-              {isLoading ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-secondary font-sans bg-white">
-                    <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
-                      sync
-                    </span>
-                    <p className="text-secondary text-body-md mt-2 font-sans">Loading category hierarchy...</p>
-                  </td>
-                </tr>
-              ) : error ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-[#ba1a1a] font-sans bg-white">
-                    <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
-                      error
-                    </span>
-                    <p className="font-bold">{error}</p>
-                    <button
-                      onClick={fetchCategories}
-                      className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-all font-sans cursor-pointer"
-                    >
-                      Retry Connection
-                    </button>
-                  </td>
-                </tr>
-              ) : categories.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-secondary font-sans bg-white">
-                      <span className="material-symbols-outlined text-secondary text-5xl block mb-2">
-                        category
-                      </span>
-                      <p className="font-bold text-[#222222] uppercase text-sm">No categories found</p>
-                      <p className="text-xs text-[#666666] mt-1">Click 'Add Category' to start building your hierarchy.</p>
-                    </td>
-                  </tr>
-                ) : filteredCategories.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-secondary italic bg-white">
-                      No categories match the selected filters.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredCategories.map((cat) => {
-                    const isSub = cat.type === 'Sub-Category';
-                    const isInactive = cat.status === 'Inactive';
-                    return (
-                      <tr
-                        key={cat.id}
-                        className={`category-row group transition-colors ${
-                          isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
-                        }`}
-                      >
-                        <td className={`px-6 py-4 flex items-center gap-3 ${isSub ? 'pl-12' : ''}`}>
-                          {!isSub ? (
-                            <div className={`w-1 h-8 rounded-full ${isInactive ? 'bg-zinc-400' : 'bg-[#ae001a]'}`}></div>
-                          ) : (
-                            <span className="material-symbols-outlined text-[#5f5e5e]/40">
-                              subdirectory_arrow_right
-                            </span>
-                          )}
-                          <div>
-                            <p className={`font-bold text-[#1d1c17] ${isInactive ? 'line-through' : ''}`}>{cat.name}</p>
-                            <p className={`text-[11px] text-secondary uppercase tracking-wider ${isInactive ? 'line-through' : ''}`}>
-                              {cat.type}
-                            </p>
-                          </div>
-                        </td>
-                        <td className={`px-6 py-4 font-mono text-[13px] text-secondary ${isInactive ? 'line-through' : ''}`}>
-                          {cat.parentId}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`bg-[#ece8e0] px-3 py-1 rounded text-body-sm font-bold text-[#1d1c17] ${isInactive ? 'line-through' : ''}`}>
-                            {cat.linkedProducts}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span
-                            className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
-                              cat.status === 'Active'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-zinc-200 text-[#5f5e5e]'
-                            }`}
-                          >
-                            {cat.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <div className="flex justify-center gap-3">
-                            <button
-                              onClick={() => handleOpenEditModal(cat)}
-                              className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                              title="Editar categoría"
-                            >
-                              <span className="material-symbols-outlined text-[20px]">edit</span>
-                            </button>
-                            <button
-                              onClick={() => void handleToggleActive(cat)}
-                              className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                              title={cat.status === 'Active' ? "Desactivar categoría" : "Activar categoría"}
-                            >
-                              <span className="material-symbols-outlined text-[20px]">
-                                {cat.status === 'Active' ? 'block' : 'check_circle_outline'}
-                              </span>
-                            </button>
-                          </div>
-                        </td>
+        {(() => {
+          const densityPadding = getDensityPadding(rowDensity);
+          const activeColSpan =
+            (visibleColumns.name ? 1 : 0) +
+            (visibleColumns.parent ? 1 : 0) +
+            (visibleColumns.products ? 1 : 0) +
+            (visibleColumns.status ? 1 : 0) +
+            (visibleColumns.actions ? 1 : 0);
+
+          return (
+            <>
+              <div className="p-4 bg-[#222222] flex justify-between items-center relative">
+                <div className="flex items-center gap-3">
+                  <span className="text-label-caps font-bold text-white uppercase tracking-wider">
+                    CATEGORY HIERARCHY DIRECTORY
+                  </span>
+                  <span className="text-[10px] font-mono font-bold bg-[#333333] text-zinc-300 px-2 py-0.5 rounded border border-[#444444]">
+                    {filteredCategories.length} {filteredCategories.length === 1 ? 'category' : 'categories'}
+                  </span>
+                </div>
+
+                <TableOptionsMenu
+                  onExportCSV={handleExportCSV}
+                  onPrint={handlePrintTable}
+                  onCopySummary={handleCopySummary}
+                  onReload={fetchCategories}
+                  columns={[
+                    { key: 'name', label: 'Category Name' },
+                    { key: 'parent', label: 'Parent ID' },
+                    { key: 'products', label: 'Linked Products' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'actions', label: 'Actions' },
+                  ]}
+                  visibleColumns={visibleColumns}
+                  onToggleColumn={(key) =>
+                    setVisibleColumns((prev) => ({
+                      ...prev,
+                      [key]: !prev[key as keyof typeof visibleColumns],
+                    }))
+                  }
+                  rowDensity={rowDensity}
+                  onChangeDensity={setRowDensity}
+                  totalItems={filteredCategories.length}
+                  pageSize={pageSize}
+                  onChangePageSize={(size) => {
+                    setPageSize(size);
+                    setCurrentPage(1);
+                  }}
+                  currentPage={currentPage}
+                  onPageChange={setCurrentPage}
+                />
+              </div>
+
+              {activeColSpan === 0 ? (
+                <NoColumnsEmptyState />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead className="bg-[#ece8e0] border-b border-[#e8e2d8]">
+                      <tr>
+                        {visibleColumns.name && (
+                          <th className={`text-left text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Category Name
+                          </th>
+                        )}
+                        {visibleColumns.parent && (
+                          <th className={`text-left text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Parent ID
+                          </th>
+                        )}
+                        {visibleColumns.products && (
+                          <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Linked Products
+                          </th>
+                        )}
+                        {visibleColumns.status && (
+                          <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Status
+                          </th>
+                        )}
+                        {visibleColumns.actions && (
+                          <th className={`text-center text-label-caps font-bold text-[#5f5e5e] ${densityPadding}`}>
+                            Actions
+                          </th>
+                        )}
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-        </div>
+                    </thead>
+                    <tbody className="divide-y divide-[#e8e2d8]">
+                      {isLoading ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className={`text-center text-secondary font-sans bg-white py-12 px-6`}>
+                            <span className="material-symbols-outlined animate-spin text-[#ae001a] text-4xl block mb-2 mx-auto select-none">
+                              sync
+                            </span>
+                            <p className="text-secondary text-body-md mt-2 font-sans">Loading category hierarchy...</p>
+                          </td>
+                        </tr>
+                      ) : error ? (
+                        <tr>
+                          <td colSpan={activeColSpan} className={`text-center text-[#ba1a1a] font-sans bg-white py-12 px-6`}>
+                            <span className="material-symbols-outlined text-[#ba1a1a] text-4xl block mb-2 mx-auto select-none">
+                              error
+                            </span>
+                            <p className="font-bold">{error}</p>
+                            <button
+                              onClick={fetchCategories}
+                              className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-all font-sans cursor-pointer"
+                            >
+                              Retry Connection
+                            </button>
+                          </td>
+                        </tr>
+                      ) : categories.length === 0 ? (
+                        <TableEmptyState
+                          colSpan={activeColSpan}
+                          icon="category"
+                          title="No categories found"
+                          description="Click 'Add Category' to start building your hierarchy."
+                        />
+                      ) : filteredCategories.length === 0 ? (
+                        <TableEmptyState
+                          colSpan={activeColSpan}
+                          icon="category"
+                          title="No categories found"
+                          description="No categories match the selected filter criteria."
+                        />
+                      ) : (
+                        paginatedCategories.map((cat) => {
+                          const isSub = cat.type === 'Sub-Category';
+                          const isInactive = cat.status === 'Inactive';
+                          return (
+                            <tr
+                              key={cat.id}
+                              className={`category-row group transition-colors ${
+                                isInactive ? 'bg-[#f8f3eb]/40 opacity-75' : 'hover:bg-[#f8f3eb]'
+                              }`}
+                            >
+                              {visibleColumns.name && (
+                                <td className={`flex items-center gap-3 ${densityPadding} ${isSub ? 'pl-12' : ''}`}>
+                                  {!isSub ? (
+                                    <div className={`w-1 h-8 rounded-full ${isInactive ? 'bg-zinc-400' : 'bg-[#ae001a]'}`}></div>
+                                  ) : (
+                                    <span className="material-symbols-outlined text-[#5f5e5e]/40">
+                                      subdirectory_arrow_right
+                                    </span>
+                                  )}
+                                  <div>
+                                    <p className={`font-bold text-[#1d1c17] ${isInactive ? 'line-through' : ''}`}>{cat.name}</p>
+                                    <p className={`text-[11px] text-secondary uppercase tracking-wider ${isInactive ? 'line-through' : ''}`}>
+                                      {cat.type}
+                                    </p>
+                                  </div>
+                                </td>
+                              )}
+                              {visibleColumns.parent && (
+                                <td className={`font-mono text-[13px] text-secondary ${densityPadding} ${isInactive ? 'line-through' : ''}`}>
+                                  {cat.parentId}
+                                </td>
+                              )}
+                              {visibleColumns.products && (
+                                <td className={`text-center ${densityPadding}`}>
+                                  <span className={`bg-[#ece8e0] px-3 py-1 rounded text-body-sm font-bold text-[#1d1c17] ${isInactive ? 'line-through' : ''}`}>
+                                    {cat.linkedProducts}
+                                  </span>
+                                </td>
+                              )}
+                              {visibleColumns.status && (
+                                <td className={`text-center ${densityPadding}`}>
+                                  <span
+                                    className={`text-[10px] px-2.5 py-0.5 font-bold rounded uppercase ${
+                                      cat.status === 'Active'
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'bg-zinc-200 text-[#5f5e5e]'
+                                    }`}
+                                  >
+                                    {cat.status}
+                                  </span>
+                                </td>
+                              )}
+                              {visibleColumns.actions && (
+                                <td className={`text-center ${densityPadding}`}>
+                                  <div className="flex justify-center gap-3">
+                                    <button
+                                      onClick={() => handleOpenEditModal(cat)}
+                                      className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
+                                      title="Editar categoría"
+                                    >
+                                      <span className="material-symbols-outlined text-[20px]">edit</span>
+                                    </button>
+                                    <button
+                                      onClick={() => void handleToggleActive(cat)}
+                                      className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
+                                      title={cat.status === 'Active' ? "Desactivar categoría" : "Activar categoría"}
+                                    >
+                                      <span className="material-symbols-outlined text-[20px]">
+                                        {cat.status === 'Active' ? 'block' : 'check_circle_outline'}
+                                      </span>
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          );
+        })()}
+
+        <TablePaginationFooter
+          currentPage={currentPage}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          totalItems={filteredCategories.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
       </div>
 
 
