@@ -137,27 +137,27 @@ export const MerchantFrame: React.FC = () => {
 
 
 
-  // Estados de carga e inicialización de sesión
+  // Session loading and initialization state
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isAuthLocked, setIsAuthLocked] = useState<boolean>(false);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
-  // Estados de navegación SPA
-  const [activeCategory, setActiveCategory] = useState<string>('saas'); // Categoria activa
-  const [activeTab, setActiveTab] = useState<string>('saas-dashboard'); // Sub-item o vista activa
+  // SPA navigation states
+  const [activeCategory, setActiveCategory] = useState<string>('saas'); // Active category
+  const [activeTab, setActiveTab] = useState<string>('saas-dashboard'); // Active sub-item or view
   const [linesEntryFilter, setLinesEntryFilter] = useState<JournalEntry | null>(null);
-  // Contexto padre al saltar de un voucher de pago a su desglose de líneas.
+  // Parent context when jumping from a payment voucher to its line item breakdown.
   const [itemsPaymentFilter, setItemsPaymentFilter] = useState<SupplierPayment | null>(null);
-  // Contexto de origen al saltar a la matriz de asignaciones (pago o nota de crédito).
+  // Origin context when jumping to allocations matrix (payment or credit note).
   const [allocationsContext, setAllocationsContext] = useState<{
     payment?: SupplierPayment | null;
     creditNote?: SupplierCreditNote | null;
   } | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
 
-  // Traduce los nombres de tab internos de las vistas SaaS compartidas (SaaSFrame)
-  // a los tab ids reales de MerchantFrame (definidos en Features.txt), ya que ambos
-  // shells reusan los mismos componentes de vista con vocabularios de navegación distintos.
+  // Translates internal tab names from shared SaaS views (SaaSFrame)
+  // to the real tab ids of MerchantFrame (defined in Features.txt), since both
+  // shells reuse the same view components with different navigation vocabularies.
   const SAAS_VIEW_TAB_MAP: Record<string, string> = {
     'subscription': 'sub-plans-core',
     'subscription-applications': 'apps-config',
@@ -171,7 +171,7 @@ export const MerchantFrame: React.FC = () => {
     setActiveTab(SAAS_VIEW_TAB_MAP[view] ?? view);
   };
 
-  // Sincronizar ruta de navegador física con el estado de navegación interna SPA
+  // Synchronize physical browser URL path with SPA internal navigation state
   useEffect(() => {
     const path = location.pathname;
     if (path === '/legal/privacy-policy') {
@@ -286,13 +286,13 @@ export const MerchantFrame: React.FC = () => {
   }, [location.pathname, profile?.role]);
   const [showKitchenKDS, setShowKitchenKDS] = useState<boolean>(false);
 
-  // Navegación Dinámica por Plan y Permisos
+  // Dynamic Navigation by Plan and Permissions
   const [navCategories, setNavCategories] = useState<NavCategory[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [expandedApps, setExpandedApps] = useState<Record<string, boolean>>({});
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState<string>('');
 
-  // Filtrado reactivo en tiempo real del menú lateral (estricto a nivel de elemento/feature)
+  // Real-time reactive filtering of sidebar menu (strict at element/feature level)
   const filteredNavCategories = useMemo(() => {
     const query = sidebarSearchQuery.trim().toLowerCase();
     if (!query) return navCategories;
@@ -327,7 +327,7 @@ export const MerchantFrame: React.FC = () => {
       const menu = await navigationService.loadAndParseNavigation(userProfile.Plan_id, userProfile.role);
       setNavCategories(menu);
     } catch (err) {
-      console.error('Error cargando el menú dinámico', err);
+      console.error('Error loading dynamic menu', err);
     }
   };
 
@@ -337,7 +337,7 @@ export const MerchantFrame: React.FC = () => {
     }
   }, [profile, refreshTrigger]);
 
-  // Las categorías y aplicaciones del menú lateral permanecen cerradas/colapsadas por defecto al iniciar sesión
+  // Sidebar categories and applications remain closed/collapsed by default on login
 
 
   // Estados de UI
@@ -356,7 +356,7 @@ export const MerchantFrame: React.FC = () => {
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
   const [isQuickOrderOpen, setIsQuickOrderOpen] = useState<boolean>(false);
 
-  // 1. Inicialización y chequeo de sesión (AC 1.1 y 1.2)
+  // 1. Session initialization and check (AC 1.1 and 1.2)
   const hydrateSession = async () => {
     try {
       setIsAuthLocked(false);
@@ -365,7 +365,7 @@ export const MerchantFrame: React.FC = () => {
       setProfile(userProfile);
       await restaurantService.getEstablishmentTier();
 
-      // Auto-inicializar vistas según el rol
+      // Auto-initialize views according to role
       if (userProfile.role === 'SaaS Owner') {
         setActiveTab('saas-dashboard');
       } else {
@@ -395,9 +395,9 @@ export const MerchantFrame: React.FC = () => {
       }
     } catch (err: any) {
       if (err.status === 401) {
-        setIsAuthLocked(true); // AC 1.3: Bloqueo de sesión
+        setIsAuthLocked(true); // AC 1.3: Session lock
       } else {
-        console.error('Error durante la hidratación de sesión', err);
+        console.error('Error during session hydration', err);
       }
     }
   };
@@ -435,11 +435,11 @@ export const MerchantFrame: React.FC = () => {
 
 
 
-  // Activar clases dinámicas de layout en el root y body según la pestaña activa
+  // Activate dynamic layout classes on root and body according to active tab
   useEffect(() => {
     const rootEl = document.getElementById('root');
     const bodyEl = document.body;
-    // Modo SaaS si el rol es SaaS Owner, si el tab es exclusivo de SaaS, o si la categoría activa es saas
+    // SaaS mode if role is SaaS Owner, if tab is SaaS-exclusive, or if active category is saas
     const exclusiveSaaS = [
       'saas-dashboard',
       'companies-dashboard',
@@ -507,7 +507,7 @@ export const MerchantFrame: React.FC = () => {
     return <KitchenMonitorView onBackToDashboard={() => setShowKitchenKDS(false)} />;
   }
 
-  // Renderizado dinámico de vistas SPA (AC 4.2)
+  // Dynamic SPA view rendering (AC 4.2)
   const renderSPAView = () => {
     // Check if this tab is a coming soon stub
     const stub = COMING_SOON_STUBS[activeTab];
@@ -531,7 +531,7 @@ export const MerchantFrame: React.FC = () => {
           <div className="p-6 bg-[#f1ece4] border border-[#e8e2d8] rounded mb-6 text-left">
             <p className="font-bold text-primary text-sm uppercase tracking-wider mb-2">Feature Coming Soon</p>
             <p className="text-body-md text-[#5f5e5e] leading-relaxed">
-              Esta sección está bajo desarrollo activo. En una futura actualización, estará disponible con todas sus funcionalidades en <strong>X7 Point of Sale</strong>.
+              This section is under active development. In a future update, it will be available with full functionality in <strong>X7 Point of Sale</strong>.
             </p>
           </div>
 
@@ -549,7 +549,7 @@ export const MerchantFrame: React.FC = () => {
               }}
               className="px-6 py-2.5 bg-[#222222] text-white font-bold text-xs uppercase tracking-wider hover:bg-primary transition-all rounded shadow-md"
             >
-              Volver al Dashboard
+              Back to Dashboard
             </button>
           </div>
         </div>
@@ -559,7 +559,7 @@ export const MerchantFrame: React.FC = () => {
     if (activeTab === 'saas-dashboard') {
       return (
         <div className="space-y-8 animate-fade-in text-left">
-          {/* Header del Dashboard de SaaS en el Canvas central */}
+          {/* SaaS Dashboard Header in central canvas */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
             <div>
               <h1 className="font-sans text-h1 text-[#222222] uppercase tracking-tighter">
@@ -752,8 +752,6 @@ export const MerchantFrame: React.FC = () => {
       return <LaborCostForecastingView onNavigate={handleStaffNavigate} />;
     }
 
-    if (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries' || activeTab === 'attendance-ledger' || activeTab === 'ledger') {
-      return <TimeEntriesView onNavigate={handleStaffNavigate} />;
     if (
       (activeCategory === 'restaurant-operations' && (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries')) ||
       activeTab === 'attendance-ledger' ||
@@ -919,10 +917,10 @@ export const MerchantFrame: React.FC = () => {
     }
 
     if (activeTab === 'floor-plans') {
-      // `UserProfile` no expone merchant_id (solo name/role/portraitUrl/Plan_id/company_id, y
-      // company_id es el ámbito de Accounts Payable, no el merchant del dining-system), así que
-      // el merchant real se resuelve desde la sesión almacenada (el mismo id que viaja en el JWT
-      // con el que la vista llama a /api/floor-plan). Si no hay sesión, la vista aplica su default.
+      // `UserProfile` does not expose merchant_id (only name/role/portraitUrl/Plan_id/company_id, and
+      // company_id is the Accounts Payable scope, not the dining-system merchant), so
+      // the real merchant is resolved from stored session (the same id that travels in the JWT
+      // with which the view calls /api/floor-plan). If no session, the view applies its default.
       return (
         <FloorPlansView
           onNavigate={(view) => setActiveTab(view)}
@@ -976,7 +974,7 @@ export const MerchantFrame: React.FC = () => {
       );
     }
 
-    // El feature id de las zonas es `table-zones` (Features.txt), no 'floor-zones'.
+    // Zone feature id is `table-zones` (Features.txt), not 'floor-zones'.
     if (activeTab === 'table-zones') {
       return (
         <FloorZonesView
@@ -1049,7 +1047,7 @@ export const MerchantFrame: React.FC = () => {
 
 
     if (activeTab !== 'dashboard') {
-      // Resolver nombre e icono dinámicamente desde navCategories
+      // Dynamically resolve name and icon from navCategories
       let featureName = activeTab.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       let featureIcon = 'widgets';
       let appName = '';
@@ -1069,7 +1067,7 @@ export const MerchantFrame: React.FC = () => {
 
       return (
         <div className="bg-white border border-[#e8e2d8] rounded shadow-sm overflow-hidden">
-          {/* Header de la vista */}
+          {/* View Header */}
           <div className="bg-[#222222] px-8 py-6 flex items-center gap-5">
             <div className="w-12 h-12 bg-[#d51f2c] rounded flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-white text-2xl">{featureIcon}</span>
@@ -1084,7 +1082,7 @@ export const MerchantFrame: React.FC = () => {
             </div>
           </div>
 
-          {/* Cuerpo del stub */}
+          {/* Stub body */}
           <div className="p-10 text-center">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-full mb-6">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
@@ -1092,8 +1090,8 @@ export const MerchantFrame: React.FC = () => {
             </div>
 
             <p className="text-body-md text-[#5f5e5e] max-w-md mx-auto leading-relaxed">
-              El módulo <strong className="text-[#222222]">{featureName}</strong> está en desarrollo activo.
-              Estará disponible en una próxima versión de <strong className="text-[#d51f2c]">X7 Point of Sale</strong>.
+              The module <strong className="text-[#222222]">{featureName}</strong> is under active development.
+              It will be available in an upcoming release of <strong className="text-[#d51f2c]">X7 Point of Sale</strong>.
             </p>
 
             <div className="flex justify-center gap-3 mt-8">
@@ -1108,7 +1106,7 @@ export const MerchantFrame: React.FC = () => {
                 }}
                 className="px-5 py-2.5 bg-[#222222] text-white font-bold text-xs uppercase tracking-wider hover:bg-[#d51f2c] transition-all rounded shadow-sm"
               >
-                Volver al Dashboard
+                Back to Dashboard
               </button>
             </div>
           </div>
@@ -1123,7 +1121,7 @@ export const MerchantFrame: React.FC = () => {
           {/* Daily Sales Card */}
           <SalesMetricCard refreshTrigger={refreshTrigger} />
 
-          {/* Ocupación de mesas y rendimiento apilados */}
+          {/* Stacked tables occupancy and performance */}
           <div className="col-span-12 lg:col-span-4 grid grid-rows-2 gap-6">
             <TablesOccupancyCard refreshTrigger={refreshTrigger} />
             <KitchenPerformanceCard refreshTrigger={refreshTrigger} />
@@ -1221,7 +1219,7 @@ export const MerchantFrame: React.FC = () => {
               <p className="text-[10px] text-white/40">"{sidebarSearchQuery}"</p>
             </div>
           ) : profile?.role === 'SaaS Owner' ? (
-            // Menú dinámico para SaaS Owner — usa filteredNavCategories
+            // Dynamic menu for SaaS Owner — uses filteredNavCategories
             filteredNavCategories.map((cat) => {
               const isCatExpanded = sidebarSearchQuery.trim() !== '' || !!expandedCategories[cat.id];
               const hasActiveTab = cat.applications.some(app =>
@@ -1231,7 +1229,7 @@ export const MerchantFrame: React.FC = () => {
 
               return (
                 <div key={cat.id} className="w-full text-left">
-                  {/* L1: Categoría */}
+                  {/* L1: Category */}
                   <div
                     onClick={() => {
                       const isCurrentlyExpanded = !!expandedCategories[cat.id];
@@ -1340,7 +1338,7 @@ export const MerchantFrame: React.FC = () => {
             filteredNavCategories.map((cat) => {
               const isCatExpanded = sidebarSearchQuery.trim() !== '' || !!expandedCategories[cat.id];
               
-              // Determinar si alguna característica dentro de esta categoría está activa
+              // Determine if any feature within this category is active
               const hasActiveTab = cat.applications.some(app => 
                 app.features.some(f => f.id === activeTab)
               );
@@ -1348,7 +1346,7 @@ export const MerchantFrame: React.FC = () => {
 
               return (
                 <div key={cat.id} className="w-full text-left">
-                  {/* Nivel 1: Categoría */}
+                  {/* Level 1: Category */}
                   <div
                     onClick={() => {
                       const isCurrentlyExpanded = !!expandedCategories[cat.id];
@@ -1420,7 +1418,7 @@ export const MerchantFrame: React.FC = () => {
                               <span>{app.name}</span>
                             </div>
 
-                            {/* Nivel 3: Características (Omitido para Kitchen Display System ya que se navega internamente desde el hub) */}
+                            {/* Level 3: Features (Omitted for Kitchen Display System since it navigates internally from the hub) */}
                             {isAppExpanded && !isKDSApp && (
                               <div className="ml-14 mt-1 border-l border-white/10 space-y-1">
                                 {app.features.map((feat) => {
@@ -1544,17 +1542,17 @@ export const MerchantFrame: React.FC = () => {
         </button>
       )}
 
-      {/* Modales de Acciones Rápidas */}
+      {/* Quick Action Modals */}
       <NewReservationModal isOpen={isReservationOpen} onClose={() => setIsReservationOpen(false)} />
       <VoidTransactionModal isOpen={isVoidOpen} onClose={() => setIsVoidOpen(false)} />
       <EODReportModal isOpen={isEODOpen} onClose={() => setIsEODOpen(false)} />
       <EmergencySupportModal isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
       <NewQuickOrderModal isOpen={isQuickOrderOpen} onClose={() => setIsQuickOrderOpen(false)} />
 
-      {/* Modal Bloqueante de Login Gateway por 401 Unauthorized (AC 1.3) */}
+      {/* Blocking Login Gateway Modal for 401 Unauthorized (AC 1.3) */}
       <LoginGatewayModal isOpen={false} onLoginSuccess={handleLoginSuccess} />
 
-      {/* Botón Flotante de Controles de Demo en la esquina inferior izquierda del canvas */}
+      {/* Floating Demo Controls Button on bottom-left corner of canvas */}
       <div className={`fixed bottom-16 z-[9999] transition-all duration-300 ease-in-out ${
         isSidebarCollapsed ? 'left-6' : 'left-[272px]'
       }`}>
@@ -1570,10 +1568,10 @@ export const MerchantFrame: React.FC = () => {
           <div className="absolute bottom-12 left-0 w-64 bg-[#222222] border border-white/10 p-4 rounded shadow-2xl space-y-3 animate-fade-in text-left">
             <div>
               <p className="font-bold text-[#d51f2c] uppercase text-[10px] tracking-wider">Demo Simulation Controls</p>
-              <p className="text-[9px] text-white/50 mb-2">Simula condiciones en caliente.</p>
+              <p className="text-[9px] text-white/50 mb-2">Simulate live conditions.</p>
             </div>
 
-            {/* Simulación de Rol (Entorno) */}
+            {/* Role Simulation (Environment) */}
             <div className="border-t border-white/10 pt-2">
               <p className="font-bold text-white uppercase text-[9px] tracking-wider mb-1">Role / Environment</p>
               <select
@@ -1602,7 +1600,7 @@ export const MerchantFrame: React.FC = () => {
               </select>
             </div>
 
-            {/* Simulación de Plan (Solo para Merchant) */}
+            {/* Plan Simulation (Merchant Only) */}
             {profile?.role !== 'SaaS Owner' && (
               <div className="border-t border-white/10 pt-2">
                 <p className="font-bold text-white uppercase text-[9px] tracking-wider mb-1">Merchant Plan (Tier)</p>
@@ -1630,7 +1628,7 @@ export const MerchantFrame: React.FC = () => {
               </div>
             )}
 
-            {/* Simulación de Fallo de API en SaaS */}
+            {/* API Failure Simulation in SaaS */}
             {profile?.role === 'SaaS Owner' ? (
               <div className="border-t border-white/10 pt-2">
                 <p className="font-bold text-white uppercase text-[9px] tracking-wider mb-1">SaaS Status</p>
@@ -1642,7 +1640,7 @@ export const MerchantFrame: React.FC = () => {
                     apiFailedToggle ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
                   }`}
                 >
-                  {apiFailedToggle ? 'Simular API Online' : 'Simular Error de API'}
+                  {apiFailedToggle ? 'Simulate Online API' : 'Simulate API Failure'}
                 </button>
               </div>
             ) : (
@@ -1656,7 +1654,7 @@ export const MerchantFrame: React.FC = () => {
                     demo401Toggle ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
                   }`}
                 >
-                  {demo401Toggle ? 'Simular Sesión Ok (200)' : 'Forzar Expiración (401)'}
+                  {demo401Toggle ? 'Simulate Session OK (200)' : 'Force Expiration (401)'}
                 </button>
               </div>
             )}

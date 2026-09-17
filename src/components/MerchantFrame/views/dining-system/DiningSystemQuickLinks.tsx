@@ -12,8 +12,8 @@ interface DiningSystemQuickLinksProps {
   onNavigate?: (view: string) => void;
 }
 
-// Cada anchor mapea a un featureId de Features.txt que MerchantFrame resuelve vía onNavigate.
-// Ojo: la zona usa la key 'floor-zones' pero el featureId real del catálogo es 'table-zones'.
+// Each anchor maps to a featureId from Features.txt that MerchantFrame resolves via onNavigate.
+// Note: zone uses 'floor-zones' key but the actual catalog featureId is 'table-zones'.
 const DINING_ANCHORS: Array<{
   key: DiningSystemAnchorKey;
   label: string;
@@ -25,9 +25,9 @@ const DINING_ANCHORS: Array<{
   { key: 'table-assignments', label: 'TABLE ASSIGNMENTS', featureId: 'table-assignments' },
 ];
 
-// Reutiliza el panel común de quick-launch (mismo componente que Accounts Payable y Suppliers).
+// Reuses common quick-launch panel (same component as Accounts Payable and Suppliers).
 // El workspace activo se renderiza destacado (aria-current="page", no navegable) en vez de
-// ocultarse, para que el usuario siempre vea dónde está dentro del módulo.
+// hidden, so user always sees where they are within the module.
 export const DiningSystemQuickLinks: React.FC<DiningSystemQuickLinksProps> = ({
   active,
   onNavigate,

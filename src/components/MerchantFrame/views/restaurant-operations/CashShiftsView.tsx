@@ -406,7 +406,7 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar los turnos de caja');
+        throw new Error('Error loading cash shifts');
       }
 
       const json = await res.json();

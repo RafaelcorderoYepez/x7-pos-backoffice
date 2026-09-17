@@ -1,10 +1,9 @@
-// Cajón de inspección de un contrato: los términos pactados, el documento firmado y la
-// bitácora de enmiendas.
+// Contract inspection drawer: agreed terms, signed document, and
+// amendment log.
 //
-// El visor incrusta el PDF en un iframe en lugar de abrir una pestaña: un auditor compara
-// las cláusulas con el panel de términos que tiene al lado, y perder el contexto del
-// workspace para eso es justo lo que la historia quiere evitar. Un .docx no se puede
-// incrustar, así que en ese caso se ofrece la descarga.
+// PDF viewer embeds in iframe rather than new tab: auditor compares
+// terms side-by-side with document without losing context. If embedding
+// fails or document is not embeddable, fallback download is offered.
 
 import React, { useRef, useState } from 'react';
 import type {
@@ -88,7 +87,7 @@ export const ContractDetailDrawer: React.FC<ContractDetailDrawerProps> = ({
   const frameRef = useRef<HTMLIFrameElement>(null);
   useModalDismiss(onClose);
 
-  // El backend devuelve una ruta relativa servida por el propio API.
+  // Backend returns relative path served by API.
   const documentHref = contract.document_url
     ? `${documentBase}${contract.document_url}`
     : '';
@@ -97,8 +96,8 @@ export const ContractDetailDrawer: React.FC<ContractDetailDrawerProps> = ({
   /**
    * Imprime el documento incrustado.
    *
-   * Se intenta primero sobre el propio iframe para no sacar al auditor del workspace; si el
-   * navegador lo bloquea por origen, se cae a abrirlo en una pestaña, que siempre funciona.
+   * Attempts print via iframe first to keep auditor in workspace; if
+   * browser blocks by origin, falls back to new tab.
    */
   const handlePrint = () => {
     try {
@@ -109,7 +108,7 @@ export const ContractDetailDrawer: React.FC<ContractDetailDrawerProps> = ({
         return;
       }
     } catch {
-      // Origen distinto: no se puede pilotar el iframe.
+      // Cross-origin: cannot script iframe directly.
     }
     window.open(documentHref, '_blank', 'noopener');
   };
@@ -168,7 +167,7 @@ export const ContractDetailDrawer: React.FC<ContractDetailDrawerProps> = ({
           </button>
         </div>
 
-        {/* ---------------- Pestañas ---------------- */}
+        {/* ---------------- Tabs ---------------- */}
         <div className="flex border-b border-[#e8e2d8] bg-[#f8f3eb]" role="tablist">
           {TABS.map((t) => (
             <button

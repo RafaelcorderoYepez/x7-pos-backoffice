@@ -693,7 +693,7 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar las reglas de propinas');
+        throw new Error('Error loading tip rules');
       }
 
       const json = await res.json();

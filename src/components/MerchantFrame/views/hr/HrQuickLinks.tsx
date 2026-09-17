@@ -8,7 +8,7 @@ interface HrQuickLinksProps {
   onNavigate?: (view: string) => void;
 }
 
-// Cada anchor mapea a un featureId de Features.txt que MerchantFrame resuelve vía onNavigate.
+// Each anchor maps to featureId that MerchantFrame resolves via onNavigate.
 const HR_ANCHORS: Array<{ key: HrAnchorKey; label: string; featureId: string }> = [
   { key: 'collaborators', label: 'COLLABORATORS DATABASE', featureId: 'collaborators' },
   {
@@ -24,7 +24,7 @@ const HR_ANCHORS: Array<{ key: HrAnchorKey; label: string; featureId: string }> 
 ];
 
 // Mismo panel compartido que usan Dining System y Accounts Payable: el workspace activo se
-// muestra destacado y no navegable, para que el usuario siempre sepa dónde está.
+// rendered highlighted and non-clickable so user always knows current location.
 export const HrQuickLinks: React.FC<HrQuickLinksProps> = ({ active, onNavigate }) => {
   const actions: QuickLaunchAction[] = HR_ANCHORS.map((anchor) => ({
     id: anchor.featureId,

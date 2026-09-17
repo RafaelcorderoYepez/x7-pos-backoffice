@@ -458,7 +458,7 @@ export const PlanApplicationsView: React.FC<PlanApplicationsViewProps> = ({
           APPLICATIONS BOUND TO PLAN: {selectedPlanState?.name || '...'}
         </span>
 
-        {/* Dropdown selector si no se pasa plan por props */}
+        {/* Dropdown selector if plan is not passed via props */}
         {!plan && plans.length > 0 && (
           <div className="flex items-center gap-3">
             <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">

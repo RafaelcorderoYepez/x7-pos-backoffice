@@ -62,8 +62,8 @@ import { Toast } from '../../shared/Toast';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-// 'deleted' es el borrado lógico de una mesa: nunca es un estado operativo ni se ofrece
-// en el formulario. El resto del vocabulario vive en types/dining-system.
+// 'deleted' is logical deletion of a table: never an operational status nor offered
+// in the form. The remaining status vocabulary lives in types/dining-system.
 const DELETED_STATUS = 'deleted';
 
 const clamp = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
@@ -78,12 +78,12 @@ interface TableFormDrawerProps {
   initial?: DiningTable;
   plans: FloorPlan[];
   zones: FloorZone[];
-  // Inventario vivo: alimenta el selector de mesa madre y cierra el candado circular.
+  // Live inventory: populates parent table selector and prevents circular joins.
   tables: DiningTable[];
-  // Números ya usados por el comercio: el índice (merchant_id, number) es ÚNICO en base.
+  // Numbers already used by merchant: (merchant_id, number) index is UNIQUE in database.
   takenNumbers: Set<string>;
-  // Camareros con esta mesa a su cargo ahora mismo. Con servicio vivo, mudarla de plano o
-  // de zona deja al POS sin saber dónde está la comanda, así que se bloquea.
+  // Staff currently assigned to this table. In active service, moving between floor plans
+  // or zones prevents the POS from tracking tickets, so it is blocked.
   activeAssignments: number;
   unitSystem: UnitSystem;
   submitting: boolean;
@@ -121,8 +121,8 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
   const [width, setWidth] = useState(String(lengthValue(base.w, unitSystem)));
   const [height, setHeight] = useState(String(lengthValue(base.h, unitSystem)));
   const [rotation, setRotation] = useState(String(initial?.rotation ?? 0));
-  // Una mesa nueva aterriza a 40,40 del origen: dentro de cualquier lienzo y visible de
-  // inmediato en el editor, donde se recoloca arrastrándola.
+  // A new table lands at 40,40 from origin: within any canvas bounds and immediately
+  // visible in editor, where it is repositioned by dragging.
   const [posX, setPosX] = useState(String(initial?.pos_x ?? 40));
   const [posY, setPosY] = useState(String(initial?.pos_y ?? 40));
   const [parentId, setParentId] = useState<string>(
@@ -131,7 +131,7 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
 
   useModalDismiss(onCancel);
 
-  // Sólo las zonas del plano elegido: una mesa no puede caer en la zona de otra sala.
+  // Only zones of selected floor plan: table cannot belong to zone of another room.
   const planZones = useMemo(
     () => zones.filter((z) => String(z.floorPlan?.id ?? '') === planId),
     [zones, planId],
@@ -151,9 +151,9 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
   const posYNum = Number(posY);
   const selectedPlan = plans.find((p) => String(p.id) === planId);
 
-  // Las coordenadas se teclean en píxeles de lienzo (los mismos que persiste el backend y
-  // que muestra la parrilla), no en la unidad de medida: son una posición sobre el plano,
-  // no una distancia que el operador mida con cinta métrica.
+  // Coordinates typed in canvas pixels (same as backend persists and
+  // grid displays), not measurement unit: they are position on plan,
+  // not a distance operator measures with tape measure.
   const positionError = positionBoundsError(posXNum, posYNum, selectedPlan, unitSystem);
   const clipWarning = positionError
     ? ''
@@ -163,14 +163,14 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
       );
   const rotationMsg = rotationError(rotationNum);
 
-  // Mesa madre: nunca ella misma ni ninguna de sus hijas, para que no se cierre el ciclo.
+  // Parent table: cannot be itself nor any descendant, preventing circular cycles.
   const parentOptions = useMemo(
     () => eligibleParentTables(tables, initial?.id ?? -1),
     [tables, initial],
   );
 
-  // Con la mesa en servicio, cambiar de plano o de zona queda bloqueado; renombrarla o
-  // recolocarla en el mismo lienzo sigue permitido.
+  // While in active service, switching floor plan or zone is locked; renaming
+  // or repositioning within the same canvas remains permitted.
   const layoutGuard =
     mode === 'edit' && initial
       ? changesTableLayout(initial, {
@@ -207,7 +207,7 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
       pos_y: Math.round(posYNum),
       floorPlan: Number(planId),
       floorZone: Number(zoneId),
-      // null explícito desune la mesa; el DTO de escritura sólo entiende el escalar.
+      // explicit null unlinks table; write DTO only understands scalar.
       parent_table_id: parentId ? Number(parentId) : null,
     });
   };
@@ -279,7 +279,7 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
               value={planId}
               onChange={(e) => {
                 setPlanId(e.target.value);
-                setZoneId(''); // La zona pertenece al plano: cambiar de sala la invalida.
+                setZoneId(''); // Zone belongs to plan: changing floor plan invalidates current zone.
               }}
               className={inputClass}
             >
@@ -337,7 +337,7 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
               onChange={(e) => {
                 const next = e.target.value as TableShape;
                 setShape(next);
-                // Cambiar de forma trae su tamaño estándar salvo que el usuario lo retoque.
+                // Changing shape sets standard size unless user customizes it.
                 const fp = tableFootprint({ shape: next });
                 setWidth(String(lengthValue(fp.w, unitSystem)));
                 setHeight(String(lengthValue(fp.h, unitSystem)));
@@ -379,8 +379,8 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
           </div>
         </div>
 
-        {/* Colocación sobre el lienzo. Las coordenadas van en píxeles del plano —la unidad
-            en la que el backend las persiste— y el giro en grados enteros. */}
+        {/* Placement on canvas. Coordinates in floor plan pixels —the unit
+            in which backend persists them— and rotation in integer degrees. */}
         <div className="grid grid-cols-3 gap-3">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="tbl-pos-x" className={labelClass}>
@@ -520,7 +520,7 @@ const TableFormDrawer: React.FC<TableFormDrawerProps> = ({
 
 const ConfirmDeleteTableDialog: React.FC<{
   table: DiningTable;
-  // Motivo por el que la mesa no puede borrarse (comanda o camarero vivos). Vacío = adelante.
+  // Reason table cannot be deleted (active order or waiter). Empty = proceed.
   guard: string;
   childCount: number;
   submitting: boolean;
@@ -596,7 +596,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
   const [tables, setTables] = useState<DiningTable[]>([]);
   const [plans, setPlans] = useState<FloorPlan[]>([]);
   const [zones, setZones] = useState<FloorZone[]>([]);
-  // Asignaciones vivas: alimentan la guarda de "mesa con camarero" sin pedir otra vista.
+  // Active assignments: drives "table assigned to staff" guard without extra requests.
   const [assignments, setAssignments] = useState<TableAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -645,9 +645,9 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     try {
       const res = await fetch(`${API_BASE}/tables?limit=100`, { headers: authHeaders() });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las mesas');
+      if (!res.ok) throw new Error('Error loading tables');
       const json = await res.json();
-      // El borrado de mesas es lógico vía status: las 'deleted' no son parte del inventario vivo.
+      // Deletion of tables is logical via status: 'deleted' are not part of live inventory.
       setTables(((json.data ?? []) as DiningTable[]).filter((t) => t.status !== DELETED_STATUS));
     } catch (err) {
       console.error('Error fetching tables:', err);
@@ -666,16 +666,16 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
       ]);
       if (planRes.ok) setPlans(((await planRes.json()).data ?? []) as FloorPlan[]);
       if (zoneRes.ok) setZones(((await zoneRes.json()).data ?? []) as FloorZone[]);
-      // Si el plan del comercio no incluye la feature, el backend responde 403: la parrilla
-      // se queda sin el dato de camarero y la guarda cae al estado de la mesa, que basta.
+      // If tenant plan lacks feature, backend returns 403: grid falls back
+      // safely to table status without waiter metadata.
       if (asgRes.ok) setAssignments(((await asgRes.json()).data ?? []) as TableAssignment[]);
     } catch (err) {
       console.error('Error fetching plans/zones for tables:', err);
     }
   };
 
-  // Mezcla filas frescas sobre las que ya están pintadas, sin reordenar ni parpadear la
-  // parrilla entera: es lo que necesita tanto un evento suelto como el delta de reconexión.
+  // Merges fresh rows over rendered ones, without reordering or flickering
+  // entire grid: needed by single events and reconnect deltas.
   const mergeTables = (incoming: DiningTable[]) => {
     if (incoming.length === 0) return;
     setTables((prev) => {
@@ -713,7 +713,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     return m;
   }, [merchantZones]);
 
-  // Cuántos camareros tienen ahora mismo cada mesa a su cargo (releasedAt === null).
+  // How many waiters currently assigned to each table (releasedAt === null).
   const activeAssignmentsByTable = useMemo(() => {
     const m = new Map<number, number>();
     assignments.filter(isActiveDuty).forEach((a) => {
@@ -732,8 +732,8 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     [tables],
   );
 
-  // Cascada: elegir un plano recorta el selector de zonas a las suyas. Sin esto el operador
-  // puede combinar "Rooftop" con una zona de la planta baja y quedarse con la parrilla vacía.
+  // Cascade: selecting a floor plan filters zone dropdown to its children. Without this,
+  // an operator could combine "Rooftop" with ground floor zone resulting in empty grid.
   const selectableZones = useMemo(
     () =>
       planFilter
@@ -790,8 +790,8 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
         shape: (dto.shape ?? 'Circle') as TableShape,
         width: dto.width ?? null,
         height: dto.height ?? null,
-        // Las mesas creadas aquí aterrizan en el origen del lienzo; se colocan luego
-        // arrastrándolas en el editor, que es donde la posición tiene sentido visual.
+        // Tables created here land at canvas origin; placed afterwards
+        // by dragging in editor, where position has visual meaning.
         pos_x: 40,
         pos_y: 40,
         floorZone: dto.floorZone ?? 0,
@@ -819,7 +819,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     setFormSubmitting(true);
     setFormError('');
     try {
-      // Las mesas usan PUT (no PATCH), a diferencia de planos y zonas.
+      // Tables use PUT (not PATCH), unlike floor plans and zones.
       const res = await fetch(`${API_BASE}/tables/${id}`, {
         method: 'PUT',
         headers: authHeaders(),
@@ -865,7 +865,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     }
   };
 
-  // PUT parcial sobre una mesa. Las mesas usan PUT (no PATCH) y rechazan merchant_id.
+  // Partial PUT on table. Tables use PUT (not PATCH) and reject merchant_id.
   const putTable = async (id: number, dto: UpdateDiningTableDto): Promise<void> => {
     const res = await fetch(`${API_BASE}/tables/${id}`, {
       method: 'PUT',
@@ -879,9 +879,8 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     }
   };
 
-  // Unir mesas para un grupo grande: cada hija apunta a la madre y, si la madre ya tiene
-  // comensales sentados, hereda su estado — el POS no puede ofrecer como libre una mesa
-  // que forma parte de un grupo ocupado.
+  // Join tables for a party: each child points to parent and, if parent has seated
+  // guests, inherits status — POS cannot present a joined table as available if group is occupied.
   const handleJoinSubmit = async (childIds: number[]) => {
     if (!joinParent) return;
     setLinkSubmitting(true);
@@ -911,8 +910,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     }
   };
 
-  // Desunir una hija antes de cerrar la cuenta: parte del grupo se va y su mesa vuelve a
-  // estar disponible por su cuenta.
+  // Unjoin child table before closing tab: part of party leaves and table returns to available.
   const handleUnjoin = async (child: DiningTable) => {
     setLinkSubmitting(true);
     try {
@@ -929,8 +927,8 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     }
   };
 
-  // Liberar el grupo entero: se sueltan todas las hijas y madre e hijas pasan a limpieza,
-  // que es lo mismo que hace el backend al cobrar la cuenta de la mesa madre.
+  // Release whole group: all children unlinked; parent and children transition to cleaning,
+  // mirroring backend logic when settling parent table tab.
   const handleReleaseGroup = async (parent: DiningTable) => {
     const children = childTablesOf(tables, parent.id);
     setLinkSubmitting(true);
@@ -958,8 +956,8 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     }
   };
 
-  // Transferencia en vivo: el backend la resuelve en una sola transacción (re-vincula la
-  // comanda abierta, libera el origen y ocupa el destino). Aquí sólo se elige el destino.
+  // Live transfer: backend resolves in single transaction (re-links
+  // open order, frees source and occupies destination). Here only destination is selected.
   const handleTransferSubmit = async (target: DiningTable) => {
     if (!transferSource) return;
     setLinkSubmitting(true);
@@ -989,7 +987,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     }
   };
 
-  // Al recuperar la red pedimos sólo lo que cambió mientras estuvimos sordos, en vez de
+  // On reconnect we request only changes while offline, instead of
   // recargar la parrilla entera. Si el backend no expone el delta, recarga completa.
   const resyncFromDelta = async (since: string) => {
     try {
@@ -1009,13 +1007,13 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     fetchTables();
   };
 
-  // La sala se mueve desde las tablets del POS: la parrilla tiene que reflejarlo sin que
-  // nadie recargue la página.
+  // Floor operations mutate via POS tablets: grid reflects realtime changes
+  // without requiring manual page refresh.
   const { connected: liveConnected } = useDiningRealtime({
     onTableStatusChanged: (p) => {
       if (p.merchantId !== activeMerchantId) return;
       setTables((prev) => {
-        // Una mesa que no tenemos pintada (recién creada en otra terminal) obliga a recargar.
+        // An unrendered table (freshly created on another terminal) forces reload.
         if (!prev.some((t) => t.id === p.tableId)) {
           fetchTables();
           return prev;
@@ -1043,7 +1041,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     },
   });
 
-  // El eje del módulo: desde la mesa se salta al lienzo donde vive.
+  // Core of module: from table we jump to canvas where it lives.
   const openEditorForTable = (t: DiningTable) => {
     const plan = t.floorPlan?.id != null ? planById.get(t.floorPlan.id) : undefined;
     if (!plan) {
@@ -1147,7 +1145,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
           ))}
         </select>
 
-        {/* Unidades: misma preferencia que el editor y la parrilla de planos. */}
+        {/* Units: shared preference with editor and floor plans grid. */}
         <div className="flex border border-[#e8e2d8] rounded overflow-hidden" role="group" aria-label="Measurement units">
           {UNIT_SYSTEMS.map((u) => (
             <button
@@ -1221,8 +1219,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
               DINING TABLES
             </span>
             <span className="flex items-center gap-3">
-              {/* Estado del canal en vivo: si la sala se mueve y esto dice "Offline", lo que
-                  hay en pantalla puede estar rancio. */}
+              {/* Realtime channel status: if floor updates occur while "Offline", onscreen data may be stale. */}
               <span
                 data-testid="dining-realtime-status"
                 title={

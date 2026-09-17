@@ -46,7 +46,7 @@ export const TablesOccupancyCard: React.FC<TablesOccupancyCardProps> = ({ refres
           <p className="font-label-caps text-label-caps text-red-500 font-bold uppercase">ACTIVE TABLES</p>
           <span className="material-symbols-outlined text-red-500">table_restaurant</span>
         </div>
-        <p className="text-[11px] text-red-600 font-medium">Error al cargar ocupación</p>
+        <p className="text-[11px] text-red-600 font-medium">Error loading occupancy</p>
       </div>
     );
   }

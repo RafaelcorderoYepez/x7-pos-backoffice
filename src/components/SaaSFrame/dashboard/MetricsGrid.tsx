@@ -18,7 +18,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ refreshTrigger }) => {
       const data = await saasService.getMetrics();
       setMetrics(data);
     } catch (err) {
-      setError('Error al cargar métricas');
+      setError('Error loading metrics');
       console.error(err);
     } finally {
       setLoading(false);
@@ -70,7 +70,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ refreshTrigger }) => {
           </div>
           <div className="h-10 bg-zinc-200/50 rounded w-full mt-4"></div>
         </div>
-        {/* Skeletons para las otras tres tarjetas */}
+        {/* Skeletons for the other three cards */}
         {[1, 2, 3].map((i) => (
           <div key={i} className="bg-white border border-[#e8e2d8] p-lg h-36 flex flex-col justify-between">
             <div>
@@ -101,14 +101,14 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ refreshTrigger }) => {
               <span className="text-label-caps text-red-500 font-bold uppercase">{item.label}</span>
               <p className="text-body-sm text-red-600 font-medium mt-2 flex items-center gap-1.5">
                 <span className="material-symbols-outlined text-sm">error</span>
-                Error de conexión
+                Connection error
               </p>
             </div>
             <button
               onClick={fetchMetrics}
               className="mt-auto self-start text-[11px] font-bold text-[#d51f2c] uppercase hover:underline flex items-center gap-1"
             >
-              <span className="material-symbols-outlined text-xs">refresh</span> Reintentar
+              <span className="material-symbols-outlined text-xs">refresh</span> Retry
             </button>
             <div className="absolute -right-2 -bottom-2 opacity-5">
               <span className="material-symbols-outlined text-[80px]">{item.icon}</span>

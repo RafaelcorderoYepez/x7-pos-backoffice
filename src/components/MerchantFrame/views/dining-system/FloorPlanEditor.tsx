@@ -76,8 +76,8 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 // ---- Constantes espaciales ----
 
-// El fondo dibuja una retícula de 20px, pero las posiciones encajan cada 10px: media
-// celda da precisión suficiente sin que el usuario tenga que "afinar" pixel a pixel.
+// The background draws a 20px grid, but positions snap every 10px: half a
+// cell provides sufficient precision without forcing the user to fine-tune pixel by pixel.
 const GRID_PX = 20;
 const SNAP_PX = 10;
 
@@ -85,43 +85,43 @@ const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
 const MIN_ZOOM = ZOOM_STEPS[0];
 const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
 
-// Color de relleno cuando la zona no define uno (el backend permite color null).
+// Fill color fallback when zone lacks color (backend allows null color).
 const FALLBACK_TABLE_COLOR = '#ae001a';
 const DEFAULT_ZONE_COLOR = '#ae001a';
 
-// ---- Contorno de la sala ----
+// ---- Room boundary ----
 
-// El suelo conserva el crema de siempre y el exterior se apaga: sin ese contraste una planta
-// en L se leería como un rectángulo con una mancha, no como una sala con una pared dentro.
+// The floor keeps its standard warm tint and the exterior dims: without this contrast an L-shaped
+// layout would read as a rectangle with a spot, rather than a room with an inner wall.
 const FLOOR_FILL = '#fef9f1';
 const OUTSIDE_FILL = '#e0d9cd';
 const GRID_LINE = '#e2dbd0';
 const WALL_COLOR = '#222222';
 const WALL_WIDTH = 4;
 
-// Medidas de los manejadores en px de PANTALLA: se dividen por el zoom al pintarlos para que
-// sigan siendo agarrables al 25% y no se conviertan en bloques enormes al 200%.
+// Handle dimensions in SCREEN px: scaled by zoom at render time so they
+// remain easily targetable at 25% and do not become enormous blocks at 200%.
 const VERTEX_HANDLE_PX = 12;
 const EDGE_HANDLE_PX = 7;
 
 type EditorMode = 'tables' | 'shape' | 'zones';
 
-// ---- Unidades de presentación ----
+// ---- Presentation units ----
 
-// El botón sólo puede lucir "m"/"ft", así que el nombre completo del sistema viaja en el
-// aria-label: un lector de pantalla no debe tener que adivinar qué significa "ft".
+// The button can only display "m"/"ft", so the full system name travels in the
+// aria-label: a screen reader should not have to guess what "ft" stands for.
 const UNIT_SYSTEM_ARIA: Record<UnitSystem, string> = {
   metric: 'Show measurements in meters',
   imperial: 'Show measurements in feet and inches',
 };
 
-// Paso de los inputs de coordenadas. En px valía 10 (la retícula); en metros o pies ese
-// mismo 10 sería un salto de 10 m, así que se afina a la centésima — que es además la
-// precisión con la que `lengthValue` devuelve el número y evita un stepMismatch del navegador.
+// Step size for coordinate inputs. In px it was 10 (grid); in meters or feet that
+// same 10 would be a 10m leap, so it is refined to hundredths — matching the
+// precision returned by `lengthValue` and preventing browser stepMismatch.
 const COORD_STEP = 0.01;
 
-// `limit` está topado a 100 en /api/tables (@Max(100)); MAX_PAGES es sólo un cinturón de
-// seguridad para que un `totalPages` corrupto no deje el editor girando en bucle.
+// `limit` is capped at 100 in /api/tables (@Max(100)); MAX_PAGES is a safety belt
+// to prevent a corrupted `totalPages` from trapping the editor in an infinite loop.
 const PAGE_LIMIT = 100;
 const MAX_PAGES = 25;
 
@@ -132,8 +132,8 @@ const clamp = (v: number, min: number, max: number): number =>
 
 const snap = (v: number): number => Math.round(v / SNAP_PX) * SNAP_PX;
 
-// La huella depende de la MESA (puede traer tamaño propio), no solo de su forma. Se
-// mantiene una variante por forma para la paleta, donde todavía no existe una mesa.
+// Footprint depends on the TABLE (can define custom dimensions), not just shape.
+// A shape-based fallback is kept for the palette, where a table does not yet exist.
 const footprintOf = (shape: TableShape) =>
   TABLE_FOOTPRINT[shape] ?? TABLE_FOOTPRINT.Square;
 
@@ -143,16 +143,16 @@ const footprintOfTable = (t: {
   height?: number | null;
 }) => tableFootprint(t);
 
-// Redondeo del contorno por forma: un óvalo es una elipse completa, un reservado tiene
-// las esquinas muy suavizadas y una barra apenas.
+// Outline corner rounding per shape: oval is a full ellipse, booth has
+// heavily smoothed corners, and bar counter is barely rounded.
 const shapeRadiusClass = (shape: TableShape): string => {
   if (shape === 'Circle' || shape === 'Oval') return 'rounded-full';
   if (shape === 'Booth') return 'rounded-2xl';
   return 'rounded';
 };
 
-// Nest devuelve `message` como string o string[], y el ValidationExceptionFilter añade
-// `errors`. Aplanamos todo a una sola línea para poder mostrarla junto a la mesa.
+// Nest returns `message` as string or string[], and ValidationExceptionFilter appends
+// `errors`. Flatten everything to a single line to display beside the table.
 interface ApiErrorBody {
   message?: string | string[];
   errors?: string[];
@@ -180,12 +180,12 @@ const fitZoom = (
   return MIN_ZOOM;
 };
 
-// Reencaja una mesa dentro del contorno de la sala.
+// Snaps a table back within room boundary.
 //
-// clampPointToPolygon acota PUNTOS y una mesa es un rectángulo, así que la empujamos esquina a
-// esquina: proyectar sólo el centro no serviría, porque el centro puede estar cómodamente
-// dentro mientras una esquina asoma por la muesca de una planta en L. Cada iteración mete al
-// menos una esquina; el tope evita ciclar en salas más estrechas que la propia mesa.
+// clampPointToPolygon constrains POINTS and a table is a rectangle, so we push corner by
+// corner: projecting only the center fails because the center can comfortably sit inside
+// while a corner pokes through an L-shaped notch. Each iteration fits at least one
+// corner; the loop limit avoids infinite cycling in rooms narrower than the table itself.
 const containToOutline = (
   x: number,
   y: number,
@@ -210,7 +210,7 @@ const containToOutline = (
     const stray = corners.find((c) => !pointInPolygon(c, outline));
     if (!stray) break;
     const target = clampPointToPolygon(stray, outline);
-    // Sin desplazamiento posible (sala degenerada): mejor parar que iterar en balde.
+    // No movement possible (degenerate room): stop rather than looping futilely.
     if (target.x === stray.x && target.y === stray.y) break;
     nextX += target.x - stray.x;
     nextY += target.y - stray.y;
@@ -223,12 +223,12 @@ const containToOutline = (
 
   const snapped = fit(snap(nextX), snap(nextY));
   if (tableInsideOutline({ pos_x: snapped.x, pos_y: snapped.y, shape }, outline)) return snapped;
-  // La retícula de 10px es una comodidad; no salirse de la sala es la regla.
+  // The 10px grid is a convenience; staying within the room boundary is mandatory.
   return fit(Math.round(nextX), Math.round(nextY));
 };
 
-// Busca un hueco libre en espiral cuadrada desde el centro del lienzo, para que las
-// mesas nuevas no se apilen unas sobre otras al pulsar "Add" varias veces seguidas.
+// Finds free slot in square spiral from canvas center, so
+// new tables do not stack exactly on top of each other when clicking "Add" repeatedly.
 const findFreeSpot = (
   shape: TableShape,
   existing: Array<Pick<DiningTable, 'pos_x' | 'pos_y' | 'shape'>>,
@@ -259,26 +259,25 @@ const findFreeSpot = (
         if (ring > 0 && Math.abs(dx) !== ring && Math.abs(dy) !== ring) continue;
         const x = clamp(snap(cx + dx * GRID_PX), 0, maxX);
         const y = clamp(snap(cy + dy * GRID_PX), 0, maxY);
-        // En una planta en L el centro del lienzo puede caer en la muesca: la retícula se
-        // recorre igual, pero sólo valen los puntos que además están dentro de la sala.
+        // In an L-shaped layout canvas center might fall in the notch: the grid is
+        // traversed similarly, but only points inside the room polygon are valid.
         if (!tableInsideOutline({ pos_x: x, pos_y: y, shape }, outline)) continue;
         if (!overlaps(x, y)) return { x, y };
       }
     }
   }
-  // Sala llena: preferimos una mesa solapada pero visible dentro del salón a una fuera.
+  // Full room: prefer an overlapping table visible inside the room over one outside.
   return containToOutline(cx, cy, shape, outline, canvasW, canvasH);
 };
 
-// Siguiente "T{n}" libre. El índice UNIQUE (merchant_id, number) del backend convierte
-// una colisión en un 409 duro, así que la deduplicación se hace en cliente antes de POST.
+// Next available "T{n}". The UNIQUE (merchant_id, number) index converts
+// collisions into hard 409s, so deduplication is performed client-side before POST.
 /**
- * Id real de la mesa madre para el payload.
+ * Resolves real parent table id for payload.
  *
- * Devuelve tal cual un id ya persistido, traduce un id temporal (negativo) al que devolvió
- * su alta en este mismo guardado, y da null cuando la mesa no cuelga de nadie. Si la madre
- * era nueva y su creación falló, también devuelve null: preferible guardar la hija suelta a
- * mandar un id inventado que el backend rechazaría con toda la razón.
+ * Returns existing id as-is, translates temporary negative id to backend-assigned id,
+ * and returns null if not joined. If parent was new and creation failed, returns null:
+ * better to save child unlinked than sending an invalid synthetic id.
  */
 const resolveParentId = (
   parentId: number | null,
@@ -299,8 +298,8 @@ const nextTableNumber = (taken: Set<string>): string => {
 
 // ---- Tipos locales ----
 
-// Las mesas sin guardar viven con id negativo: sirve como clave estable de React, como
-// data-testid y como marcador de "esto todavía no existe en el servidor".
+// Unsaved tables use negative IDs: serves as stable React key,
+// data-testid, and marker for "not yet persisted on server".
 type EditorTable = DiningTable;
 
 export interface FloorPlanEditorProps {
@@ -316,16 +315,16 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   onSaved,
   merchantId,
 }) => {
-  // Un plano con dimensiones corruptas dejaría un lienzo de 0px sin superficie donde
-  // soltar mesas; caemos al mínimo del dominio para que el editor siga siendo usable.
+  // A floor plan with corrupt dimensions would result in a 0px canvas with no drop area;
+  // fallback to domain minimum so the editor remains usable.
   const canvasW = plan.width > 0 ? plan.width : FLOOR_PLAN_MIN_DIMENSION;
   const canvasH = plan.height > 0 ? plan.height : FLOOR_PLAN_MIN_DIMENSION;
   // El backend persiste el estado como varchar libre ('inactive'/'deleted' incluidos):
   // normalizamos antes de indexar los mapas de badge para no pintar "undefined".
   const planStatus = normalizeFloorPlanStatus(plan.status);
 
-  // El contorno vive en el propio plano (`floor_plan.outline`, columna text nullable) y no en
-  // las mesas: por eso se guarda con un PATCH aparte y lleva su propio flag de "sucio".
+  // Boundary resides on the floor plan itself (`floor_plan.outline`, nullable text column) and not
+  // on tables: persisted separately via PATCH with its own dirty flag.
   const [mode, setMode] = useState<EditorMode>('tables');
   const [outline, setOutline] = useState<Outline>(() =>
     parseOutline(plan.outline, canvasW, canvasH),
@@ -333,8 +332,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   const [outlineDirty, setOutlineDirty] = useState(false);
   const [selectedVertex, setSelectedVertex] = useState<number | null>(null);
 
-  // Región dibujada de cada zona (id -> polígono). Se hidrata de `zone.area` y vive aparte
-  // del contorno de la sala: son polígonos independientes que se guardan por PATCH a su zona.
+  // Drawn region per zone (id -> polygon). Hydrated from `zone.area` and lives separate
+  // from room boundary: independent polygons saved via PATCH to their respective zone.
   const [zoneAreas, setZoneAreas] = useState<Map<number, Outline>>(new Map());
   const [dirtyZoneIds, setDirtyZoneIds] = useState<Set<number>>(new Set());
   const [selectedZoneVertex, setSelectedZoneVertex] = useState<number | null>(null);
@@ -345,8 +344,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   } | null>(null);
 
   const [tables, setTables] = useState<EditorTable[]>([]);
-  // Todas las mesas del comercio, no sólo las de este plano: un traslado puede llevarse a
-  // los comensales a la terraza, que es otro lienzo.
+  // All merchant tables, not just this plan: a transfer might move diners
+  // to the patio, which is on another canvas.
   const [allTables, setAllTables] = useState<DiningTable[]>([]);
   const [zones, setZones] = useState<FloorZone[]>([]);
   const [activeZoneId, setActiveZoneId] = useState<number | null>(null);
@@ -354,12 +353,12 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
 
   const [dirtyIds, setDirtyIds] = useState<Set<number>>(new Set());
   const [pendingDeletes, setPendingDeletes] = useState<number[]>([]);
-  // Selección MÚLTIPLE: fusionar mesas es una operación de conjunto, no de pareja, así que
-  // la selección es el conjunto y `selectedId` pasa a ser el caso particular de uno solo.
+  // MULTIPLE selection: merging tables is a set operation, so selection
+  // tracks the whole set and `selectedId` is just the single-item case.
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
-  // Marco de selección por arrastre sobre el lienzo vacío, en coordenadas de lienzo.
-  // Madre elegida a mano para la fusión, si la hubo. La efectiva se deriva más abajo.
+  // Marquee selection box on empty canvas in canvas coordinates.
+  // Explicit parent chosen for merge if any. Effective parent is derived below.
   const [joinParentId, setJoinParentId] = useState<number | null>(null);
   const [marquee, setMarquee] = useState<{
     x1: number;
@@ -370,23 +369,23 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   } | null>(null);
 
   const [zoom, setZoom] = useState(1);
-  // Unidad de LECTURA. El píxel sigue siendo la unidad de almacenamiento y de cálculo: aquí
-  // sólo se decide cómo se enseña y cómo se teclea, nunca lo que viaja a la API.
+  // DISPLAY unit. Pixels remain the storage and compute unit: this only controls
+  // how values are rendered and input, never what is sent to the API.
   const [unitSystem, setUnitSystem] = useState<UnitSystem>(loadUnitSystem);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[]>([]);
-  // El borrador de zona sirve para crear y para editar: 'edit' guarda el id que se está
-  // renombrando/recoloreando, null significa alta nueva.
+  // Zone draft handles create and edit: 'edit' holds the id being
+  // renamed/recolored, null indicates a new zone.
   const [zoneDraftOpen, setZoneDraftOpen] = useState(false);
   const [zoneDraftEditId, setZoneDraftEditId] = useState<number | null>(null);
-  // Traslado de comensales: lo resuelve el backend en una transacción, así que se lanza
-  // desde aquí contra el servidor y no forma parte del lote de cambios locales.
+  // Guest transfer: handled server-side in a transaction, executed directly
+  // against the API and excluded from the local unsaved changes batch.
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferSubmitting, setTransferSubmitting] = useState(false);
 
-  // Zona activa resuelta: alimenta el swatch y el formulario de edición.
+  // Resolved active zone: drives the color swatch and edit form.
   const activeZone = useMemo(
     () => zones.find((z) => z.id === activeZoneId) ?? null,
     [zones, activeZoneId],
@@ -402,24 +401,24 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  // Estado del arrastre fuera de React: un re-render por pointermove sólo para recordar
-  // el offset del puntero sería ruido puro.
+  // Drag state held outside React state: re-rendering on every pointermove just to track
+  // cursor offset would introduce unnecessary overhead.
   const dragRef = useRef<{ id: number; dx: number; dy: number } | null>(null);
-  // Mismo patrón para los vértices del contorno: el desfase puntero-vértice se guarda al
-  // agarrar, si no el vértice saltaría bajo el cursor en el primer movimiento.
+  // Same pattern for boundary vertices: pointer-vertex offset is stored on pointerdown,
+  // otherwise vertex would snap abruptly under cursor on initial move.
   const vertexDragRef = useRef<{ index: number; dx: number; dy: number } | null>(null);
-  // Espejo síncrono del contorno para los handlers de puntero (ver tablesRef).
+  // Synchronous mirror of boundary for pointer handlers (see tablesRef).
   const outlineRef = useRef<Outline>(outline);
   useEffect(() => {
     outlineRef.current = outline;
   }, [outline]);
-  // Fotografía de las filas tal como vinieron del servidor, para enviar en el PUT sólo
-  // el subconjunto realmente modificado (el backend rechaza cuerpos vacíos con 400).
+  // Snapshot of rows as received from server, allowing PUT payloads to include only
+  // actually modified items (backend rejects empty update payloads with 400).
   const originalById = useRef<Map<number, DiningTable>>(new Map());
   const tempIdRef = useRef(-1);
   const zoomInitialized = useRef(false);
-  // Espejo síncrono del estado para los handlers de puntero, que se disparan más rápido
-  // de lo que React re-renderiza.
+  // Synchronous state mirror for pointer handlers, firing faster
+  // than React re-renders.
   const tablesRef = useRef<EditorTable[]>([]);
   useEffect(() => {
     tablesRef.current = tables;
@@ -431,8 +430,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     return () => clearTimeout(t);
   }, [toast]);
 
-  // El editor vive en un portal colgado de <body>: al abrirlo el foco se quedaba en el
-  // botón del grid que queda detrás del overlay aria-modal, así que lo traemos dentro.
+  // Editor renders in a <body> portal: on mount focus remained trapped on the
+  // background grid button behind the aria-modal overlay, so focus is pulled inside.
   useEffect(() => {
     rootRef.current?.focus({ preventScroll: true });
   }, []);
@@ -451,11 +450,10 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
 
   // ---------------- Carga inicial ----------------
 
-  // Ninguno de los dos listados acepta filtro por plano y ambos vienen paginados
-  // (`limit` tope 100 en /api/tables), así que hay que recorrer las páginas: con una
-  // sola, un comercio con más de 100 mesas vería su plano a medias y el pool de números
-  // ocupados incompleto reventaría en 409 al guardar. La clave de paginación difiere por
-  // endpoint: `paginationMeta` en /api/tables y `pagination` en /api/floor-zone.
+  // Neither endpoint accepts floor plan filter and both are paginated
+  // (`limit` capped at 100 in /api/tables), requiring page traversal: fetching only
+  // one page would leave merchants with >100 tables seeing partial layouts and cause
+  // 409 collision errors. Pagination metadata key differs: `paginationMeta` vs `pagination`.
   const fetchAllPages = useCallback(
     async <T,>(
       resource: string,
@@ -495,20 +493,19 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         handleUnauthorized();
         return;
       }
-      if (!tablesResult.ok) throw new Error('Error al cargar las mesas del plano');
+      if (!tablesResult.ok) throw new Error('Error loading floor plan tables');
 
       const allTables = tablesResult.rows;
 
-      // GET /api/tables no expone ningún filtro por plano y la respuesta no trae un
-      // escalar floor_plan_id: el único vínculo es el objeto anidado `floorPlan`, que sí
-      // viene hidratado (leftJoinAndSelect). Por eso filtramos en cliente y no hace falta
-      // el fallback por /tables/:id ni /floor-plan/:id.
+      // GET /api/tables has no floor plan query param and response lacks a scalar
+      // floor_plan_id: relation is nested inside `floorPlan` (hydrated via leftJoinAndSelect).
+      // Filtering client-side avoids fallback calls to /tables/:id or /floor-plan/:id.
       const planTables = allTables.filter(
         (t) => t.floorPlan?.id === plan.id && t.status !== 'deleted',
       );
 
-      // El pool de números ocupados incluye las mesas borradas en soft: la fila sigue en
-      // la tabla y el índice UNIQUE (merchant_id, number) también.
+      // Busy numbers pool includes soft-deleted tables: record still exists in
+      // database alongside UNIQUE (merchant_id, number) constraint.
       setTakenNumbers(new Set(allTables.map((t) => (t.number ?? '').toLowerCase())));
       setAllTables(allTables.filter((t) => t.status !== 'deleted'));
 
@@ -517,14 +514,14 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       setDirtyIds(new Set());
       setPendingDeletes([]);
 
-      // /api/floor-zone NO está scopeado por merchant (findAll ignora el JWT), así que
-      // filtramos por floorPlan.id: el plano ya pertenece a un único comercio.
+      // /api/floor-zone is NOT scoped by merchant, so we filter by
+      // floorPlan.id since the plan already belongs to a single merchant.
       const planZones = zonesResult.rows.filter(
         (z) => z.floorPlan?.id === plan.id && z.status !== 'deleted',
       );
       setZones(planZones);
-      // Hidratamos las regiones dibujadas; una zona sin `area` simplemente no aparece
-      // en el mapa y se sigue comportando como etiqueta de color.
+      // Hydrate drawn regions; zone without `area` simply does not render
+      // on map and continues functioning as a color tag.
       setZoneAreas(() => {
         const next = new Map<number, Outline>();
         planZones.forEach((z) => {
@@ -550,10 +547,9 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     void loadLayout();
   }, [loadLayout]);
 
-  // El editor se monta por plano, pero si el padre reutilizara la instancia para otro habría
-  // que releer el contorno: seguir editando la sala anterior guardaría la forma equivocada.
-  // Se compara el id y no `plan.outline` a propósito: un refresco del padre tras guardar trae
-  // el mismo plano y no debe pisar lo que el usuario tenga dibujado.
+  // Editor mounts per plan; if parent reused instance for another plan, outline
+  // must reload to avoid overwriting shapes. Plan ID is compared rather than
+  // `plan.outline` so background refreshes do not erase in-progress edits.
   const loadedPlanId = useRef(plan.id);
   useEffect(() => {
     if (loadedPlanId.current === plan.id) return;
@@ -564,7 +560,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     setPendingPreset(null);
   }, [plan.id, plan.outline, canvasW, canvasH]);
 
-  // Zoom inicial: el mayor paso que hace caber el plano completo en el viewport.
+  // Initial zoom: largest step fitting complete floor plan into viewport.
   useEffect(() => {
     if (zoomInitialized.current) return;
     const el = viewportRef.current;
@@ -584,8 +580,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     return map;
   }, [zones]);
 
-  // Mesas de la selección, en el orden en que se fueron sumando: la primera es la madre
-  // propuesta, que es lo que el usuario espera tras encuadrar o ir haciendo Ctrl+clic.
+  // Selected tables ordered by addition: first table acts as proposed
+  // parent, matching intuitive user expectations from marquee or Ctrl+clicks.
   const selectedTables = useMemo(
     () =>
       selectedIds
@@ -595,10 +591,9 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   );
 
   /**
-   * Madre efectiva del grupo: la elegida a mano mientras siga seleccionada, y si no la
-   * primera de la selección. Derivarla evita tener que reajustar el estado cada vez que
-   * cambia el conjunto, que es justo donde aparecerían las incoherencias.
-   */
+  * Effective group parent: explicitly chosen table if selected, or first in
+  * selection. Deriving it dynamically avoids desync when selection set changes.
+  */
   const effectiveJoinParent =
     joinParentId != null && selectedIds.includes(joinParentId)
       ? joinParentId
@@ -609,9 +604,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     [tables, selectedId],
   );
 
-  // Vínculos madre-hija que se pueden TRAZAR: sólo si ambas mesas están en este plano. Una
-  // madre en otra sala es legítima (la parrilla lo permite), pero aquí no hay a dónde tirar
-  // la línea, así que esa unión se comunica sólo con el badge de la mesa.
+  // Parent-child links that can be DRAWN: only if both tables belong to this plan.
+  // If parent is on another plan, link cannot be drawn and is reflected via badge.
   const joinLinks = useMemo(() => {
     const byId = new Map(tables.map((t) => [t.id, t]));
     return tables.flatMap((t) => {
@@ -633,8 +627,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     });
   }, [tables]);
 
-  // Grupo entero de la mesa seleccionada: se sube hasta la raíz y se baja por toda la
-  // descendencia, para poder resaltar la unión completa y no sólo el eslabón elegido.
+  // Complete group hierarchy: ascends to root and descends all children to
+  // highlight the entire join group rather than just the selected node.
   const selectedGroupIds = useMemo(() => {
     if (!selectedTable) return new Set<number>();
     const byId = new Map(tables.map((t) => [t.id, t]));
@@ -650,23 +644,21 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     return new Set<number>([root.id, ...descendantTableIds(tables, root.id)]);
   }, [tables, selectedTable]);
 
-  // Candidatas a madre: ni ella misma ni su descendencia (candado circular). Las mesas aún
-  // sin guardar SÍ entran: su id temporal se traduce al real durante el guardado, porque
-  // exigir "guarda primero" para poder unir dejaba la función escondida detrás de un paso
-  // que nadie adivina.
+  // Candidate parent tables: exclude self and descendants (prevents circular loops).
+  // Unsaved tables ARE included: temporary IDs are resolved to backend IDs during save.
   const parentChoices = useMemo(
     () => (selectedTable ? eligibleParentTables(tables, selectedTable.id) : []),
     [tables, selectedTable],
   );
 
-  // El índice sobrevive a borrar un vértice (queda fuera de rango), de ahí el ?? null.
+  // Index might survive vertex deletion (out of bounds), hence ?? null fallback.
   const selectedVertexPoint = useMemo(
     () => (selectedVertex === null ? null : (outline[selectedVertex] ?? null)),
     [outline, selectedVertex],
   );
 
-  // El contorno cuenta como un cambio pendiente más: se guarda en la misma pulsación de
-  // "Save layout" aunque viaje por otro endpoint.
+  // Boundary counts as a pending change: saved in the same "Save layout"
+  // action even though it targets an independent endpoint.
   const dirtyCount = useMemo(
     () =>
       tables.filter((t) => t.id < 0 || dirtyIds.has(t.id)).length +
@@ -676,11 +668,10 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     [tables, dirtyIds, pendingDeletes, outlineDirty, dirtyZoneIds],
   );
 
-  // ---------------- Traslado de comensales ----------------
+  // ---------------- Guest Transfer ----------------
 
-  // Lo resuelve el backend en una transacción (comanda, cobertura y ambos estados), así que
-  // aquí sólo se lanza y se recarga. El botón está deshabilitado con cambios pendientes,
-  // porque recargar después los tiraría.
+  // Handled server-side in a transaction (order, cover, and statuses), triggered
+  // and reloaded here. Action is disabled with pending unsaved changes to avoid loss.
   const handleTransfer = useCallback(
     async (target: DiningTable) => {
       const source = tablesRef.current.find((t) => t.id === selectedId);
@@ -720,8 +711,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
 
   // ---------------- Canal en vivo ----------------
 
-  // Recargar el plano descarta lo que el usuario no ha guardado, así que con trabajo
-  // pendiente NO se recarga: se avisa y se le deja decidir.
+  // Reloading discards unsaved changes, so with pending work we DO NOT reload
+  // automatically: prompt the user to make a deliberate decision.
   const refreshFromFloor = () => {
     if (dirtyCount > 0) {
       setToast({
@@ -739,8 +730,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       if (p.merchantId !== merchantId) return;
       setTables((prev) => {
         const local = prev.find((t) => t.id === p.tableId);
-        // Una mesa que el usuario está editando conserva SU versión: el evento no puede
-        // pisar trabajo sin guardar.
+        // Table currently being edited preserves ITS version: incoming events
+        // must not overwrite unsaved local work.
         if (!local || dirtyIds.has(p.tableId)) return prev;
         // Borrada en otra terminal: desaparece del lienzo en vez de quedarse pintada.
         if (p.status === 'deleted') return prev.filter((t) => t.id !== p.tableId);
@@ -757,16 +748,16 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     onReconnect: () => refreshFromFloor(),
   });
 
-  // Mesas cuya huella se sale de la sala (no del lienzo): con una planta en L el rectángulo
-  // del papel ya no es la frontera real.
+  // Tables whose footprint lies outside room boundary: in L-shaped layouts,
+  // the rectangular canvas boundary is not the true perimeter.
   const outsideCount = useMemo(() => tablesOutsideOutline(tables, outline), [tables, outline]);
 
-  // Superficie en px² (fórmula del cordón). Se guarda cruda a propósito: la conversión a m²
-  // o ft² es cosa del render, que es quien sabe qué unidad ha elegido el usuario.
+  // Area in px² (shoelace formula). Stored raw by design: conversion to m²
+  // or sq ft happens at render time based on selected unit.
   const roomAreaPx2 = useMemo(() => polygonArea(outline), [outline]);
 
-  // "Custom" = el contorno ya no es el rectángulo completo del lienzo. Sólo entonces tiene
-  // sentido anunciar la superficie: en un rectángulo el usuario ya la deduce de width × height.
+  // "Custom" = boundary is no longer the full canvas rectangle. Area is only
+  // shown then: on standard rectangles it is trivial from width × height.
   const customShape = useMemo(
     () => outline.length !== 4 || Math.abs(roomAreaPx2 - canvasW * canvasH) > 0.5,
     [outline.length, roomAreaPx2, canvasW, canvasH],
@@ -800,7 +791,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   // ---------------- Mutaciones locales ----------------
 
   const markDirty = useCallback((id: number) => {
-    if (id < 0) return; // las mesas nuevas ya cuentan como pendientes por su id negativo
+    if (id < 0) return; // newly created tables are already marked pending via negative id
     setDirtyIds((prev) => {
       if (prev.has(id)) return prev;
       const next = new Set(prev);
@@ -817,10 +808,9 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     [markDirty],
   );
 
-  // Posición siempre en px de lienzo (nunca de pantalla), pegada a la retícula y
-  // recortada para que la huella no se salga del plano. Se lee de tablesRef y no de un
-  // updater porque marcar "sucio" es un efecto colateral que no puede vivir dentro de
-  // setState (React lo invoca dos veces en modo estricto).
+  // Position is in canvas px (never screen px), snapped to grid and clamped
+  // inside room boundary. Read from tablesRef rather than updater because marking
+  // dirty is a side effect that cannot reside inside setState (executed twice in strict mode).
   const moveTable = useCallback(
     (id: number, rawX: number, rawY: number) => {
       const current = tablesRef.current.find((t) => t.id === id);
@@ -828,8 +818,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       const fp = footprintOfTable(current);
       const boxX = clamp(snap(rawX), 0, Math.max(0, canvasW - fp.w));
       const boxY = clamp(snap(rawY), 0, Math.max(0, canvasH - fp.h));
-      // Dos fronteras: el papel (lienzo) y la sala (contorno). Con un contorno rectangular la
-      // segunda no cambia nada; con una planta en L impide soltar la mesa en la muesca.
+      // Dual boundaries: canvas paper and room outline. On rectangular plans
+      // boundaries coincide; on L-shaped layouts it prevents dropping tables into dead space.
       const { x, y } = containToOutline(
         boxX,
         boxY,
@@ -849,19 +839,17 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   );
 
   /**
-   * Une o desune una mesa dentro del lote local: la fusión es una propiedad más de la mesa
-   * y viaja en el mismo Save que la posición o la capacidad.
-   *
-   * Se escriben los DOS campos a la vez —el escalar y el objeto embebido— porque la
-   * respuesta de la API trae `parent_table` y los DTO de escritura hablan de
-   * `parent_table_id`: dejar uno viejo haría que el lienzo y el formulario discreparan.
-   */
+  * Joins or unlinks a table locally: join relation is a table property
+  * committed in the same Save operation as coordinates or capacity.
+  *
+  * Updates both the scalar ID and the nested reference to keep canvas and form in sync.
+  */
   const setTableParent = useCallback(
     (childId: number, parentId: number | null) => {
       const parent =
         parentId != null ? (tablesRef.current.find((t) => t.id === parentId) ?? null) : null;
-      // Al unirse a una madre con comensales, la hija hereda su estado: un grupo unido es
-      // una sola unidad de servicio y media unión libre no significa nada en la sala.
+      // When joining an occupied parent, child inherits status: joined table acts as
+      // a unified service unit; half-vacant joined tables make no sense in floor operations.
       const inherited = parent ? inheritedChildStatus(parent.status) : null;
       patchTable(childId, {
         parent_table_id: parentId,
@@ -873,13 +861,11 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   );
 
   /**
-   * Fusiona TODAS las mesas seleccionadas bajo una madre.
-   *
-   * Sin límite de número: un grupo grande se arma encuadrando cinco mesas y pulsando una
-   * vez, no encadenando cinco uniones de a pares. Las que cerrarían un ciclo se saltan en
-   * silencio — no pueden ocurrir si la madre sale de la propia selección, pero la guarda
-   * evita que un dato heredado raro rompa el gesto entero.
-   */
+  * Merges ALL selected tables under a parent.
+  *
+  * Supports batch linking: marquee select five tables and link in a single action.
+  * Potential circular loops are skipped safely without crashing the batch operation.
+  */
   const joinSelected = useCallback(
     (parentId: number) => {
       selectedIds
@@ -901,16 +887,16 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       next.delete(id);
       return next;
     });
-    // Una mesa creada localmente y borrada antes de guardar simplemente desaparece: no
-    // existe en el servidor, así que no hay DELETE que encolar.
+    // A locally created table deleted before saving simply disappears:
+    // never existed on the server, so no DELETE is queued.
     if (id > 0) setPendingDeletes((prev) => (prev.includes(id) ? prev : [...prev, id]));
     setSelectedIds((prev) => prev.filter((x) => x !== id));
   }, []);
 
-  // ---------------- Contorno de la sala ----------------
+  // ---------------- Room Boundary ----------------
 
-  // Toda mutación del contorno pasa por aquí: refresca el espejo síncrono (los handlers de
-  // puntero lo leen antes de que React re-renderice) y marca el plano como pendiente de PATCH.
+  // Boundary mutations route through here: updates synchronous mirror (pointer handlers
+  // read before re-render) and marks boundary dirty for PATCH.
   const applyOutline = useCallback((next: Outline) => {
     outlineRef.current = next;
     setOutline(next);
@@ -922,8 +908,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       const current = outlineRef.current;
       const vertex = current[index];
       if (!vertex) return;
-      // Los vértices se acotan al lienzo entero (no a la huella de una mesa): una esquina de
-      // la sala sí puede tocar el borde del papel.
+      // Vertices are clamped to canvas extents: room corners can touch
+      // the perimeter boundary.
       const x = clamp(snap(rawX), 0, canvasW);
       const y = clamp(snap(rawY), 0, canvasH);
       if (x === vertex.x && y === vertex.y) return;
@@ -935,16 +921,15 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   const insertAtEdge = useCallback(
     (edgeIndex: number) => {
       applyOutline(insertVertex(outlineRef.current, edgeIndex));
-      // El vértice nuevo queda justo detrás de la arista: dejarlo seleccionado permite
-      // arrastrarlo o borrarlo sin tener que buscarlo entre los demás.
+      // New vertex is inserted right behind edge: keeping it selected allows
+      // immediate dragging or deletion without searching.
       setSelectedVertex(edgeIndex + 1);
     },
     [applyOutline],
   );
 
-  // Un puntero real dispara pointerdown y DESPUÉS click sobre el mismo manejador; sin esta
-  // ventana el gesto insertaría dos vértices. Un click suelto (teclado, pruebas sintéticas)
-  // no encuentra rastro reciente y sí inserta.
+  // Real pointers fire pointerdown and THEN click on the same handle; without this
+  // window, action would insert duplicate vertices. Standalone clicks proceed normally.
   const lastEdgeInsert = useRef<{ edge: number; at: number } | null>(null);
 
   const handleEdgePointerDown = useCallback(
@@ -972,8 +957,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   const deleteVertex = useCallback(
     (index: number) => {
       const next = removeVertex(outlineRef.current, index);
-      // removeVertex devuelve la MISMA referencia cuando no puede quitar (suelo de 3
-      // esquinas): así la regla vive en un único sitio y aquí sólo se explica al usuario.
+      // removeVertex returns SAME reference when deletion fails (3-vertex floor minimum);
+      // keeps logic centralized while reporting to user.
       if (next === outlineRef.current) {
         setToast({
           message: `A room needs at least ${MIN_OUTLINE_VERTICES} corners.`,
@@ -987,7 +972,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     [applyOutline],
   );
 
-  // Cambiar de forma puede dejar mesas en la calle: se avisa ANTES de aplicar y se deja
+  // Changing layout preset may orphan tables outside room: user is warned beforehand
   // continuar, pero nunca en silencio.
   const requestOutline = useCallback(
     (label: string, candidate: Outline) => {
@@ -1024,7 +1009,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     });
   }, [canvasW, canvasH, patchTable]);
 
-  // ---------------- Zonas ----------------
+  // ---------------- Zones ----------------
 
   const createZone = useCallback(
     async (name: string, color: string): Promise<FloorZone | null> => {
@@ -1033,8 +1018,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         const res = await fetch(`${API_BASE}/floor-zone`, {
           method: 'POST',
           headers: authHeaders(),
-          // Los cinco campos son @IsNotEmpty y `floorPlan`/`merchant` viajan como enteros
-          // planos (el backend no deriva el comercio del JWT en este módulo).
+          // All five fields are @IsNotEmpty and `floorPlan`/`merchant` sent as plain
+          // integers (backend does not infer merchant from JWT in this endpoint).
           body: JSON.stringify({
             merchant: merchantId,
             name,
@@ -1074,7 +1059,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     async (id: number, name: string, color: string): Promise<FloorZone | null> => {
       setZoneBusy(true);
       try {
-        // PATCH y sin `merchant`: la zona no cambia de comercio al renombrarla.
+        // PATCH without `merchant`: zone does not change merchant on rename.
         const res = await fetch(`${API_BASE}/floor-zone/${id}`, {
           method: 'PATCH',
           headers: authHeaders(),
@@ -1108,7 +1093,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     [authHeaders, handleUnauthorized],
   );
 
-  // ---------------- Áreas de zona ----------------
+  // ---------------- Zone areas ----------------
 
   const markZoneDirty = useCallback((id: number) => {
     setDirtyZoneIds((prev) => {
@@ -1118,7 +1103,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     });
   }, []);
 
-  /** Dibuja una región por defecto para la zona activa: un cuarto del lienzo, centrado. */
+  /** Draws a default region for active zone: centered quarter of canvas. */
   const drawZoneArea = useCallback(() => {
     if (activeZoneId == null) return;
     const w = Math.max(120, Math.round(canvasW / 2));
@@ -1136,7 +1121,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     setSelectedZoneVertex(null);
   }, [activeZoneId, canvasW, canvasH, markZoneDirty]);
 
-  /** Quita la región: la zona vuelve a ser sólo una etiqueta de color. */
+  /** Clears region: zone reverts to a color tag without spatial bounds. */
   const clearZoneArea = useCallback(() => {
     if (activeZoneId == null) return;
     setZoneAreas((prev) => {
@@ -1148,7 +1133,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     setSelectedZoneVertex(null);
   }, [activeZoneId, markZoneDirty]);
 
-  /** ¿En qué zona cae un punto del lienzo? Da la primera región que lo contiene. */
+  /** Resolves which zone polygon contains a given canvas coordinate point. */
   const zoneAtPoint = useCallback(
     (x: number, y: number): number | null => {
       for (const [id, poly] of zoneAreas) {
@@ -1185,16 +1170,15 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   ]);
 
 
-  // ---------------- Añadir mesa ----------------
+  // ---------------- Add table ----------------
 
   const addTable = useCallback(
     async (shape: TableShape) => {
       let zone: FloorZone | null =
         zones.find((z) => z.id === activeZoneId) ?? zones[0] ?? null;
 
-      // `floorZone` es obligatorio al crear una mesa (@IsNotEmpty en CreateTableDto): sin
-      // ninguna zona el POST /api/tables sería imposible, así que creamos "General" al
-      // vuelo la primera vez. Es la única escritura que ocurre antes de "Save layout".
+      // `floorZone` is required when creating a table (@IsNotEmpty in CreateTableDto):
+      // automatically creates a default "General" zone on first run if none exist.
       if (!zone) {
         zone = await createZone('General', DEFAULT_ZONE_COLOR);
         if (!zone) return;
@@ -1205,7 +1189,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       const tempId = tempIdRef.current;
       tempIdRef.current -= 1;
       // Leemos el contorno fuera del updater: React puede invocarlo dos veces en modo estricto
-      // y el hueco debe calcularse contra la misma sala en ambas pasadas.
+      // and available space must be computed against the same room geometry.
       const currentOutline = outlineRef.current;
 
       setTables((prev) => {
@@ -1218,8 +1202,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           number: nextTableNumber(taken),
           capacity: 4,
           status: 'available',
-          // `location` también es @IsNotEmpty: usamos el nombre de la zona como valor
-          // inicial razonable en lugar de mandar una cadena vacía y comerse un 400.
+          // `location` is also @IsNotEmpty: zone name is used as default
+          // fallback to prevent 400 validation error.
           location: zone.name,
           rotation: 0,
           shape,
@@ -1237,9 +1221,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
 
   // ---------------- Arrastre ----------------
 
-  // Pantalla -> lienzo: el contenedor está escalado con CSS transform, de modo que
-  // getBoundingClientRect ya viene multiplicado por el zoom y hay que dividir para
-  // recuperar px de lienzo. Guardar px de pantalla corrompería las coordenadas.
+  // Screen -> canvas: container is transformed via CSS scale, meaning
+  // getBoundingClientRect is scaled; divide by zoom to obtain true canvas px.
   const toCanvasCoords = useCallback(
     (clientX: number, clientY: number): { x: number; y: number } | null => {
       const rect = canvasRef.current?.getBoundingClientRect();
@@ -1251,10 +1234,10 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
 
   const handleTablePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>, t: EditorTable) => {
-      // Los controles embebidos (botón de borrado rápido) no deben iniciar un arrastre.
+      // Embedded controls (such as quick delete button) must not initiate table dragging.
       if ((e.target as HTMLElement).closest('[data-no-drag="true"]')) return;
-      // Ctrl/Cmd (o Shift) suma o quita de la selección y NO arrastra: mezclar ambos gestos
-      // haría que cada intento de sumar una mesa la moviera un poco.
+      // Ctrl/Cmd (or Shift) toggles selection and DOES NOT drag: isolating gestures
+      // prevents accidental displacement when adding items.
       const additive = e.ctrlKey || e.metaKey || e.shiftKey;
       if (additive) {
         setSelectedIds((prev) =>
@@ -1263,16 +1246,14 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         e.preventDefault();
         return;
       }
-      // Arrastrar una mesa que ya forma parte de una selección múltiple la conserva; si no,
-      // el clic simple reinicia la selección a esa mesa.
+      // Dragging a table in a multi-selection retains group; otherwise single click
+      // resets selection to that table.
       setSelectedIds((prev) => (prev.includes(t.id) ? prev : [t.id]));
-      // preventDefault() cancela el mousedown y con él el foco implícito, así que lo
-      // damos a mano: sin foco las flechas del teclado nunca llegan a la mesa y el foco
-      // se queda en el botón del grid que hay detrás del overlay aria-modal.
-      // preventScroll evita que el viewport salte justo al empezar a arrastrar.
+      // preventDefault() cancels mousedown and implicit focus, so focus is set manually;
+      // without focus, arrow keys fail to reach table. preventScroll avoids jumpy viewport.
       e.currentTarget.focus({ preventScroll: true });
-      // Sólo el botón primario arrastra: con el secundario el usuario va a por el menú
-      // contextual, y mover la mesa ahí dejaba el layout sucio sin que se notara.
+      // Only primary button triggers drag: secondary button opens context menu,
+      // and moving table during right-click leaves layout inadvertently dirty.
       if (e.button !== 0) return;
       const point = toCanvasCoords(e.clientX, e.clientY);
       if (!point) return;
@@ -1289,12 +1270,11 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   );
 
   /**
-   * Arrastre sobre el lienzo VACÍO: dibuja un marco de selección.
-   *
-   * Sólo arranca si el gesto empieza fuera de una mesa (el pointerdown de la mesa no
-   * burbujea hasta aquí porque llama a preventDefault y captura el puntero), así que
-   * arrastrar una mesa y encuadrar varias nunca compiten por el mismo gesto.
-   */
+  * Dragging over EMPTY canvas: draws selection marquee.
+  *
+  * Triggers only when pointerdown initiates outside tables, preventing collision
+  * between table dragging and marquee selection.
+  */
   const handleCanvasPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.target !== e.currentTarget) return;
@@ -1306,13 +1286,13 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       const point = toCanvasCoords(e.clientX, e.clientY);
       if (!point) return;
       const additive = e.ctrlKey || e.metaKey || e.shiftKey;
-      // Sin modificador el encuadre reemplaza la selección; con él la amplía.
+      // Without modifier, marquee replaces selection; with modifier, extends it.
       if (!additive) setSelectedIds([]);
       setMarquee({ x1: point.x, y1: point.y, x2: point.x, y2: point.y, additive });
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
-        // Ver comentario en el pointerdown de la mesa.
+        // See comment on table pointerdown handler.
       }
     },
     [mode, toCanvasCoords],
@@ -1334,7 +1314,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {
-        // Ver comentario en el pointerdown de la mesa.
+        // See comment on table pointerdown handler.
       }
       const left = Math.min(marquee.x1, marquee.x2);
       const right = Math.max(marquee.x1, marquee.x2);
@@ -1342,12 +1322,12 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       const bottom = Math.max(marquee.y1, marquee.y2);
       setMarquee(null);
 
-      // Un clic sin arrastre no encuadra nada: sólo deselecciona, que es lo que el usuario
-      // espera al pinchar en el suelo vacío.
+      // A click without movement does not marquee: deselects, matching standard
+      // desktop behavior when clicking empty floor.
       if (right - left < 4 && bottom - top < 4) return;
 
-      // Basta con TOCAR la mesa: exigir que quepa entera dentro del marco obliga a encuadres
-      // quirúrgicos en un plano apretado.
+      // Intersecting bounds is sufficient: requiring full containment is cumbersome
+      // in dense floor plans.
       const hit = tablesRef.current
         .filter((t) => {
           const fp = footprintOfTable(t);
@@ -1388,9 +1368,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       } catch {
         // Ver comentario en pointerdown.
       }
-      // Al soltar, la región donde cae el CENTRO de la mesa manda: si pertenece a una zona
-      // dibujada, la mesa se reasigna a ella. Es lo que hace que las áreas signifiquen algo
-      // en vez de ser sólo decoración.
+      // On release, table center point determines zone: if it lands in a defined
+      // zone polygon, table is reassigned to it.
       const table = tablesRef.current.find((t) => t.id === drag.id);
       if (!table) return;
       const fp = footprintOfTable(table);
@@ -1407,10 +1386,10 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     [patchTable, zoneAtPoint, zones],
   );
 
-  // ---- Arrastre de vértices (modo ROOM SHAPE) ----
+  // ---- Vertex dragging (ROOM SHAPE mode) ----
 
-  // Arrastre de vértices de la región de zona. Mismo patrón que el contorno de sala:
-  // guardamos el desfase del puntero para que el vértice no salte al cursor al agarrarlo.
+  // Zone polygon vertex dragging: tracks pointer offset so vertex does not snap
+  // abruptly on pointerdown.
   const zoneVertexDragRef = useRef<{ index: number; dx: number; dy: number } | null>(null);
 
   const handleZoneVertexPointerDown = useCallback(
@@ -1438,7 +1417,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       if (!drag || activeZoneId == null) return;
       const point = toCanvasCoords(e.clientX, e.clientY);
       if (!point) return;
-      // Snap a la rejilla y clamp al lienzo, en coordenadas de lienzo (ya sin zoom).
+      // Snap to grid and clamp to canvas in unscaled canvas coordinates.
       const x = clamp(snap(point.x - drag.dx), 0, canvasW);
       const y = clamp(snap(point.y - drag.dy), 0, canvasH);
       setZoneAreas((prev) => {
@@ -1465,8 +1444,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     (e: React.PointerEvent<SVGRectElement>, index: number) => {
       setSelectedVertex(index);
       try {
-        // Igual que en las mesas: preventDefault() mata el foco implícito y sin foco las
-        // flechas del teclado nunca llegarían al vértice.
+        // Same as tables: preventDefault() eliminates implicit focus; focus is set
+        // explicitly so arrow keys work.
         e.currentTarget.focus({ preventScroll: true });
       } catch {
         // jsdom no implementa focus() en SVGElement.
@@ -1479,7 +1458,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
-        // Ver el comentario del arrastre de mesas.
+        // See table dragging comment.
       }
       e.preventDefault();
     },
@@ -1503,7 +1482,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
-      // Ver el comentario del arrastre de mesas.
+      // See table dragging comment.
     }
   }, []);
 
@@ -1572,11 +1551,10 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     const created: Array<{ tempId: number; row: DiningTable }> = [];
     let unauthorized = false;
 
-    // El contorno viaja primero y por su cuenta: es una columna del plano, no una mesa. Si
-    // falla, las mesas se guardan igual (y al revés): los errores se acumulan y se listan
-    // juntos en vez de abortar y perder trabajo del usuario.
+    // Boundary is persisted independently: if it fails, tables still save (and vice versa);
+    // errors accumulate and are displayed together without losing user work.
     let outlineSaved = false;
-    // Regiones de zona: cada una se guarda con PATCH a SU zona, no al plano.
+    // Zone regions: each is saved via PATCH to its corresponding zone, not the plan.
     for (const zoneId of dirtyZoneIds) {
       const poly = zoneAreas.get(zoneId);
       const zone = zones.find((z) => z.id === zoneId);
@@ -1584,8 +1562,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         const res = await fetch(`${API_BASE}/floor-zone/${zoneId}`, {
           method: 'PATCH',
           headers: authHeaders(),
-          // Sólo `area`: el update hace Object.assign, así que mandar `merchant` o
-          // `floorPlan` como enteros planos destrozaría las relaciones.
+          // Only `area`: backend update uses Object.assign, so sending scalar IDs
+          // would destroy relational entity links.
           body: JSON.stringify({ area: poly ? serializeOutline(poly) : null }),
         });
         if (res.status === 401) {
@@ -1610,8 +1588,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           const res = await fetch(`${API_BASE}/floor-plan/${plan.id}`, {
             method: 'PATCH',
             headers: authHeaders(),
-            // SÓLO `outline`: el update hace Object.assign sobre la entidad, así que enviar
-            // `merchant` (un número plano) sustituiría la relación por basura.
+            // ONLY `outline`: backend update uses Object.assign, so sending scalar
+            // `merchant` would corrupt relationship.
             body: JSON.stringify({ outline: serializeOutline(outline) }),
           });
           if (res.status === 401) {
@@ -1630,8 +1608,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       }
     }
 
-    // Secuencial a propósito: el backend valida unicidad de `number` por comercio y en
-    // paralelo dos altas podrían pisarse; además así el error se atribuye a una mesa.
+    // Sequential by design: backend validates unique table numbers per merchant;
+    // serial execution prevents race conditions and links errors to specific tables.
     if (!unauthorized) {
       for (const id of pendingDeletes) {
         try {
@@ -1657,8 +1635,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     }
 
     if (!unauthorized) {
-      // Una mesa nueva puede colgar de otra mesa nueva: se crean primero las madres para
-      // que su id real exista cuando le toque el turno a la hija.
+      // A new table may join another new table: parents are created first so
+      // so that its real id exists when processing the child table.
       const pending = tables.filter((row) => row.id < 0);
       const newIds = new Set(pending.map((t) => t.id));
       const parentsFirst = [
@@ -1686,17 +1664,17 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           location: t.location,
           rotation: Math.round(t.rotation),
           shape: t.shape,
-          // Solo se envía el tamaño propio si la mesa lo tiene: omitirlo deja que el
-          // backend guarde null y la mesa herede el de su forma.
+          // Only send custom dimensions if defined; omitting allows backend
+          // to persist null and inherit standard shape size.
           ...(t.width != null ? { width: Math.round(t.width) } : {}),
           ...(t.height != null ? { height: Math.round(t.height) } : {}),
-          // pos_x/pos_y son int en Postgres: redondeamos aquí para no depender del truncado.
+          // pos_x/pos_y are integers in Postgres: round client-side for consistent placement.
           pos_x: Math.round(t.pos_x),
           pos_y: Math.round(t.pos_y),
           floorZone: zoneId,
           floorPlan: plan.id,
-          // La madre puede ser una mesa recién creada en este mismo guardado: su id
-          // temporal se cambia por el real que devolvió su POST.
+          // Parent may be a newly created table in this save operation: temporary
+          // ID is replaced by assigned ID from POST response.
           ...(resolveParentId(parentTableId(t), created) != null
             ? { parent_table_id: resolveParentId(parentTableId(t), created) }
             : {}),
@@ -1740,9 +1718,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         if (!original || original.height !== t.height) dto.height = t.height ?? null;
         if (!original || original.pos_x !== t.pos_x) dto.pos_x = Math.round(t.pos_x);
         if (!original || original.pos_y !== t.pos_y) dto.pos_y = Math.round(t.pos_y);
-        // La unión se compara con parentTableId() y no campo a campo: el original llega de
-        // la API con `parent_table` embebido y el editado lleva además el escalar. Si la
-        // madre era una mesa nueva, su id temporal ya tiene equivalente real.
+        // Compares parent link via parentTableId() rather than field by field: accounts
+        // for differences between nested entity and scalar ID.
         if (!original || parentTableId(original) !== parentTableId(t)) {
           dto.parent_table_id = resolveParentId(parentTableId(t), created);
         }
@@ -1784,16 +1761,16 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     }
 
     if (failures.length > 0) {
-      // Fallo parcial: NO refrescamos, para no perder lo que el usuario aún tiene en el
-      // lienzo. Sólo consolidamos lo que sí viajó y dejamos el resto marcado como sucio.
+      // Partial failure: DO NOT reload from server to prevent losing unsaved canvas state.
+      // Consolidate successfully persisted items and retain dirty state on remainder.
       if (created.length > 0) {
         const byTempId = new Map(created.map((c) => [c.tempId, c.row]));
         setTables((prev) =>
           prev.map((t) => {
             const row = byTempId.get(t.id);
             if (!row) return t;
-            // El POST devuelve floorZone/floorPlan sólo como {id,name}: conservamos el
-            // objeto local cuando el servidor no lo trae para no perder el color.
+            // POST returns floorZone/floorPlan as {id, name}: preserve local
+            // object styling attributes if missing in response.
             return {
               ...t,
               ...row,
@@ -1802,7 +1779,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
             };
           }),
         );
-        // La fila del servidor es la nueva verdad para calcular diffs en el próximo PUT.
+        // Server row becomes new baseline for future diff computation.
         created.forEach((c) => originalById.current.set(c.row.id, { ...c.row }));
         setTakenNumbers((prev) => {
           const next = new Set(prev);
@@ -1816,7 +1793,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       });
       setDirtyIds((prev) => new Set([...prev].filter((id) => !savedUpdates.includes(id))));
       setPendingDeletes((prev) => prev.filter((id) => !savedDeletes.includes(id)));
-      // El contorno sí llegó al servidor aunque alguna mesa fallara: no volver a mandarlo.
+      // Boundary succeeded even if a table failed: do not resend unnecessarily.
       if (outlineSaved) setOutlineDirty(false);
       if (failures.length === 0) setDirtyZoneIds(new Set());
       setSaveErrors(failures);
@@ -1828,9 +1805,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       return;
     }
 
-    // loadLayout() sólo recarga mesas y zonas; el contorno recién guardado ya es la verdad
-    // local, y el `plan` que llega por props sigue trayendo el valor viejo hasta que el padre
-    // refresque (de ahí que no se vuelva a parsear aquí).
+    // loadLayout() reloads tables and zones; saved boundary is already truth locally,
+    // avoiding stale props overwrite until parent re-renders.
     await loadLayout();
     setOutlineDirty(false);
     setSelectedIds([]);
@@ -1864,7 +1840,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     onClose();
   }, [dirtyCount, onClose]);
 
-  // Escape deselecciona antes de cerrar: perder la selección es barato, perder el layout no.
+  // Escape key deselects before dismissing modal: losing selection is cheap, losing layout is not.
   useModalDismiss(() => {
     if (dragRef.current || vertexDragRef.current) return;
     if (confirmClose) {
@@ -1886,8 +1862,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     requestClose();
   });
 
-  // Cambiar de modo limpia la selección del otro: en ROOM SHAPE el inspector de mesas no se
-  // ve, y dejar una mesa "seleccionada" invisible confunde al volver.
+  // Switching modes clears cross-mode selection: table inspector is hidden
+  // in ROOM SHAPE mode, avoiding confusing hidden selections.
   const switchMode = useCallback((next: EditorMode) => {
     setMode(next);
     if (next === 'shape') setSelectedIds([]);
@@ -1920,7 +1896,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
 
   // ---------------- Unidades ----------------
 
-  // Se persiste al vuelo: quien trabaja en pies no debería reelegirlo cada vez que abre un plano.
+  // Persisted immediately: users working in feet should not need to reselect on each load.
   const changeUnitSystem = useCallback((next: UnitSystem) => {
     setUnitSystem(next);
     saveUnitSystem(next);
@@ -1928,7 +1904,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
 
   // ---------------- Render ----------------
 
-  // Un id estable por plano: dos editores del mismo plano nunca coexisten, y con useId el
+  // Stable id per plan: two editors for same plan never coexist, avoiding conflicts.
   // valor generado por React lleva caracteres que ensucian la referencia url(#…) del SVG.
   const gridPatternId = `floor-grid-${plan.id}`;
 
@@ -1936,8 +1912,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     'w-full bg-[#fef9f1] text-[#1d1c17] px-3 py-2 border border-[#e8e2d8] rounded text-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none';
   const labelClass = 'text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider';
 
-  // Un status heredado fuera del vocabulario se ofrece igual, para no cambiárselo por
-  // accidente a la mesa sólo por abrir el inspector.
+  // Legacy status outside standard vocabulary is retained to prevent inadvertent mutation.
   const statusOptions: string[] =
     selectedTable && !isTableStatus(selectedTable.status)
       ? [selectedTable.status, ...TABLE_STATUSES]
@@ -1966,13 +1941,12 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
             <p className="text-white/50 text-[11px] font-mono">
               {formatDimensions(canvasW, canvasH, unitSystem)} · {tables.length}{' '}
               {tables.length === 1 ? 'table' : 'tables'}
-              {/* La superficie sólo se anuncia cuando la sala deja de ser el rectángulo
-                  completo: en un rectángulo ya se deduce de width × height. */}
+              {/* Area is only announced when room deviates from standard full rectangle:
+              in a rectangle it is already deduced from width × height. */}
               {customShape ? ` · ${formatArea(roomAreaPx2, unitSystem)}` : ''}
             </p>
           </div>
-          {/* Estado del canal en vivo. Va aparte de la línea de dimensiones para que esa
-              cadena siga siendo un único texto legible de un vistazo. */}
+          {/* Live channel connection status, separated from dimension metrics. */}
           <span
             data-testid="editor-realtime-status"
             title={
@@ -1996,8 +1970,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           </span>
         </div>
 
-        {/* Conmutador de modo: mesas o forma de la sala. Los dos gestos se disparan con el
-            mismo pointerdown sobre el lienzo, así que no pueden estar activos a la vez. */}
+        {/* Mode toggle: Tables vs Room Shape. Both gestures share pointerdown
+        on canvas, so they cannot be active simultaneously. */}
         <div
           role="group"
           aria-label="Editor mode"
@@ -2030,8 +2004,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           ))}
         </div>
 
-        {/* Unidades. Va en la barra y no en un menú porque es una lectura constante: el
-            gerente piensa la sala en metros (o en pies) y no debería tener que abrir nada
+        {/* Unit system. Placed on top bar for immediate access: managers measure
+            in meters or feet and should not have to drill into submenus
             para cambiar de sistema. */}
         <div
           role="group"
@@ -2171,8 +2145,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                   <span className="material-symbols-outlined text-[20px]" aria-hidden="true">
                     table_restaurant
                   </span>
-                  {/* La huella se apila bajo el nombre: "80 cm × 80 cm" no cabe en la misma
-                      línea que "RECTANGLE" en una barra de 240px. */}
+                  {/* Dimensions stack below shape name: width x height does not fit
+                  on the same line as shape label on compact sidebar. */}
                   <span className="min-w-0 flex flex-col">
                     <span className="text-xs font-bold uppercase tracking-widest">{shape}</span>
                     <span className="text-[10px] text-[#5f5e5e] font-mono">
@@ -2193,8 +2167,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
               Active zone
             </h2>
             <div className="flex items-center gap-2">
-              {/* El color es la razón de ser de la zona: sin verlo aquí, el selector no
-                  dice nada. El swatch refleja el de la zona activa. */}
+              {/* Color identifies zone: swatch displays active zone tone. */}
               <span
                 data-testid="active-zone-swatch"
                 aria-hidden="true"
@@ -2338,7 +2311,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           ref={viewportRef}
           className="flex-1 min-w-0 overflow-auto p-8 relative"
           onPointerDown={(e) => {
-            // Clic en el vacío (fuera del lienzo) = deseleccionar.
+            // Click on empty space outside canvas = deselect.
             if (e.target === e.currentTarget) setSelectedIds([]);
           }}
         >
@@ -2373,17 +2346,15 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                   height: canvasH,
                   transform: `scale(${zoom})`,
                   transformOrigin: 'top left',
-                  // Fuera del contorno el papel se apaga: así "sala" y "exterior" se
-                  // distinguen de un vistazo aunque la planta sea irregular.
+                  // Dim outer region so room and exterior are immediately distinguishable.
                   backgroundColor: OUTSIDE_FILL,
                   boxShadow: '0 0 0 2px #222222, 0 12px 30px rgba(0,0,0,0.15)',
                   touchAction: 'none',
                 }}
                 className="relative"
               >
-                {/* Suelo, retícula y muros. La retícula va como <pattern> DENTRO del relleno
-                    del propio contorno: se recorta sola con el polígono, sin clipPath, y así
-                    la cuadrícula sólo existe donde hay sala. */}
+                {/* Floor, grid, and walls. Grid is styled inside boundary polygon
+                    fill so it naturally clips to room contours. */}
                 <svg
                   width={canvasW}
                   height={canvasH}
@@ -2432,9 +2403,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                   />
                 )}
 
-                {/* Vínculos de fusión: una línea de puntos entre el centro de cada hija y
-                    el de su madre. Va antes que las mesas para que pase por DEBAJO de ellas
-                    y no tape números ni asientos. */}
+                {/* Join links: dashed lines connecting each child center to its parent center.
+                    Rendered before tables so they pass UNDERNEATH them without obscuring numbers or seats. */}
                 {joinLinks.length > 0 && (
                   <svg
                     width={canvasW}
@@ -2445,8 +2415,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                     aria-hidden="true"
                   >
                     {joinLinks.map((link) => {
-                      // Con una mesa del grupo seleccionada, el resto de uniones se atenúa:
-                      // en una sala con varios grupos, todas las líneas a la vez son ruido.
+                      // Dim other join links when a specific group is selected to reduce clutter.
                       const inSelectedGroup =
                         selectedGroupIds.has(link.childId) && selectedGroupIds.has(link.parentId);
                       const dimmed = selectedGroupIds.size > 0 && !inSelectedGroup;
@@ -2481,8 +2450,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                       key={t.id}
                       data-testid={`floor-table-${t.id}`}
                       role="button"
-                      // En modo ROOM SHAPE las mesas quedan de decorado: sin foco tabulable y
-                      // sin eventos, para que el arrastre de vértices no compita con el suyo.
+                      // In ROOM SHAPE mode tables are decorative: un-focusable and inert
+                      // to prevent pointer conflicts with vertex editing.
                       tabIndex={mode === 'tables' ? 0 : -1}
                       aria-label={
                         joinedTo != null
@@ -2496,9 +2465,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                       onPointerMove={handleTablePointerMove}
                       onPointerUp={handleTablePointerUp}
                       onPointerCancel={handleTablePointerUp}
-                      // Si el navegador pierde la captura (elemento reemplazado, gesto
-                      // del sistema) el pointerup ya no llega aquí y el arrastre se
-                      // quedaría pegado al cursor sin botón pulsado.
+                      // Reset drag if pointer capture is lost to prevent stuck dragged items.
                       onLostPointerCapture={handleTablePointerUp}
                       onKeyDown={(e) => handleTableKeyDown(e, t)}
                       title={
@@ -2518,12 +2485,12 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                         transform: `rotate(${t.rotation}deg)`,
                         backgroundColor: tableColor(t),
                         touchAction: 'none',
-                        // Atenuadas y sordas mientras se dibuja la sala: siguen sirviendo de
+                        // Dimmed and inert while editing room boundary: serves as reference.
                         // referencia visual, pero no capturan el puntero.
                         opacity: mode === 'tables' ? 1 : 0.35,
                         pointerEvents: mode === 'tables' ? undefined : 'none',
-                        // Aviso ámbar para mesas fuera de la sala o con número repetido: usamos
-                        // box-shadow y no `ring` para no chocar con el outline de selección.
+                        // Warning highlight for out-of-bounds tables or duplicates: uses
+                        // box-shadow rather than ring to avoid selection outline clash.
                         boxShadow:
                           clipped || outsideRoom || duplicated
                             ? '0 0 0 3px #fbbf24, 0 4px 10px rgba(0,0,0,0.2)'
@@ -2556,8 +2523,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                       {joinedTo != null && (
                         <span
                           data-testid={`join-badge-${t.id}`}
-                          // El giro de la mesa no debe girar el icono: se contrarresta para
-                          // que el eslabón se lea igual con la mesa a 90°.
+                          // Counter-rotate join icon so icon remains upright regardless of table angle.
                           style={{ transform: `rotate(${-t.rotation}deg)` }}
                           title={`Joined to ${
                             tables.find((x) => x.id === joinedTo)?.number ??
@@ -2575,9 +2541,9 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                   );
                 })}
 
-                {/* Regiones de zona: rellenos translúcidos con el color de cada zona.
-                    Se pintan en TODOS los modos y por debajo de las mesas — son el fondo
-                    que responde a "qué parte de la sala es de quién". */}
+                {/* Zone regions: translucent fills matching each zone color.
+                    Rendered in ALL modes and beneath tables — serving as the background
+                    layer that identifies spatial zone assignments. */}
                 <svg
                   width={canvasW}
                   height={canvasH}
@@ -2652,9 +2618,9 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                   </svg>
                 )}
 
-                {/* Manejadores del contorno. Van DESPUÉS de las mesas para pintarse encima:
-                    con la sala llena, un vértice bajo una mesa sería inagarrable. La capa no
-                    intercepta el puntero salvo en los manejadores mismos. */}
+                {/* Boundary outline handles. Rendered AFTER tables to paint on top:
+                    in a crowded room, a vertex underneath a table would be unclickable.
+                    The layer does not capture pointer events except on the handles themselves. */}
                 {mode === 'shape' && (
                   <svg
                     width={canvasW}
@@ -2664,7 +2630,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                     style={{ pointerEvents: 'none', overflow: 'visible' }}
                   >
                     {outline.map((p, i) => {
-                      // Punto medio de la arista i -> i+1 (la última cierra contra el vértice 0).
+                      // Midpoint of edge i -> i+1 (last wraps back to vertex 0).
                       const next = outline[(i + 1) % outline.length];
                       return (
                         <circle
@@ -2694,8 +2660,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                     })}
 
                     {outline.map((p, i) => {
-                      // Tamaño en px de pantalla: dividir por el zoom mantiene el manejador
-                      // igual de agarrable al 25% que al 200%.
+                      // Sized in screen px: dividing by zoom keeps handle target size constant.
                       const size = VERTEX_HANDLE_PX / zoom;
                       const isVertexSelected = selectedVertex === i;
                       return (
@@ -2859,8 +2824,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                 </button>
               </div>
 
-              {/* Confirmación previa: aplicar el preset dejaría mesas en la calle. Se puede
-                  seguir adelante, pero enterándose. */}
+              {/* Warning: applying preset places existing tables out of bounds. */}
               {pendingPreset && (
                 <div
                   data-testid="outline-preset-confirm"
@@ -3127,7 +3091,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                       const shape = e.target.value as TableShape;
                       const fp = footprintOf(shape);
                       // Cambiar de forma cambia la huella: reencuadramos contra el lienzo y
-                      // contra la sala para que la mesa no acabe medio fuera tras el cambio.
+                      // against room boundaries so table is not partially positioned outside.
                       const spot = containToOutline(
                         clamp(selectedTable.pos_x, 0, Math.max(0, canvasW - fp.w)),
                         clamp(selectedTable.pos_y, 0, Math.max(0, canvasH - fp.h)),
@@ -3153,8 +3117,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                 </div>
               </div>
 
-              {/* Tamaño propio: una mesa puede salirse del estándar de su forma (una barra
-                  larga, un reservado grande). Vacío = hereda el de la forma. */}
+              {/* Custom dimensions: allows deviation from standard shape template.
+                  Empty = inherits shape default. */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
                   <label htmlFor="insp-width" className={labelClass}>
@@ -3294,8 +3258,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                   <label htmlFor="insp-x" className={labelClass}>
                     X {lengthSuffix(unitSystem)}
                   </label>
-                  {/* El usuario teclea en su unidad, pero la mesa se guarda en píxeles: la
-                      conversión ocurre aquí y nunca en el camino hacia la API. */}
+                  {/* User enters values in active units, converted to pixels locally
+                      before persistence. */}
                   <input
                     id="insp-x"
                     type="number"
@@ -3332,7 +3296,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                 </div>
               </div>
 
-              {/* ---------------- Fusión ---------------- */}
+              {/* ---------------- Table Merging ---------------- */}
               <div className="flex flex-col gap-1.5 pt-3 border-t border-[#e8e2d8]">
                 <label htmlFor="insp-parent" className={labelClass}>
                   <span className="material-symbols-outlined text-[13px] align-middle" aria-hidden="true">
@@ -3399,7 +3363,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                 )}
               </div>
 
-              {/* ---------------- Traslado de comensales ---------------- */}
+              {/* ---------------- Guest Transfer ---------------- */}
               {selectedTable.status === 'occupied' && (
                 <div className="flex flex-col gap-1.5">
                   <button
@@ -3456,7 +3420,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         </aside>
       </div>
 
-      {/* ---------------- Confirmación de cierre con cambios pendientes ---------------- */}
+      {/* ---------------- Close Confirmation Modal with Unsaved Changes ---------------- */}
       {confirmClose && (
         <div className="absolute inset-0 z-[1010] bg-black/60 flex items-center justify-center p-4">
           <div

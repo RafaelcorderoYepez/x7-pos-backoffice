@@ -54,7 +54,7 @@ interface PurchaseOrdersViewProps {
   onNavigate?: (view: string) => void;
 }
 
-// Fila de la grilla orientada a materias primas
+// Raw materials grid row
 interface OrderItemRow {
   localId: string;
   id?: number;
@@ -96,16 +96,16 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Campos de creación/edición (Master)
+  // Master creation/editing fields
   const [editingOrderId, setEditingOrderId] = useState<number | null>(null);
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | ''>('');
   const [orderStatus, setOrderStatus] = useState<string>('DRAFT');
 
 
-  // Grilla de ítems orientada a materias primas (Detail)
+  // Detail raw materials items grid
   const [itemRows, setItemRows] = useState<OrderItemRow[]>([]);
 
-  // Detalle para inspección
+  // Inspection details
   const [selectedOrderForInspect, setSelectedOrderForInspect] = useState<PurchaseOrder | null>(null);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState<boolean>(false);
   const [inspectorStatus, setInspectorStatus] = useState<string>('');
@@ -150,7 +150,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar órdenes de compra');
+        throw new Error('Error loading purchase orders');
       }
 
       const json = await res.json();
@@ -193,7 +193,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
         throw new Error(errBody.message || 'Failed to delete purchase order.');
       }
 
-      // Actualizar el DOM de inmediato removiéndola de la lista
+      // Update DOM immediately by removing from list
       setPurchaseOrders(prev => prev.filter(p => p.id !== selectedOrderForDelete.id));
       setIsDeleteModalOpen(false);
       setSelectedOrderForDelete(null);
@@ -213,10 +213,10 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       };
 
-      // Cargar proveedores activos
+      // Load active suppliers
       const suppliersRes = await fetch(`${API_BASE}/v1/inventory/suppliers?limit=100`, { headers });
 
-      // Cargar materias primas activas (insumos)
+      // Load active raw materials (supplies)
       let suppliesRes = await fetch(`${API_BASE}/v1/inventory/raw-materials?status=active&limit=500`, { headers });
       if (!suppliesRes.ok) {
         suppliesRes = await fetch(`${API_BASE}/supplies?status=active&limit=500`, { headers });
@@ -258,7 +258,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     fetchSuppliersAndSupplies();
   }, []);
 
-  // ── Handlers de grilla de insumos ──────────────────────────────────────────
+  // ── Supplies grid handlers ──────────────────────────────────────────
 
   const handleAddRow = () => {
     const defaultLocationId = locations.length > 0 ? locations[0].id : '';
@@ -337,7 +337,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   // Calcular Gran Total
   const grandTotal = itemRows.reduce((acc, row) => acc + row.subtotal, 0);
 
-  // Inicializar Formulario de Creación
+  // Initialize creation form
   const handleOpenCreateMode = () => {
     setEditingOrderId(null);
     setSelectedSupplierId('');
@@ -346,7 +346,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     setMode('create');
   };
 
-  // Inicializar Formulario de Edición (PO en estado DRAFT o SENT)
+  // Initialize edit form (PO in DRAFT or SENT state)
   const handleOpenEditMode = async (po: PurchaseOrder) => {
     let fullOrder = po;
     try {
@@ -392,7 +392,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     setMode('create');
   };
 
-  // Validaciones y Guardado (Creación o Edición PUT)
+  // Validations and Save (Creation or PUT edit)
   const handleSavePurchaseOrder = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -468,7 +468,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
 
 
 
-  // Abrir Drawer de Inspección
+  // Open Inspection Drawer
   const handleInspectOrder = async (po: PurchaseOrder) => {
     try {
       const token = getAccessToken();
@@ -507,7 +507,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     setIsDetailDrawerOpen(true);
   };
 
-  // Guardar cambios del inspector (Fulfillment State y Recepciones Parciales vía POST /receive)
+  // Save inspector changes (Fulfillment State and Partial Receivals via POST /receive)
   const handleSaveInspectorChanges = async () => {
     if (!selectedOrderForInspect) return;
     try {
@@ -517,7 +517,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       };
 
-      // 1. Verificar si hay cantidades recibidas adicionales para enviar vía /receive
+      // 1. Check for additional received quantities to submit via /receive
       const receiveItemsPayload: { id: number; receivedQuantity: number }[] = [];
       if (selectedOrderForInspect.purchaseOrderItems) {
         selectedOrderForInspect.purchaseOrderItems.forEach(item => {
@@ -535,7 +535,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
         });
       }
 
-      // Si hay ítems a recibir, llamamos al endpoint especializado POST /v1/purchase-orders/:id/receive
+      // If items pending receipt, call specialized POST /v1/purchase-orders/:id/receive endpoint
       if (receiveItemsPayload.length > 0) {
         const receiveRes = await fetch(`${API_BASE}/v1/purchase-orders/${selectedOrderForInspect.id}/receive`, {
           method: 'POST',
@@ -550,7 +550,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
         }
       }
 
-      // 2. Si el estado cambió explícitamente en el selector a otro valor no derivado, actualizar vía PATCH /status
+      // 2. If status was explicitly changed in dropdown to another non-derived value, update via PATCH /status
       if (inspectorStatus !== selectedOrderForInspect.status && receiveItemsPayload.length === 0) {
         const statusRes = await fetch(`${API_BASE}/v1/purchase-orders/${selectedOrderForInspect.id}/status`, {
           method: 'PATCH',
@@ -574,7 +574,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   };
 
 
-  // Helper para obtener las transiciones válidas del ciclo de vida
+  // Helper to retrieve valid lifecycle transitions
   const getAllowedNextStatuses = (currentStatus: string) => {
     const norm = (currentStatus || 'DRAFT').toUpperCase();
     switch (norm) {
@@ -617,13 +617,13 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     }
   };
 
-  // Calcular ítems totales pendientes para el inspector y total del dinero recibido
+  // Calculate total pending items for inspector and total received cost
 
   let totalPendingItemsCount = 0;
   let totalReceivedAmount = 0;
   if (selectedOrderForInspect?.purchaseOrderItems) {
     selectedOrderForInspect.purchaseOrderItems.forEach(item => {
-      // Para materias primas usar quantityOrdered; fallback a quantity para compatibilidad
+      // For raw materials use quantityOrdered; fallback to quantity for compatibility
       const requested = Number(item.quantityOrdered ?? item.quantity) || 0;
       const price = Number(item.unitCost ?? item.unitPrice) || 0;
       let received = 0;
@@ -664,7 +664,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     return matchesSearch && matchesStatus && matchesSupplier;
   });
 
-  // Portal del drawer de inspección
+  // Inspection drawer portal
   const drawerPortal = (isDetailDrawerOpen && selectedOrderForInspect)
     ? createPortal(
         <div className="fixed inset-0 z-[1000] flex justify-end font-sans">
@@ -695,7 +695,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
 
             {/* Info Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Banner de ítems pendientes */}
+              {/* Pending items banner */}
               {inspectorStatus === 'PARTIALLY_RECEIVED' && totalPendingItemsCount > 0 && (
                 <div className="bg-amber-50 border border-amber-200 p-3 flex items-start gap-2.5 rounded">
                   <span className="material-symbols-outlined text-amber-600 text-lg">warning</span>
@@ -721,7 +721,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                   </div>
                 </div>
 
-                {/* Selector rápido para actualizar estatus */}
+                {/* Quick status update selector */}
                 <div className="flex flex-col items-end gap-1">
                   <span className="text-[9px] font-black uppercase tracking-wider text-[#5f5e5e]">Fulfillment State</span>
                   <select
@@ -738,7 +738,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                 </div>
               </div>
 
-              {/* Botón de edición si la orden está en estado DRAFT o SENT */}
+              {/* Edit button if order is in DRAFT or SENT status */}
               {(selectedOrderForInspect.status === 'DRAFT' || selectedOrderForInspect.status === 'SENT') && (
                 <button
                   type="button"
@@ -793,7 +793,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                         <div className="flex items-center gap-3">
                           <span className="material-symbols-outlined text-[#5f5e5e] text-lg">box</span>
                           <div>
-                            {/* Nombre: prioritizar rawMaterial, luego product */}
+                            {/* Name: prioritize rawMaterial, then product */}
                             <span className="block text-xs font-bold text-[#1c1b16]">
                               {item.rawMaterial?.name ||
                                 item.product?.name ||
@@ -808,7 +808,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                             {item.location && (
                               <span className="block text-[10px] text-zinc-500 font-bold">Dest: {item.location.name}</span>
                             )}
-                            {/* Mostrar campos de insumo si aplica */}
+                            {/* Display supply fields if applicable */}
                             {item.rawMaterialId ? (
                               <span className="block text-[10px] text-[#ae001a] font-mono">
                                 Qty: {Number(item.quantityOrdered ?? item.quantity).toFixed(2)} {item.purchaseUnit || ''} × ${Number(item.unitCost ?? item.unitPrice).toFixed(2)}
@@ -929,7 +929,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans relative">
       <div ref={topRef} />
 
-      {/* Título de Sección */}
+      {/* Section Title */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-[#ae001a] text-2xl">
@@ -948,9 +948,9 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
 
       {mode === 'list' ? (
         <>
-          {/* Barra de Búsqueda y Filtros */}
+          {/* Search Bar and Filters */}
           <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-            {/* Fila 1: Búsqueda al 100% de ancho */}
+            {/* Row 1: Full-width search */}
             <div className="relative w-full">
               <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary font-sans">
                 search
@@ -970,7 +970,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
             {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-3">
-                {/* Filtro por Proveedor */}
+                {/* Filter by Supplier */}
                 <select
                   value={supplierFilter}
                   onChange={(e) => {
@@ -1016,7 +1016,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
             </div>
           </div>
 
-          {/* Directorio de Órdenes de Compra */}
+          {/* Purchase Orders Directory */}
           {(() => {
             const activeColSpan =
               (visibleColumns.orderCode ? 1 : 0) +
@@ -1190,7 +1190,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                             currency: 'USD'
                           }).format(po.totalAmount);
 
-                          // Mapear estilos según la especificación
+                          // Map styles per specification
                           const uStatus = po.status.toUpperCase();
                           let badgeStyle = 'bg-blue-100 text-blue-800 border border-blue-200';
                           if (uStatus === 'DRAFT') {
@@ -1207,7 +1207,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                             badgeStyle = 'bg-indigo-100 text-indigo-800 border border-indigo-200';
                           }
 
-                          // Calcular progreso de recepción
+                          // Calculate receiving progress
                           let fulfillmentText = '0%';
                           let totalQtyRequested = 0;
                           let totalQtyReceived = 0;
@@ -1335,7 +1335,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
           </button>
         </>
       ) : (
-        /* Formulario Master-Detalle de Creación */
+        /* Master-Detail Creation Form */
         <form onSubmit={handleSavePurchaseOrder} className="space-y-6">
           <div className="flex justify-between items-center">
             <button
@@ -1395,7 +1395,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
               </div>
             </div>
 
-            {/* Detalle (Detail Grid Items) */}
+            {/* Detail Grid Items */}
             <div className="space-y-4">
               <div className="flex justify-between items-center border-t border-[#e8e2d8] pt-6">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[#ae001a]">
@@ -1572,7 +1572,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
         onClose={() => setIsSupportOpen(false)}
       />
 
-      {/* Modal de confirmación de eliminación (Soft-Delete) */}
+      {/* Deletion confirmation modal (Soft-Delete) */}
       {isDeleteModalOpen && selectedOrderForDelete && (
         <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
           {/* Backdrop */}
@@ -1635,7 +1635,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
       {/* Persistent Quick Links Hub */}
       <StockQuickLinks current="purchase-orders" onNavigate={onNavigate} />
 
-      {/* Portal: Detail Drawer (Inspección de orden) */}
+      {/* Portal: Detail Drawer (Order inspection) */}
       {drawerPortal}
     </div>
   );

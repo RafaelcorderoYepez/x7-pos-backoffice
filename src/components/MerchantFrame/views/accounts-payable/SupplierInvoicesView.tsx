@@ -20,7 +20,7 @@ import { Toast } from '../../shared/Toast';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-// ---- Helpers de coerción y formato ----
+// ---- Coercion and formatting helpers ----
 
 const num = (v: number | string | null | undefined): number => {
   if (v === null || v === undefined) return 0;
@@ -37,8 +37,8 @@ const formatDate = (value?: string | null): string => {
   return isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
 };
 
-// Una factura está "vencida por antigüedad" si su fecha de vencimiento ya pasó
-// respecto a la fecha del sistema y aún tiene saldo pendiente (balance_due > 0).
+// An invoice is overdue if its due date has passed
+// relative to system date and still has balance due (balance_due > 0).
 const isPastDue = (inv: Pick<SupplierInvoice, 'due_date' | 'balance_due'>): boolean => {
   const due = new Date(inv.due_date);
   if (isNaN(due.getTime())) return false;
@@ -61,7 +61,7 @@ const STATUS_BADGE_STYLES: Record<SupplierInvoiceStatus, string> = {
   cancelled: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
 };
 
-// Una factura está bloqueada para edición financiera si ya recibió pagos o está saldada.
+// An invoice is locked for financial editing if payments received or settled.
 const isFinanciallyLocked = (inv: Pick<SupplierInvoice, 'paid_amount' | 'status'>): boolean =>
   num(inv.paid_amount) > 0 || inv.status === 'paid';
 
@@ -92,7 +92,7 @@ const InvoiceFormDrawer: React.FC<InvoiceFormDrawerProps> = ({
   const [taxTotal, setTaxTotal] = useState(initial ? String(num(initial.tax_total)) : '');
   const [notes, setNotes] = useState(initial?.notes ?? '');
 
-  // Regla de madurez: la fecha de vencimiento no puede ser anterior a la de emisión.
+  // Maturity rule: due date cannot be earlier than issue date.
   const maturityError =
     invoiceDate && dueDate && dueDate < invoiceDate
       ? 'Due date cannot be earlier than the invoice issuance date.'
@@ -110,7 +110,7 @@ const InvoiceFormDrawer: React.FC<InvoiceFormDrawerProps> = ({
     dueDate.trim().length > 0 &&
     !maturityError;
 
-  // En edición, no permitir guardar si nada cambió respecto al registro original.
+  // In edit mode, disallow save if nothing changed from original record.
   const isUnchanged =
     mode === 'edit' &&
     !!initial &&
@@ -142,7 +142,7 @@ const InvoiceFormDrawer: React.FC<InvoiceFormDrawerProps> = ({
       return;
     }
 
-    // En edición, los campos financieros bloqueados no se reenvían.
+    // In edit mode, locked financial fields are not resent.
     const dto: UpdateSupplierInvoiceDto = {
       invoice_number: invoiceNumber.trim(),
       invoice_date: invoiceDate,
@@ -198,7 +198,7 @@ const InvoiceFormDrawer: React.FC<InvoiceFormDrawerProps> = ({
                     {s.name}
                   </option>
                 ))}
-                {/* Garantiza que el proveedor actual sea seleccionable aun si no vino en la lista */}
+                {/* Ensures current supplier is selectable even if not in list */}
                 {initial?.supplier && !suppliers.some((s) => s.id === initial.supplier_id) && (
                   <option value={initial.supplier_id}>{initial.supplier.name}</option>
                 )}
@@ -621,7 +621,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
   // Filtros
   const [searchQuery, setSearchQuery] = useState('');
   const [supplierFilter, setSupplierFilter] = useState<string>('');
-  // 'overdue' es un estado DERIVADO (due_date < hoy && balance > 0), no persistido en el backend.
+  // 'overdue' is a DERIVED state (due_date < today && balance > 0), not persisted directly.
   const [statusFilter, setStatusFilter] = useState<'' | SupplierInvoiceStatus | 'overdue'>('');
   const [overdueOnly, setOverdueOnly] = useState(false);
 
@@ -657,7 +657,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
     setLoading(true);
     setError(null);
     try {
-      // El scoping por empresa lo resuelve el backend vía JWT; sólo pedimos un límite alto.
+      // Tenant scoping resolved by backend via JWT; requesting high limit.
       // En modo "archived" pedimos las soft-deleted con only_deleted=true.
       const query = viewMode === 'archived' ? 'only_deleted=true&limit=100' : 'limit=100';
       const res = await fetch(
@@ -665,9 +665,9 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
         { headers: authHeaders() },
       );
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las facturas de proveedores');
+      if (!res.ok) throw new Error('Error loading supplier invoices');
       const json = await res.json();
-      // Activo: excluye soft-deleted. Archivado: sólo soft-deleted.
+      // Active: excludes soft-deleted. Archived: only soft-deleted.
       const list = (json.data ?? []).filter((inv: SupplierInvoice) =>
         viewMode === 'archived' ? !!inv.deleted_at : !inv.deleted_at,
       );
@@ -701,7 +701,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompanyId]);
 
-  // Opciones del filtro por proveedor: unión de proveedores fetchados y los presentes en facturas.
+  // Supplier filter options: union of fetched suppliers and those in invoices.
   const supplierOptions = useMemo(() => {
     const map = new Map<number, string>();
     suppliers.forEach((s) => map.set(s.id, s.name));
@@ -803,7 +803,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
         const json = await res.json().catch(() => ({}));
         throw new Error(json.message || 'Failed to delete invoice');
       }
-      // Soft-delete: se retira del directorio activo sin purga física.
+      // Soft-delete: removed from active directory without physical purge.
       setInvoices((prev) => prev.filter((inv) => inv.id !== deletingInvoice.id));
       setDeletingInvoice(null);
       setToast({ message: 'Invoice deleted successfully', type: 'success' });
@@ -850,8 +850,8 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
       if (!res.ok) throw new Error(json.message || 'Failed to load invoice details');
       const inv: SupplierInvoice = json.data;
 
-      // El backend devuelve la factura plana: resolvemos el contacto del proveedor
-      // desde la lista fetchada y cargamos los items de la factura por separado.
+      // Backend returns flat invoice: resolve supplier contact
+      // from fetched list and load invoice line items separately.
       const supplier =
         suppliers.find((s) => s.id === inv.supplier_id) ?? inv.supplier ?? null;
 
@@ -866,7 +866,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
           items = (ij.data ?? []).filter((it: SupplierInvoiceItem) => !it.deleted_at);
         }
       } catch {
-        /* los items son opcionales para el detalle */
+        /* items are optional for detail */
       }
 
       setDetailInvoice({ ...inv, supplier, items });
@@ -1160,7 +1160,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
                           </div>
                         </td>
 
-                        {/* Status (OVERDUE derivado tiene prioridad visual sobre el estado guardado) */}
+                        {/* Status (derived OVERDUE takes visual precedence over stored status) */}
                         <td className="px-6 py-4 text-center">
                           {pastDue ? (
                             <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-red-500/10 text-red-700">

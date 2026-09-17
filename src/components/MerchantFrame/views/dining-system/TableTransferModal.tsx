@@ -1,8 +1,8 @@
-// Traslado de comensales en vivo: la cuenta abierta se muda de una mesa a otra sin cerrarla.
+// Live guest transfer: the active tab is moved from one table to another without settling.
 //
-// Sólo se ofrecen mesas disponibles. Una mesa ocupada duplicaría comandas y una en limpieza
-// o fuera de servicio no debería recibir a nadie, así que el destino se elige de una lista
-// ya filtrada y la razón del bloqueo se explica cuando esa lista sale vacía.
+// Only available tables are offered. An occupied table would duplicate tickets and one in cleaning
+// or out of service should receive nobody, so destination is chosen from an already filtered list
+// and the lock reason is explained when that list is empty.
 
 import React, { useState } from 'react';
 import type { DiningTable } from '../../../../types/dining-system';
@@ -12,7 +12,7 @@ import { AppModal, ModalFormFooter } from '../../shared/AppModal';
 
 interface TableTransferModalProps {
   source: DiningTable;
-  // Ya filtradas a las que pueden recibir (status 'available').
+  // Already filtered to receptive tables (status 'available').
   targets: DiningTable[];
   submitting: boolean;
   onCancel: () => void;
@@ -30,8 +30,8 @@ export const TableTransferModal: React.FC<TableTransferModalProps> = ({
   useModalDismiss(onCancel);
 
   const target = targets.find((t) => String(t.id) === targetId);
-  // Una mesa más pequeña no invalida el traslado —el encargado sabrá si caben— pero avisar
-  // evita mudar a seis comensales a una mesa de dos por descuido.
+  // A smaller table does not invalidate the transfer —manager knows if they fit— but warning
+  // prevents accidentally moving six guests to a two-top table.
   const capacityWarning =
     target && target.capacity < source.capacity
       ? `${target.number} seats ${target.capacity}, fewer than the ${source.capacity} at ${source.number}.`
@@ -90,9 +90,9 @@ export const TableTransferModal: React.FC<TableTransferModalProps> = ({
           </div>
         )}
 
-        {/* Cinturón por si la lista llegara con una mesa que dejó de estar libre mientras
-            el diálogo estaba abierto: el backend lo rechazaría igual, pero el operador
-            merece leer el motivo antes de pulsar. */}
+        {/* Safety check in case the list arrives with a table that is no longer free while
+            the dialog was open: backend would reject it anyway, but operator
+            deserves to read the reason before clicking. */}
         {target && target.status !== 'available' && (
           <p role="alert" className="text-[11px] font-semibold text-[#ae001a]">
             {transferTargetError(target)}

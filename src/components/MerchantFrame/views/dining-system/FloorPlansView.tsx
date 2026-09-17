@@ -54,34 +54,34 @@ const num = (v: number | string | null | undefined): number => {
   return isNaN(n) ? 0 : n;
 };
 
-// El backend guarda width/height en píxeles de lienzo, pero un gerente de sala mide su
-// comedor en metros (o en pies): el píxel es un detalle de implementación y no sale a
+// Backend saves width/height in canvas pixels, but a floor manager measures
+// dining room in meters (or feet): pixel is implementation detail and hidden from
 // pantalla. `num` sigue delante porque el backend puede devolver el int como string.
 const formatResolution = (width: number, height: number, system: UnitSystem): string =>
   formatDimensions(num(width), num(height), system);
 
-// Lienzo por defecto al crear, en píxeles: se convierte a la unidad elegida al pintar el
-// formulario, así que no depende del sistema activo.
+// Default canvas on creation, in pixels: converted to chosen unit when rendering
+// form, so it does not depend on active unit system.
 const DEFAULT_CANVAS_W = 800;
 const DEFAULT_CANVAS_H = 600;
 
 const pluralize = (n: number, singular: string, plural: string): string =>
   `${n} ${n === 1 ? singular : plural}`;
 
-// /api/tables cuelga de la feature TABLES y /api/floor-plan de FLOOR_PLANS: una suscripción
-// puede conceder una y no la otra, así que el censo de mesas puede fallar (403/500) mientras
-// la parrilla carga bien. Sin ese censo NO se puede demostrar que un plano esté vacío, y el
-// backend no cascadea el borrado: fallar en abierto dejaría mesas huérfanas colgando de un
-// plano invisible. Por eso el guard se bloquea en vez de asumir cero.
+// /api/tables belongs to TABLES feature and /api/floor-plan to FLOOR_PLANS: a subscription
+// may grant one and not the other, so table census may fail (403/500) while
+// grid loads fine. Without that census we CANNOT verify plan is empty, and
+// backend does not cascade deletion: failing open leaves orphan tables on an
+// invisible floor plan. That is why the guard blocks rather than assuming zero.
 const COUNTS_UNAVAILABLE_MESSAGE =
   'Table and zone counts are unavailable right now, so the layout guard cannot be verified. Retry the connection before deleting or archiving a floor plan.';
 
-// ---- Forma de la sala ----
+// ---- Room Shape ----
 
-// Un contorno es "propio" cuando NO llena por completo su caja envolvente: solo un rectángulo
-// alineado a los ejes iguala área y caja, así que cualquier muesca (L, U) o chaflán baja el área.
-// Medirlo así evita comparar vértice a vértice y funciona con cualquier polígono, venga del
-// preset que venga. La tolerancia de medio píxel absorbe el redondeo de serializeOutline.
+// An outline is "custom" when it DOES NOT fully fill its bounding box: only axis-aligned
+// rectangle equals area and box, so any notch (L, U) or bevel reduces area.
+// Measuring this way avoids vertex comparison and works with any polygon preset.
+// Half-pixel tolerance absorbs serializeOutline rounding.
 const isCustomShape = (outline: Outline): boolean => {
   const bounds = polygonBounds(outline);
   const boxArea = bounds.width * bounds.height;
@@ -89,14 +89,14 @@ const isCustomShape = (outline: Outline): boolean => {
   return outline.length !== 4 || Math.abs(polygonArea(outline) - boxArea) > 0.5;
 };
 
-// Miniatura de la planta para la parrilla: se DERIVA del contorno persistido en
-// `floor_plan.outline`, de modo que un salón en L o en U se distingue de uno rectangular sin
-// abrir el editor. Con `outline` nulo, parseOutline ya devuelve el rectángulo width × height,
-// que es exactamente lo que representa ese null, así que aquí no hace falta ramificar.
+// Floor plan thumbnail for grid: DERIVED from outline persisted in
+// `floor_plan.outline`, so L or U room is distinguished from rectangle without
+// opening editor. With null `outline`, parseOutline returns width x height rectangle,
+// which is exactly what null represents, so no branching needed.
 const FloorPlanShapeThumb: React.FC<{ outline: Outline }> = ({ outline }) => {
   const bounds = polygonBounds(outline);
-  // El trazo se dibuja a 1px reales (non-scaling-stroke), así que no escala con el viewBox y
-  // sin este margen quedaría cortado justo contra el borde de la caja.
+  // Stroke rendered at 1px real (non-scaling-stroke), so it does not scale with viewBox and
+  // without this margin would be clipped against box edge.
   const pad = Math.max(bounds.width, bounds.height) * 0.05 || 1;
   return (
     <svg
@@ -127,10 +127,10 @@ const FloorPlanShapeThumb: React.FC<{ outline: Outline }> = ({ outline }) => {
 interface FloorPlanFormDrawerProps {
   mode: 'create' | 'edit';
   initial?: FloorPlan;
-  // Mesas ya colocadas en ESTE plano: alimentan el aviso de recorte y el guard de archivado.
+  // Tables placed on THIS floor plan: drives bounds clip warning and archive guard.
   planTables: DiningTable[];
-  // `planTables` vacío es ambiguo cuando /api/tables falló: distinguimos "no hay mesas" de
-  // "no lo sabemos" para no archivar un plano lleno creyéndolo vacío.
+  // empty `planTables` is ambiguous when /api/tables failed: we distinguish "no tables" from
+  // "unknown" to avoid archiving non-empty plan assuming it is empty.
   tableCountsUnknown: boolean;
   unitSystem: UnitSystem;
   submitting: boolean;
@@ -161,8 +161,8 @@ const FloorPlanFormDrawer: React.FC<FloorPlanFormDrawerProps> = ({
 
   const widthNum = Number(width);
   const heightNum = Number(height);
-  // La validación sigue siendo en píxeles (es el rango que impone el backend), pero el
-  // mensaje habla en la unidad que el usuario está viendo.
+  // Validation remains in pixels (enforced by backend), but
+  // message speaks in unit user is currently viewing.
   const dimensionRangeMessage = `Canvas dimensions must be between ${formatLength(
     FLOOR_PLAN_MIN_DIMENSION,
     unitSystem,
@@ -170,8 +170,8 @@ const FloorPlanFormDrawer: React.FC<FloorPlanFormDrawerProps> = ({
   const widthError = validateCanvasDimension(widthNum) ? dimensionRangeMessage : '';
   const heightError = validateCanvasDimension(heightNum) ? dimensionRangeMessage : '';
 
-  // Solo al ENCOGER el lienzo pueden quedar mesas fuera de los límites; agrandarlo
-  // nunca recorta, así que no molestamos al usuario con el aviso en ese caso.
+  // Only SHRINKING canvas can leave tables out of bounds; enlarging
+  // never clips, so user is not prompted with warning in that case.
   const shrinking =
     mode === 'edit' && !!initial && (widthNum < initial.width || heightNum < initial.height);
   const clipError =
@@ -179,12 +179,12 @@ const FloorPlanFormDrawer: React.FC<FloorPlanFormDrawerProps> = ({
       ? clippingWarning(planTables, widthNum, heightNum)
       : '';
 
-  // Guard de reforma: el contorno propio se persiste en píxeles ABSOLUTOS, así que —al revés
-  // que un plano rectangular (outline null), que se estira con el lienzo— no se reescala al
-  // cambiar width/height. Un lienzo más pequeño que su caja envolvente dejaría media sala
-  // dibujada fuera del área editable, sin forma de recuperarla desde este formulario.
-  // Solo miramos planos CON contorno guardado, y reutilizamos polygonBounds en vez de rehacer
-  // la cuenta de mínimos y máximos.
+  // Renovation guard: custom outline is persisted in ABSOLUTE pixels, so —unlike
+  // a rectangular plan (null outline), which stretches with canvas— does not rescale when
+  // changing width/height. Canvas smaller than bounding box would leave half room
+  // rendered outside editable area, unrecoverable from this form.
+  // Only inspect plans WITH saved outline, reusing polygonBounds rather than recomputing
+  // min and max calculations.
   const outlineFitError = useMemo(() => {
     if (mode !== 'edit' || !initial?.outline || widthError || heightError) return '';
     const bounds = polygonBounds(parseOutline(initial.outline, initial.width, initial.height));
@@ -195,7 +195,7 @@ const FloorPlanFormDrawer: React.FC<FloorPlanFormDrawerProps> = ({
       : `The saved room shape spans ${Math.round(bounds.maxX)}px × ${Math.round(bounds.maxY)}px, so a ${widthNum}px × ${heightNum}px canvas would leave part of it outside the editable area. Enlarge the canvas or redraw the room shape in the editor first.`;
   }, [mode, initial, widthNum, heightNum, widthError, heightError]);
 
-  // Archivar equivale a borrar de cara al POS: mismo guard que el diálogo de borrado.
+  // Archiving equals deletion for POS: same guard as deletion dialog.
   const archiveError =
     mode === 'edit' && status === 'archived'
       ? tableCountsUnknown
@@ -215,9 +215,9 @@ const FloorPlanFormDrawer: React.FC<FloorPlanFormDrawerProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || submitting) return;
-    // `outline` se omite a propósito: el contorno se dibuja en el editor, no aquí, y el PATCH
-    // es parcial, así que no mandarlo lo preserva intacto. Enviarlo desde este formulario
-    // (donde nadie lo ha tocado) sería reescribirlo con una copia potencialmente vieja.
+    // `outline` omitted on purpose: outline drawn in editor, not here, and PATCH
+    // is partial, so omitting it preserves it intact. Sending from this form
+    // would rewrite it with a potentially stale copy.
     onSubmit({
       name: name.trim(),
       width: widthNum,
@@ -265,8 +265,8 @@ const FloorPlanFormDrawer: React.FC<FloorPlanFormDrawerProps> = ({
             <label htmlFor="plan-width" className="text-[11px] font-bold text-[#5f5e5e] uppercase">
               Canvas Width {lengthSuffix(unitSystem)} <span className="text-[#ae001a]">*</span>
             </label>
-            {/* El estado se mantiene en píxeles (es lo que persiste el backend); el input solo
-                traduce a la unidad del usuario a la entrada y a la salida. */}
+            {/* State stored in pixels (persisted by backend); input only
+                translates to user unit upon input and output. */}
             <input
               id="plan-width"
               type="number"
@@ -435,8 +435,8 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
-  // La unidad se comparte con el editor a través de localStorage: elegir pies aquí
-  // se respeta al abrir el lienzo, y al revés.
+  // Unit shared with editor via localStorage: choosing feet here
+  // respected when opening canvas, and vice versa.
   const [unitSystem, setUnitSystem] = useState<UnitSystem>(loadUnitSystem);
 
   const changeUnitSystem = (next: UnitSystem) => {
@@ -473,8 +473,8 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
   };
 
   // /api/floor-plan NUNCA embebe tables ni floorZones (findAll solo hace join con merchant),
-  // y ni /api/tables ni /api/floor-zone aceptan un filtro por plano: la única forma de
-  // obtener los contadores es traer ambas colecciones una vez y agruparlas por floorPlan.id.
+  // neither /api/tables nor /api/floor-zone accept floor plan filter: only way
+  // computing counts requires fetching both collections once and grouping by floorPlan.id.
   const fetchFloorPlans = async () => {
     setLoading(true);
     setError(null);
@@ -482,13 +482,13 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
       const [plansRes, zonesRes, tablesRes] = await Promise.all([
         fetch(`${API_BASE}/floor-plan?limit=100`, { headers: authHeaders() }),
         fetch(`${API_BASE}/floor-zone?limit=100`, { headers: authHeaders() }),
-        // limit está capado a 100 en tables: pedir más devuelve 400.
+        // limit capped at 100 in tables: requesting more returns 400.
         fetch(`${API_BASE}/tables?limit=100`, { headers: authHeaders() }),
       ]);
       if (plansRes.status === 401 || zonesRes.status === 401 || tablesRes.status === 401) {
         return handleUnauthorized();
       }
-      if (!plansRes.ok) throw new Error('Error al cargar los planos de sala');
+      if (!plansRes.ok) throw new Error('Error loading floor plans');
 
       const plansJson = await plansRes.json();
       const rows = (plansJson.data ?? []) as Array<Omit<FloorPlan, 'status'> & { status: string }>;
@@ -501,13 +501,13 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
         })),
       );
 
-      // La grid sigue siendo usable con 0, pero el contador de mesas también alimenta el
+      // Grid remains usable with 0, but table counter also feeds
       // guard de borrado/archivado: marcamos el censo como no fiable para bloquearlo.
       setCountsStale(!zonesRes.ok || !tablesRes.ok);
       const zonesJson = zonesRes.ok ? await zonesRes.json() : { data: [] };
       const tablesJson = tablesRes.ok ? await tablesRes.json() : { data: [] };
-      // El soft-delete deja las filas con status 'deleted' en la lista; contarlas
-      // bloquearía el borrado del plano por mesas que ya no existen.
+      // Soft-delete retains status 'deleted' rows in the query response; counting them
+      // would block floor plan deletion for tables no longer existing.
       setZones(((zonesJson.data ?? []) as FloorZone[]).filter((z) => z.status !== 'deleted'));
       setTables(((tablesJson.data ?? []) as DiningTable[]).filter((t) => t.status !== 'deleted'));
     } catch (err) {
@@ -551,7 +551,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     const term = searchQuery.trim().toLowerCase();
     return plans.filter((p) => {
       // Aislamiento multi-tenant: GET /api/floor-plan NO filtra por comercio (devuelve los
-      // planos de todos), pero sí embebe `merchant`, así que recortamos aquí. Los planos sin
+      // all plans), but embeds `merchant`, so we filter here. Plans without
       // merchant resuelto se muestran para no ocultar datos por un join incompleto.
       if (p.merchant?.id != null && p.merchant.id !== activeMerchantId) return false;
       if (term && !(p.name ?? '').toLowerCase().includes(term)) return false;
@@ -575,7 +575,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     setFormSubmitting(true);
     setFormError('');
     try {
-      // El campo del comercio es `merchant` (número) y no se deriva del JWT en floor-plan.
+      // Merchant field is `merchant` (number) and not derived from JWT in floor-plan.
       const body: CreateFloorPlanDto = {
         merchant: activeMerchantId,
         name: dto.name ?? '',
@@ -605,7 +605,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     setFormSubmitting(true);
     setFormError('');
     try {
-      // PATCH (no PUT) y sin `merchant`: Object.assign sobreescribiría la relación.
+      // PATCH (not PUT) and without `merchant`: Object.assign would overwrite relationship.
       const res = await fetch(`${API_BASE}/floor-plan/${id}`, {
         method: 'PATCH',
         headers: authHeaders(),
@@ -624,7 +624,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     }
   };
 
-  // El backend no cascadea el borrado: las mesas quedarían apuntando a un plano invisible.
+  // Backend does not cascade delete: tables would point to an invisible plan.
   const requestDelete = (plan: FloorPlan) => {
     if (countsStale) {
       setToast({ message: COUNTS_UNAVAILABLE_MESSAGE, type: 'error' });
@@ -730,7 +730,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
             </option>
           ))}
         </select>
-        {/* Conmutador de unidades: el gerente lee metros, no píxeles. */}
+        {/* Unit switch: manager reads meters, not pixels. */}
         <select
           value={unitSystem}
           onChange={(e) => changeUnitSystem(e.target.value as UnitSystem)}
@@ -766,7 +766,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
         )}
       </div>
 
-      {/* Censo de mesas/zonas degradado: las píldoras de la parrilla mostrarían 0 sin serlo. */}
+      {/* Degraded table/zone census: grid pills would show 0 incorrectly. */}
       {countsStale && !loading && (
         <div
           data-testid="floor-plans-counts-stale"
@@ -879,7 +879,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
                   filteredPlans.map((p) => {
                     const zoneCount = zoneCountByPlan.get(p.id) ?? 0;
                     const tableCount = tablesOf(p.id).length;
-                    // parseOutline nunca lanza: ante un JSON corrupto cae al rectángulo, de modo
+                    // parseOutline never throws: falls back to rectangle on corrupt JSON, so
                     // que una fila con datos rotos sigue pintando una miniatura coherente.
                     const outline = parseOutline(p.outline, p.width, p.height);
                     return (
@@ -894,7 +894,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
                           <p className="font-bold text-[#1d1c17]">{p.name}</p>
                         </td>
 
-                        {/* Canvas resolution + silueta de la sala */}
+                        {/* Canvas resolution + room outline silhouette */}
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center gap-3">
                             <FloorPlanShapeThumb outline={outline} />
@@ -935,7 +935,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
                         {/* Actions */}
                         <td className="px-6 py-4 text-center">
                           <div className="flex justify-center items-center gap-2">
-                            {/* El editor 2D es la acción estrella del módulo: va como botón
+                            {/* 2D editor is the star action of the module: featured button
                                 etiquetado y siempre visible, no oculto tras el hover como
                                 las acciones secundarias. */}
                             <button

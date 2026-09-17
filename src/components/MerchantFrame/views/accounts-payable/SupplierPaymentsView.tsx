@@ -45,7 +45,7 @@ const formatDate = (value?: string | null): string => {
 const unallocatedBalance = (p: Pick<SupplierPayment, 'total_amount' | 'allocated_amount'>): number =>
   Math.max(0, num(p.total_amount) - num(p.allocated_amount));
 
-// Un pago con monto asignado bloquea sus campos estructurales.
+// Payment with allocated amount locks structural fields.
 const isAllocated = (p: Pick<SupplierPayment, 'allocated_amount'>): boolean => num(p.allocated_amount) > 0;
 
 const formatMethod = (method: string): string =>
@@ -62,7 +62,7 @@ const STATUS_BADGE_STYLES: Record<SupplierPaymentStatus, string> = {
 
 // ========================= FORM DRAWER (RECORD / EDIT) =========================
 
-// Asignación que el form emite: a qué invoice (por número) y cuánto aplica el pago.
+// Allocation emitted by form: invoice number and applied amount.
 export type PaymentAllocationDraft = Pick<
   CreateSupplierPaymentAllocationDto,
   'supplier_id' | 'document_number' | 'document_type' | 'allocated_amount'
@@ -91,7 +91,7 @@ const PaymentFormDrawer: React.FC<PaymentFormDrawerProps> = ({
   onSubmit,
 }) => {
   const [supplierId, setSupplierId] = useState<string>(initial ? String(initial.supplier_id) : '');
-  // Facturas pendientes del proveedor (balance_due > 0) para asignar el pago.
+  // Pending supplier invoices (balance_due > 0) to allocate payment.
   const [outstanding, setOutstanding] = useState<SupplierInvoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   // invoice_id → monto a asignar (string del input).
@@ -104,9 +104,9 @@ const PaymentFormDrawer: React.FC<PaymentFormDrawerProps> = ({
   const [status, setStatus] = useState<SupplierPaymentStatus>(initial?.status ?? 'draft');
 
   const allocatedAmount = num(initial?.allocated_amount);
-  // Lock de auditoría de campos estructurales (supplier_id, total_amount):
+  // Audit lock for structural fields (supplier_id, total_amount):
   // - si ya hay monto asignado (allocated_amount > 0), o
-  // - si el pago ya salió de DRAFT (posting transition bloquea los atributos de cabecera).
+  // - if payment transitioned from DRAFT (posting locks header attributes).
   const locked =
     mode === 'edit' && !!initial && (allocatedAmount > 0 || initial.status !== 'draft');
 
@@ -116,7 +116,7 @@ const PaymentFormDrawer: React.FC<PaymentFormDrawerProps> = ({
       ? 'Cannot mark as Fully Allocated unless the allocated amount equals the total amount.'
       : '';
 
-  // Cargar las facturas pendientes del proveedor seleccionado para poder asignarlas.
+  // Load pending invoices of selected supplier to allocate against.
   useEffect(() => {
     if (!supplierId) {
       setOutstanding([]);
@@ -147,12 +147,12 @@ const PaymentFormDrawer: React.FC<PaymentFormDrawerProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supplierId]);
 
-  // Asignaciones capturadas (monto > 0) y su validación contra el saldo disponible.
+  // Captured allocations (amount > 0) and validation against available balance.
   const allocEntries = outstanding
     .map((inv) => ({ inv, amount: num(alloc[inv.id]) }))
     .filter((e) => e.amount > 0);
   const allocSum = allocEntries.reduce((s, e) => s + e.amount, 0);
-  // Monto del pago aún sin asignar (en edición puede haber asignaciones previas).
+  // Unallocated payment amount (in edit mode previous allocations may exist).
   const unallocatedCap = totalNum - (mode === 'edit' ? allocatedAmount : 0);
   const overCap = allocSum > unallocatedCap + 0.001;
   const overBalance = allocEntries.some(
@@ -186,7 +186,7 @@ const PaymentFormDrawer: React.FC<PaymentFormDrawerProps> = ({
     num(totalAmount) === num(initial.total_amount) &&
     status === initial.status;
 
-  // En edición, agregar asignaciones es un cambio válido aunque la cabecera no cambie.
+  // In edit mode, adding allocations is valid even if header is unchanged.
   const canSubmit = fieldsValid && (!isUnchanged || hasAllocations);
 
   const buildAllocations = (): PaymentAllocationDraft[] =>
@@ -688,7 +688,7 @@ const ConfirmDeleteDialog: React.FC<ConfirmDeleteDialogProps> = ({
 interface SupplierPaymentsViewProps {
   onNavigate?: (view: string) => void;
   companyId?: number;
-  // Salta al workspace de líneas de pago ya filtrado por este voucher.
+  // Jumps to payment line items workspace filtered by this voucher.
   onViewItems?: (payment: SupplierPayment) => void;
   // Salta a la matriz de asignaciones ya filtrada por este voucher.
   onViewAllocations?: (payment: SupplierPayment) => void;
@@ -758,7 +758,7 @@ export const SupplierPaymentsView: React.FC<SupplierPaymentsViewProps> = ({
     try {
       const res = await fetch(`${API_BASE}/supplier-payments?limit=100`, { headers: authHeaders() });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar los pagos a proveedores');
+      if (!res.ok) throw new Error('Error loading supplier payments');
       const json = await res.json();
       const active = (json.data ?? []).filter((p: SupplierPayment) => !p.deleted_at);
       setPayments(active);
@@ -823,8 +823,8 @@ export const SupplierPaymentsView: React.FC<SupplierPaymentsViewProps> = ({
     setStatusFilter('');
   };
 
-  // Crea las asignaciones pago→invoice. El backend recalcula allocated_amount del pago
-  // y paid_amount/status de cada factura, así que refrescamos tras aplicarlas.
+  // Creates payment->invoice allocations. Backend recalculates allocated_amount
+  // and paid_amount/status for each invoice, so refetch after applying.
   const postAllocations = async (
     paymentId: number,
     allocations: PaymentAllocationDraft[],
@@ -904,7 +904,7 @@ export const SupplierPaymentsView: React.FC<SupplierPaymentsViewProps> = ({
     }
   };
 
-  // Bloqueo de borrado: no se puede soft-delete si tiene monto asignado.
+  // Deletion lock: cannot soft-delete if it has allocated amount.
   const handleDeleteClick = (p: SupplierPayment) => {
     if (isAllocated(p)) {
       setToast({
@@ -945,7 +945,7 @@ export const SupplierPaymentsView: React.FC<SupplierPaymentsViewProps> = ({
     setDetailAllocations(null);
     setDetailItems(null);
 
-    // Breakdown items del pago.
+    // Payment breakdown line items.
     void (async () => {
       try {
         const res = await fetch(
@@ -958,7 +958,7 @@ export const SupplierPaymentsView: React.FC<SupplierPaymentsViewProps> = ({
       }
     })();
 
-    // Allocations activas contra facturas.
+    // Active allocations against invoices.
     try {
       const res = await fetch(
         `${API_BASE}/supplier-payment-allocations?payment_id=${p.id}&limit=100`,

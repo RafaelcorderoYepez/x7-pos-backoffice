@@ -22,7 +22,7 @@ export const RecentMerchants: React.FC<RecentMerchantsProps> = ({
       const data = await saasService.getRecentMerchants();
       setMerchants(data);
     } catch (err) {
-      setError('Error al cargar comercios');
+      setError('Error loading merchants');
       console.error(err);
     } finally {
       setLoading(false);
@@ -108,7 +108,7 @@ export const RecentMerchants: React.FC<RecentMerchantsProps> = ({
             onClick={fetchRecentMerchants}
             className="px-3 py-1.5 bg-[#d51f2c] text-white font-bold text-[10px] uppercase hover:opacity-90 transition-all"
           >
-            Reintentar
+            Retry
           </button>
         </div>
       </div>

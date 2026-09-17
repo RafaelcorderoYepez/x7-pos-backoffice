@@ -252,7 +252,7 @@ export const MerchantSettlementsView: React.FC<MerchantSettlementsViewProps> = (
     try {
       const res = await fetch(`${API_BASE}/v1/platform/merchant-settlements`, { headers: authHeaders() });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las liquidaciones');
+      if (!res.ok) throw new Error('Error loading settlements');
       const json = await res.json();
       setSettlements(json.data ?? []);
     } catch (err) {
@@ -267,7 +267,7 @@ export const MerchantSettlementsView: React.FC<MerchantSettlementsViewProps> = (
     fetchSettlements();
   }, []);
 
-  // Genera las liquidaciones del día a partir de las órdenes recaudadas.
+  // Generates daily settlements from collected orders.
   const handleGenerate = async () => {
     setGenerating(true);
     try {
@@ -278,7 +278,7 @@ export const MerchantSettlementsView: React.FC<MerchantSettlementsViewProps> = (
       if (res.status === 401) return handleUnauthorized();
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.message || 'Failed to generate settlements');
-      // El endpoint devuelve la lista actualizada de liquidaciones.
+      // The endpoint returns the updated list of settlements.
       setSettlements(json.data ?? []);
       setToast({ message: 'Daily settlements generated successfully', type: 'success' });
     } catch (err: any) {

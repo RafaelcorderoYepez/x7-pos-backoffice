@@ -382,7 +382,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
     return result;
   }, [logs, searchQuery]);
 
-  // Agrupamiento por orden (patrón estilo stock)
+  // Grouping by order (stock style pattern)
   const groupedOrders = useMemo(() => {
     const groupMap = new Map<string, GroupedOrderEvents>();
 
@@ -421,7 +421,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
 
     const groups = Array.from(groupMap.values());
 
-    // 1. Dentro de cada grupo de orden, ordenar eventos estrictamente en el orden en que ocurrieron (cronológico)
+    // 1. Within each order group, sort events strictly in chronological order
     groups.forEach((grp) => {
       grp.events.sort((a, b) => {
         const timeA = new Date(a.eventTime).getTime();
@@ -431,7 +431,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
       });
     });
 
-    // 2. Orden de la tabla: Órdenes con eventos más recientes primero
+    // 2. Table ordering: Orders with most recent events first
     groups.sort((a, b) => {
       if (!a.orderId) return 1;
       if (!b.orderId) return -1;
@@ -441,7 +441,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
     return groups;
   }, [filteredLogs]);
 
-  // Estado de grupos expandidos (por defecto todas las órdenes cerradas/contraídas)
+  // Expanded groups state (all orders collapsed by default)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const toggleGroup = (key: string) => {
@@ -717,7 +717,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         </div>
       </div>
 
-      {/* 1.5 Story 4203: Real-Time Event Metrics Velocity KPI Bar (4 Cuadrados idénticos en fila estática con Detección de Incidentes) */}
+      {/* 1.5 Story 4203: Real-Time Event Metrics Velocity KPI Bar (4 identical cards in static row with Incident Detection) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Events Today */}
         <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 transition-all duration-200 hover:border-[#d5cfc4]">
@@ -1137,7 +1137,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
 
       {/* 3. Standard Canonical Table Container */}
       <div className="bg-white border border-[#e8e2d8] rounded shadow-sm relative overflow-hidden">
-        {/* HeaderQuickTabs con Título Oficial, Badge de Conteo y TableOptionsMenu */}
+        {/* HeaderQuickTabs with Official Title, Count Badge, and TableOptionsMenu */}
         <HeaderQuickTabs
           title="KITCHEN EVENT LOG AUDIT DIRECTORY"
           badgeCount={
@@ -1264,7 +1264,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
 
                       return (
                         <React.Fragment key={group.orderKey}>
-                          {/* Fila Principal de la Orden (Cabecera de Grupo estilo Stock) */}
+                          {/* Order Main Row (Group Header) */}
                           <tr
                             onClick={() => toggleGroup(group.orderKey)}
                             className={`group transition-colors duration-150 cursor-pointer border-t-2 border-[#e8e2d8] ${
@@ -1298,7 +1298,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                               </td>
                             )}
 
-                            {/* Columna 2: Estado general de la comanda */}
+                            {/* Column 2: Overall ticket status */}
                             {visibleColumns.eventType && (
                               <td className={`${densityPadding} truncate`}>
                                 {group.hasCancellation ? (
@@ -1345,7 +1345,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                               </td>
                             )}
 
-                            {/* Columna 4: Estación */}
+                            {/* Column 4: Station */}
                             {visibleColumns.station && (
                               <td className={`${densityPadding} truncate`}>
                                 <div className="truncate text-xs font-bold text-[#1d1c17]" title={group.stationName}>
@@ -1391,7 +1391,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                                 onClick={() => setInspectingRecord(record)}
                                 className="transition-colors duration-150 hover:bg-[#fef9f1] bg-[#fcfaf7]/70 cursor-pointer group/sub"
                               >
-                                {/* Event Timestamp con indentación */}
+                                {/* Event Timestamp with indentation */}
                                 {visibleColumns.eventTime && (
                                   <td className={`${densityPadding} pl-6 truncate relative`}>
                                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#ae001a]/40" />

@@ -59,10 +59,10 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Modo de vista: Por Ubicación (By Location) o Por Insumo (By Material)
+  // View mode: By Location or By Material
   const [viewMode, setViewMode] = useState<'by-location' | 'by-material'>('by-location');
 
-  // Ajuste de stock manual
+  // Manual stock adjustment
   const [isAdjustOpen, setIsAdjustOpen] = useState<boolean>(false);
   const [selectedItemForAdjust, setSelectedItemForAdjust] = useState<StockItem | null>(null);
   const [adjustValue, setAdjustValue] = useState<number>(0);
@@ -71,7 +71,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   const [isSubmittingAdjust, setIsSubmittingAdjust] = useState<boolean>(false);
   const [adjustError, setAdjustError] = useState<string | null>(null);
 
-  // Historial de movimientos de stock (Drawer)
+  // Stock movements history (Drawer)
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [selectedItemForHistory, setSelectedItemForHistory] = useState<StockItem | null>(null);
   const [historyMovements, setHistoryMovements] = useState<any[]>([]);
@@ -202,7 +202,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         console.warn('Could not fetch supplies list for status map:', sErr);
       }
 
-      // Cargar ítems de stock
+      // Load stock items
       let itemsRes = await fetch(`${API_BASE}/v1/raw-material-stock/items?limit=100`, { headers });
       if (!itemsRes.ok || itemsRes.status === 404) {
         const fallbackItems = await fetch(`${API_BASE}/items?limit=100`, { headers });
@@ -262,7 +262,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
     }
   };
 
-  // Abrir Modal de Ajuste de Stock
+  // Open Stock Adjustment Modal
   const handleOpenAdjust = (item: StockItem) => {
     if (!isAdministrator) return;
     setSelectedItemForAdjust(item);
@@ -293,7 +293,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         reason: adjustReason
       };
 
-      console.log('[AdjustStock] Enviando ajuste:', {
+      console.log('[AdjustStock] Sending adjustment:', {
         stockItemId: selectedItemForAdjust.id,
         product: selectedItemForAdjust.product?.name,
         location: selectedItemForAdjust.location?.name,
@@ -327,7 +327,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       const resBody = await res.json();
       const updatedItem = resBody.data || resBody;
 
-      // Sincronizar el grid en segundo plano inmediatamente sin recargar
+      // Sync grid silently in background without full reload
       setStockItems(prev => prev.map(item => item.id === updatedItem.id ? { ...item, currentQty: updatedItem.currentQty } : item));
       setIsAdjustOpen(false);
     } catch (err: any) {
@@ -338,7 +338,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
     }
   };
 
-  // Navegar a la bitácora de movimientos filtrada por itemId (Deep-Linking)
+  // Navigate to movement log filtered by itemId (Deep-Linking)
   const handleViewActivityLogs = async (item: StockItem) => {
     window.history.pushState({}, '', `/inventory/movements?itemId=${item.id}`);
     if (onNavigate) {
@@ -359,7 +359,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
         const res = await fetch(`${API_BASE}/movements?itemId=${item.id}&limit=100`, { headers });
         if (!res.ok) {
-          throw new Error('Error al cargar la bitácora de movimientos');
+          throw new Error('Error loading movement log');
         }
 
         const json = await res.json();
@@ -374,7 +374,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
     }
   };
 
-  // Filtrado reactivo multicriterio en el frontend
+  // Multi-criteria reactive frontend filtering
 
   const filteredItems = stockItems.filter(item => {
     const locName = item.location?.name || '';
@@ -382,19 +382,19 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
     const rawMaterialName = item.supply?.name || item.product?.name || '';
     const itemSku = item.supply?.code || item.supply?.sku || item.product?.sku || '';
 
-    // Búsqueda alfanumérica por nombre de ubicación, código de ubicación o nombre de materia prima
+    // Alphanumeric search by location name, location code, or raw material name
     const matchesSearch =
       locName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       locCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
       rawMaterialName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       itemSku.toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Filtro por Ubicación de Almacén Específica
+    // Specific Warehouse Location Filter
     const matchesLocation =
       locationFilter === 'All' ||
       (item.location && String(item.location.id) === locationFilter);
 
-    // Filtro estricto: Mostrar únicamente elementos activos. Si está inactivo o la ubicación está desactivada, se elimina de la vista.
+    // Strict filter: Display only active elements. If inactive or location is deactivated, exclude from view.
     const supplyIsActive = item.supply
       ? ((item.supply as any).isActive !== false && (item.supply as any).is_active !== false && (item.supply as any).status !== 'inactive' && (item.supply as any).status !== 'deleted')
       : true;
@@ -409,7 +409,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
 
 
-    // Filtro Rápido de Alerta de Stock Bajo (currentStock <= minStockThreshold)
+    // Quick Low Stock Alert Filter (currentStock <= minStockThreshold)
     const minThreshold = Number(item.minimumQty ?? item.supply?.min_stock_threshold ?? 0);
     const isLowStock = minThreshold > 0 ? item.currentQty < minThreshold : false;
     const matchesOutOfStock = !outOfStockOnly || isLowStock;
@@ -418,7 +418,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   });
 
 
-  // Agrupar por Ubicación (By Location) o por Materia Prima (By Material)
+  // Group by Location or by Raw Material
   // Helper para determinar de forma exhaustiva el costo unitario (WACC/CPP, cost_per_unit, unit_cost)
   const getItemUnitCost = (item: any): number => {
     if (!item) return 0;
@@ -605,9 +605,9 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         </div>
       </div>
 
-      {/* 2. Toolbar Multicriterio (Búsqueda + Filtros) */}
+      {/* 2. Multi-criteria Toolbar (Search + Filters) */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda a la izquierda y View Switcher a la derecha en la MISMA línea horizontal */}
+        {/* Row 1: Search on left and View Switcher on right on SAME horizontal line */}
         <div className="flex flex-row items-center justify-between gap-3 w-full">
           <div className="relative flex-1 min-w-0">
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary font-sans">
@@ -625,7 +625,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
             />
           </div>
 
-          {/* Toggle de Modo de Vista: By Location vs By Material (Estilo idéntico a Devices) */}
+          {/* View Mode Toggle: By Location vs By Material */}
           <div className="flex items-center bg-[#f2ede5] p-1 rounded border border-[#e8e2d8] shrink-0">
             <button
               type="button"
@@ -663,7 +663,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Selector de Ubicación Específica */}
+            {/* Specific Location Selector */}
             <select
               value={locationFilter}
               onChange={(e) => {
@@ -680,7 +680,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
               ))}
             </select>
 
-            {/* Toggle Rápido: Low Stock Only */}
+            {/* Quick Toggle: Low Stock Only */}
             <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 bg-[#fef9f1] border border-[#e8e2d8] rounded">
               <input
                 type="checkbox"
@@ -699,7 +699,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Botón Acción Registrar Movimiento */}
+            {/* Action Button: Register Movement */}
             {onNavigate && (
               <button
                 type="button"
@@ -850,7 +850,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                         }`}
                         onClick={() => toggleGroup(group.key)}
                       >
-                        {/* Columna 1: Nombre de Ubicación / Insumo */}
+                        {/* Column 1: Location Name / Supply */}
                         {visibleColumns.entity && (
                           <td className={`${densityPadding}`}>
                             <div className="flex items-center gap-3">
@@ -894,7 +894,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                           </td>
                         )}
 
-                        {/* Columna 2: Recuento o Insumo */}
+                        {/* Column 2: Count or Supply */}
                         {visibleColumns.itemsCount && (
                           <td className={`${densityPadding} font-semibold text-secondary`}>
                             {viewMode === 'by-location' ? (
@@ -1141,7 +1141,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
 
 
-      {/* Renderizado del Portal del Drawer de Historial de Movimientos */}
+      {/* Movement History Drawer Portal Render */}
       {isHistoryOpen && selectedItemForHistory && createPortal(
         <div className="fixed inset-0 z-[9999] overflow-hidden flex justify-end font-sans">
           {/* Backdrop */}
@@ -1172,7 +1172,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
             {/* Cuerpo del Drawer */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Contexto del Ítem */}
+              {/* Item Context */}
               <div className="bg-zinc-50 p-4 border border-zinc-200 rounded-lg flex gap-4 items-center">
                 <div className="w-10 h-10 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-[#ae001a]">
                   <span className="material-symbols-outlined text-xl block">inventory</span>
@@ -1304,7 +1304,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
             {/* Formulario */}
             <form onSubmit={handleSubmitAdjust} className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Contexto del Ítem */}
+              {/* Item Context */}
               <div className="bg-zinc-50 p-4 border border-zinc-200 rounded-lg flex gap-4 items-center">
                 <div className="w-10 h-10 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-[#ae001a]">
                   <span className="material-symbols-outlined text-xl block">box</span>
@@ -1325,13 +1325,13 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                 </div>
               </div>
 
-              {/* Ajuste de Cantidad */}
+              {/* Quantity Adjustment */}
               <div className="space-y-5">
                 <label className="block text-label-caps font-bold text-zinc-400 uppercase tracking-widest text-[9px]">
                   Adjustment Setup
                 </label>
 
-                {/* Tipo de Ajuste */}
+                {/* Adjustment Type */}
                 <div className="space-y-2">
                   <span className="block text-body-xs font-bold text-zinc-700 font-sans">Adjustment Type</span>
                   <div className="grid grid-cols-2 gap-2 bg-zinc-100 p-1 rounded-lg">
@@ -1390,7 +1390,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                   </div>
                 </div>
 
-                {/* Motivo del Ajuste */}
+                {/* Adjustment Reason */}
                 <div className="space-y-1.5">
                   <span className="block text-body-xs font-bold text-zinc-700 font-sans">Reason for Adjustment</span>
                   <textarea

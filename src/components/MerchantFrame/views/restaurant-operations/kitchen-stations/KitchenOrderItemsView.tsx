@@ -7,7 +7,7 @@ import { KitchenQuickLinks } from './KitchenQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-export type KitchenItemPrepStatus = 'pending' | 'in_preparation' | 'ready';
+export type KitchenItemPrepStatus = 'held' | 'pending' | 'in_preparation' | 'ready';
 
 export interface KitchenOrderItemDetail {
   id: number;
@@ -18,6 +18,9 @@ export interface KitchenOrderItemDetail {
   quantity: number;
   preparedQuantity: number;
   preparationStatus: KitchenItemPrepStatus;
+  course?: 'appetizer' | 'main_course' | 'dessert' | 'beverage';
+  holdUntil?: string | null;
+  firedAt?: string | null;
   status: 'active' | 'deleted';
   startedAt?: string | null;
   completedAt?: string | null;
@@ -59,7 +62,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   const [error, setError] = useState<string | null>(null);
 
   // Filters
-  const [activeTab, setActiveTab] = useState<'ALL' | 'PENDING' | 'IN_PREPARATION' | 'READY'>('ALL');
+  const [activeTab, setActiveTab] = useState<'ALL' | 'HELD' | 'PENDING' | 'IN_PREPARATION' | 'READY'>('ALL');
   const [selectedStationId, setSelectedStationId] = useState<number | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [refreshInterval, setRefreshInterval] = useState<number>(10); // 10s default
@@ -355,6 +358,39 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     }
   };
 
+  // Handle Fire Item (Held -> Pending)
+  const handleFireItem = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (actionInProgressId === item.id) return;
+
+    setActionInProgressId(item.id);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}/fire`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || 'Failed to fire item');
+      }
+
+      const data = await res.json();
+      const updatedItem = data.data || data;
+      setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem, preparationStatus: 'pending' } : it)));
+      showToast(`🔥 Fired "${item.product?.name || 'Item'}" to active preparation queue!`, 'success');
+      loadItems(true);
+    } catch (err: any) {
+      showToast(err.message || 'Error firing item', 'warning');
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
   // Handle Reset to Pending (0/N)
   const handleResetItem = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -455,17 +491,20 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   // Global counts for badges
   const counts = useMemo(() => {
     const total = stationFilteredItems.length;
+    const held = stationFilteredItems.filter(i => i.preparationStatus === 'held').length;
     const pending = stationFilteredItems.filter(i => i.preparationStatus === 'pending').length;
     const inPrep = stationFilteredItems.filter(i => i.preparationStatus === 'in_preparation').length;
     const ready = stationFilteredItems.filter(i => i.preparationStatus === 'ready').length;
-    return { total, pending, inPrep, ready };
+    return { total, held, pending, inPrep, ready };
   }, [stationFilteredItems]);
 
   // Filter by Tab and Search
   const filteredItems = useMemo(() => {
     let result = stationFilteredItems;
 
-    if (activeTab === 'PENDING') {
+    if (activeTab === 'HELD') {
+      result = result.filter(i => i.preparationStatus === 'held');
+    } else if (activeTab === 'PENDING') {
       result = result.filter(i => i.preparationStatus === 'pending');
     } else if (activeTab === 'IN_PREPARATION') {
       result = result.filter(i => i.preparationStatus === 'in_preparation');
@@ -523,7 +562,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         const prioB = b.kitchenOrder?.priority ?? 0;
         if (prioB !== prioA) return prioB - prioA;
 
-        // FIFO: Oldest created first, newest last (la más vieja primero, la más nueva el último)
+        // FIFO: Oldest created first, newest last
         const timeA = new Date(a.createdAt).getTime();
         const timeB = new Date(b.createdAt).getTime();
         if (timeA !== timeB) return timeA - timeB;
@@ -604,7 +643,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         </div>
       )}
 
-      {/* 1. Header Card Workspace (Solo para el título) */}
+      {/* 1. Header Card Workspace (Title only) */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div>
           <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
@@ -616,7 +655,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         </div>
       </div>
 
-      {/* 1.5 Real-Time Summary KPI Banner (4 Cuadrados idénticos a Kitchen Stations en una fila horizontal) */}
+      {/* 1.5 Real-Time Summary KPI Banner (4 identical cards to Kitchen Stations in horizontal row) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Line Items */}
         <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
@@ -702,9 +741,9 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         </div>
       </div>
 
-      {/* 2. Toolbar Multicriterio idéntico a Kitchen Orders */}
+      {/* 2. Multi-criteria Toolbar identical to Kitchen Orders */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda a la izquierda y View Switcher + Auto-Refresh a la derecha */}
+        {/* Row 1: Search on left and View Switcher + Auto-Refresh on right */}
         <div className="flex flex-row items-center justify-between gap-3 w-full">
           <div className="relative flex-1 min-w-0">
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e] font-sans">
@@ -737,7 +776,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
           {/* View Switcher Toggle & Auto-Refresh al lado derecho */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* View Switcher Toggle (Mismo diseño y color que Kitchen Orders / Devices) */}
+            {/* View Switcher Toggle (Same design and color as Kitchen Orders / Devices) */}
             <div className="flex items-center bg-[#f2ede5] p-1 rounded border border-[#e8e2d8] shrink-0">
               <button
                 type="button"
@@ -786,7 +825,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
           </div>
         </div>
 
-        {/* Fila 2: Status Tabs (Segmented Pill Buttons al medio, entre Búsqueda y Filtros, sin línea divisoria) */}
+        {/* Row 2: Status Tabs (Segmented Pill Buttons in middle, between Search and Filters, without divider line) */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
             <button
@@ -808,6 +847,29 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                 }`}
               >
                 {counts.total}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('HELD');
+                setCurrentPage(1);
+              }}
+              className={`px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wide transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                activeTab === 'HELD'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-[#5f5e5e] hover:text-[#1d1c17] hover:bg-[#f2ede5]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-xs">lock_clock</span>
+              <span>Held Courses</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  activeTab === 'HELD' ? 'bg-white text-amber-700' : 'bg-[#e8e2d8] text-[#5f5e5e]'
+                }`}
+              >
+                {counts.held}
               </span>
             </button>
 
@@ -880,7 +942,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
           </div>
         </div>
 
-        {/* Fila 3: Filtro de Estación con diseño idéntico a Kitchen Orders */}
+        {/* Row 3: Station Filter with identical design to Kitchen Orders */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <select
@@ -946,12 +1008,13 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredItems.map(item => {
+            const isHeld = item.preparationStatus === 'held';
             const isReady = item.preparationStatus === 'ready';
             const isInPrep = item.preparationStatus === 'in_preparation';
             const isOrderClosed =
               item.kitchenOrder?.businessStatus === 'completed' ||
               item.kitchenOrder?.businessStatus === 'cancelled';
-            const canTapCard = !isOrderClosed && !isReady;
+            const canTapCard = !isOrderClosed && !isReady && !isHeld;
 
             const progressPercent = item.quantity > 0
               ? Math.min(100, Math.round((item.preparedQuantity / item.quantity) * 100))
@@ -968,6 +1031,8 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                     ? 'bg-zinc-50/80 border-zinc-200 opacity-85 cursor-default'
                     : isReady
                     ? 'bg-emerald-50/40 border-emerald-300 hover:border-emerald-400 cursor-default'
+                    : isHeld
+                    ? 'bg-amber-50/40 border-dashed border-amber-400 hover:border-amber-500'
                     : isInPrep
                     ? 'bg-blue-50/40 border-blue-300 hover:border-blue-400 cursor-pointer'
                     : 'bg-white border-[#e8e2d8] hover:border-[#ae001a]/50 hover:shadow-sm cursor-pointer'
@@ -1005,6 +1070,13 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                         }`}
                       >
                         P+{(item.kitchenOrder?.priority ?? 0)}
+                      </span>
+                    )}
+
+                    {/* Course badge */}
+                    {item.course && (
+                      <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                        {item.course.replace('_', ' ')}
                       </span>
                     )}
 
@@ -1112,6 +1184,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                         <span className="material-symbols-outlined text-xs">check_circle</span>
                         READY
                       </span>
+                    ) : isHeld ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-400 uppercase tracking-wider animate-pulse">
+                        <span className="material-symbols-outlined text-xs">lock_clock</span>
+                        HELD
+                      </span>
                     ) : isInPrep ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-black bg-blue-100 text-blue-800 border border-blue-300 uppercase tracking-wider">
                         <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span>
@@ -1146,6 +1223,18 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                         <span className="material-symbols-outlined text-xs">lock</span>
                         <span>{item.kitchenOrder?.businessStatus === 'cancelled' ? 'Cancelled' : 'Order Closed'}</span>
                       </div>
+                    </div>
+                  ) : isHeld ? (
+                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={e => handleFireItem(item, e)}
+                        disabled={isActionLoading}
+                        title="Fire item immediately to line cooks"
+                        className="px-3 h-7 rounded text-xs font-black uppercase tracking-wider flex items-center gap-1 shadow-xs transition-all cursor-pointer bg-amber-600 hover:bg-amber-700 text-white"
+                      >
+                        <span className="material-symbols-outlined text-xs font-black">local_fire_department</span>
+                        <span>Fire Item</span>
+                      </button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -1330,6 +1419,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                       />
                     ) : (
                       paginatedItems.map(item => {
+                    const isHeld = item.preparationStatus === 'held';
                     const isReady = item.preparationStatus === 'ready';
                     const isInPrep = item.preparationStatus === 'in_preparation';
                     const isOrderClosed =
@@ -1344,6 +1434,8 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                             ? 'bg-zinc-50/60 opacity-85'
                             : isReady
                             ? 'bg-emerald-50/30'
+                            : isHeld
+                            ? 'bg-amber-50/30'
                             : isInPrep
                             ? 'bg-blue-50/30'
                             : ''
@@ -1358,6 +1450,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                               {item.variant?.name && (
                                 <span className="text-[#5f5e5e] text-xs font-normal ml-1">
                                   ({item.variant.name})
+                                </span>
+                              )}
+                              {item.course && (
+                                <span className="ml-2 text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 inline-block">
+                                  {item.course.replace('_', ' ')}
                                 </span>
                               )}
                             </div>
@@ -1440,6 +1537,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                                 <span className="material-symbols-outlined text-xs">check</span>
                                 READY
                               </span>
+                            ) : isHeld ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-400 uppercase">
+                                <span className="material-symbols-outlined text-xs">lock_clock</span>
+                                HELD
+                              </span>
                             ) : isInPrep ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-300 uppercase">
                                 IN PREP
@@ -1482,6 +1584,18 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                                   <span className="material-symbols-outlined text-xs">lock</span>
                                   {item.kitchenOrder?.businessStatus === 'cancelled' ? 'Cancelled' : 'Closed'}
                                 </span>
+                              </div>
+                            ) : isHeld ? (
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  onClick={e => handleFireItem(item, e)}
+                                  disabled={actionInProgressId === item.id}
+                                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold inline-flex items-center gap-1 shadow-xs cursor-pointer"
+                                  title="Fire item to Active Queue"
+                                >
+                                  <span className="material-symbols-outlined text-xs">local_fire_department</span>
+                                  <span>Fire</span>
+                                </button>
                               </div>
                             ) : (
                               <div className="inline-flex items-center gap-1.5">
@@ -1590,6 +1704,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
             label: 'ORDER ITEMS',
             icon: 'lunch_dining',
             active: true,
+            onClick: () => onNavigate?.('kitchen-order-items'),
           },
           {
             id: 'kitchen-event-log',

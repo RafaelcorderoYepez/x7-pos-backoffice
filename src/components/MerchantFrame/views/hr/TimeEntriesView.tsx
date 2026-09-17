@@ -1,9 +1,8 @@
-// Control de fichajes: la jornada de cada colaborador, sus incidencias y lo que se paga.
+// Time entries control: collaborator shifts, incidents, and payable hours.
 //
-// El estado de cada fila (en curso, tarde, sin cerrar, con horas extra) NO es una columna:
-// se deriva de las marcas y del turno programado. Por eso el filtro por estado también se
-// aplica en cliente, sobre el mismo cálculo que pinta el badge — si uno viniera del servidor
-// y otro de aquí, acabarían discrepando.
+// Row status (in progress, late, open, overtime) is NOT a stored column:
+// derived from clock stamps and scheduled shifts. State filter is computed
+// client-side using the same logic that drives badges to avoid desync.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
@@ -106,7 +105,7 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
         headers: authHeaders(),
       });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar los fichajes');
+      if (!res.ok) throw new Error('Error loading time entries');
       const json = await res.json();
       setEntries((json.data ?? []) as TimeEntry[]);
     } catch (err) {
@@ -146,13 +145,13 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
 
   const clearFilters = () => setFilters(defaultTimeEntryFilters());
 
-  // Cuántas jornadas siguen abiertas ahora mismo: el dato que un supervisor mira primero.
+  // Count of open shifts right now: primary metric for supervisors.
   const onDutyCount = useMemo(
     () => entries.filter((e) => classifyEntry(e) === 'on_duty').length,
     [entries],
   );
 
-  // ---------------- Alta y corrección ----------------
+  // ---------------- Creation and Correction ----------------
 
   const handleCreate = async (draft: TimeEntryDraft) => {
     setFormSubmitting(true);
@@ -160,7 +159,7 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
     try {
       const collaborator = collaborators.find((c) => c.id === draft.collaborator_id);
       const body: CreateTimeEntryDto = {
-        // El DTO exige la compañía; se toma de la ficha del colaborador, que es quien la
+        // DTO requires company; taken from collaborator record,
         // conoce, y se cae al comercio activo si la fila no la trae hidratada.
         company_id: collaborator?.merchant?.id ?? activeMerchantId,
         merchant_id: activeMerchantId,
@@ -192,8 +191,8 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
     setFormSubmitting(true);
     setFormError('');
     try {
-      // Las horas no viajan: el servidor las recalcula desde las marcas. Mandarlas
-      // permitiría cuadrar la nómina sin que los fichajes lo respalden.
+      // Hours are not sent: server recalculates from timestamps.
+      // This ensures payroll reconciles backed by actual entries.
       const body: UpdateTimeEntryDto = {
         clock_in: draft.clock_in,
         clock_out: draft.clock_out,

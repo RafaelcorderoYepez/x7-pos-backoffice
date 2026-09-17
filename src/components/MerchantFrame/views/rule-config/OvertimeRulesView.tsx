@@ -528,7 +528,7 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar las reglas de horas extra');
+        throw new Error('Error loading overtime rules');
       }
 
       const json = await res.json();

@@ -26,13 +26,13 @@ const num = (v: number | string | null | undefined): number => {
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 // Cantidad y precio unitario se muestran con hasta 4 decimales; el dinero con 2.
-// Cantidad: hasta 4 decimales de precisión pero SIN ceros finales (10.0000 → 10, 10.25 → 10.25).
+// Quantity: up to 4 decimal places but WITHOUT trailing zeroes (10.0000 -> 10, 10.25 -> 10.25).
 const formatQty = (v: number | string | null | undefined): string => String(parseFloat(num(v).toFixed(4)));
 // Dinero: SIEMPRE 2 decimales.
 const formatCurrency = (v: number | string | null | undefined): string =>
   `$${num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-// Bloqueo de auditoría: no se pueden mutar líneas si la factura padre tiene pagos o está saldada.
+// Audit lock: lines cannot be modified if parent invoice has payments or is settled.
 const parentLocked = (inv?: SupplierInvoice): boolean =>
   !!inv && (num(inv.paid_amount) > 0 || inv.status === 'paid');
 
@@ -72,12 +72,12 @@ const ItemFormDrawer: React.FC<ItemFormDrawerProps> = ({
   const [taxAmount, setTaxAmount] = useState(initial ? String(num(initial.tax_amount)) : '0');
 
   // Producto seleccionado y sus variantes activas. El backend exige variant_id
-  // cuando se vincula un producto, así que se obliga a elegir variante.
+  // when a product is linked, so variant selection is enforced.
   const selectedProduct = productId ? products.find((p) => String(p.id) === productId) ?? null : null;
   const productVariants = (selectedProduct?.variants ?? []).filter((v) => v.isActive !== false);
   const productHasNoVariants = !!selectedProduct && productVariants.length === 0;
 
-  // Aritmética de línea en tiempo real.
+  // Realtime line item arithmetic.
   const lineSubtotal = round2(num(quantity) * num(unitPrice));
   const lineTotal = round2(lineSubtotal + num(taxAmount));
 
@@ -97,7 +97,7 @@ const ItemFormDrawer: React.FC<ItemFormDrawerProps> = ({
     // (product_id y variant_id deben ir juntos, o ninguno).
     (!productId || variantId.trim().length > 0);
 
-  // En edición, no permitir guardar si nada cambió respecto a la línea original.
+  // In edit mode, disallow save if nothing changed from original line.
   const isUnchanged =
     mode === 'edit' &&
     !!initial &&
@@ -118,7 +118,7 @@ const ItemFormDrawer: React.FC<ItemFormDrawerProps> = ({
     }
     const product = products.find((p) => String(p.id) === value);
     if (product) {
-      // Auto-rellena descripción y precio unitario con el último costo del producto.
+      // Autofills description and unit price with product cost.
       setDescription(product.name);
       if (product.last_cost !== null && product.last_cost !== undefined) {
         setUnitPrice(String(num(product.last_cost)));
@@ -136,14 +136,14 @@ const ItemFormDrawer: React.FC<ItemFormDrawerProps> = ({
     if (!canSubmit || submitting || locked) return;
 
     // El backend exige product_id y variant_id juntos (o ninguno). Solo se vincula
-    // inventario cuando ambos están presentes.
+    // inventory when both are present.
     const linkingInventory = !!productId && !!variantId;
     const base = {
       description: description.trim(),
       quantity: num(quantity),
       unit_price: num(unitPrice),
       tax_amount: num(taxAmount),
-      // El backend exige line_subtotal y line_total en el body (los calculamos aquí).
+      // Backend requires line_subtotal and line_total in payload (calculated here).
       line_subtotal: lineSubtotal,
       line_total: lineTotal,
       product_id: linkingInventory ? Number(productId) : null,
@@ -428,7 +428,7 @@ const ConfirmDeleteItemDialog: React.FC<ConfirmDeleteItemDialogProps> = ({
 interface SupplierInvoiceItemsViewProps {
   onNavigate?: (view: string) => void;
   companyId?: number;
-  invoiceId?: number; // Cuando se accede desde una factura específica.
+  invoiceId?: number; // When accessed from a specific invoice.
 }
 
 export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> = ({
@@ -478,13 +478,13 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
     setLoading(true);
     setError(null);
     try {
-      // El scoping por empresa lo resuelve el backend vía JWT.
+      // Tenant scoping resolved by backend via JWT.
       const res = await fetch(
         `${API_BASE}/supplier-invoice-items?limit=100`,
         { headers: authHeaders() },
       );
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las líneas de factura');
+      if (!res.ok) throw new Error('Error loading invoice line items');
       const json = await res.json();
       const active = (json.data ?? []).filter((it: SupplierInvoiceItem) => !it.deleted_at);
       setItems(active);
@@ -528,14 +528,14 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompanyId]);
 
-  // Mapa id→factura para determinar el bloqueo por pago y resolver números de factura.
+  // ID->Invoice map to determine payment locks and resolve invoice numbers.
   const invoiceMap = useMemo(() => {
     const map = new Map<number, SupplierInvoice>();
     invoices.forEach((inv) => map.set(inv.id, inv));
     return map;
   }, [invoices]);
 
-  // Mapa id→producto para resolver nombre/SKU (el backend devuelve la línea plana).
+  // ID->Product map to resolve name/SKU (backend returns flat row).
   const productMap = useMemo(() => {
     const map = new Map<number, InvoiceProductRef>();
     products.forEach((p) => map.set(p.id, p));
@@ -553,8 +553,8 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
     return set;
   }, [invoices]);
 
-  // Tras cualquier mutación de línea, la factura padre debe recalcular sus totales.
-  // Re-obtenemos la factura para reflejar subtotal, tax_total, total_amount y balance_due.
+  // After line mutation, parent invoice must recalculate totals.
+  // Refetch parent invoice to reflect subtotal, tax_total, total_amount, and balance_due.
   const refreshParentInvoice = async (parentId: number) => {
     try {
       const res = await fetch(`${API_BASE}/supplier-invoices/${parentId}`, {
@@ -898,7 +898,7 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
                           )}
                         </td>
 
-                        {/* Qty × unit price — cantidad con precisión (sin ceros de más), precio como dinero (2 dec) */}
+                        {/* Qty x unit price — precision quantity, currency formatted price */}
                         <td className="px-6 py-4 text-right whitespace-nowrap font-mono text-sm text-[#1d1c17]">
                           {formatQty(it.quantity)}
                           <span className="text-[#5f5e5e]"> @ </span>{formatCurrency(it.unit_price)}

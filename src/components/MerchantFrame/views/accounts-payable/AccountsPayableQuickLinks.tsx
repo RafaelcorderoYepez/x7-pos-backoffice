@@ -14,7 +14,7 @@ interface AccountsPayableQuickLinksProps {
   onNavigate?: (view: string) => void;
 }
 
-// Cada anchor mapea a un featureId de Features.txt que MerchantFrame resuelve vía onNavigate.
+// Each anchor maps to a featureId that MerchantFrame resolves via onNavigate.
 const AP_ANCHORS: Array<{
   key: AccountsPayableAnchorKey;
   label: string;
@@ -28,10 +28,10 @@ const AP_ANCHORS: Array<{
   { key: 'allocations', label: 'PAYMENT ALLOCATIONS', featureId: 'supplier-payments-allocation' },
 ];
 
-// Reutiliza el panel común de quick-launch (mismo componente que Suppliers, Products y el SaaS).
-// Muestra los 6 workspaces de Accounts Payable; el activo se renderiza con tratamiento
-// destacado (aria-current="page", no navegable) en vez de ocultarse, para que el usuario
-// siempre vea dónde está dentro del módulo.
+// Reuses standard quick-launch panel (shared with Suppliers, Products, and SaaS).
+// Displays the 6 Accounts Payable workspaces; the active view is rendered with
+// highlighted treatment (aria-current="page", non-clickable) rather than hidden,
+// so user always sees current location within the module.
 export const AccountsPayableQuickLinks: React.FC<AccountsPayableQuickLinksProps> = ({
   active,
   onNavigate,

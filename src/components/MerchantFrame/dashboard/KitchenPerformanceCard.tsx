@@ -48,7 +48,7 @@ export const KitchenPerformanceCard: React.FC<KitchenPerformanceCardProps> = ({
           <p className="font-label-caps text-label-caps text-red-500 font-bold uppercase">KITCHEN PERFORMANCE</p>
           <span className="material-symbols-outlined text-red-500">speed</span>
         </div>
-        <p className="text-[11px] text-red-600 font-medium">Error al cargar rendimiento</p>
+        <p className="text-[11px] text-red-600 font-medium">Error loading performance</p>
       </div>
     );
   }

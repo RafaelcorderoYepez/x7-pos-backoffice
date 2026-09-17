@@ -13,7 +13,7 @@ vi.mock('../../../lib/auth-storage', () => ({
   clearAuthSession: vi.fn(),
 }));
 
-// Factura 1: sin pagos -> mutable. Factura 2: con pagos -> bloqueada.
+// Invoice 1: no payments -> mutable. Invoice 2: with payments -> locked.
 const INVOICES: SupplierInvoice[] = [
   {
     id: 1,
@@ -34,7 +34,7 @@ const INVOICES: SupplierInvoice[] = [
     id: 2,
     company_id: 1,
     supplier_id: 20,
-    supplier: { id: 20, name: 'Nestlé Foods' },
+    supplier: { id: 20, name: 'Nestle Foods' },
     invoice_number: 'INV-2026-0002',
     invoice_date: '2026-01-10',
     due_date: '2026-02-10',
@@ -215,7 +215,7 @@ describe('SupplierInvoiceItemsView — grid & precision', () => {
           id: 201,
           invoice_id: 1,
           invoice: { id: 1, invoice_number: 'INV-2026-0001' },
-          product_id: 55, // sin product embebido → se resuelve desde la lista
+          product_id: 55, // without embedded product -> resolved from list
           description: 'Flat mapped line',
           quantity: 1,
           unit_price: 10,
@@ -343,7 +343,7 @@ describe('SupplierInvoiceItemsView — line arithmetic', () => {
     await user.type(screen.getByLabelText(/Description/), 'Widget');
     await user.type(screen.getByLabelText(/Quantity/), '2');
     await user.type(screen.getByLabelText(/Unit Price/), '5');
-    // Selecciona un producto multi-variante → Save queda bloqueado hasta elegir variante.
+    // Selects multi-variant product -> Save remains locked until variant is selected.
     await user.selectOptions(screen.getByLabelText(/Inventory Product/), '77');
     expect(screen.getByRole('button', { name: /save item/i })).toBeDisabled();
 
@@ -402,7 +402,7 @@ describe('SupplierInvoiceItemsView — parent recalculation', () => {
     );
     expect(postCall).toBeTruthy();
 
-    // Recálculo del padre: GET a la factura padre tras la mutación.
+    // Parent recalculation: GET parent invoice after mutation.
     const refreshCall = spy.mock.calls.find(
       ([url, opts]) =>
         (opts?.method ?? 'GET') === 'GET' && String(url).includes('supplier-invoices/1'),
@@ -499,7 +499,7 @@ describe('SupplierInvoiceItemsView — quick links & errors', () => {
     render(<SupplierInvoiceItemsView onNavigate={onNavigate} />);
     await screen.findByText('Premium coffee beans');
 
-    // El workspace activo (line items) no se ofrece como acción del panel.
+    // Active workspace (line items) is excluded from panel actions.
     expect(screen.queryByRole('button', { name: /invoice line items/i })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /credit notes/i }));
     expect(onNavigate).toHaveBeenCalledWith('supplier-credit-notes');
