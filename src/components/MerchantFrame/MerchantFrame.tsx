@@ -93,6 +93,11 @@ import { CollaboratorsView } from './views/hr/CollaboratorsView';
 import { TimeEntriesView as HrTimeEntriesView } from './views/hr/TimeEntriesView';
 import { ContractsView } from './views/hr/ContractsView';
 import { TableAssignmentsView } from './views/dining-system/TableAssignmentsView';
+import { ReservationsView } from './views/reservations/ReservationsView';
+import { ReservationTablesView } from './views/reservations/ReservationTablesView';
+import { ReservationNotesView } from './views/reservations/ReservationNotesView';
+import { ReservationGuestsView } from './views/reservations/ReservationGuestsView';
+import { featureIdForReservationPath } from '../../lib/reservation-navigation';
 import { RawMaterialsView } from './views/products-inventory/raw-materials/RawMaterialsView';
 import { RawMaterialCategoriesView } from './views/products-inventory/category/RawMaterialCategoriesView';
 import { RecipesView } from './views/products-inventory/recipes/RecipesView';
@@ -231,6 +236,10 @@ export const MerchantFrame: React.FC = () => {
     } else if (path === '/staff-management/attendance/kiosk') {
       setActiveCategory('restaurant-operations');
       setActiveTab('time-clock-kiosk');
+    } else if (path.startsWith('/reservations/')) {
+      // Las URLs públicas del épico de Reservas mapean 1:1 a los featureId de Features.txt.
+      setActiveCategory('restaurant-operations');
+      setActiveTab(featureIdForReservationPath(path));
     } else if (path === '/store-operations/tips-ledger' || path === '/tips/ledger') {
       setActiveCategory('restaurant-operations');
       setActiveTab('tips-ledger');
@@ -378,17 +387,16 @@ export const MerchantFrame: React.FC = () => {
           'reports',
         ].includes(activeTab);
 
-        const merchantCompanyPaths = [
-          '/dashboard/company-profile',
-          '/dashboard/company-configurations',
-          '/dashboard/merchants',
-          '/dashboard/users',
-        ];
-        const isMerchantCompanyRoute = merchantCompanyPaths.includes(
-          location.pathname,
-        );
+        // Este rebote existe para que a un usuario de comercio no se le quede delante una
+        // pestaña del portal SaaS (el estado inicial de activeTab es 'saas-dashboard'). Pero
+        // hidratar la sesión es ASÍNCRONO y termina DESPUÉS del efecto que traduce la URL a
+        // pestaña, así que rebotar sin mirar la ruta pisaba cualquier enlace profundo: entrar
+        // por /reservations/list, /staff-management/... o /inventory/... acababa siempre en el
+        // panel de inicio. Una ruta distinta de /dashboard es un destino que el usuario ha
+        // pedido explícitamente, y manda sobre el rebote.
+        const isExplicitDeepLink = location.pathname !== '/dashboard';
 
-        if ((activeCategory === 'saas' || isSaaSTab) && !isMerchantCompanyRoute) {
+        if ((activeCategory === 'saas' || isSaaSTab) && !isExplicitDeepLink) {
           setActiveCategory('core');
           setActiveTab('dashboard');
         }
@@ -752,8 +760,6 @@ export const MerchantFrame: React.FC = () => {
       return <LaborCostForecastingView onNavigate={handleStaffNavigate} />;
     }
 
-    if (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries' || activeTab === 'attendance-ledger' || activeTab === 'ledger') {
-      return <TimeEntriesView onNavigate={handleStaffNavigate} />;
     if (
       (activeCategory === 'restaurant-operations' && (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries')) ||
       activeTab === 'attendance-ledger' ||
@@ -970,6 +976,45 @@ export const MerchantFrame: React.FC = () => {
     if (activeTab === 'table-assignments') {
       return (
         <TableAssignmentsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    // El libro de reservas. De los 5 sub-módulos del épico sólo queda sin vista propia el
+    // histórico de estados: la barra inferior navega a su featureId y MerchantFrame lo
+    // resuelve con el stub genérico hasta que se construya.
+    if (activeTab === 'reservations') {
+      return (
+        <ReservationsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-tables') {
+      return (
+        <ReservationTablesView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-notes') {
+      return (
+        <ReservationNotesView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-guests') {
+      return (
+        <ReservationGuestsView
           onNavigate={(view) => setActiveTab(view)}
           merchantId={getCurrentMerchantId() ?? undefined}
         />

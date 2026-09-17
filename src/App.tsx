@@ -262,6 +262,14 @@ export default function App() {
           }
         />
         <Route
+          path="/reservations/*"
+          element={
+            <ProtectedRoute>
+              <MerchantFrame />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/store-operations/tips-ledger"
           element={
             <ProtectedRoute>
