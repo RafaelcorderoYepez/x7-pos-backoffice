@@ -24,7 +24,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Estados  // Filters state
+  // Filters state
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All Status');
   const [typeFilter, setTypeFilter] = useState<string>('All Types');
@@ -44,13 +44,13 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
 
-  // Campos del Formulario del Modal
+  // Modal Form Fields
   const [formName, setFormName] = useState<string>('');
   const [formParent, setFormParent] = useState<string>('NULL');
   const [formStatus, setFormStatus] = useState<'Active' | 'Inactive'>('Active');
   const [formLinkedProducts, setFormLinkedProducts] = useState<number>(0);
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
-  // Estados para modal de confirmación de activación/desactivación
+  // State for activation/deactivation confirmation modal
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
   const [confirmTargetCategory, setConfirmTargetCategory] = useState<Category | null>(null);
   const [isToggling, setIsToggling] = useState<boolean>(false);
@@ -91,7 +91,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
       }
 
       if (!categoriesRes.ok || !productsRes.ok) {
-        throw new Error('Error al cargar datos del servidor');
+        throw new Error('Error loading data from server');
       }
 
       const categoriesJson = await categoriesRes.json();
@@ -100,7 +100,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
       const categoriesData = categoriesJson.data || [];
       const productsData = productsJson.data || [];
 
-      // Mapear al formato de la interfaz local
+      // Map to local interface format
       const mapped: Category[] = categoriesData.map((cat: any) => {
         const hasParent = cat.parents && cat.parents.length > 0;
         const parentId = hasParent ? String(cat.parents[0].id) : 'NULL';
@@ -150,7 +150,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     navigator.clipboard.writeText(`Product Categories: ${filteredCategories.length} total, ${active} active, ${filteredCategories.length - active} inactive.`);
   };
 
-  // Filtrado reactivo de la lista
+  // Reactive list filtering
   const filteredCategories = categories.filter((cat) => {
     const matchesSearch = cat.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           cat.id.toLowerCase().includes(searchQuery.toLowerCase());
@@ -166,7 +166,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     currentPage * pageSize
   );
 
-  // Abrir modal para añadir
+  // Open modal to add
   const handleOpenAddModal = () => {
     setModalMode('add');
     setEditingCategoryId(null);
@@ -177,7 +177,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     setIsModalOpen(true);
   };
 
-  // Abrir modal para editar
+  // Open modal to edit
   const handleOpenEditModal = (cat: Category) => {
     setModalMode('edit');
     setEditingCategoryId(cat.id);
@@ -188,7 +188,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     setIsModalOpen(true);
   };
 
-  // Activar/Desactivar categoría rápidamente
+  // Toggle category active/inactive quickly
   const handleToggleActive = (cat: Category) => {
     setConfirmTargetCategory(cat);
     setToggleError(null);
@@ -216,7 +216,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error al cambiar el estado de la categoría');
+        throw new Error(errorJson.message || 'Error updating category status');
       }
 
       setCategories((prevCategories) =>
@@ -228,17 +228,17 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
       setConfirmTargetCategory(null);
     } catch (err: any) {
       console.error(err);
-      setToggleError(err.message || 'Error al cambiar el estado de la categoría');
+      setToggleError(err.message || 'Error updating category status');
     } finally {
       setIsToggling(false);
     }
   };
 
-  // Guardar Formulario (Add o Edit) en el backend
+  // Save form (Add or Edit) to backend
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
-      alert('Por favor, ingresa el nombre de la categoría.');
+      alert('Please enter a category name.');
       return;
     }
 
@@ -263,7 +263,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
             isActive: formStatus === 'Active'
           })
         });
-        if (!res.ok) throw new Error('Error al crear la categoría');
+        if (!res.ok) throw new Error('Error creating category');
       } else if (modalMode === 'edit' && editingCategoryId) {
         const res = await fetch(`${API_BASE}/category/${editingCategoryId}`, {
           method: 'PATCH',
@@ -274,14 +274,14 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
             isActive: formStatus === 'Active'
           })
         });
-        if (!res.ok) throw new Error('Error al actualizar la categoría');
+        if (!res.ok) throw new Error('Error updating category');
       }
 
       setIsModalOpen(false);
       fetchCategories();
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error al guardar la categoría');
+      alert(err.message || 'Error saving category');
     }
   };
 
@@ -289,7 +289,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     <div className="flex flex-col gap-6 animate-fade-in text-left">
       <div ref={topRef} />
 
-      {/* Título de Sección */}
+      {/* Section Title */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div>
           <div className="flex items-center gap-2.5">
@@ -306,9 +306,9 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
         </div>
       </div>
 
-      {/* Barra de búsqueda y Filtros */}
+      {/* Search Bar and Filters */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda al 100% de ancho */}
+        {/* Row 1: Full-width search bar */}
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary">
             search
@@ -537,14 +537,14 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
                                     <button
                                       onClick={() => handleOpenEditModal(cat)}
                                       className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                                      title="Editar categoría"
+                                      title="Edit category"
                                     >
                                       <span className="material-symbols-outlined text-[20px]">edit</span>
                                     </button>
                                     <button
                                       onClick={() => void handleToggleActive(cat)}
                                       className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                                      title={cat.status === 'Active' ? "Desactivar categoría" : "Activar categoría"}
+                                      title={cat.status === 'Active' ? "Deactivate category" : "Activate category"}
                                     >
                                       <span className="material-symbols-outlined text-[20px]">
                                         {cat.status === 'Active' ? 'block' : 'check_circle_outline'}
@@ -579,7 +579,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
       </div>
 
 
-      {/* Modal Interactivo de Add / Edit Category */}
+      {/* Interactive Add / Edit Category Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-4 md:pb-12 backdrop-blur-sm">
           <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md overflow-hidden animate-fade-in max-h-[90vh] flex flex-col">
@@ -675,7 +675,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
         onClose={() => setIsSupportOpen(false)}
       />
 
-      {/* Modal de confirmación de activación/desactivación */}
+      {/* Activation/deactivation confirmation modal */}
       {isConfirmModalOpen && confirmTargetCategory && (
         <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
           {/* Backdrop */}
@@ -684,7 +684,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
             onClick={() => setIsConfirmModalOpen(false)}
           />
 
-          {/* Caja del Modal */}
+          {/* Modal Box */}
           <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-zinc-200 animate-scale-in">
             <div className="flex items-start gap-4">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${

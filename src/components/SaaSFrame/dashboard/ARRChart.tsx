@@ -20,7 +20,7 @@ export const ARRChart: React.FC = () => {
       const data = await saasService.getRevenue(selectedPeriod);
       setRevenueData(data);
     } catch (err) {
-      setError('Error al cargar datos de ingresos');
+      setError('Error loading revenue data');
       console.error(err);
     } finally {
       setLoading(false);
@@ -163,7 +163,7 @@ export const ARRChart: React.FC = () => {
               <div className="h-5 bg-zinc-200 rounded w-36"></div>
             </div>
             <div className="relative w-full h-[300px] bg-[#f9f7f4] border border-dashed border-[#e8e2d8] rounded flex items-center justify-center">
-              <div className="text-label-caps text-[#666666]">Cargando gráfico de ingresos...</div>
+              <div className="text-label-caps text-[#666666]">Loading revenue chart...</div>
             </div>
           </div>
         ) : error || !revenueData ? (
@@ -174,12 +174,12 @@ export const ARRChart: React.FC = () => {
             </div>
             <div className="relative w-full h-[300px] bg-red-50/20 border border-dashed border-red-200 rounded flex flex-col items-center justify-center gap-3">
               <span className="material-symbols-outlined text-red-400 text-3xl">error</span>
-              <span className="text-label-caps text-red-500">Error al cargar la visualización del ARR</span>
+              <span className="text-label-caps text-red-500">Error loading ARR visualization</span>
               <button
                 onClick={() => fetchRevenue(period)}
                 className="px-3 py-1 bg-[#d51f2c] text-white font-bold text-[10px] uppercase hover:opacity-90 transition-all"
               >
-                Reintentar
+                Retry
               </button>
             </div>
           </div>

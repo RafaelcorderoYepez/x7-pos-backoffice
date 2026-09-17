@@ -162,7 +162,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
       const stockRes = await fetch(`${API_BASE}/v1/raw-material-stock/items?limit=100`, { headers });
 
       if (!materialsRes.ok) {
-        throw new Error('Error al cargar materias primas del servidor');
+        throw new Error('Error loading raw materials from server');
       }
 
       const materialsJson = await materialsRes.json();
@@ -210,7 +210,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
       setCategories(rawCategoriesData);
     } catch (err: any) {
       console.error('Error fetching raw materials:', err);
-      setError('No se pudieron cargar las materias primas. Por favor, revisa la conexión con el servidor.');
+      setError('Could not load raw materials. Please check connection with server.');
     } finally {
       setIsLoading(false);
     }
@@ -314,12 +314,12 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
 
         if (!res.ok) {
           const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error al guardar el insumo en el servidor');
+          throw new Error(errorJson.message || 'Error saving raw material to server');
         }
 
         await fetchData();
       } catch (err: any) {
-        alert(err.message || 'No se pudo completar la operación');
+        alert(err.message || 'Could not complete the operation');
       } finally {
         setIsLoading(false);
       }
@@ -379,7 +379,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
 
       // Si intentan desactivar (poner isActive = false), validamos si tiene uso
       if (!nextActiveState) {
-        // La deactivación por soft status (isActive = false) SÍ es la forma de "eliminar de nuevas recetas".
+        // Soft deactivation (isActive = false) IS the mechanism to "prevent usage in new recipes".
       }
 
       // Aplicar soft deactivation (PATCH)
@@ -390,13 +390,13 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
       });
 
       if (!res.ok) {
-        throw new Error('Error al actualizar el estatus de la materia prima');
+        throw new Error('Error updating raw material status');
       }
 
       setIsToggleModalOpen(false);
       await fetchData();
     } catch (err: any) {
-      setToggleError(err.message || 'Error al cambiar estatus');
+      setToggleError(err.message || 'Error updating status');
     } finally {
       setIsToggling(false);
     }
@@ -454,7 +454,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
         </p>
       </div>
 
-      {/* Panel de búsqueda y acciones */}
+      {/* Search panel and actions */}
       <div className="bg-white border border-[#e8e2d8] rounded p-6 shadow-sm space-y-4">
         {/* Fila 1: Buscador a ancho completo */}
         <div className="relative w-full">
@@ -473,7 +473,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
         {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Categorías */}
+            {/* Categories */}
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
@@ -540,7 +540,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
 
 
 
-      {/* Contenedor de la Tabla */}
+      {/* Table Container */}
       <div className="bg-white border border-[#e8e2d8] rounded overflow-hidden shadow-sm">
         <div className="p-4 bg-[#222222] flex justify-between items-center relative">
           <div className="flex items-center gap-3">
@@ -831,7 +831,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
                     />
                   </div>
 
-                  {/* Categoria */}
+                  {/* Category */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[11px] font-bold text-[#5f5e5e] uppercase font-sans">
                       Category Tag
@@ -1052,7 +1052,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
         </div>
       )}
 
-      {/* Modal de Confirmación de Toggle Estatus (Soft Deactivate) */}
+      {/* Toggle Status Confirmation Modal (Soft Deactivate) */}
       {isToggleModalOpen && toggleTarget && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 font-sans">
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsToggleModalOpen(false)} />

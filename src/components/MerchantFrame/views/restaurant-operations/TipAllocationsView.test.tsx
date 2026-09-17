@@ -66,7 +66,7 @@ const TEST_TIP_ALLOCATIONS: TipAllocation[] = [
     collaborator: {
       id: 102,
       first_name: 'Sofia',
-      last_name: 'Rodríguez',
+      last_name: 'Rodriguez',
       role: 'BARTENDER',
     },
     tip: {
@@ -90,7 +90,7 @@ const TEST_TIP_ALLOCATIONS: TipAllocation[] = [
     collaborator: {
       id: 106,
       first_name: 'Gabriel',
-      last_name: 'Fernández',
+      last_name: 'Fernandez',
       role: 'HOST',
     },
     tip: {
@@ -139,7 +139,7 @@ describe('Tip Allocations Directory Workspace & Form Drawer', () => {
       await waitFor(() => {
         expect(screen.getByText('Mateo Silva')).toBeInTheDocument();
         expect(screen.getByText('Carlos Mendoza')).toBeInTheDocument();
-        expect(screen.getByText('Sofia Rodríguez')).toBeInTheDocument();
+        expect(screen.getByText('Sofia Rodriguez')).toBeInTheDocument();
         expect(screen.getAllByText('#TIP-201').length).toBeGreaterThan(0);
         expect(screen.getByText('#TIP-202')).toBeInTheDocument();
       });

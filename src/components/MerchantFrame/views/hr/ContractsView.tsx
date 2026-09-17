@@ -1,9 +1,8 @@
-// Directorio de contratos de colaborador: los acuerdos laborales vigentes y pasados, con su
-// vigencia, su estructura salarial y el documento firmado.
+// Collaborator contracts directory: active and past agreements with
+// terms, wage structure, and signed documents.
 //
-// El estado de cumplimiento no se pide al backend: se deriva de `active` y de `end_date`
-// contra la fecha del sistema (ver lib/contracts.ts). Guardarlo sería tener dos verdades y
-// que una envejeciera sola cada noche sin que nadie tocase la fila.
+// Compliance status is not queried from backend: derived from `active` and `end_date`
+// relative to system date. Storing it would create dual truth and state drift.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
@@ -49,7 +48,7 @@ import { ContractDetailDrawer } from './ContractDetailDrawer';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-// Los adjuntos se sirven en la raíz del API (`/uploads/...`), fuera del prefijo `/api`.
+// Attachments served at API root (`/uploads/...`), outside `/api` prefix.
 const DOCUMENT_BASE = API_BASE.replace(/\/api\/?$/, '');
 
 const DELETED_STATUS = 'deleted';
@@ -145,7 +144,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
     return headers;
   };
 
-  // La subida va como multipart: poner Content-Type a mano rompería el boundary.
+  // Multipart upload: setting Content-Type manually breaks boundary.
   const uploadHeaders = (): Record<string, string> => {
     const token = getAccessToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -164,7 +163,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
         headers: authHeaders(),
       });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar los contratos');
+      if (!res.ok) throw new Error('Error loading contracts');
       const json = await res.json();
       setContracts((json.data ?? []) as CollaboratorContract[]);
     } catch (err) {
@@ -197,7 +196,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
       );
     }
 
-    // La empresa no viaja en la sesión y el DTO de alta la exige, así que se resuelve desde
+    // Company missing from session; DTO requires it, resolved from
     // el propio comercio en lugar de inventarla a partir del merchant_id.
     try {
       const res = await fetch(`${API_BASE}/merchants/${activeMerchantId}`, {
@@ -270,7 +269,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
       if (res.status === 401) return handleUnauthorized();
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // El 409 del solape se traduce al aviso que nombra el contrato que estorba.
+        // Overlap 409 translated into warning identifying conflicting contract.
         throw new Error(
           res.status === 409
             ? conflictMessageFor(contracts, draft.collaborator_id, json.message)
@@ -358,7 +357,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
     }
   };
 
-  // ---------------- Inspección ----------------
+  // ---------------- Inspection ----------------
 
   const loadRevisions = async (id: number) => {
     setRevisionsLoading(true);

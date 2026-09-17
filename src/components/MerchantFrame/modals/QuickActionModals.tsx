@@ -15,7 +15,7 @@ export const NewReservationModal: React.FC<ModalProps> = ({ isOpen, onClose }) =
         <h3 className="font-bold text-lg text-[#222222] uppercase border-b border-[#e8e2d8] pb-3 mb-4">
           New Reservation
         </h3>
-        <form onSubmit={(e) => { e.preventDefault(); alert('Reserva guardada con éxito'); onClose(); }} className="space-y-4 text-left">
+        <form onSubmit={(e) => { e.preventDefault(); alert('Reservation saved successfully'); onClose(); }} className="space-y-4 text-left">
           <div>
             <label className="block text-xs font-bold text-secondary uppercase mb-1">Guest Name</label>
             <input required type="text" className="w-full bg-white border border-[#e8e2d8] p-2 text-body-sm focus:ring-0 focus:border-[#222222]" />
@@ -44,7 +44,7 @@ export const NewReservationModal: React.FC<ModalProps> = ({ isOpen, onClose }) =
   );
 };
 
-// Modal 2: Anular Transacción
+// Modal 2: Void Transaction
 export const VoidTransactionModal: React.FC<ModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
   return (
@@ -53,7 +53,7 @@ export const VoidTransactionModal: React.FC<ModalProps> = ({ isOpen, onClose }) 
         <h3 className="font-bold text-lg text-red-600 uppercase border-b border-[#e8e2d8] pb-3 mb-4 flex items-center gap-1.5">
           <span className="material-symbols-outlined">warning</span> Void Transaction
         </h3>
-        <form onSubmit={(e) => { e.preventDefault(); alert('Transacción anulada'); onClose(); }} className="space-y-4 text-left">
+        <form onSubmit={(e) => { e.preventDefault(); alert('Transaction voided'); onClose(); }} className="space-y-4 text-left">
           <div>
             <label className="block text-xs font-bold text-secondary uppercase mb-1">Ticket Number / ID</label>
             <input required placeholder="e.g. TXN-9842" type="text" className="w-full bg-white border border-[#e8e2d8] p-2 text-body-sm focus:ring-0 focus:border-[#222222]" />
@@ -81,7 +81,7 @@ export const VoidTransactionModal: React.FC<ModalProps> = ({ isOpen, onClose }) 
   );
 };
 
-// Modal 3: Reporte de Fin de Día (EOD)
+// Modal 3: End of Day (EOD) Report
 export const EODReportModal: React.FC<ModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
   return (
@@ -125,10 +125,10 @@ export const EODReportModal: React.FC<ModalProps> = ({ isOpen, onClose }) => {
   );
 };
 
-// Modal 4: Soporte de Emergencia
+// Modal 4: Emergency Support
 export const EmergencySupportModal: React.FC<ModalProps> = ({ isOpen, onClose }) => {
   const [messages, setMessages] = useState<{ sender: 'user' | 'support'; text: string }[]>([
-    { sender: 'support', text: 'Soporte prioritario X7 POS activo. ¿Cuál es su emergencia operacional?' }
+    { sender: 'support', text: 'X7 POS priority support active. What is your operational emergency?' }
   ]);
   const [input, setInput] = useState('');
 
@@ -146,7 +146,7 @@ export const EmergencySupportModal: React.FC<ModalProps> = ({ isOpen, onClose })
         ...prev,
         {
           sender: 'support',
-          text: `Recibido: "${currentInput}". Un agente técnico de nivel 2 se está conectando a su terminal.`
+          text: `Received: "${currentInput}". A tier 2 technical agent is connecting to your terminal.`
         }
       ]);
     }, 1000);
@@ -228,7 +228,7 @@ export const NewQuickOrderModal: React.FC<ModalProps> = ({ isOpen, onClose }) =>
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
       <div className="bg-white border border-[#e8e2d8] p-6 max-w-2xl w-full rounded flex flex-col md:flex-row gap-6">
-        {/* Izquierda: Menú */}
+        {/* Left: Menu */}
         <div className="flex-1 text-left">
           <h3 className="font-bold text-base text-[#222222] uppercase border-b border-[#e8e2d8] pb-3 mb-4">
             Menu Items
@@ -247,7 +247,7 @@ export const NewQuickOrderModal: React.FC<ModalProps> = ({ isOpen, onClose }) =>
           </div>
         </div>
 
-        {/* Derecha: Ticket / Pedido */}
+        {/* Right: Ticket / Order */}
         <div className="w-full md:w-72 border-t md:border-t-0 md:border-l border-[#e8e2d8] pt-4 md:pt-0 md:pl-6 flex flex-col justify-between text-left min-h-[300px]">
           <div>
             <h3 className="font-bold text-base text-[#222222] uppercase border-b border-[#e8e2d8] pb-3 mb-4">
@@ -299,7 +299,7 @@ export const NewQuickOrderModal: React.FC<ModalProps> = ({ isOpen, onClose }) =>
   );
 };
 
-// Modal 6: LoginGatewayModal (Para el bloqueo ante 401 Unauthorized)
+// Modal 6: LoginGatewayModal (For blocking on 401 Unauthorized)
 interface LoginGatewayProps {
   isOpen: boolean;
   onLoginSuccess: () => void;
@@ -316,13 +316,13 @@ export const LoginGatewayModal: React.FC<LoginGatewayProps> = ({ isOpen, onLogin
           </div>
           <h2 className="text-white text-lg font-black uppercase tracking-wider">Session Invalidation Gateway</h2>
           <p className="text-white/50 text-xs mt-2">
-            La sesión activa ha expirado o requiere re-autenticación (Código de respuesta: <strong className="text-red-500">401 Unauthorized</strong>).
+            Active session has expired or requires re-authentication (Response code: <strong className="text-red-500">401 Unauthorized</strong>).
           </p>
         </div>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            // Re-establecer el estado de autenticación
+            // Re-establish authentication state
             setAuthenticatedState(true);
             setSimulate401(false);
             onLoginSuccess();

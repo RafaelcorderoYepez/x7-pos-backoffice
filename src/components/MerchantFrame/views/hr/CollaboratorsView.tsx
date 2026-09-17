@@ -1,9 +1,8 @@
-// Directorio de colaboradores: la plantilla del comercio, su cuenta de plataforma, su rol
-// operativo y su turno.
+// Collaborators directory: merchant staff, access account, operational role,
+// and shift assignments.
 //
-// El aislamiento por comercio lo impone el token en el backend; el `merchant_id` que se
-// envía al crear se valida allí contra el JWT, así que aquí no es una defensa sino el dato
-// que el DTO exige.
+// Tenant isolation enforced by backend token; `merchant_id` sent
+// on create is validated against JWT, satisfying DTO contract.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
@@ -45,7 +44,7 @@ import { CollaboratorDetailDrawer } from './CollaboratorDetailDrawer';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-// Baja lógica: la fila sigue en base para no romper el histórico de comandas y cajas.
+// Soft-delete: row retained in database to preserve order and shift history.
 const DELETED_STATUS = 'deleted';
 
 const ConfirmDeleteDialog: React.FC<{
@@ -98,8 +97,8 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
 
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [users, setUsers] = useState<MerchantUser[]>([]);
-  // Por qué no hay cuentas que ofrecer. Sin esto, un fallo de carga y "todas enlazadas"
-  // se veían igual en el formulario, y el mensaje acusaba al dato equivocado.
+  // Reason why accounts list is empty. Differentiates fetch failure
+  // from all accounts being assigned.
   const [usersError, setUsersError] = useState('');
   const [shifts, setShifts] = useState<ShiftRef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,7 +148,7 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
         headers: authHeaders(),
       });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar los colaboradores');
+      if (!res.ok) throw new Error('Error loading collaborators');
       const json = await res.json();
       setCollaborators(
         ((json.data ?? []) as Collaborator[]).filter((c) => c.status !== DELETED_STATUS),
@@ -163,13 +162,11 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
   };
 
   const fetchContext = async () => {
-    // Las cuentas se piden por /users/merchant/{id}: el listado raíz `GET /users` es
-    // exclusivo de PORTAL_ADMIN y a un administrador de comercio le devuelve 403, así que
-    // el desplegable se quedaba vacío sin que nadie se enterara.
+    // Accounts requested via /users/merchant/{id}: root `GET /users` is
+    // exclusive to PORTAL_ADMIN and returns 403 for merchant admins.
     setUsersError('');
     try {
-      // El comercio sale del prop, no de localStorage: la vista ya lo recibe y así el
-      // listado no depende de un segundo lugar donde ese id podría estar desfasado.
+      // Merchant ID sourced from prop, avoiding local storage desync.
       const res = await fetch(`${API_BASE}/users/merchant/${activeMerchantId}`, {
         headers: authHeaders(),
       });
@@ -222,7 +219,7 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
 
   const clearFilters = () => setFilters(DEFAULT_COLLABORATOR_FILTERS);
 
-  // ---------------- Alta y edición ----------------
+  // ---------------- Creation and editing ----------------
 
   const handleCreate = async (draft: CollaboratorDraft) => {
     setFormSubmitting(true);
@@ -244,7 +241,7 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
       if (res.status === 401) return handleUnauthorized();
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        // El 409 del índice único se traduce al mensaje que nombra la cuenta concreta.
+        // Unique index 409 mapped to descriptive error naming user account.
         throw new Error(
           res.status === 409
             ? conflictMessageFor(draft.user_id, json.message)
@@ -265,8 +262,8 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
     setFormSubmitting(true);
     setFormError('');
     try {
-      // El backend actualiza con PUT (no PATCH) y con whitelist: user_id y merchant_id no
-      // viajan, porque reasignarlos cambiaría de dueño la ficha entera.
+      // Backend updates with PUT using whitelist: user_id and merchant_id
+      // are omitted because reassigning would change profile ownership.
       const body: UpdateCollaboratorDto = {
         name: draft.name,
         role: draft.role,

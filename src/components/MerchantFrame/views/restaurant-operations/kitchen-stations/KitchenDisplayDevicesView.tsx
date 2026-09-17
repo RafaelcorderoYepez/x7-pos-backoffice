@@ -56,7 +56,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
-  // Tabla: Densidad, Columnas Visibles y Paginación
+  // Table: Density, Visible Columns, and Pagination
   const [visibleColumns, setVisibleColumns] = useState<{
     deviceIdentity: boolean;
     stationBinding: boolean;
@@ -79,12 +79,12 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Reset de página al cambiar filtros o tamaño de página
+  // Reset page when filters or page size change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, stationFilter, connectivityFilter, statusFilter, pageSize]);
 
-  // Drawer de Edición y Creación
+  // Edit and Create Drawer
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit'>('add');
   const [editingDevice, setEditingDevice] = useState<KitchenDisplayDevice | null>(null);
@@ -99,12 +99,12 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Modal de Eliminación (Soft Delete)
+  // Delete Modal (Soft Delete)
   const [deleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
   const [deviceToDelete, setDeviceToDelete] = useState<KitchenDisplayDevice | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  // Estado y Feedback de Resincronización
+  // Resynchronization State and Feedback
   const [syncingDeviceId, setSyncingDeviceId] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'warning' | 'info' } | null>(null);
 
@@ -234,7 +234,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   }, [statusFilter, connectivityFilter, stationFilter]);
 
 
-  // Filtrado alfanumérico en memoria
+  // In-memory alphanumeric filtering
   const filteredDevices = devices.filter((dev) => {
     const q = searchQuery.toLowerCase().trim();
     if (q) {
@@ -297,7 +297,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     });
   };
 
-  // Abrir Drawer para Crear
+  // Open Drawer to Create
   const handleOpenAddDrawer = () => {
     setDrawerMode('add');
     setEditingDevice(null);
@@ -311,7 +311,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     setIsDrawerOpen(true);
   };
 
-  // Abrir Drawer para Editar
+  // Open Drawer to Edit
   const handleOpenEditDrawer = (device: KitchenDisplayDevice) => {
     setDrawerMode('edit');
     setEditingDevice(device);
@@ -325,7 +325,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     setIsDrawerOpen(true);
   };
 
-  // Guardar Formulario (Crear o Editar)
+  // Save Form (Create or Edit)
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
@@ -401,7 +401,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     }
   };
 
-  // Resincronización de Dispositivo KDS en tiempo real (Ping y persistencia de lastSync en PostgreSQL)
+  // Real-time KDS Device Resynchronization (Ping and lastSync persistence in PostgreSQL)
   const handleResyncDevice = async (device: KitchenDisplayDevice) => {
     setSyncingDeviceId(device.id);
     const nowIso = new Date().toISOString();
@@ -446,7 +446,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     }
   };
 
-  // Eliminar Dispositivo (Soft Delete en PostgreSQL DB)
+  // Delete Device (Soft Delete in PostgreSQL DB)
   const handleConfirmDelete = async () => {
     if (!deviceToDelete) return;
     setIsDeleting(true);
@@ -491,7 +491,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
       </div>
 
-      {/* 1.5 Real-Time Health Summary KPI Banner (Estrictamente 4 Cuadrados en 1 sola línea horizontal) */}
+      {/* 1.5 Real-Time Health Summary KPI Banner (Strictly 4 cards in 1 horizontal row) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Registered Active Devices */}
         <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
@@ -580,7 +580,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
       {/* 2. Toolbar Multicriterio a 2 Filas */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda a la izquierda y View Switcher a la derecha en la MISMA línea horizontal */}
+        {/* Row 1: Search on left and View Switcher on right in SAME horizontal line */}
         <div className="flex flex-row items-center justify-between gap-3 w-full">
           <div className="relative flex-1 min-w-0">
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e] font-sans">
@@ -596,7 +596,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             />
           </div>
 
-          {/* View Switcher Toggle (Table View vs Quick-Launch Cards) pegado a la derecha en la misma línea */}
+          {/* View Switcher Toggle (Table View vs Quick-Launch Cards) aligned right on same line */}
           <div className="flex items-center bg-[#f2ede5] p-1 rounded border border-[#e8e2d8] shrink-0">
             <button
               type="button"
@@ -675,7 +675,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Botón Principal Añadir */}
+            {/* Primary Add Button */}
             <button
               type="button"
               onClick={handleOpenAddDrawer}
@@ -1112,7 +1112,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                 </table>
               </div>
 
-              {/* Pie de paginación */}
+              {/* Pagination footer */}
               <TablePaginationFooter
                 currentPage={currentPage}
                 totalItems={filteredDevices.length}
@@ -1124,7 +1124,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
       )}
 
-      {/* 4. Quick Launch Panel Componente Estándar */}
+      {/* 4. Standard Quick Launch Panel Component */}
       <div className="mt-6">
         <KitchenQuickLinks current="kitchen-display-devices" onNavigate={onNavigate} />
       </div>
@@ -1176,7 +1176,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         ]}
       />
 
-      {/* Drawer Slide-over para Agregar / Editar Dispositivo KDS */}
+      {/* Slide-over Drawer to Add / Edit KDS Device */}
       {isDrawerOpen &&
         createPortal(
           <div className="fixed inset-0 z-50 flex justify-end font-sans">
@@ -1341,7 +1341,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         )
       }
 
-      {/* Modal Confirmación de Eliminación Lógica */}
+      {/* Soft Delete Confirmation Modal */}
       {deleteModalOpen && deviceToDelete && (
         <AppModal
           onClose={() => setDeleteModalOpen(false)}

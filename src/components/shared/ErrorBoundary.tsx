@@ -46,9 +46,9 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-[#ae001a]">
               <span className="material-symbols-outlined text-3xl">warning</span>
             </div>
-            <h2 className="text-xl font-bold text-[#1d1c17]">Se ha producido un error inesperado</h2>
+            <h2 className="text-xl font-bold text-[#1d1c17]">An unexpected error occurred</h2>
             <p className="text-sm text-[#5f5e5e] max-w-md">
-              La vista no pudo cargarse debido a un conflicto de datos en la sesión actual.
+              The view could not load due to a data conflict in the current session.
             </p>
             {this.state.error && (
               <div className="w-full bg-[#f8f3eb] p-3 rounded text-left font-mono text-xs text-red-700 overflow-x-auto border border-[#e8e2d8]">
@@ -62,7 +62,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 className="flex-1 px-5 py-3 bg-[#ae001a] hover:bg-[#930015] text-white font-bold text-xs uppercase tracking-widest rounded transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span className="material-symbols-outlined text-base">refresh</span>
-                Limpiar Caché y Recargar
+                Clear Cache & Reload
               </button>
             </div>
           </div>

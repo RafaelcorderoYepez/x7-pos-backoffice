@@ -15,7 +15,7 @@ vi.mock('../../../lib/auth-storage', () => ({
 
 const SUPPLIERS: InvoiceSupplierRef[] = [
   { id: 10, name: 'Coca-Cola FEMSA', email: 'sales@femsa.com' },
-  { id: 20, name: 'Nestlé Foods', email: 'orders@nestle.com' },
+  { id: 20, name: 'Nestle Foods', email: 'orders@nestle.com' },
 ];
 
 const NOTES: SupplierCreditNote[] = [
@@ -166,7 +166,7 @@ describe('SupplierCreditNotesView — filters', () => {
     render(<SupplierCreditNotesView />);
     await screen.findByText('CN-2026-0001');
 
-    await user.type(screen.getByLabelText('Search credit notes'), 'Nestlé');
+    await user.type(screen.getByLabelText('Search credit notes'), 'Nestle');
     expect(screen.getByText('CN-2026-0002')).toBeInTheDocument();
     expect(screen.queryByText('CN-2026-0001')).not.toBeInTheDocument();
   });

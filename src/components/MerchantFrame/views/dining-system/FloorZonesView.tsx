@@ -30,10 +30,10 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 const pluralize = (n: number, singular: string, plural: string): string =>
   `${n} ${n === 1 ? singular : plural}`;
 
-// El censo de mesas cuelga de la feature TABLES y las zonas de TABLE_ZONES: una suscripción
-// puede conceder una y no la otra. Sin censo NO se puede demostrar que una zona esté vacía,
-// y el backend no reasigna las mesas al borrar la zona: fallar en abierto las dejaría
-// huérfanas. Por eso el guard se bloquea en vez de asumir cero.
+// Table census belongs to TABLES feature and zones to TABLE_ZONES: a subscription
+// may grant one and not the other. Without census we CANNOT verify that a zone is empty,
+// and backend does not reassign tables upon deleting zone: failing open would leave
+// them orphaned. That is why the guard blocks instead of assuming zero.
 const COUNTS_UNAVAILABLE_MESSAGE =
   'Table counts are unavailable right now, so the assignment guard cannot be verified. Retry the connection before deleting or archiving a zone.';
 
@@ -42,9 +42,9 @@ const COUNTS_UNAVAILABLE_MESSAGE =
 interface FloorZoneFormDrawerProps {
   mode: 'create' | 'edit';
   initial?: FloorZone;
-  // Planos donde se puede colocar la zona (solo los que siguen operativos).
+  // Floor plans where zone can be placed (only active operational ones).
   plans: FloorPlan[];
-  // Resto de zonas del comercio: alimentan el guard de nombre único por plano.
+  // Remaining merchant zones: feed unique name per floor plan guard.
   siblings: FloorZone[];
   zoneTableCount: number;
   tableCountsUnknown: boolean;
@@ -79,7 +79,7 @@ const FloorZoneFormDrawer: React.FC<FloorZoneFormDrawerProps> = ({
 
   const selectedPlan = plans.find((p) => String(p.id) === planId);
 
-  // Nombre único POR PLANO: dos salas distintas pueden tener su propio "VIP Lounge".
+  // Unique name PER FLOOR PLAN: two different rooms can have their own "VIP Lounge".
   const duplicateError = useMemo(() => {
     const trimmed = name.trim().toLowerCase();
     if (!trimmed || !planId) return '';
@@ -94,7 +94,7 @@ const FloorZoneFormDrawer: React.FC<FloorZoneFormDrawerProps> = ({
     return duplicateZoneNameError(name.trim(), planName);
   }, [name, planId, siblings, initial?.id, selectedPlan]);
 
-  // Archivar equivale a retirar la zona del POS: mismo guard que el borrado.
+  // Archiving removes zone from POS: same guard as deletion.
   const archiveError =
     mode === 'edit' && status === 'archived'
       ? tableCountsUnknown
@@ -102,7 +102,7 @@ const FloorZoneFormDrawer: React.FC<FloorZoneFormDrawerProps> = ({
         : floorZoneMutationGuard(zoneTableCount)
       : '';
 
-  // Aviso blando: dos zonas del mismo plano con el mismo color son indistinguibles en el POS.
+  // Soft warning: two zones in same floor plan with identical colors are indistinguishable in POS.
   const colorClash = useMemo(() => {
     if (!planId || !color) return '';
     const clash = siblings.some(
@@ -194,8 +194,8 @@ const FloorZoneFormDrawer: React.FC<FloorZoneFormDrawerProps> = ({
                 {p.name}
               </option>
             ))}
-            {/* La zona puede colgar de un plano archivado que ya no está en el selector:
-                lo añadimos para no perder el vínculo al editar. */}
+            {/* Zone may belong to an archived floor plan no longer in selector:
+                we add it so we do not lose the link when editing. */}
             {initial?.floorPlan?.id != null &&
               !plans.some((p) => p.id === initial.floorPlan?.id) && (
                 <option value={initial.floorPlan.id}>
@@ -381,7 +381,7 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
     try {
       const res = await fetch(`${API_BASE}/floor-zone?limit=100`, { headers: authHeaders() });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las zonas');
+      if (!res.ok) throw new Error('Error loading zones');
       const json = await res.json();
       setZones((json.data ?? []) as FloorZone[]);
     } catch (err) {
@@ -437,7 +437,7 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
     [plans, activeMerchantId],
   );
 
-  // Planos ofrecibles en el formulario: los archivados no admiten zonas nuevas.
+  // Available plans in form: archived plans do not accept new zones.
   const assignablePlans = useMemo(
     () => merchantPlans.filter((p) => normalizeFloorPlanStatus(p.status) !== 'archived'),
     [merchantPlans],
@@ -487,7 +487,7 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
     setFormSubmitting(true);
     setFormError('');
     try {
-      // El comercio no lo elige el usuario: sale de la sesión, igual que en los planos.
+      // Merchant is not chosen by user: resolved from session, same as in floor plans.
       const body: CreateFloorZoneDto = {
         merchant: activeMerchantId,
         name: dto.name ?? '',
@@ -517,7 +517,7 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
     setFormSubmitting(true);
     setFormError('');
     try {
-      // PATCH (no PUT) y sin `merchant`: reasignar el comercio rompería el aislamiento.
+      // PATCH (not PUT) and without `merchant`: reassigning merchant would break isolation.
       const res = await fetch(`${API_BASE}/floor-zone/${id}`, {
         method: 'PATCH',
         headers: authHeaders(),
@@ -576,8 +576,8 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
     }
   };
 
-  // El eje del módulo es el editor en vivo: desde una zona se salta al lienzo de su plano,
-  // que es donde las zonas cobran sentido (colorean las mesas colocadas).
+  // Core of the module is the live editor: from a zone we jump to its floor plan canvas,
+  // where zones deliver spatial meaning (color-coding placed tables).
   const openEditorForZone = (z: FloorZone) => {
     const plan = z.floorPlan?.id != null ? planById.get(z.floorPlan.id) : undefined;
     if (!plan) {

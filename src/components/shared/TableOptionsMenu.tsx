@@ -18,7 +18,7 @@ export interface CustomActionOption {
 export const DEFAULT_PAGE_SIZE = 5;
 
 export interface TableOptionsMenuProps {
-  // Pestaña Acciones
+  // Actions Tab
   onExportCSV?: () => void;
   exportCSVLabel?: string;
   onPrint?: () => void;
@@ -28,16 +28,16 @@ export interface TableOptionsMenuProps {
   onReload?: () => void;
   customActions?: CustomActionOption[];
 
-  // Pestaña Columnas
+  // Columns Tab
   columns?: ColumnOption[];
   visibleColumns?: Record<string, boolean>;
   onToggleColumn?: (columnKey: string) => void;
 
-  // Pestaña Vista & Densidad
+  // View & Density Tab
   rowDensity?: TableDensity;
   onChangeDensity?: (density: TableDensity) => void;
 
-  // Paginación y Límites
+  // Pagination and Limits
   totalItems?: number;
   pageSize?: number;
   onChangePageSize?: (size: number) => void;
@@ -129,7 +129,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
     };
   }, [isOpen]);
 
-  // Estado interno para paginación por defecto si no es controlada externamente
+  // Internal state for default pagination if not externally controlled
   const [internalPageSize, setInternalPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [internalCurrentPage, setInternalCurrentPage] = useState<number>(1);
 
@@ -153,7 +153,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
     handlePageChange(1);
   };
 
-  // Determinar pestañas disponibles
+  // Determine available tabs
   const hasActionsTab = !!(onExportCSV || onPrint || onCopySummary || onReload || customActions.length > 0);
   const hasColumnsTab = columns.length > 0 && !!onToggleColumn;
   const hasDensityTab = !!(onChangeDensity || onChangePageSize);
@@ -162,7 +162,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
     hasActionsTab ? 'tools' : hasColumnsTab ? 'columns' : 'density'
   );
 
-  // Cerrar el menú al hacer clic afuera
+  // Close menu on click outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -186,8 +186,8 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
     };
   }, [isOpen]);
 
-  // Paginación automática en el DOM en caso de que la tabla del contenedor tenga más de 5 filas
-  // y la vista padre no haya implementado el slicing manualmente en React
+  // Automatic DOM pagination if container table has more than 5 rows
+  // and parent view did not implement manual slicing in React
   useEffect(() => {
     if (onPageChange) return;
     const container = menuRef.current?.closest('div.bg-white, .rounded, [class*="border"]');
@@ -223,7 +223,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
 
   return (
     <div className="relative inline-flex items-center gap-1.5 text-left font-sans" ref={menuRef}>
-      {/* Controles de paginación de cabecera si hay más de 1 página */}
+      {/* Header pagination controls if there is more than 1 page */}
       {totalPages > 1 && (
         <div className="flex items-center gap-1 bg-[#1a1a1a] px-2 py-1 rounded border border-white/10 text-white select-none">
           <button
@@ -275,7 +275,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
             }}
             className="w-72 bg-white border border-[#e8e2d8] rounded-lg shadow-2xl text-left font-sans text-xs animate-fade-in flex flex-col overflow-hidden"
           >
-            {/* Tabs de Selección Superior */}
+            {/* Top Selection Tabs */}
             <div className="flex border-b border-[#e8e2d8] bg-[#f8f3eb] shrink-0">
               {hasActionsTab && (
                 <button
@@ -438,7 +438,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
               </div>
             )}
 
-            {/* Tab 3: Densidad & Filas por Página */}
+            {/* Tab 3: Density & Rows per Page */}
             {activeTab === 'density' && hasDensityTab && (
               <div className="p-3 space-y-4 overflow-y-auto flex-1 overscroll-contain pb-4">
                 {/* Densidad de Fila */}
@@ -470,7 +470,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
                   </div>
                 )}
 
-                {/* Cantidad de Registros por Página */}
+                {/* Visible Rows per Page */}
                 {onChangePageSize && (
                   <div>
                     <div className="text-[10px] font-bold text-secondary uppercase tracking-wider mb-2">

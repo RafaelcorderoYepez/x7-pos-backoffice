@@ -18,7 +18,7 @@ export const TopSellingItems: React.FC<TopSellingItemsProps> = ({ refreshTrigger
       const data = await restaurantService.getTopSellingItems();
       setItems(data);
     } catch (err) {
-      setError('Error al obtener productos');
+      setError('Error fetching products');
       console.error(err);
     } finally {
       setLoading(false);
@@ -66,7 +66,7 @@ export const TopSellingItems: React.FC<TopSellingItemsProps> = ({ refreshTrigger
             onClick={fetchTopItems}
             className="px-3 py-1.5 bg-[#d51f2c] text-white font-bold text-[10px] uppercase hover:opacity-90 transition-all animate-bounce"
           >
-            Reintentar
+            Retry
           </button>
         </div>
       </div>

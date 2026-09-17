@@ -40,15 +40,15 @@ const formatDateTime = (value?: string | null): string => {
   return isNaN(d.getTime()) ? '—' : `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
 };
 
-// Saldo sin asignar de un pago: lo que todavía puede financiar asignaciones.
+// Unallocated balance of a payment: available to fund allocations.
 const paymentAvailable = (p: SupplierPayment): number =>
   Math.max(0, num(p.total_amount) - num(p.allocated_amount));
 
-// Saldo sin aplicar de una nota de crédito.
+// Unapplied balance of a credit note.
 const creditNoteAvailable = (cn: SupplierCreditNote): number =>
   Math.max(0, num(cn.total_amount) - num(cn.applied_amount));
 
-// Tolerancia de un milésimo para no bloquear por ruido decimal.
+// Thousandth tolerance to avoid floating point precision locks.
 const EPSILON = 0.001;
 
 // ========================= FORM DRAWER (ALLOCATE) =========================
@@ -75,7 +75,7 @@ const AllocationFormDrawer: React.FC<AllocationFormDrawerProps> = ({
   onSubmit,
 }) => {
   const [supplierId, setSupplierId] = useState('');
-  // Fuente de fondeo mutuamente excluyente: o pago, o nota de crédito.
+  // Mutually exclusive funding source: either payment or credit note.
   const [sourceKind, setSourceKind] = useState<'payment' | 'credit_note'>('payment');
   const [paymentId, setPaymentId] = useState('');
   const [creditNoteId, setCreditNoteId] = useState('');
@@ -97,7 +97,7 @@ const AllocationFormDrawer: React.FC<AllocationFormDrawerProps> = ({
     setPaymentId('');
   };
 
-  // Solo fuentes del proveedor elegido y con saldo disponible.
+  // Only funding sources for selected supplier with available balance.
   const availablePayments = useMemo(
     () =>
       payments.filter(
@@ -121,7 +121,7 @@ const AllocationFormDrawer: React.FC<AllocationFormDrawerProps> = ({
     [creditNotes, supplierId],
   );
 
-  // Documentos pendientes del proveedor: destino de la asignación.
+  // Pending supplier documents: allocation destination.
   useEffect(() => {
     if (!supplierId) {
       setOutstanding([]);
@@ -189,7 +189,7 @@ const AllocationFormDrawer: React.FC<AllocationFormDrawerProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || submitting) return;
-    // Exactamente una fuente viaja informada; la otra va explícitamente nula.
+    // Exactly one funding source is populated; the other is explicitly null.
     onSubmit({
       payment_id: sourceKind === 'payment' ? Number(paymentId) : null,
       credit_note_id: sourceKind === 'credit_note' ? Number(creditNoteId) : null,
@@ -230,7 +230,7 @@ const AllocationFormDrawer: React.FC<AllocationFormDrawerProps> = ({
             value={supplierId}
             onChange={(e) => {
               setSupplierId(e.target.value);
-              // Cambiar de proveedor invalida fuente y destino previos.
+              // Changing supplier invalidates prior source and destination.
               setPaymentId('');
               setCreditNoteId('');
               setDocumentNumber('');
@@ -581,7 +581,7 @@ const ConfirmUnlinkDialog: React.FC<ConfirmUnlinkDialogProps> = ({
 interface SupplierPaymentAllocationsViewProps {
   onNavigate?: (view: string) => void;
   companyId?: number;
-  // Contexto de origen: pago, nota de crédito o documento destino.
+  // Origin context: payment, credit note, or destination document.
   payment?: SupplierPayment | null;
   creditNote?: SupplierCreditNote | null;
   documentNumber?: string | null;
@@ -641,7 +641,7 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
     setError(null);
     try {
       // payment_id/credit_note_id son filtros reales del backend; document_number
-      // no lo es, así que ese contexto se aplica en cliente.
+      // is not, so context is applied client-side.
       const params = new URLSearchParams({ limit: '100' });
       if (payment) params.set('payment_id', String(payment.id));
       if (creditNote) params.set('credit_note_id', String(creditNote.id));
@@ -649,7 +649,7 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
         headers: authHeaders(),
       });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las asignaciones de pago');
+      if (!res.ok) throw new Error('Error loading payment allocations');
       const json = await res.json();
       const active = ((json.data ?? []) as SupplierPaymentAllocation[]).filter(
         (a) => !a.deleted_at,
@@ -663,7 +663,7 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
     }
   };
 
-  // Catálogos para resolver los números de fuente y validar saldos en el drawer.
+  // Catalogs to resolve source numbers and validate balances in drawer.
   const fetchSources = async () => {
     try {
       const [payRes, cnRes, supRes] = await Promise.all([
@@ -714,7 +714,7 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
     return map;
   }, [suppliers]);
 
-  // Une cada asignación con el número de su fuente (el backend devuelve solo ids).
+  // Joins each allocation with its source number (backend returns only IDs).
   const withSources = (a: SupplierPaymentAllocation): SupplierPaymentAllocation => {
     const parentPayment = a.payment_id != null ? paymentById.get(a.payment_id) : undefined;
     const parentCreditNote =
@@ -776,7 +776,7 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
     setFormOpen(true);
   };
 
-  // El backend recalcula pago/nota de crédito/factura en cascada: recargamos todo.
+  // Backend recalculates payment/credit note/invoice in cascade: reload all.
   const refreshAll = async () => {
     await Promise.all([fetchAllocations(), fetchSources()]);
   };
@@ -817,7 +817,7 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
         throw new Error(json.message || 'Failed to unlink allocation');
       }
       setUnlinkingAllocation(null);
-      // Refetch: el backend ya revirtió los saldos de la fuente y del documento.
+      // Refetch: backend already reverted source and document balances.
       await refreshAll();
       setToast({ message: 'Allocation unlinked and balances restored', type: 'success' });
     } catch (err) {

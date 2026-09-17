@@ -497,7 +497,7 @@ export const PayrollRulesView: React.FC<PayrollRulesViewProps> = ({ onNavigate }
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar las reglas de nómina');
+        throw new Error('Error loading payroll rules');
       }
 
       const json = await res.json();

@@ -38,7 +38,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 const DUTY_FILTERS: DutyFilter[] = ['all', 'active', 'released'];
 
 // Lo que el drawer entrega al enviar. `assignedAt` no viaja: lo sella el servidor, y
-// mandarlo desde el cliente sólo abriría la puerta a relojes desalineados entre tablets.
+// sending from client would only risk clock desync across tablets.
 interface AssignmentDraft {
   shiftId: number;
   tableId: number;
@@ -51,9 +51,9 @@ interface AssignmentFormDrawerProps {
   tables: DiningTable[];
   shifts: ShiftRef[];
   collaborators: CollaboratorRef[];
-  // Turno abierto: el drawer arranca ya apuntando ahí, que es donde ocurre el 99% del trabajo.
+  // Open shift: drawer starts pointing there, where 99% of work occurs.
   defaultShiftId: string;
-  // Asignaciones vivas, para avisar del conflicto ANTES de enviar.
+  // Live active assignments, used to warn of conflicts BEFORE submission.
   activeAssignments: TableAssignment[];
   submitting: boolean;
   formError: string;
@@ -75,16 +75,16 @@ const AssignmentFormDrawer: React.FC<AssignmentFormDrawerProps> = ({
   const [shiftId, setShiftId] = useState(defaultShiftId);
   const [tableId, setTableId] = useState('');
   const [collaboratorId, setCollaboratorId] = useState('');
-  // Filtros de teclado sobre los dos catálogos largos: en un local con 60 mesas, un select
-  // pelado obliga a recorrer la lista entera con la rueda del ratón.
+  // Keyboard filters on the two long catalogs: in a 60-table venue, a plain select
+  // forces scrolling through the entire list with the mouse wheel.
   const [tableQuery, setTableQuery] = useState('');
   const [zoneFilter, setZoneFilter] = useState('');
   const [staffQuery, setStaffQuery] = useState('');
 
   useModalDismiss(onCancel);
 
-  // Zonas que de verdad tienen mesas. Se derivan del propio inventario en vez de pedir
-  // /api/floor-zone: ofrecer una zona vacía sólo llevaría a un desplegable sin opciones.
+  // Zones that actually contain tables. Derived from inventory directly rather than
+  // requesting /api/floor-zone: offering an empty zone would lead to an empty dropdown.
   const zoneOptions = useMemo(() => {
     const byId = new Map<number, string>();
     tables.forEach((t) => {
@@ -120,8 +120,8 @@ const AssignmentFormDrawer: React.FC<AssignmentFormDrawerProps> = ({
     );
   }, [collaborators, staffQuery]);
 
-  // El conflicto ya no bloquea: se anuncia aquí y se resuelve con el traspaso de turno que
-  // confirma el diálogo siguiente.
+  // Conflict no longer blocks: reported here and resolved with shift transfer
+  // confirmed in the next dialog.
   const conflict = useMemo(() => {
     if (!shiftId || !tableId) return null;
     return conflictingAssignment(activeAssignments, Number(tableId), Number(shiftId));
@@ -136,8 +136,8 @@ const AssignmentFormDrawer: React.FC<AssignmentFormDrawerProps> = ({
 
   const handleZoneChange = (value: string) => {
     setZoneFilter(value);
-    // Cambiar de zona invalida la mesa elegida si ya no pertenece a la lista visible: es
-    // preferible obligar a reelegir que enviar una mesa que el operador cree haber cambiado.
+    // Changing zone filter invalidates selected table if no longer in filtered list: better
+    // to force explicit reselection than submit an unintentionally mismatched table.
     const stillVisible = tables.some(
       (t) => String(t.id) === tableId && (!value || String(t.floorZone?.id ?? '') === value),
     );
@@ -285,8 +285,8 @@ const AssignmentFormDrawer: React.FC<AssignmentFormDrawerProps> = ({
             </>
           ) : (
             <>
-              {/* Honesto sobre la limitación: sin la feature de colaboradores el backend
-                  responde 403 y no hay catálogo de nombres que ofrecer. */}
+              {/* Honest about limitation: without collaborators feature backend
+                  responds 403 and there is no names catalog to offer. */}
               <input
                 id="asg-collaborator"
                 type="number"
@@ -318,8 +318,8 @@ const AssignmentFormDrawer: React.FC<AssignmentFormDrawerProps> = ({
 
 // ========================= CONFLICT / REASSIGN =========================
 
-// La mesa ya está cubierta en este turno. No se duplica la cobertura: se traspasa, y el
-// diálogo deja claro a quién se le retira antes de tocar nada.
+// Table is already covered in this shift. Coverage is not duplicated: it is transferred, and
+// dialog clarifies from whom it is removed before touching anything.
 const ConfirmReassignDialog: React.FC<{
   tableNumber: string;
   holder: TableAssignment;
@@ -358,7 +358,7 @@ const ConfirmReassignDialog: React.FC<{
 const ConfirmReleaseDialog: React.FC<{
   assignment: TableAssignment;
   tableLabel: string;
-  // Aviso, no bloqueo: el turno se acaba igual, pero alguien tiene que recoger esas cuentas.
+  // Warning, not lock: shift ends anyway, but someone must pick up those checks.
   openChecksWarning: string;
   submitting: boolean;
   onCancel: () => void;
@@ -423,7 +423,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [dutyFilter, setDutyFilter] = useState<DutyFilter>('all');
-  // null = el operador aún no ha tocado el selector, así que manda el turno abierto.
+  // null = operator has not touched selector yet, so open shift takes precedence.
   // '' = ha elegido "All Shifts" a conciencia. Distinguirlos evita que una recarga de datos
   // le devuelva al turno de hoy justo cuando acaba de irse a revisar el de ayer.
   const [shiftFilter, setShiftFilter] = useState<string | null>(null);
@@ -465,7 +465,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
         headers: authHeaders(),
       });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las asignaciones');
+      if (!res.ok) throw new Error('Error loading table assignments');
       const json = await res.json();
       setAssignments((json.data ?? []) as TableAssignment[]);
     } catch (err) {
@@ -491,8 +491,8 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
         const json = await shiftRes.json();
         setShifts(((json.data ?? []) as ShiftRef[]).filter((s) => s.status !== 'deleted'));
       }
-      // 403 cuando el plan no incluye la feature de colaboradores: el drawer cae entonces
-      // al id numérico en vez de al catálogo de nombres.
+      // 403 when plan lacks collaborators feature: drawer falls back
+      // to numeric id instead of names catalog.
       if (staffRes.ok) {
         const json = await staffRes.json();
         setCollaborators(
@@ -545,7 +545,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     });
   }, [assignments, tableById, searchQuery, dutyFilter, effectiveShift]);
 
-  // Sólo las vivas alimentan la exclusividad mesa/turno.
+  // Only active ones feed table/shift exclusivity.
   const liveAssignments = useMemo(() => assignments.filter(isActiveDuty), [assignments]);
 
   const hasActiveFilter = Boolean(searchQuery || dutyFilter !== 'all' || effectiveShift);
@@ -555,7 +555,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     setShiftFilter('');
   };
 
-  // Crea la asignación. `assignedAt` y los timestamps los sella el servidor.
+  // Creates assignment. `assignedAt` and timestamps are stamped by server.
   const createAssignment = async (draft: AssignmentDraft) => {
     const res = await fetch(`${API_BASE}/table-assignments`, {
       method: 'POST',
@@ -568,7 +568,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
   };
 
   // Cierra una cobertura: sella releasedAt y la desactiva. No borra, para no perder la
-  // traza de quién cubrió qué durante el turno.
+  // trace of who covered what during shift.
   const releaseAssignment = async (id: number) => {
     const res = await fetch(`${API_BASE}/table-assignments/${id}`, {
       method: 'PATCH',
@@ -583,7 +583,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
   };
 
   const handleCreateSubmit = async (draft: AssignmentDraft) => {
-    // Exclusividad mesa/turno: si ya hay alguien cubriéndola, se pide confirmación en vez
+    // Table/shift exclusivity: if someone is covering it, confirmation is requested instead
     // de duplicar la cobertura en silencio.
     const holder = conflictingAssignment(liveAssignments, draft.tableId, draft.shiftId);
     if (holder) {
@@ -604,9 +604,8 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     }
   };
 
-  // Traspaso de cobertura: se libera al camarero anterior y se crea la nueva fila. Si la
-  // creación falla, la liberación ya está hecha — la mesa queda descubierta, que es un
-  // estado visible y arreglable, y nunca con dos camareros a la vez.
+  // Coverage transfer: previous waiter is released and a new assignment row is created.
+  // If creation fails, table remains uncovered — a visible, remediable state, never double-assigned.
   const handleReassignConfirm = async () => {
     if (!pendingDraft) return;
     setFormSubmitting(true);
@@ -645,7 +644,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     }
   };
 
-  // Las coberturas cambian desde las tablets de sala; el supervisor mira esta parrilla en
+  // Coverages mutate via floor tablets; supervisor monitors this grid in
   // una pantalla fija y tiene que ver lo mismo que ellos.
   const { connected: liveConnected } = useDiningRealtime({
     onAssignmentChanged: (p) => {
@@ -661,8 +660,8 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
       fetchContext();
     },
     onReconnect: () => {
-      // Las asignaciones no tienen endpoint de delta: la lista es corta y una recarga
-      // completa reconcilia igual de rápido.
+      // Assignments do not have delta endpoint: dataset is small and full reload
+      // reconciles equally fast.
       fetchAssignments();
       fetchContext();
     },

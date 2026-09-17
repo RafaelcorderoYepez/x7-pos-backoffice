@@ -47,7 +47,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Table options & Paginación y Filtros
+  // Table options, pagination, and filters
   const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
     id: true,
@@ -88,7 +88,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
   const currentUser = getStoredUser();
   const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-  // Lista única de materias primas por nombre e ID
+  // Unique list of raw materials by name and ID
   const uniqueSuppliesMap = new Map<number, { id: number; name: string }>();
   stockItemOptions.forEach(item => {
     if (item.supply?.id && item.supply?.name) {
@@ -99,14 +99,14 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
   });
   const uniqueSupplies = Array.from(uniqueSuppliesMap.values());
 
-  // Ubicaciones disponibles para la materia prima seleccionada
+  // Available locations for selected raw material
   const availableStockItems = stockItemOptions.filter(item => {
     if (!formSupplyId) return false;
     if (item.supply?.id) return String(item.supply.id) === formSupplyId;
     return String(item.id) === formSupplyId;
   });
 
-  // Lista única de ubicaciones globales para transferencia
+  // Unique list of global locations for transfer
   const uniqueLocationsMap = new Map<number, string>();
   stockItemOptions.forEach(item => {
     if (item.location?.id && item.location?.name) {
@@ -219,7 +219,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
 
     const sourceLocationName = selectedStockItem.location?.name || 'Source Location';
 
-    // 1. Guard de validación para Transferencias
+    // 1. Validation guard for Transfers
     if (formMovementType === 'TRANSFER') {
       if (!formDestinationLocationId) {
         setSubmitError('Please select a destination storage location.');
@@ -231,7 +231,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
       }
     }
 
-    // 2. Insufficient Stock Guard para Transferencias, Mermas (WASTE) y Salidas
+    // 2. Insufficient Stock Guard for Transfers, Waste, and Outflows
     const isDecrement = formMovementType === 'TRANSFER' || formMovementType === 'WASTE' || formMovementType === 'POS_DEPLETION';
     const currentStockQty = Number(selectedStockItem.currentQty || 0);
 
@@ -331,7 +331,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans pb-24">
-      {/* Título de Sección */}
+      {/* Section Title */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div className="flex items-center gap-2.5">
             <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
@@ -346,7 +346,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
         </p>
       </div>
 
-      {/* Panel de búsqueda y acciones */}
+      {/* Search panel and actions */}
       <div className="bg-white border border-[#e8e2d8] rounded p-6 shadow-sm space-y-4">
         {/* Fila 1: Buscador a ancho completo */}
         <div className="relative w-full">
@@ -730,7 +730,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
                 </select>
               </div>
 
-              {/* Seleccionar Ubicación / Almacén Origen */}
+              {/* Select Source Location / Warehouse */}
               <div className="space-y-1.5">
                 <label className="block text-body-xs font-bold text-zinc-700">
                   {formMovementType === 'TRANSFER' ? 'Source Storage Location *'
@@ -755,7 +755,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
                 </select>
               </div>
 
-              {/* Ubicación Destino si es TRANSFER */}
+              {/* Destination Location if TRANSFER */}
               {formMovementType === 'TRANSFER' && (
                 <div className="space-y-1.5">
                   <label className="block text-body-xs font-bold text-zinc-700">Destination Storage Location *</label>
@@ -785,8 +785,8 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
                 >
                   <option value="PURCHASE_RECEIPT">PURCHASE_RECEIPT (Entrada por Compra)</option>
                   <option value="WASTE">WASTE (Mermas / Desperdicio)</option>
-                  <option value="TRANSFER">TRANSFER (Transferencia entre Almacenes)</option>
-                  <option value="ADJUSTMENT">ADJUSTMENT (Ajuste Fisico de Inventario)</option>
+                  <option value="TRANSFER">TRANSFER (Warehouse Transfer)</option>
+                  <option value="ADJUSTMENT">ADJUSTMENT (Physical Inventory Adjustment)</option>
                   <option value="POS_DEPLETION">POS_DEPLETION (Salida por Venta POS)</option>
                 </select>
               </div>

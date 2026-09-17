@@ -19,7 +19,7 @@ export const SalesMetricCard: React.FC<SalesMetricCardProps> = ({ refreshTrigger
       const data = await restaurantService.getDailySales();
       setSalesData(data);
     } catch (err) {
-      setError('Error al obtener ventas diarias');
+      setError('Error fetching daily sales');
       console.error(err);
     } finally {
       setLoading(false);
@@ -50,14 +50,14 @@ export const SalesMetricCard: React.FC<SalesMetricCardProps> = ({ refreshTrigger
           <span className="text-label-caps text-red-500 font-bold uppercase">TOTAL DAILY SALES</span>
           <p className="text-body-sm text-red-600 font-medium mt-4 flex items-center gap-1.5">
             <span className="material-symbols-outlined text-sm">error</span>
-            Error de conexión de ventas
+            Sales connection error
           </p>
         </div>
         <button
           onClick={fetchSales}
           className="self-start text-[11px] font-bold text-[#d51f2c] uppercase hover:underline flex items-center gap-1 mt-4"
         >
-          <span className="material-symbols-outlined text-xs">refresh</span> Reintentar
+          <span className="material-symbols-outlined text-xs">refresh</span> Retry
         </button>
         <div className="absolute -right-2 -bottom-2 opacity-5 pointer-events-none">
           <span className="material-symbols-outlined text-[80px]">trending_up</span>
@@ -66,7 +66,7 @@ export const SalesMetricCard: React.FC<SalesMetricCardProps> = ({ refreshTrigger
     );
   }
 
-  // Encontrar el valor máximo para calcular las alturas porcentuales
+  // Find max value to calculate percentage heights
   const maxSales = Math.max(...salesData.hourlyData.map((d) => d.sales)) || 1;
 
   return (

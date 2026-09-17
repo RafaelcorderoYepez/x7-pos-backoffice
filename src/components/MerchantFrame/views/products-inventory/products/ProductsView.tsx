@@ -47,7 +47,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Control de expansión de filas de productos
+  // Control product rows expansion
   const [expandedProducts, setExpandedProducts] = useState<Record<number, boolean>>({});
 
   // Filtros locales
@@ -55,12 +55,12 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   const [categoryFilter, setCategoryFilter] = useState<string>('All Categories');
   const [statusFilter, setStatusFilter] = useState<string>('All Status');
 
-  // Estados del Modal
+  // Modal States
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
 
-  // Campos del Formulario del Modal
+  // Modal Form Fields
   const [formName, setFormName] = useState<string>('');
   const [formSku, setFormSku] = useState<string>('');
   const [formPrice, setFormPrice] = useState<string>('');
@@ -68,7 +68,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   const [formIsActive, setFormIsActive] = useState<boolean>(true);
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
 
-  // Estados para modal de confirmación de activación/desactivación
+  // State for activation/deactivation confirmation modal
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
   const [confirmTargetProduct, setConfirmTargetProduct] = useState<Product | null>(null);
   const [isToggling, setIsToggling] = useState<boolean>(false);
@@ -84,7 +84,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     actions: true,
   });
 
-  // Estado para Densidad de la Fila (Padding) y Límite de Registros Visibles
+  // Row density (padding) and visible records limit state
   const [rowDensity, setRowDensity] = useState<TableDensity>('comfortable');
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -122,7 +122,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
       }
 
       if (!productsRes.ok || !categoriesRes.ok) {
-        throw new Error('Error al cargar datos del servidor');
+        throw new Error('Error loading data from server');
       }
 
       const productsJson = await productsRes.json();
@@ -157,7 +157,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     fetchAllData();
   }, []);
 
-  // Filtrado de productos reactivo en el cliente
+  // Client-side reactive product filtering
   const filteredProducts = products.filter((p) => {
     const matchesSearch =
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -184,7 +184,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     }).format(num);
   };
 
-  // Abrir modal para añadir
+  // Open modal to add
   const handleOpenAddModal = () => {
     setModalMode('add');
     setEditingProductId(null);
@@ -196,7 +196,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     setIsModalOpen(true);
   };
 
-  // Abrir modal para editar
+  // Open modal to edit
   const handleOpenEditModal = (p: Product) => {
     setModalMode('edit');
     setEditingProductId(p.id);
@@ -208,7 +208,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     setIsModalOpen(true);
   };
 
-  // Activar/Desactivar producto rápidamente
+  // Toggle product active/inactive quickly
   const handleToggleActive = (p: Product) => {
     setConfirmTargetProduct(p);
     setToggleError(null);
@@ -234,7 +234,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error al cambiar el estado del producto');
+        throw new Error(errorJson.message || 'Error updating product status');
       }
 
       setProducts((prevProducts) =>
@@ -246,13 +246,13 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
       setConfirmTargetProduct(null);
     } catch (err: any) {
       console.error(err);
-      setToggleError(err.message || 'Error al cambiar el estado del producto');
+      setToggleError(err.message || 'Error updating product status');
     } finally {
       setIsToggling(false);
     }
   };
 
-  // Guardar Formulario (Add o Edit) en el backend
+  // Save form (Add or Edit) to backend
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formSku.trim() || !formPrice.trim()) {
@@ -262,7 +262,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
 
     const priceNum = parseFloat(formPrice);
     if (isNaN(priceNum) || priceNum <= 0) {
-      alert('El precio debe ser un número positivo.');
+      alert('Price must be a positive number.');
       return;
     }
 
@@ -293,7 +293,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
         });
         if (!res.ok) {
           const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error al crear el producto');
+          throw new Error(errorJson.message || 'Error creating product');
         }
       } else if (modalMode === 'edit' && editingProductId) {
         const res = await fetch(`${API_BASE}/products/${editingProductId}`, {
@@ -303,7 +303,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
         });
         if (!res.ok) {
           const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error al actualizar el producto');
+          throw new Error(errorJson.message || 'Error updating product');
         }
       }
 
@@ -311,11 +311,11 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
       fetchAllData();
     } catch (err: any) {
       console.error(err);
-      alert(err.message || 'Error al guardar el producto');
+      alert(err.message || 'Error saving product');
     }
   };
 
-  // Funciones de acción del menú de opciones (more_vert)
+  // Action menu handlers (more_vert)
   const handleExportCSV = () => {
     setIsOptionsMenuOpen(false);
     if (!filteredProducts || filteredProducts.length === 0) return;
@@ -352,7 +352,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     alert('Products directory list copied to clipboard!');
   };
 
-  // Helpers para tabla dinámica
+  // Dynamic table helpers
   const densityPadding = getDensityPadding(rowDensity);
   const totalPages = Math.ceil(filteredProducts.length / pageSize) || 1;
   const paginatedProducts = filteredProducts.slice(
@@ -372,7 +372,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans">
       <div ref={topRef} />
 
-      {/* Título de Sección */}
+      {/* Section Title */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-[#ae001a] text-2xl">
@@ -389,9 +389,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Barra de Búsqueda y Filtros */}
+      {/* Search Bar and Filters */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda al 100% de ancho */}
+        {/* Row 1: Full-width search */}
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary font-sans">
             search
@@ -408,7 +408,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
         {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Filtro por Categoría */}
+            {/* Category Filter */}
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
@@ -447,9 +447,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Tabla del Directorio de Productos */}
+      {/* Products Directory Table */}
       <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm">
-        {/* Header Oscuro #222222 con Menú Desplegable Completo de Opciones */}
+        {/* Dark Header #222222 with Full Options Dropdown Menu */}
         <div className="p-4 bg-[#222222] flex justify-between items-center relative">
           <div className="flex items-center gap-3">
             <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans">
@@ -640,14 +640,14 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
                                   <button
                                     onClick={() => handleOpenEditModal(product)}
                                     className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                                    title="Editar producto"
+                                    title="Edit product"
                                   >
                                     <span className="material-symbols-outlined text-[20px]">edit</span>
                                   </button>
                                   <button
                                     onClick={() => void handleToggleActive(product)}
                                     className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                                    title={product.isActive ? "Desactivar producto" : "Activar producto"}
+                                    title={product.isActive ? "Deactivate product" : "Activate product"}
                                   >
                                     <span className="material-symbols-outlined text-[20px]">
                                       {product.isActive ? 'block' : 'check_circle_outline'}
@@ -758,7 +758,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
         />
       </div>
 
-      {/* Modal Interactivo de Add / Edit Product */}
+      {/* Interactive Add / Edit Product Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-4 md:pb-12 backdrop-blur-sm">
           <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md overflow-hidden animate-fade-in text-left max-h-[90vh] flex flex-col">
@@ -865,7 +865,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
         onClose={() => setIsSupportOpen(false)}
       />
 
-      {/* Modal de confirmación de activación/desactivación */}
+      {/* Activation/deactivation confirmation modal */}
       {isConfirmModalOpen && confirmTargetProduct && (
         <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
           {/* Backdrop */}
@@ -874,7 +874,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
             onClick={() => setIsConfirmModalOpen(false)}
           />
 
-          {/* Caja del Modal */}
+          {/* Modal Box */}
           <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-zinc-200 animate-scale-in">
             <div className="flex items-start gap-4">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${

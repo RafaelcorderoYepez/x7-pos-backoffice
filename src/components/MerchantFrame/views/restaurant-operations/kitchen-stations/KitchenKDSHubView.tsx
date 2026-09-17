@@ -68,7 +68,7 @@ export const KitchenKDSHubView: React.FC<KitchenKDSHubViewProps> = ({
     fetchData();
   }, []);
 
-  // Métricas calculadas en tiempo real
+  // Real-time calculated metrics
   const activeStations = stations.filter(s => (s.is_active ?? true) && (s.status === 'active' || !s.status));
   const boundPrintersCount = stations.filter(s => s.printer_name && s.printer_name.trim() !== '').length;
   const expoStationsCount = stations.filter(s => (s.station_type === 'EXPO' || s.station_type === 'PACKING') && (s.status === 'active' || !s.status)).length;

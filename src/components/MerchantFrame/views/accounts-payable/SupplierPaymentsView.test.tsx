@@ -15,7 +15,7 @@ vi.mock('../../../lib/auth-storage', () => ({
 
 const SUPPLIERS: InvoiceSupplierRef[] = [
   { id: 10, name: 'Coca-Cola FEMSA' },
-  { id: 20, name: 'Nestlé Foods' },
+  { id: 20, name: 'Nestle Foods' },
 ];
 
 const PAYMENTS: SupplierPayment[] = [
@@ -195,7 +195,7 @@ describe('SupplierPaymentsView — filters', () => {
     render(<SupplierPaymentsView />);
     await screen.findByText('PAY-2026-0001');
 
-    await user.type(screen.getByLabelText('Search payments'), 'Nestlé');
+    await user.type(screen.getByLabelText('Search payments'), 'Nestle');
     expect(screen.getByText('PAY-2026-0002')).toBeInTheDocument();
     expect(screen.queryByText('PAY-2026-0001')).not.toBeInTheDocument();
   });
@@ -257,7 +257,7 @@ describe('SupplierPaymentsView — record & lifecycle', () => {
   });
 
   it('locks header attributes once the payment is posted (out of draft)', async () => {
-    // Posting transition: un pago POSTED con allocated 0 igual bloquea supplier/total.
+    // Posting transition: POSTED payment with 0 allocated still locks supplier/total.
     installFetch({
       payments: [{ ...PAYMENTS[0], id: 8, payment_number: 'PAY-POSTED-8', status: 'posted', allocated_amount: 0 }],
     });
@@ -433,7 +433,7 @@ describe('SupplierPaymentsView — create & edit persistence', () => {
     await user.type(within(dialog).getByLabelText(/Payment Date/), '2026-05-01');
     await user.type(within(dialog).getByLabelText(/Total Amount/), '200');
 
-    // La factura pendiente aparece tras cargar; asignamos 150.
+    // Pending invoice appears after load; allocate 150.
     await user.type(await within(dialog).findByLabelText('Allocate to FAC-500'), '150');
     await user.click(within(dialog).getByRole('button', { name: /record payment/i }));
 
@@ -513,7 +513,7 @@ describe('SupplierPaymentsView — detail & quick links', () => {
     render(<SupplierPaymentsView />);
     await screen.findByText('PAY-2026-0001');
 
-    // El workspace activo no se ofrece como acción; los otros sí.
+    // Active workspace is not offered as action; others are.
     expect(
       screen.queryByRole('button', { name: /payments & disbursements/i }),
     ).not.toBeInTheDocument();

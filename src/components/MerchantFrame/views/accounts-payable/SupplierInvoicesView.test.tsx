@@ -11,12 +11,12 @@ vi.mock('../../../lib/auth-storage', () => ({
 
 const SUPPLIERS: InvoiceSupplierRef[] = [
   { id: 10, name: 'Coca-Cola FEMSA', email: 'sales@femsa.com', phone: '+56 9 1111 2222' },
-  { id: 20, name: 'Nestlé Foods', email: 'orders@nestle.com' },
+  { id: 20, name: 'Nestle Foods', email: 'orders@nestle.com' },
 ];
 
-// Fecha de vencimiento muy en el pasado para forzar el estado "overdue".
+// Far-past due date to force "overdue" status.
 const PAST_DUE_DATE = '2020-01-15';
-// Fecha de vencimiento muy en el futuro para garantizar que NO esté vencida.
+// Far-future due date to ensure it is not overdue.
 const FUTURE_DUE_DATE = '2999-12-31';
 
 const MOCK_INVOICES: SupplierInvoice[] = [
@@ -85,8 +85,8 @@ interface InstallOpts {
   items?: unknown[];
 }
 
-// Mock de fetch consciente de la URL: enruta facturas activas/archivadas, detalle,
-// items (para el detalle), proveedores, restore y escrituras.
+// URL-aware fetch mock: routes active/archived invoices, detail,
+// items (for detail), suppliers, restore, and mutations.
 function installFetch({
   invoices = MOCK_INVOICES,
   suppliers = SUPPLIERS,
@@ -118,7 +118,7 @@ function installFetch({
           const inv = [...invoices, ...archived].find((i) => String(i.id) === detailMatch[1]);
           return jsonRes({ data: inv ?? null });
         }
-        // Modo archivado: only_deleted=true en la URL.
+        // Archived mode: only_deleted=true in URL.
         if (u.includes('only_deleted=true')) {
           return jsonRes({ data: archived });
         }
@@ -215,7 +215,7 @@ describe('SupplierInvoicesView — filters', () => {
     render(<SupplierInvoicesView />);
     await screen.findByText('INV-2026-0001');
 
-    await user.type(screen.getByLabelText('Search supplier invoices'), 'Nestlé');
+    await user.type(screen.getByLabelText('Search supplier invoices'), 'Nestle');
     expect(screen.getByText('INV-2026-0002')).toBeInTheDocument();
     expect(screen.queryByText('INV-2026-0001')).not.toBeInTheDocument();
   });
@@ -445,7 +445,7 @@ describe('SupplierInvoicesView — detail drawer', () => {
   beforeEach(() => installFetch());
 
   it('opens the detail drawer, resolves supplier contact and loads the invoice items', async () => {
-    // El backend devuelve la factura plana; los items se cargan desde el endpoint de items.
+    // Backend returns flat invoice; items load from items endpoint.
     installFetch({
       items: [
         {
@@ -466,7 +466,7 @@ describe('SupplierInvoicesView — detail drawer', () => {
     await user.click(await screen.findByText('INV-2026-0001'));
 
     const dialog = await screen.findByRole('dialog', { name: /invoice details/i });
-    // Contacto del proveedor resuelto desde la lista de suppliers.
+    // Supplier contact resolved from suppliers list.
     expect(within(dialog).getByText('sales@femsa.com')).toBeInTheDocument();
     // Items cargados por separado.
     expect(await within(dialog).findByText('Sparkling water crate')).toBeInTheDocument();

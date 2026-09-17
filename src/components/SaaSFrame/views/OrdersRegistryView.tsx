@@ -44,7 +44,7 @@ export const OrdersRegistryView: React.FC<OrdersRegistryViewProps> = ({ onNaviga
     try {
       const res = await fetch(`${API_BASE}/v1/platform/orders`, { headers: authHeaders() });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las órdenes');
+      if (!res.ok) throw new Error('Error loading orders');
       const json = await res.json();
       setOrders(json.data ?? []);
     } catch (err) {

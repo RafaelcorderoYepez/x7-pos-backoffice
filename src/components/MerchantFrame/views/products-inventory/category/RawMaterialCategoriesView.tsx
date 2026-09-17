@@ -114,7 +114,7 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar categorías del servidor');
+        throw new Error('Error loading categories from server');
       }
 
       const json = await res.json();
@@ -132,7 +132,7 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
       setCategories(mapped);
     } catch (err: any) {
       console.error('Error fetching categories:', err);
-      setError('No se pudieron cargar las categorías. Por favor, revisa la conexión con el servidor.');
+      setError('Could not load categories. Please check connection with server.');
     } finally {
       setIsLoading(false);
     }
@@ -196,12 +196,12 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error al guardar la categoría en el servidor');
+        throw new Error(errorJson.message || 'Error saving category to server');
       }
 
       await fetchData();
     } catch (err: any) {
-      alert(err.message || 'No se pudo completar la operación');
+      alert(err.message || 'Could not complete the operation');
     } finally {
       setIsLoading(false);
     }
@@ -237,13 +237,13 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error al actualizar el estatus de la categoría. Es posible que esté asignada a materias primas activas.');
+        throw new Error(errorJson.message || 'Error updating category status. It might be assigned to active raw materials.');
       }
 
       setIsToggleModalOpen(false);
       await fetchData();
     } catch (err: any) {
-      setToggleError(err.message || 'Error al cambiar estatus');
+      setToggleError(err.message || 'Error updating status');
     } finally {
       setIsToggling(false);
     }
@@ -284,7 +284,7 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
         </p>
       </div>
 
-      {/* Panel de búsqueda y acciones */}
+      {/* Search panel and actions */}
       <div className="bg-white border border-[#e8e2d8] rounded p-6 shadow-sm space-y-4">
         {/* Fila 1: Buscador a ancho completo */}
         <div className="relative w-full">

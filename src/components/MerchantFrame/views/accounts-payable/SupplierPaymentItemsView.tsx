@@ -39,7 +39,7 @@ const formatDate = (value?: string | null): string => {
   return isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
 };
 
-// Motivo por el que un pago congela sus líneas, para explicarlo en la UI.
+// Reason why a payment locks its line items, displayed in UI.
 const frozenReason = (p: SupplierPayment): string =>
   num(p.allocated_amount) > 0
     ? `Locked — this payment already has ${formatCurrency(p.allocated_amount)} allocated.`
@@ -51,7 +51,7 @@ interface PaymentItemFormDrawerProps {
   mode: 'create' | 'edit';
   initial?: SupplierPaymentItem;
   payments: SupplierPayment[];
-  // Pago preseleccionado cuando se entra desde un voucher concreto.
+  // Preselected payment when accessed from a specific voucher.
   defaultPaymentId?: number;
   submitting: boolean;
   formError: string;
@@ -77,15 +77,15 @@ const PaymentItemFormDrawer: React.FC<PaymentItemFormDrawerProps> = ({
   const [documentNumber, setDocumentNumber] = useState(initial?.document_number ?? '');
   const [documentType, setDocumentType] = useState<string>(initial?.document_type ?? 'invoice');
   const [amount, setAmount] = useState(initial ? String(num(initial.amount)) : '');
-  // Líneas hermanas del pago elegido: necesarias para validar la suma contra el total padre.
+  // Sibling line items of selected payment: needed to validate sum against parent total.
   const [siblings, setSiblings] = useState<SupplierPaymentItem[] | null>(null);
 
   useModalDismiss(onCancel);
 
   const selectedPayment = payments.find((p) => String(p.id) === paymentId);
 
-  // Solo se pueden capturar líneas contra pagos no inmovilizados. En edición, el pago
-  // actual se mantiene listado aunque ya no aparezca en el catálogo cargado.
+  // Line items only recorded against unlocked payments. In edit mode, current
+  // payment is retained in dropdown even if omitted from active catalog.
   const selectablePayments = useMemo(() => {
     const open = payments.filter((p) => !isPaymentFrozen(p));
     if (initial && !open.some((p) => p.id === initial.payment_id)) {
@@ -95,7 +95,7 @@ const PaymentItemFormDrawer: React.FC<PaymentItemFormDrawerProps> = ({
     return open;
   }, [payments, initial]);
 
-  // Traer las líneas vivas del pago seleccionado para calcular el margen disponible.
+  // Fetch active lines of selected payment to compute available margin.
   useEffect(() => {
     if (!paymentId) {
       setSiblings(null);
@@ -122,7 +122,7 @@ const PaymentItemFormDrawer: React.FC<PaymentItemFormDrawerProps> = ({
   }, [paymentId]);
 
   const amountNum = num(amount);
-  // Suma de las OTRAS líneas del pago (la propia se excluye al editar).
+  // Sum of OTHER lines on payment (current excluded in edit mode).
   const otherItemsSum = (siblings ?? [])
     .filter((i) => i.id !== initial?.id)
     .reduce((s, i) => s + num(i.amount), 0);
@@ -544,14 +544,14 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
     setLoading(true);
     setError(null);
     try {
-      // El scoping multi-tenant lo aplica el backend con el JWT; el parent context
+      // Multi-tenant scoping enforced by backend with JWT; parent context
       // se traduce a un filtro payment_id server-side.
       const url = payment
         ? `${API_BASE}/supplier-payment-items?payment_id=${payment.id}&limit=100`
         : `${API_BASE}/supplier-payment-items?limit=100`;
       const res = await fetch(url, { headers: authHeaders() });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las líneas de pago');
+      if (!res.ok) throw new Error('Error loading payment items');
       const json = await res.json();
       const active = ((json.data ?? []) as SupplierPaymentItem[]).filter((i) => !i.deleted_at);
       setItems(active);
@@ -563,7 +563,7 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
     }
   };
 
-  // Catálogo de pagos: resuelve payment_number para la grid y total/status para los locks.
+  // Payment catalog: resolves payment_number for grid and total/status for locks.
   const fetchPayments = async () => {
     try {
       const res = await fetch(`${API_BASE}/supplier-payments?limit=100`, {
@@ -599,7 +599,7 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
     };
   };
 
-  // Opciones del selector de pago padre: los que tienen líneas cargadas.
+  // Parent payment dropdown options: those with loaded line items.
   const paymentOptions = useMemo(() => {
     const map = new Map<number, string>();
     items.forEach((i) => {
@@ -656,7 +656,7 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
       setFormDrawer(null);
       setToast({ message: 'Payment item added successfully', type: 'success' });
     } catch (err) {
-      // El guard de suma padre vive en el backend: se muestra inline sin cerrar el drawer.
+      // Parent sum guard lives on backend: displayed inline without closing drawer.
       setFormError(err instanceof Error ? err.message : 'Failed to add payment item');
     } finally {
       setFormSubmitting(false);
@@ -686,7 +686,7 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
     }
   };
 
-  // Posted Payment Immobility Lock: sin pago padre cargado se asume mutable
+  // Posted Payment Immobility Lock: assumed mutable if no parent loaded
   // (el backend vuelve a validar de todos modos).
   const isItemLocked = (i: SupplierPaymentItem): boolean => {
     const parent = paymentById.get(i.payment_id);

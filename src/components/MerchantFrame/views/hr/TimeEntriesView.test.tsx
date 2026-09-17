@@ -8,14 +8,13 @@ vi.mock('../../../../lib/auth-storage', () => ({
   clearAuthSession: vi.fn(),
 }));
 
-// Reloj fijo: el estado de una jornada depende de cuándo se mire, así que la vista se
-// prueba siempre en el mismo instante.
+// Fixed clock: shift state depends on current time, so test runs against constant timestamp.
 const NOW = new Date(2026, 7, 30, 14, 0, 0);
 const at = (day: number, h: number, m = 0): string =>
   new Date(2026, 7, day, h, m, 0).toISOString();
 
 const COLLABORATORS = [
-  { id: 4, user_id: 9, merchant_id: 3, name: 'Juan Pérez', role: 'waiter', status: 'active' },
+  { id: 4, user_id: 9, merchant_id: 3, name: 'Juan Perez', role: 'waiter', status: 'active' },
   { id: 5, user_id: 10, merchant_id: 3, name: 'Ana Rivas', role: 'cook', status: 'active' },
 ];
 
@@ -38,11 +37,11 @@ const ENTRIES = [
     double_overtime_hours: 0,
     approved: false,
     created_at: at(30, 8),
-    collaborator: { id: 4, name: 'Juan Pérez', role: 'waiter' },
+    collaborator: { id: 4, name: 'Juan Perez', role: 'waiter' },
     shift: { id: 7, role: 'waiter', startTime: at(30, 8), endTime: at(30, 16) },
   },
   {
-    // Jornada abierta del día: sigue en curso.
+    // Open shift for the day: in progress.
     id: 102,
     company_id: 1,
     merchant_id: 3,
@@ -64,7 +63,7 @@ const ENTRIES = [
     shift: null,
   },
   {
-    // Entró 20 min tarde respecto a su turno, y la fila fue corregida por un supervisor.
+    // Clocked in 20 min late; row was corrected by supervisor.
     id: 103,
     company_id: 1,
     merchant_id: 3,
@@ -82,7 +81,7 @@ const ENTRIES = [
     double_overtime_hours: 0,
     approved: false,
     created_at: at(29, 8),
-    collaborator: { id: 4, name: 'Juan Pérez', role: 'waiter' },
+    collaborator: { id: 4, name: 'Juan Perez', role: 'waiter' },
     shift: { id: 7, role: 'waiter', startTime: at(29, 8), endTime: at(29, 16) },
   },
 ];
@@ -173,7 +172,7 @@ describe('TimeEntriesView', () => {
   });
 
   describe('parrilla', () => {
-    it('muestra el estado vacío cuando no hay fichajes', async () => {
+    it('renders empty state when no time entries exist', async () => {
       vi.stubGlobal('fetch', backend({ entries: [] }));
       render(<TimeEntriesView merchantId={3} />);
 
@@ -198,7 +197,7 @@ describe('TimeEntriesView', () => {
       expect(screen.getByTestId('entry-net-101')).toHaveTextContent('7.20 hrs');
     });
 
-    it('marca como en curso la jornada sin salida', async () => {
+    it('marks shift without clock-out as in progress', async () => {
       await renderView();
 
       expect(screen.getByTestId('entry-in-progress-102')).toHaveTextContent('In Progress');
@@ -206,7 +205,7 @@ describe('TimeEntriesView', () => {
       expect(screen.getByTestId('entry-status-102').className).toContain('blue');
     });
 
-    it('marca el retraso fuera del margen de cortesía', async () => {
+    it('marks late arrival outside grace period', async () => {
       await renderView();
 
       expect(screen.getByTestId('entry-status-103')).toHaveTextContent('Tardy');
@@ -216,18 +215,18 @@ describe('TimeEntriesView', () => {
     it('un retraso dentro del margen sigue siendo puntual', async () => {
       await renderView();
 
-      // 08:03 con turno a las 08:00 está dentro de los 5 min de cortesía.
+      // 08:03 with 08:00 shift is within 5 min grace window.
       expect(screen.getByTestId('entry-status-101')).toHaveTextContent('On Time');
     });
 
-    it('señala las filas corregidas por un supervisor', async () => {
+    it('flags rows corrected by supervisor', async () => {
       await renderView();
 
       expect(screen.getByTestId('entry-edited-103')).toHaveTextContent('Adjusted');
       expect(screen.queryByTestId('entry-edited-101')).not.toBeInTheDocument();
     });
 
-    it('cuenta cuánta gente sigue fichada', async () => {
+    it('counts how many staff members remain clocked in', async () => {
       await renderView();
 
       expect(screen.getByTestId('on-duty-counter')).toHaveTextContent('1 on duty now');
@@ -235,7 +234,7 @@ describe('TimeEntriesView', () => {
   });
 
   describe('filtros', () => {
-    it('arranca en la semana en curso', async () => {
+    it('starts in current week', async () => {
       await renderView();
 
       // 30 de agosto de 2026 es domingo: la semana va del lunes 24 al domingo 30.
@@ -243,7 +242,7 @@ describe('TimeEntriesView', () => {
       expect(screen.getByLabelText('To date')).toHaveValue('2026-08-30');
     });
 
-    it('filtra por estado de la jornada', async () => {
+    it('filters by shift status', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -263,7 +262,7 @@ describe('TimeEntriesView', () => {
       expect(screen.queryByText('#TME-101')).not.toBeInTheDocument();
     });
 
-    it('busca por referencia del fichaje', async () => {
+    it('searches by entry reference', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -285,11 +284,10 @@ describe('TimeEntriesView', () => {
     });
   });
 
-  describe('alta manual', () => {
-    // El calendario del navegador rellena sólo la fecha y deja la hora en `--:--`: el campo
-    // parece relleno pero su value sigue vacío. Arrancar con un valor completo hace que
-    // elegir otra fecha conserve la hora.
-    it('abre con la entrada ya puesta, no con un datetime a medias', async () => {
+  describe('manual creation', () => {
+    // Browser datepicker fills date leaving time `--:--`: field appears filled
+    // but value is empty. Starting with complete value preserves time when date changes.
+    it('opens with clock-in populated, avoiding half-empty datetime', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -303,7 +301,7 @@ describe('TimeEntriesView', () => {
       ).toBeNull();
     });
 
-    it('explica por qué no deja guardar cuando la entrada se queda sin hora', async () => {
+    it('explains why save is blocked when clock-in lacks time', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -313,7 +311,7 @@ describe('TimeEntriesView', () => {
         within(dialog).getByRole('combobox', { name: /collaborator/i }),
         '4',
       );
-      // Un datetime-local incompleto devuelve cadena vacía, igual que uno en blanco.
+      // Incomplete datetime-local returns empty string, same as blank.
       await user.clear(within(dialog).getByLabelText(/clock-in/i));
 
       expect(
@@ -322,11 +320,11 @@ describe('TimeEntriesView', () => {
       expect(
         within(dialog).getByRole('button', { name: /^log time entry$/i }),
       ).toBeDisabled();
-      // "In progress" describiría un turno abierto, no un formulario sin entrada.
+      // "In progress" describes an open shift, not a form missing clock-in.
       expect(within(dialog).getByTestId('net-preview')).toHaveTextContent('—');
     });
 
-    it('bloquea una salida anterior a la entrada', async () => {
+    it('blocks clock-out before clock-in', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -349,7 +347,7 @@ describe('TimeEntriesView', () => {
       ).toBeDisabled();
     });
 
-    it('bloquea un intervalo que solapa con otro fichaje del mismo colaborador', async () => {
+    it('blocks an interval that overlaps with another shift for same collaborator', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -359,7 +357,7 @@ describe('TimeEntriesView', () => {
         within(dialog).getByRole('combobox', { name: /collaborator/i }),
         '4',
       );
-      // Cae dentro del fichaje 101 (08:03–16:00 del día 30).
+      // Falls within shift 101 (08:03-16:00 on day 30).
       await user.clear(within(dialog).getByLabelText(/clock-in/i));
       await user.type(within(dialog).getByLabelText(/clock-in/i), '2026-08-30T10:00');
       await user.clear(within(dialog).getByLabelText(/clock-out/i));
@@ -368,7 +366,7 @@ describe('TimeEntriesView', () => {
       expect(within(dialog).getByText(/overlaps time entry #TME-101/i)).toBeInTheDocument();
     });
 
-    it('enseña las horas netas antes de guardar', async () => {
+    it('displays net hours before saving', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -389,7 +387,7 @@ describe('TimeEntriesView', () => {
       expect(within(dialog).getByTestId('net-preview')).toHaveTextContent('8.00 hrs');
     });
 
-    it('envía el fichaje con su justificación', async () => {
+    it('submits entry with reason justification', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -452,8 +450,8 @@ describe('TimeEntriesView', () => {
     });
   });
 
-  describe('corrección', () => {
-    it('no manda las horas: las recalcula el servidor desde las marcas', async () => {
+  describe('correction', () => {
+    it('does not send hours: server recalculates from timestamps', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -474,7 +472,7 @@ describe('TimeEntriesView', () => {
       expect(body.overtime_hours).toBeUndefined();
     });
 
-    it('no deja reasignar el fichaje a otro colaborador', async () => {
+    it('prevents reassigning entry to another collaborator', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -486,7 +484,7 @@ describe('TimeEntriesView', () => {
   });
 
   describe('inspector', () => {
-    it('desglosa las horas y dibuja la jornada', async () => {
+    it('breaks down hours and draws timeline', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -499,7 +497,7 @@ describe('TimeEntriesView', () => {
       expect(screen.getByTestId('detail-punch-status')).toHaveTextContent('On Time');
     });
 
-    it('muestra el histórico de correcciones con el antes y el después', async () => {
+    it('renders corrections history with before and after states', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -512,7 +510,7 @@ describe('TimeEntriesView', () => {
       expect(list).toHaveTextContent('08:20 AM');
     });
 
-    it('un fichaje nunca corregido lo dice explícitamente', async () => {
+    it('explicitly states when an entry was never corrected', async () => {
       const user = userEvent.setup();
       vi.stubGlobal('fetch', backend());
       const original = fetchMock();
@@ -532,7 +530,7 @@ describe('TimeEntriesView', () => {
       expect(await screen.findByText(/has never been corrected/i)).toBeInTheDocument();
     });
 
-    it('deja reintentar si el histórico falla', async () => {
+    it('allows retry if history fetch fails', async () => {
       const user = userEvent.setup();
       await renderView({ revisionsStatus: 500 });
 
@@ -543,7 +541,7 @@ describe('TimeEntriesView', () => {
     });
   });
 
-  describe('export de nómina', () => {
+  describe('payroll export', () => {
     it('resume lo que va a exportar antes de descargar', async () => {
       const user = userEvent.setup();
       await renderView();
@@ -551,12 +549,12 @@ describe('TimeEntriesView', () => {
       await user.click(screen.getByRole('button', { name: /export timesheets/i }));
       const dialog = await screen.findByRole('dialog', { name: /export timesheets/i });
 
-      // La semana en curso sólo incluye los fichajes de los días 29 y 30.
+      // Current week includes entries from days 29 and 30.
       expect(within(dialog).getByTestId('export-preview')).toHaveTextContent('2 collaborators');
       expect(within(dialog).getByTestId('export-preview')).toHaveTextContent('3 entries');
     });
 
-    it('deja claro que el departamento aún no acota el export', async () => {
+    it('clarifies that department does not filter export yet', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -568,7 +566,7 @@ describe('TimeEntriesView', () => {
       ).toBeInTheDocument();
     });
 
-    it('descarga el CSV con el nombre del rango', async () => {
+    it('downloads CSV named after date range', async () => {
       const user = userEvent.setup();
       await renderView();
       const createUrl = vi.fn(() => 'blob:mock');
@@ -598,7 +596,7 @@ describe('TimeEntriesView', () => {
     });
   });
 
-  describe('navegación HR', () => {
+  describe('HR navigation', () => {
     it('marca el workspace activo y navega a los otros', async () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();

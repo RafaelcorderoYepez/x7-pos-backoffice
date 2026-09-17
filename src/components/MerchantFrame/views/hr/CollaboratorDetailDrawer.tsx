@@ -1,8 +1,8 @@
-// Cajón de detalle de un colaborador: con qué está enredado ahora mismo y cuánto ha movido.
+// Collaborator detail drawer: active engagements and transaction volume metrics.
 //
-// Los contadores llegan de un único GET /api/collaborators/:id/summary en vez de cinco
-// listados distintos: el backend los cuenta en la base y devuelve además una muestra corta
-// de cada relación, que es lo que cabe y lo que se lee en un panel lateral.
+// Metrics arrive via a single GET /api/collaborators/:id/summary rather than five
+// independent endpoints: aggregated server-side and returns a short sample
+// for each relation, appropriate for a drawer view.
 
 import React, { useState } from 'react';
 import type { Collaborator, CollaboratorSummary } from '../../../../types/collaborator';
@@ -59,8 +59,8 @@ export const CollaboratorDetailDrawer: React.FC<CollaboratorDetailDrawerProps> =
 
   const counts = summary?.counts;
 
-  // Contador por pestaña: se pinta en la propia pestaña para que el usuario sepa dónde hay
-  // algo antes de entrar.
+  // Tab count: rendered directly on the tab label so user knows where data exists
+  // before navigating into it.
   const countFor = (key: TabKey): number | null => {
     if (!counts) return null;
     if (key === 'shifts') return counts.shiftAssignments;
@@ -119,7 +119,7 @@ export const CollaboratorDetailDrawer: React.FC<CollaboratorDetailDrawerProps> =
           </div>
         </div>
 
-        {/* ---------------- Pestañas ---------------- */}
+        {/* ---------------- Tabs ---------------- */}
         <div
           role="tablist"
           aria-label="Collaborator operational bindings"

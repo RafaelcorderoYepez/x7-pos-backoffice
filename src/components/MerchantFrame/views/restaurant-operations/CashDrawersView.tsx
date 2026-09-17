@@ -350,7 +350,7 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar las sesiones de caja');
+        throw new Error('Error loading cash drawer sessions');
       }
 
       const json = await res.json();

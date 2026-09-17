@@ -18,7 +18,7 @@ export const CurrentShifts: React.FC<CurrentShiftsProps> = ({ refreshTrigger }) 
       const data = await restaurantService.getActiveShifts();
       setShifts(data);
     } catch (err) {
-      setError('Error al obtener turnos');
+      setError('Error fetching shifts');
       console.error(err);
     } finally {
       setLoading(false);
@@ -66,7 +66,7 @@ export const CurrentShifts: React.FC<CurrentShiftsProps> = ({ refreshTrigger }) 
             onClick={fetchShifts}
             className="px-3 py-1.5 bg-[#d51f2c] text-white font-bold text-[10px] uppercase hover:opacity-90 transition-all"
           >
-            Reintentar
+            Retry
           </button>
         </div>
       </div>
