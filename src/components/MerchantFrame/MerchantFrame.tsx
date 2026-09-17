@@ -93,6 +93,11 @@ import { CollaboratorsView } from './views/hr/CollaboratorsView';
 import { TimeEntriesView as HrTimeEntriesView } from './views/hr/TimeEntriesView';
 import { ContractsView } from './views/hr/ContractsView';
 import { TableAssignmentsView } from './views/dining-system/TableAssignmentsView';
+import { ReservationsView } from './views/reservations/ReservationsView';
+import { ReservationTablesView } from './views/reservations/ReservationTablesView';
+import { ReservationNotesView } from './views/reservations/ReservationNotesView';
+import { ReservationGuestsView } from './views/reservations/ReservationGuestsView';
+import { featureIdForReservationPath } from '../../lib/reservation-navigation';
 import { RawMaterialsView } from './views/products-inventory/raw-materials/RawMaterialsView';
 import { RawMaterialCategoriesView } from './views/products-inventory/category/RawMaterialCategoriesView';
 import { RecipesView } from './views/products-inventory/recipes/RecipesView';
@@ -231,6 +236,10 @@ export const MerchantFrame: React.FC = () => {
     } else if (path === '/staff-management/attendance/kiosk') {
       setActiveCategory('restaurant-operations');
       setActiveTab('time-clock-kiosk');
+    } else if (path.startsWith('/reservations/')) {
+      // Public URLs for the Reservations epic map 1:1 to featureIds in Features.txt.
+      setActiveCategory('restaurant-operations');
+      setActiveTab(featureIdForReservationPath(path));
     } else if (path === '/store-operations/tips-ledger' || path === '/tips/ledger') {
       setActiveCategory('restaurant-operations');
       setActiveTab('tips-ledger');
@@ -340,7 +349,7 @@ export const MerchantFrame: React.FC = () => {
   // Sidebar categories and applications remain closed/collapsed by default on login
 
 
-  // Estados de UI
+  // UI States
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [demo401Toggle, setDemo401Toggle] = useState<boolean>(getSimulate401());
@@ -349,7 +358,7 @@ export const MerchantFrame: React.FC = () => {
 
   const [apiFailedToggle, setApiFailedToggle] = useState<boolean>(getSimulateApiFailure());
 
-  // Estados de Modales
+  // Modal States
   const [isReservationOpen, setIsReservationOpen] = useState<boolean>(false);
   const [isVoidOpen, setIsVoidOpen] = useState<boolean>(false);
   const [isEODOpen, setIsEODOpen] = useState<boolean>(false);
@@ -378,17 +387,15 @@ export const MerchantFrame: React.FC = () => {
           'reports',
         ].includes(activeTab);
 
-        const merchantCompanyPaths = [
-          '/dashboard/company-profile',
-          '/dashboard/company-configurations',
-          '/dashboard/merchants',
-          '/dashboard/users',
-        ];
-        const isMerchantCompanyRoute = merchantCompanyPaths.includes(
-          location.pathname,
-        );
+        // This redirect prevents merchant users from being left on a SaaS portal tab
+        // (the initial activeTab state is 'saas-dashboard'). However, hydrating the session
+        // is ASYNCHRONOUS and completes AFTER the effect that parses the URL into a tab,
+        // so redirecting blindly trampled deep links: navigating to /reservations/list,
+        // /staff-management/..., or /inventory/... always ended up on the home dashboard.
+        // A route other than /dashboard is an explicit user destination and overrides the bounce.
+        const isExplicitDeepLink = location.pathname !== '/dashboard';
 
-        if ((activeCategory === 'saas' || isSaaSTab) && !isMerchantCompanyRoute) {
+        if ((activeCategory === 'saas' || isSaaSTab) && !isExplicitDeepLink) {
           setActiveCategory('core');
           setActiveTab('dashboard');
         }
@@ -968,6 +975,45 @@ export const MerchantFrame: React.FC = () => {
     if (activeTab === 'table-assignments') {
       return (
         <TableAssignmentsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    // Reservations book. Among the 5 sub-modules in the epic, only state history
+    // remains without a dedicated view: the bottom navigation bar routes to its featureId
+    // and MerchantFrame handles it via the generic stub until implemented.
+    if (activeTab === 'reservations') {
+      return (
+        <ReservationsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-tables') {
+      return (
+        <ReservationTablesView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-notes') {
+      return (
+        <ReservationNotesView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-guests') {
+      return (
+        <ReservationGuestsView
           onNavigate={(view) => setActiveTab(view)}
           merchantId={getCurrentMerchantId() ?? undefined}
         />
