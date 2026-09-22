@@ -13,6 +13,9 @@ export type KitchenDisplayDeviceStatus = 'active' | 'deleted';
 export interface KitchenStationRef {
   id: number;
   name: string;
+  stationNumber?: number;
+  station_number?: number;
+  display_order?: number;
 }
 
 export interface KitchenDisplayDevice {
@@ -162,10 +165,22 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         const json = await resStations.json();
         const rawList = Array.isArray(json) ? json : json.data || [];
         setStations(
-          rawList.map((s: { id: number; name: string }) => ({
-            id: s.id,
-            name: s.name,
-          }))
+          rawList.map(
+            (s: {
+              id: number;
+              name: string;
+              stationNumber?: number;
+              station_number?: number;
+              display_order?: number;
+              displayOrder?: number;
+            }) => ({
+              id: s.id,
+              name: s.name,
+              stationNumber: s.stationNumber ?? s.station_number ?? s.displayOrder ?? s.display_order ?? s.id,
+              station_number: s.station_number ?? s.stationNumber ?? s.display_order ?? s.displayOrder ?? s.id,
+              display_order: s.display_order ?? s.displayOrder,
+            })
+          )
         );
       } else {
         setStations([]);
@@ -228,8 +243,14 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           merchant_id?: number;
           merchantId?: number;
           station_id?: number;
-          stationId?: number;
-          station?: { id: number; name: string };
+          station?: {
+            id: number;
+            name: string;
+            stationNumber?: number;
+            station_number?: number;
+            display_order?: number;
+            displayOrder?: number;
+          };
           name: string;
           device_identifier?: string;
           deviceIdentifier?: string;
@@ -248,7 +269,25 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           id: dev.id,
           merchant_id: dev.merchant_id ?? dev.merchantId ?? 1,
           station_id: dev.station_id ?? dev.stationId ?? dev.station?.id ?? null,
-          station: dev.station ? { id: dev.station.id, name: dev.station.name } : null,
+          station: dev.station
+            ? {
+                id: dev.station.id,
+                name: dev.station.name,
+                stationNumber:
+                  dev.station.stationNumber ??
+                  dev.station.station_number ??
+                  dev.station.displayOrder ??
+                  dev.station.display_order ??
+                  dev.station.id,
+                station_number:
+                  dev.station.station_number ??
+                  dev.station.stationNumber ??
+                  dev.station.display_order ??
+                  dev.station.displayOrder ??
+                  dev.station.id,
+                display_order: dev.station.display_order ?? dev.station.displayOrder,
+              }
+            : null,
           name: dev.name,
           device_identifier: dev.device_identifier ?? dev.deviceIdentifier ?? 'DEV-000',
           ip_address: dev.ip_address ?? dev.ipAddress ?? null,
@@ -688,7 +727,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                 const count = deviceCountByStation[s.id] || 0;
                 return (
                   <option key={s.id} value={String(s.id)}>
-                    {s.name} (#KST-{s.id}) {count > 0 ? `(${count} ${count === 1 ? 'screen' : 'screens'})` : '(No screen)'}
+                    {s.name} (#KST-{s.stationNumber ?? s.station_number ?? s.display_order ?? s.id}) {count > 0 ? `(${count} ${count === 1 ? 'screen' : 'screens'})` : '(No screen)'}
                   </option>
                 );
               })}
@@ -803,7 +842,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                         <div className="flex items-center gap-1">
                           <span className="font-bold text-[#1d1c17] text-xs">{device.station.name}</span>
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                            #KST-{device.station.id}
+                            #KST-{device.station.stationNumber ?? device.station.station_number ?? device.station.display_order ?? device.station.id}
                           </span>
                         </div>
                       ) : (
@@ -842,7 +881,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                     title={`Force network resynchronization for ${device.name}`}
                   >
                     <span className={`material-symbols-outlined text-xs ${syncingDeviceId === device.id ? 'animate-spin text-amber-700' : 'text-amber-700'}`}>
-                      sync
+                      {syncingDeviceId === device.id ? 'sync' : 'power'}
                     </span>
                     <span>{syncingDeviceId === device.id ? 'Resyncing...' : 'Resync'}</span>
                   </button>
@@ -953,7 +992,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                       {visibleColumns.connectivity && <th className={`${getDensityPadding(rowDensity)} text-center text-[#5f5e5e]`}>Live Connectivity</th>}
                       {visibleColumns.lastSync && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e]`}>Last Sync Timestamp</th>}
                       {visibleColumns.status && <th className={`${getDensityPadding(rowDensity)} text-center text-[#5f5e5e]`}>Lifecycle Status</th>}
-                      {visibleColumns.actions && <th className={`${getDensityPadding(rowDensity)} text-right text-[#5f5e5e]`}>Actions</th>}
+                      {visibleColumns.actions && <th className={`${getDensityPadding(rowDensity)} text-center text-[#5f5e5e]`}>Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e8e2d8]">
@@ -1027,7 +1066,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                                 <div className="flex flex-wrap items-center gap-1.5 max-w-[220px]">
                                   <span className="font-bold text-[#1d1c17] text-xs leading-snug">{device.station.name}</span>
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
-                                    #KST-{device.station.id}
+                                    #KST-{device.station.stationNumber ?? device.station.station_number ?? device.station.display_order ?? device.station.id}
                                   </span>
                                 </div>
                               ) : (
@@ -1068,24 +1107,11 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                           {/* Last Sync Timestamp */}
                           {visibleColumns.lastSync && (
                             <td className={`${densityPadding} whitespace-nowrap`}>
-                              <div className="flex items-center justify-between gap-2">
-                                <div>
-                                  <div className="font-semibold text-[#1d1c17] text-xs">{formatTimeAgo(device.last_sync)}</div>
-                                  <div className="text-[10px] text-[#5f5e5e] font-mono">
-                                    {device.last_sync ? new Date(device.last_sync).toLocaleString('en-US') : 'No sync recorded'}
-                                  </div>
+                              <div>
+                                <div className="font-semibold text-[#1d1c17] text-xs">{formatTimeAgo(device.last_sync)}</div>
+                                <div className="text-[10px] text-[#5f5e5e] font-mono">
+                                  {device.last_sync ? new Date(device.last_sync).toLocaleString('en-US') : 'No sync recorded'}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleResyncDevice(device)}
-                                  disabled={isInactive || syncingDeviceId === device.id}
-                                  className="p-1 rounded text-zinc-400 hover:text-amber-800 hover:bg-amber-100/60 border border-transparent hover:border-amber-200 transition-all cursor-pointer disabled:opacity-30"
-                                  title="Resync now"
-                                >
-                                  <span className={`material-symbols-outlined text-[15px] ${syncingDeviceId === device.id ? 'animate-spin text-amber-700' : ''}`}>
-                                    sync
-                                  </span>
-                                </button>
                               </div>
                             </td>
                           )}
@@ -1107,23 +1133,18 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
                           {/* Actions */}
                           {visibleColumns.actions && (
-                            <td className={`${densityPadding} text-right whitespace-nowrap`}>
-                              <div className="flex items-center justify-end gap-1.5">
+                            <td className={`${densityPadding} text-center whitespace-nowrap`}>
+                              <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => handleResyncDevice(device)}
                                   disabled={isInactive || syncingDeviceId === device.id}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold uppercase rounded border transition-all cursor-pointer shadow-2xs ${
-                                    syncingDeviceId === device.id
-                                      ? 'bg-amber-100 border-amber-300 text-amber-900 cursor-wait'
-                                      : 'bg-[#fef9f1] border-amber-200 text-amber-900 hover:bg-amber-100/90 hover:border-amber-300 hover:shadow-xs'
-                                  } disabled:opacity-30 disabled:cursor-not-allowed`}
+                                  className="p-1.5 text-zinc-600 hover:text-[#ae001a] hover:bg-[#fef9f1] rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                                   title={`Force network resynchronization for ${device.name} with KDS server`}
                                 >
-                                  <span className={`material-symbols-outlined text-[15px] ${syncingDeviceId === device.id ? 'animate-spin text-amber-700' : 'text-amber-700'}`}>
-                                    sync
+                                  <span className={`material-symbols-outlined text-[18px] ${syncingDeviceId === device.id ? 'animate-spin text-amber-700' : ''}`}>
+                                    {syncingDeviceId === device.id ? 'sync' : 'power'}
                                   </span>
-                                  <span>{syncingDeviceId === device.id ? 'Resyncing...' : 'Resync'}</span>
                                 </button>
                                 <button
                                   type="button"
@@ -1316,7 +1337,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                       <option value="">-- Unassigned / Floating Unit --</option>
                       {stations.map((s) => (
                         <option key={s.id} value={String(s.id)}>
-                          {s.name} (#KST-{s.id})
+                          {s.name} (#KST-{s.stationNumber ?? s.station_number ?? s.display_order ?? s.id})
                         </option>
                       ))}
                     </select>

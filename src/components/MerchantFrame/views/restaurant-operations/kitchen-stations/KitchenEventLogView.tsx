@@ -28,6 +28,9 @@ export interface KitchenEventLogUser {
 
 export interface KitchenEventLogStation {
   id: number;
+  stationNumber?: number;
+  station_number?: number;
+  display_order?: number;
   name: string;
   colorHex?: string | null;
 }
@@ -75,6 +78,9 @@ interface StationOption {
   id: number;
   name: string;
   code?: string;
+  stationNumber?: number;
+  station_number?: number;
+  display_order?: number;
 }
 
 interface GroupedOrderEvents {
@@ -183,7 +189,34 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         if (!res.ok) return;
         const data = await res.json();
         const rawList = data.data || data || [];
-        setStations(rawList.map((st: { id: number; name: string; code?: string }) => ({ id: st.id, name: st.name, code: st.code })));
+        setStations(
+          rawList.map(
+            (st: {
+              id: number;
+              name: string;
+              code?: string;
+              stationNumber?: number;
+              station_number?: number;
+              display_order?: number;
+              displayOrder?: number;
+            }) => {
+              const sNum =
+                st.stationNumber ??
+                st.station_number ??
+                st.displayOrder ??
+                st.display_order ??
+                st.id;
+              return {
+                id: st.id,
+                name: st.name,
+                code: st.code || `#KST-${sNum}`,
+                stationNumber: sNum,
+                station_number: sNum,
+                display_order: st.display_order ?? st.displayOrder,
+              };
+            }
+          )
+        );
       } catch (e) {
         console.error('Failed to load stations', e);
       }
@@ -1797,7 +1830,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                       </div>
                       <div className="flex items-center gap-2 mt-1">
                         <span className="font-mono text-xs text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                          #KST-{inspectingRecord.station.id}
+                          #KST-{inspectingRecord.station.stationNumber ?? inspectingRecord.station.station_number ?? inspectingRecord.station.display_order ?? inspectingRecord.station.id}
                         </span>
                         {inspectingRecord.station.colorHex && (
                           <div className="flex items-center gap-1 text-[11px] text-[#5f5e5e]">

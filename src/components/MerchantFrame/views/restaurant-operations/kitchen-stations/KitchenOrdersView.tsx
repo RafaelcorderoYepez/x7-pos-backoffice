@@ -60,6 +60,9 @@ interface KitchenStationOption {
   id: number;
   name: string;
   stationType?: string;
+  stationNumber?: number;
+  station_number?: number;
+  display_order?: number;
 }
 
 interface KitchenOrdersViewProps {
@@ -313,6 +316,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             id: Number(s.id),
             name: String(s.name || ''),
             stationType: (s.stationType || s.station_type) as KitchenStationType | undefined,
+            stationNumber: Number(s.stationNumber ?? s.station_number ?? s.displayOrder ?? s.display_order ?? s.id),
+            station_number: Number(s.station_number ?? s.stationNumber ?? s.display_order ?? s.displayOrder ?? s.id),
           }))
         );
       } catch {
@@ -668,7 +673,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         const elapsedMinsA = Math.max(0, Math.floor((now - new Date(a.createdAt).getTime()) / 60000));
         const elapsedMinsB = Math.max(0, Math.floor((now - new Date(b.createdAt).getTime()) / 60000));
 
-        // 1. Regla de minutos máximos (SLA Shield >= 15 min):
+        // 1. Regla de minutos máximos (SLA Shield >= 15 min esperando el cliente):
         // Si una orden lleva demasiado tiempo esperando (>= 15 min), NINGUNA orden nueva en prep puede pasarle por encima.
         const isCriticalA = elapsedMinsA >= 15;
         const isCriticalB = elapsedMinsB >= 15;
@@ -686,7 +691,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         if (!hasPrepA && hasPrepB) return 1;
       }
 
-      // Dentro de cada categoría: orden de llegada estricto (FIFO: el más viejo primero)
+      // Dentro de cada categoría: orden por tiempo del cliente (FIFO: la orden creada antes va siempre primero a la cima)
       const timeA = new Date(a.createdAt).getTime();
       const timeB = new Date(b.createdAt).getTime();
       if (timeA !== timeB) return timeA - timeB;
@@ -1419,6 +1424,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     const isCancelled = order.businessStatus === 'cancelled';
                     const isCompleted = order.businessStatus === 'completed';
                     const isStarted = order.businessStatus === 'started';
+                    const isTableAllHeld = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'held');
 
                     const prepDuration =
                       isCompleted && order.completedAt && order.createdAt
@@ -1503,6 +1509,11 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 uppercase">
                                 <span className="material-symbols-outlined text-xs">cancel</span>
                                 Cancelled
+                              </span>
+                            ) : isTableAllHeld ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase">
+                                <span className="material-symbols-outlined text-xs">pause_circle</span>
+                                Held
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-300 uppercase">
@@ -1640,11 +1651,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             const isStarted = order.businessStatus === 'started' && hasActivePrep;
             const isCompleted = order.businessStatus === 'completed';
             const isCancelled = order.businessStatus === 'cancelled';
-            const isPending = !isStarted && !isCompleted && !isCancelled;
+            const isPending = !isAllHeld && !isStarted && !isCompleted && !isCancelled;
 
-            const startReference = order.startedAt
-              ? new Date(order.startedAt).getTime()
-              : new Date(order.createdAt).getTime();
+            const startReference = new Date(order.createdAt).getTime();
             const elapsedSeconds = Math.max(0, Math.floor((currentTime - startReference) / 1000));
             const elapsedMinutes = Math.floor(elapsedSeconds / 60);
             const remainingSec = elapsedSeconds % 60;
@@ -2191,7 +2200,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       >
                         {stations.map(s => (
                           <option key={s.id} value={String(s.id)}>
-                            {s.name} (#KST-{s.id})
+                            {s.name} (#KST-{s.stationNumber ?? s.station_number ?? s.display_order ?? s.id})
                           </option>
                         ))}
                       </select>
