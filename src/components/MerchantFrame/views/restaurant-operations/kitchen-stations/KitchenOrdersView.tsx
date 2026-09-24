@@ -7,6 +7,9 @@ import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmpt
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { AppModal } from '../../../shared/AppModal';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
+import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
+import { KitchenSlaConfigModal } from './KitchenSlaConfigModal';
+import { KitchenDevResetButton } from './KitchenDevResetButton';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -254,6 +257,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [inspectingTicket, setInspectingTicket] = useState<KitchenOrderTicket | null>(null);
 
   // Create Order Modal State
+  const [criticalSlaMinutes] = useKdsCriticalSla();
+  const [isSlaModalOpen, setIsSlaModalOpen] = useState<boolean>(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [formStationId, setFormStationId] = useState<string>('');
   const [formPriority, setFormPriority] = useState<number>(0);
@@ -440,7 +445,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           variantName: ((it.variant as Record<string, unknown> | undefined)?.name || it.variantName || null) as string | null,
           quantity: Number(it.quantity ?? 1),
           preparedQuantity: Number(it.preparedQuantity ?? it.prepared_quantity ?? 0),
-          preparationStatus: (it.preparationStatus || it.preparation_status || 'pending') as 'pending' | 'in_progress' | 'ready' | 'cancelled',
+          preparationStatus: (it.preparationStatus || it.preparation_status || 'pending') as 'held' | 'pending' | 'in_preparation' | 'ready' | 'cancelled',
           course: (it.course || null) as string | null,
           holdUntil: (it.holdUntil || it.hold_until || null) as string | null,
           firedAt: (it.firedAt || it.fired_at || null) as string | null,
@@ -470,6 +475,15 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     const timer = setInterval(() => loadOrders(true), autoRefreshInterval * 1000);
     return () => clearInterval(timer);
   }, [autoRefreshInterval, loadOrders]);
+
+  // Escuchar evento global de reinicio KDS
+  useEffect(() => {
+    const handleReset = () => {
+      loadOrders(true);
+    };
+    window.addEventListener('x7_kds_data_reset', handleReset);
+    return () => window.removeEventListener('x7_kds_data_reset', handleReset);
+  }, [loadOrders]);
 
   // Station Filtered pool for KPI metrics
   const stationOrders = useMemo(() => {
@@ -655,50 +669,79 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       }
     };
 
-    return [...result].sort((a, b) => {
-      const tierA = getStatusTier(a.businessStatus);
-      const tierB = getStatusTier(b.businessStatus);
+    const activeOrders: KitchenOrderTicket[] = [];
+    const completedOrders: KitchenOrderTicket[] = [];
+    const cancelledOrders: KitchenOrderTicket[] = [];
 
-      // Separación por estado principal:
-      // Tier 1: Activas (started / pending)
-      // Tier 2: Listas / Completadas (ready / completed)
-      // Tier 3: Canceladas (siempre abajo de todo)
-      if (tierA !== tierB) {
-        return tierA - tierB;
-      }
+    result.forEach((o) => {
+      const tier = getStatusTier(o.businessStatus);
+      if (tier === 1) activeOrders.push(o);
+      else if (tier === 2) completedOrders.push(o);
+      else cancelledOrders.push(o);
+    });
 
-      // Tier 1: Activas (started / pending)
-      if (tierA === 1) {
-        const now = currentTime;
-        const elapsedMinsA = Math.max(0, Math.floor((now - new Date(a.createdAt).getTime()) / 60000));
-        const elapsedMinsB = Math.max(0, Math.floor((now - new Date(b.createdAt).getTime()) / 60000));
-
-        // 1. Regla de minutos máximos (SLA Shield >= 15 min esperando el cliente):
-        // Si una orden lleva demasiado tiempo esperando (>= 15 min), NINGUNA orden nueva en prep puede pasarle por encima.
-        const isCriticalA = elapsedMinsA >= 15;
-        const isCriticalB = elapsedMinsB >= 15;
-        if (isCriticalA && !isCriticalB) return -1;
-        if (!isCriticalA && isCriticalB) return 1;
-        if (isCriticalA && isCriticalB) {
-          return elapsedMinsB - elapsedMinsA; // la más demorada primero
-        }
-
-        // 2. Prioridad operativa de cocina (para órdenes dentro del tiempo estándar < 15 min):
-        // Lo que se está cocinando activamente (in_preparation) va PRIMERO antes que órdenes retenidas (held)
-        const hasPrepA = a.items.some(it => it.preparationStatus === 'in_preparation');
-        const hasPrepB = b.items.some(it => it.preparationStatus === 'in_preparation');
-        if (hasPrepA && !hasPrepB) return -1;
-        if (!hasPrepA && hasPrepB) return 1;
-      }
-
-      // Dentro de cada categoría: orden por tiempo del cliente (FIFO: la orden creada antes va siempre primero a la cima)
+    // 1. Ordenar activas cronológicamente (orden de llegada al sistema)
+    activeOrders.sort((a, b) => {
       const timeA = new Date(a.createdAt).getTime();
       const timeB = new Date(b.createdAt).getTime();
       if (timeA !== timeB) return timeA - timeB;
-
       return a.id - b.id;
     });
-  }, [stationOrders, statusFilter, cancellationFilter, dateRangePreset, customStartDate, customEndDate, searchQuery, currentTime]);
+
+    // 2. Simulación de cola en tiempo real con Escudo SLA:
+    // - Las órdenes existentes NO saltan hacia adelante al cumplir 15 min; se quedan exactamente donde están.
+    // - Pero una vez que una orden tiene el escudo SLA (espera >= 15 min), NINGUNA orden creada con posterioridad
+    //   puede colocarse por delante de ella (el escudo SLA protege su posición contra nuevas órdenes entrantes).
+    const activeQueue: KitchenOrderTicket[] = [];
+
+    for (const item of activeOrders) {
+      const itemTime = new Date(item.createdAt).getTime();
+      const isPreparingItem = item.items.some((it) => it.preparationStatus === 'in_preparation');
+      const itemScore = (item.priority ?? 0) * 10 + (isPreparingItem ? 1 : 0);
+
+      // Determinar la barrera mínima permitida: debe ser posterior a cualquier orden que YA tenía SLA
+      // (espera >= criticalSlaMinutes) al momento en que esta nueva orden fue creada.
+      let minInsertIndex = 0;
+      for (let i = 0; i < activeQueue.length; i++) {
+        const qTime = new Date(activeQueue[i].createdAt).getTime();
+        const waitingAtArrival = itemTime - qTime;
+        if (waitingAtArrival >= criticalSlaMinutes * 60 * 1000) {
+          minInsertIndex = i + 1;
+        }
+      }
+
+      // Dentro del rango permitido (>= minInsertIndex), si la orden entrante tiene MAYOR prioridad
+      // que la orden en esa posición, se adelanta a ella. Si tiene igual o menor prioridad, se ubica detrás (FIFO).
+      let insertIndex = activeQueue.length;
+      for (let i = minInsertIndex; i < activeQueue.length; i++) {
+        const q = activeQueue[i];
+        const isPreparingQ = q.items.some((it) => it.preparationStatus === 'in_preparation');
+        const qScore = (q.priority ?? 0) * 10 + (isPreparingQ ? 1 : 0);
+        if (itemScore > qScore) {
+          insertIndex = i;
+          break;
+        }
+      }
+
+      activeQueue.splice(insertIndex, 0, item);
+    }
+
+    // Tier 2 y Tier 3: Completadas y canceladas en orden cronológico correlativo (FIFO)
+    completedOrders.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id - b.id;
+    });
+    cancelledOrders.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id - b.id;
+    });
+
+    return [...activeQueue, ...completedOrders, ...cancelledOrders];
+  }, [stationOrders, statusFilter, cancellationFilter, dateRangePreset, customStartDate, customEndDate, searchQuery, criticalSlaMinutes]);
 
   // Paginated records for table view
   const paginatedOrders = useMemo(() => {
@@ -798,8 +841,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
   };
 
-  const handleRecallOrder = async () => {
-    if (!lastBumpedOrder) return;
+  const handleRecallOrder = async (targetOrderId?: number) => {
+    const idToRecall = targetOrderId ?? lastBumpedOrder?.id;
+    if (!idToRecall) return;
     try {
       const token = getAccessToken();
       const headers = {
@@ -807,32 +851,17 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
-      const res = await fetch(`${API_BASE}/kitchen-orders/${lastBumpedOrder.id}`, {
-        method: 'PUT',
+      const res = await fetch(`${API_BASE}/kitchen-orders/${idToRecall}/recall`, {
+        method: 'POST',
         headers,
-        body: JSON.stringify({ businessStatus: 'started', completedAt: null }),
       });
 
       if (res.ok) {
-        const resetItems = (lastBumpedOrder.items || []).map(it => ({
-          ...it,
-          preparationStatus: 'in_preparation' as const,
-          preparedQuantity: 0,
-        }));
-        setOrders(prev =>
-          prev.map(o =>
-            o.id === lastBumpedOrder.id
-              ? {
-                  ...o,
-                  businessStatus: 'started',
-                  completedAt: null,
-                  items: resetItems,
-                }
-              : o
-          )
-        );
-        showToast(`RECALLED #KO-${lastBumpedOrder.id} to Active Line`, 'info');
-        setLastBumpedOrder(null);
+        showToast(`Order #KO-${idToRecall} RECALLED to Active Line`, 'info');
+        if (lastBumpedOrder?.id === idToRecall) {
+          setLastBumpedOrder(null);
+        }
+        loadOrders(true);
       }
     } catch {
       showToast('Error recalling order', 'warning');
@@ -1256,6 +1285,22 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
           {/* Right: Action Buttons */}
           <div className="flex flex-wrap items-center gap-3">
+            {/* SLA Configuration Button */}
+            <button
+              type="button"
+              onClick={() => setIsSlaModalOpen(true)}
+              className="px-3.5 py-2 bg-[#fef9f1] border border-[#e8e2d8] hover:border-[#ae001a] text-[#1d1c17] rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs group"
+              title="Configure Kitchen SLA Threshold"
+            >
+              <span className="material-symbols-outlined text-[16px] text-red-600 group-hover:scale-110 transition-transform">
+                shield
+              </span>
+              <span className="text-[#5f5e5e] font-medium">SLA:</span>
+              <span className="font-mono font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded text-[11px]">
+                {criticalSlaMinutes}m
+              </span>
+            </button>
+
             {/* Create Order Button */}
             <button
               type="button"
@@ -1425,6 +1470,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     const isCompleted = order.businessStatus === 'completed';
                     const isStarted = order.businessStatus === 'started';
                     const isTableAllHeld = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'held');
+                    const elapsedMinutes = Math.floor(Math.max(0, (currentTime - new Date(order.createdAt).getTime()) / 1000) / 60);
 
                     const prepDuration =
                       isCompleted && order.completedAt && order.createdAt
@@ -1465,6 +1511,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                 <span>#ORD-{order.orderId}</span>
                               ) : order.onlineOrderId ? (
                                 <span>#ONL-{order.onlineOrderId}</span>
+                              ) : order.notes ? (
+                                <span className="text-[#854d0e] font-semibold">{order.notes.split('•')[0].trim()}</span>
                               ) : (
                                 <span>Direct POS</span>
                               )}
@@ -1479,15 +1527,29 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               {order.stationName || 'Unassigned Station'}
                             </span>
                             <div className="flex items-center gap-1 mt-0.5">
-                              <span
-                                className={`text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border ${
-                                  order.priority > 0
-                                    ? 'bg-red-50 text-red-700 border-red-200'
-                                    : 'bg-zinc-100 text-zinc-600 border-zinc-200'
-                                }`}
-                              >
-                                Priority {order.priority > 0 ? `+${order.priority} HIGH` : 'Normal'}
-                              </span>
+                              {order.priority >= 3 ? (
+                                <span className="text-[10px] font-black uppercase px-1.5 py-0.2 rounded border bg-purple-50 text-purple-700 border-purple-200">
+                                  VIP Rush (+3)
+                                </span>
+                              ) : order.priority === 2 ? (
+                                <span className="text-[10px] font-black uppercase px-1.5 py-0.2 rounded border bg-red-50 text-red-700 border-red-200">
+                                  Urgent (+2)
+                                </span>
+                              ) : order.priority === 1 ? (
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                                  High (+1)
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium uppercase px-1.5 py-0.2 rounded border bg-zinc-100 text-zinc-600 border-zinc-200">
+                                  Normal (0)
+                                </span>
+                              )}
+                              {elapsedMinutes >= criticalSlaMinutes && !isCompleted && !isCancelled && (
+                                <span className="text-[10px] bg-red-600 text-white border border-red-700 px-1.5 py-0.2 rounded font-black tracking-wide flex items-center gap-0.5 shadow-xs animate-pulse">
+                                  <span className="material-symbols-outlined text-[10px]">shield</span>
+                                  SLA
+                                </span>
+                              )}
                             </div>
                           </td>
                         )}
@@ -1600,7 +1662,17 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
                         {/* Actions */}
                         {visibleColumns.actions && (
-                          <td className={`${densityPadding} text-right`}>
+                          <td className={`${densityPadding} text-right space-x-1.5`}>
+                            {order.businessStatus === 'completed' && (
+                              <button
+                                onClick={() => handleRecallOrder(order.id)}
+                                className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer shadow-2xs"
+                                title="Recall order back to active kitchen board"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">replay</span>
+                                <span>Recall</span>
+                              </button>
+                            )}
                             <button
                               onClick={() => setInspectingTicket(order)}
                               className="px-2.5 py-1 bg-[#f4efe6] hover:bg-[#ae001a] hover:text-white text-[#1d1c17] border border-[#e8e2d8] rounded text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer"
@@ -1660,7 +1732,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             const timerDisplay = `${elapsedMinutes}m ${remainingSec.toString().padStart(2, '0')}s`;
 
             let timerColorClass = 'bg-stone-700 text-white';
-            if (elapsedMinutes >= 15) {
+            if (elapsedMinutes >= criticalSlaMinutes) {
               timerColorClass = 'bg-red-600 text-white animate-pulse font-black';
             } else if (isAllHeld) {
               timerColorClass = 'bg-amber-700 text-white font-bold';
@@ -1727,12 +1799,20 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                           CANCELLED
                         </span>
                       )}
-                      {order.priority > 0 && (
-                        <span className="text-[10px] bg-red-100 text-red-800 border border-red-200 px-1.5 py-0.2 rounded font-black">
-                          P+{order.priority}
+                      {order.priority >= 3 ? (
+                        <span className="text-[10px] bg-purple-100 text-purple-800 border border-purple-300 px-1.5 py-0.2 rounded font-black">
+                          VIP (+3)
                         </span>
-                      )}
-                      {elapsedMinutes >= 15 && (isPending || isStarted) && (
+                      ) : order.priority === 2 ? (
+                        <span className="text-[10px] bg-red-100 text-red-800 border border-red-300 px-1.5 py-0.2 rounded font-black">
+                          URGENT (+2)
+                        </span>
+                      ) : order.priority === 1 ? (
+                        <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-black">
+                          HIGH (+1)
+                        </span>
+                      ) : null}
+                      {elapsedMinutes >= criticalSlaMinutes && !isCompleted && !isCancelled && (
                         <span className="text-[10px] bg-red-600 text-white border border-red-700 px-1.5 py-0.5 rounded font-black tracking-wide flex items-center gap-0.5 shadow-xs animate-pulse">
                           <span className="material-symbols-outlined text-[12px]">shield</span>
                           SLA SHIELD
@@ -1850,12 +1930,23 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   </button>
 
                   <div className="flex items-center gap-2">
-                    {isPending && (
+                    {(isPending || isAllHeld) && (
                       <button
                         onClick={() => handleStartPrep(order)}
                         className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
                       >
                         Start
+                      </button>
+                    )}
+
+                    {isCompleted && (
+                      <button
+                        onClick={() => handleRecallOrder(order.id)}
+                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1"
+                        title="Recall order back to active kitchen board"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">replay</span>
+                        <span>Recall</span>
                       </button>
                     )}
 
@@ -1904,7 +1995,14 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   <span className="text-[#5f5e5e] ml-2 font-mono">#ORD-{inspectingTicket.orderId}</span>
                 )}
                 <span className="block text-[11px] text-[#5f5e5e] mt-0.5">
-                  Station: {inspectingTicket.stationName || 'Unassigned'} • Priority: P+{inspectingTicket.priority}
+                  Station: {inspectingTicket.stationName || 'Unassigned'} • Priority:{' '}
+                  {inspectingTicket.priority >= 3
+                    ? 'VIP Rush (+3)'
+                    : inspectingTicket.priority === 2
+                    ? 'Urgent (+2)'
+                    : inspectingTicket.priority === 1
+                    ? 'High (+1)'
+                    : 'Normal (0)'}
                 </span>
               </div>
 
@@ -2140,10 +2238,24 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     'Content-Type': 'application/json',
                     ...(token ? { Authorization: `Bearer ${token}` } : {}),
                   };
+                  const ticketRef = formOrderId.trim();
+                  const instructions = formNotes.trim();
+                  let combinedNotes = '';
+                  if (ticketRef && instructions) {
+                    combinedNotes = `${ticketRef} • ${instructions}`;
+                  } else if (ticketRef) {
+                    combinedNotes = ticketRef;
+                  } else if (instructions) {
+                    combinedNotes = instructions;
+                  }
+
+                  const isNumericOrderId = /^\d+$/.test(ticketRef);
+
                   const payload = {
                     stationId: formStationId ? Number(formStationId) : (stations[0]?.id || null),
                     priority: Number(formPriority),
-                    orderId: formOrderId ? Number(formOrderId) : null,
+                    orderId: isNumericOrderId ? Number(ticketRef) : null,
+                    notes: combinedNotes || null,
                     businessStatus: 'started',
                     startedAt: new Date().toISOString(),
                     kitchenOrderItems: validItems.map((it) => ({
@@ -2226,11 +2338,11 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider mb-1">
-                        POS Ticket # Reference
+                        Table / Ticket Reference (Name or #)
                       </label>
                       <input
-                        type="number"
-                        placeholder="e.g. 101, 102"
+                        type="text"
+                        placeholder="e.g. Table 6, Bar 2, 101..."
                         value={formOrderId}
                         onChange={e => setFormOrderId(e.target.value)}
                         className="w-full px-3 py-2 bg-[#fef9f1] border border-[#e8e2d8] rounded text-xs font-semibold focus:border-[#ae001a] outline-none text-[#1d1c17]"
@@ -2592,6 +2704,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           },
         ]}
       />
+      <KitchenSlaConfigModal
+        isOpen={isSlaModalOpen}
+        onClose={() => setIsSlaModalOpen(false)}
+        onSavedToast={(msg) => showToast(msg, 'success')}
+      />
+      <KitchenDevResetButton onResetComplete={() => loadOrders(true)} />
     </div>
   );
 };

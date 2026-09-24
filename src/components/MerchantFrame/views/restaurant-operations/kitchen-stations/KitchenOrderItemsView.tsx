@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
+import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
+import { KitchenDevResetButton } from './KitchenDevResetButton';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -61,6 +63,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   const [stations, setStations] = useState<KitchenStationOption[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [criticalSlaMinutes] = useKdsCriticalSla();
 
   // Filters
   const [activeTab, setActiveTab] = useState<'ALL' | 'HELD' | 'PENDING' | 'IN_PREPARATION' | 'READY'>('ALL');
@@ -92,8 +95,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     id: number;
   } | null>(null);
 
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastIdRef = useRef(0);
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 4500);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
 
   // Real-time clock for elapsed second counters
   const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
@@ -103,12 +109,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   }, []);
 
   const showToast = (text: string, type: 'success' | 'info' | 'warning' | 'auto_bump' = 'success') => {
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    toastIdRef.current += 1;
-    setToastMessage({ text, type, id: toastIdRef.current });
-    toastTimeoutRef.current = setTimeout(() => {
-      setToastMessage(null);
-    }, 4500);
+    setToastMessage(prev => ({ text, type, id: (prev?.id ?? 0) + 1 }));
   };
 
   // 1. Fetch stations
@@ -188,6 +189,15 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     }, refreshInterval * 1000);
     return () => clearInterval(interval);
   }, [refreshInterval, loadItems]);
+
+  // Escuchar evento global de reinicio KDS
+  useEffect(() => {
+    const handleReset = () => {
+      loadItems(true);
+    };
+    window.addEventListener('x7_kds_data_reset', handleReset);
+    return () => window.removeEventListener('x7_kds_data_reset', handleReset);
+  }, [loadItems]);
 
   // Handle Tap-to-Increment (+1)
   const handleIncrement = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
@@ -408,8 +418,8 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     }
   };
 
-  // Handle Reset to Pending (0/N)
-  const handleResetItem = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
+  // Handle Revert to Pending (Undo accidental prep)
+  const handleRevertItemToPending = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (actionInProgressId === item.id) return;
 
@@ -420,11 +430,6 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       showToast('This order is already completed and cannot be modified.', 'warning');
       return;
     }
-
-    const confirmReset = window.confirm(
-      `Reset "${item.product?.name || 'Dish'}" back to PENDING (0/${item.quantity})?`
-    );
-    if (!confirmReset) return;
 
     setActionInProgressId(item.id);
 
@@ -444,13 +449,13 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to reset item');
+      if (!res.ok) throw new Error('Failed to revert item');
       const data = await res.json();
       const updatedItem = data.data || data;
-      setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem } : it)));
-      showToast(`Reset ${item.product.name} to PENDING (0/${item.quantity})`, 'info');
+      setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem, preparedQuantity: 0, preparationStatus: 'pending' } : it)));
+      showToast(`↩️ REVERTED: "${item.product.name}" returned to queue.`, 'info');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error resetting item';
+      const msg = err instanceof Error ? err.message : 'Error reverting item';
       showToast(msg, 'warning');
     } finally {
       setActionInProgressId(null);
@@ -468,13 +473,12 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
     try {
       const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-orders/${kitchenOrderId}`, {
-        method: 'PUT',
+      const res = await fetch(`${API_BASE}/kitchen-orders/${kitchenOrderId}/recall`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ businessStatus: 'started', completedAt: null }),
       });
 
       if (!res.ok) {
@@ -567,60 +571,82 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       }
     };
 
-    return [...result].sort((a, b) => {
-      const tierA = getStatusTier(a.kitchenOrder?.businessStatus);
-      const tierB = getStatusTier(b.kitchenOrder?.businessStatus);
+    const activeItems: KitchenOrderItemRecord[] = [];
+    const completedItems: KitchenOrderItemRecord[] = [];
+    const cancelledItems: KitchenOrderItemRecord[] = [];
 
-      if (tierA !== tierB) {
-        return tierA - tierB;
-      }
+    result.forEach((it) => {
+      const tier = getStatusTier(it.kitchenOrder?.businessStatus);
+      if (tier === 1) activeItems.push(it);
+      else if (tier === 2) completedItems.push(it);
+      else cancelledItems.push(it);
+    });
 
-      // Tier 1: Active orders -> Items in preparation / pending first!
-      if (tierA === 1) {
-        // 1. PRIORIDAD OPERATIVA DE COCINA:
-        // Lo que se está cocinando / pendiente va primero que lo pausado (HELD) o ya listo
-        const getPrepRank = (status?: string): number => {
-          switch (status) {
-            case 'in_preparation':
-              return 1;
-            case 'pending':
-              return 2;
-            case 'ready':
-              return 3;
-            case 'held':
-              return 4;
-            default:
-              return 5;
-          }
-        };
-
-        const rankA = getPrepRank(a.preparationStatus);
-        const rankB = getPrepRank(b.preparationStatus);
-        if (rankA !== rankB) {
-          return rankA - rankB;
-        }
-
-        // 2. Prioridad de orden si ambos tienen el mismo estado de preparación
-        const prioA = a.kitchenOrder?.priority ?? 0;
-        const prioB = b.kitchenOrder?.priority ?? 0;
-        if (prioB !== prioA) return prioB - prioA;
-
-        // 3. FIFO para el mismo estado de preparación: el más antiguo primero
-        const timeA = new Date(a.createdAt).getTime();
-        const timeB = new Date(b.createdAt).getTime();
-        if (timeA !== timeB) return timeA - timeB;
-
-        return a.id - b.id;
-      }
-
-      // Tier 2 & 3: Completed / Cancelled -> Oldest first
+    // 1. Ordenar items activos cronológicamente por momento de creación (llegada al sistema)
+    activeItems.sort((a, b) => {
       const timeA = new Date(a.createdAt).getTime();
       const timeB = new Date(b.createdAt).getTime();
       if (timeA !== timeB) return timeA - timeB;
-
       return a.id - b.id;
     });
-  }, [stationFilteredItems, activeTab, searchQuery]);
+
+    // Ranking de preparación operativa: in_preparation (400) > pending (300) > ready (200) > held (100)
+    const getPrepRankScore = (status?: string): number => {
+      switch (status) {
+        case 'in_preparation':
+          return 400;
+        case 'pending':
+          return 300;
+        case 'ready':
+          return 200;
+        case 'held':
+          return 100;
+        default:
+          return 0;
+      }
+    };
+
+    // 2. Simulación de cola en tiempo real con Escudo SLA:
+    // - Los platos de una comanda que alcanza 15 min NO saltan hacia adelante; se quedan donde están.
+    // - El escudo SLA protege su posición contra platos de nuevas órdenes entrantes creadas con posterioridad.
+    const activeQueue: KitchenOrderItemRecord[] = [];
+
+    for (const item of activeItems) {
+      const itemTime = new Date(item.createdAt).getTime();
+      const parentPrio = item.kitchenOrder?.priority ?? 0;
+      const itemScore = getPrepRankScore(item.preparationStatus) + parentPrio * 10;
+
+      // Determinar barrera SLA: posterior a cualquier ítem cuyo pedido YA tenía SLA (>= criticalSlaMinutes) al llegar este ítem
+      let minInsertIndex = 0;
+      for (let i = 0; i < activeQueue.length; i++) {
+        const qTime = new Date(activeQueue[i].createdAt).getTime();
+        const waitingAtArrival = itemTime - qTime;
+        if (waitingAtArrival >= criticalSlaMinutes * 60 * 1000) {
+          minInsertIndex = i + 1;
+        }
+      }
+
+      // En la zona permitida, si el ítem entrante tiene MAYOR puntuación operativa (prep rank + prioridad), se adelanta.
+      let insertIndex = activeQueue.length;
+      for (let i = minInsertIndex; i < activeQueue.length; i++) {
+        const q = activeQueue[i];
+        const qParentPrio = q.kitchenOrder?.priority ?? 0;
+        const qScore = getPrepRankScore(q.preparationStatus) + qParentPrio * 10;
+        if (itemScore > qScore) {
+          insertIndex = i;
+          break;
+        }
+      }
+
+      activeQueue.splice(insertIndex, 0, item);
+    }
+
+    // Completados y cancelados ordenados por fecha más reciente
+    completedItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    cancelledItems.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    return [...activeQueue, ...completedItems, ...cancelledItems];
+  }, [stationFilteredItems, activeTab, searchQuery, criticalSlaMinutes]);
 
   // Paginated items for table view
   const paginatedItems = useMemo(() => {
@@ -1060,6 +1086,8 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
               : 0;
 
             const isActionLoading = actionInProgressId === item.id;
+            const itemAgeMs = Math.max(0, currentTime - new Date(item.createdAt).getTime());
+            const isSlaBreached = itemAgeMs >= criticalSlaMinutes * 60 * 1000 && !isOrderClosed && !isReady;
 
             return (
               <div
@@ -1103,12 +1131,26 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                     {(item.kitchenOrder?.priority ?? 0) > 0 && (
                       <span
                         className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                          (item.kitchenOrder?.priority ?? 0) >= 2
+                          (item.kitchenOrder?.priority ?? 0) >= 3
+                            ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                            : (item.kitchenOrder?.priority ?? 0) === 2
                             ? 'bg-red-100 text-[#ae001a] border border-red-300'
                             : 'bg-amber-100 text-amber-900 border border-amber-300'
                         }`}
                       >
-                        P+{(item.kitchenOrder?.priority ?? 0)}
+                        {(item.kitchenOrder?.priority ?? 0) >= 3
+                          ? 'VIP (+3)'
+                          : (item.kitchenOrder?.priority ?? 0) === 2
+                          ? 'URGENT (+2)'
+                          : 'HIGH (+1)'}
+                      </span>
+                    )}
+
+                    {/* SLA shield badge */}
+                    {isSlaBreached && (
+                      <span className="text-[10px] bg-red-600 text-white border border-red-700 px-1.5 py-0.5 rounded font-black tracking-wide flex items-center gap-0.5 shadow-xs animate-pulse">
+                        <span className="material-symbols-outlined text-[11px]">shield</span>
+                        SLA
                       </span>
                     )}
 
@@ -1317,6 +1359,18 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                           className="w-7 h-7 rounded bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 text-emerald-800 flex items-center justify-center transition-colors cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-xs font-black">done_all</span>
+                        </button>
+                      )}
+
+                      {/* Revert to Queue (Undo) */}
+                      {(isInPrep || isReady || item.preparedQuantity > 0) && (
+                        <button
+                          onClick={e => handleRevertItemToPending(item, e)}
+                          disabled={isActionLoading}
+                          title="Revert to Queue (Undo)"
+                          className="w-7 h-7 rounded bg-[#f0ebe1] hover:bg-amber-100 text-[#5f5e5e] hover:text-amber-800 border border-[#e8e2d8] hover:border-amber-300 flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-xs">undo</span>
                         </button>
                       )}
                     </div>
@@ -1674,13 +1728,13 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                                   </button>
                                 )}
 
-                                {isReady && (
+                                {(isInPrep || isReady || item.preparedQuantity > 0) && (
                                   <button
-                                    onClick={e => handleResetItem(item, e)}
-                                    title="Reset to Pending"
-                                    className="p-1 text-[#5f5e5e] hover:text-[#1d1c17] hover:bg-[#f0ebe1] rounded cursor-pointer"
+                                    onClick={e => handleRevertItemToPending(item, e)}
+                                    title="Revert to Queue (Undo)"
+                                    className="p-1 text-[#5f5e5e] hover:text-amber-700 hover:bg-amber-50 rounded cursor-pointer"
                                   >
-                                    <span className="material-symbols-outlined text-sm">restart_alt</span>
+                                    <span className="material-symbols-outlined text-sm">undo</span>
                                   </button>
                                 )}
                               </div>
@@ -1759,6 +1813,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
           },
         ]}
       />
+      <KitchenDevResetButton onResetComplete={() => loadItems(true)} />
     </div>
   );
 };

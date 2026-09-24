@@ -16,7 +16,7 @@ import { KitchenQuickLinks } from './KitchenQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-export type KitchenEventType = 'inicio' | 'listo' | 'servido' | 'cancelado';
+export type KitchenEventType = 'inicio' | 'listo' | 'servido' | 'cancelado' | 'recall';
 
 export interface KitchenEventLogUser {
   id: number;
@@ -94,6 +94,7 @@ interface GroupedOrderEvents {
   events: KitchenEventLogRecord[];
   hasCancellation: boolean;
   isCompleted: boolean;
+  latestStatus: 'SERVED' | 'CANCELLED' | 'RECALLED' | 'IN PREP' | 'PENDING';
   totalEvents: number;
 }
 
@@ -438,7 +439,6 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
       grp.events.push(log);
       grp.totalEvents += 1;
       if (log.eventType === 'cancelado') grp.hasCancellation = true;
-      if (log.eventType === 'servido') grp.isCompleted = true;
       if (new Date(log.eventTime).getTime() < new Date(grp.firstEventTime).getTime()) {
         grp.firstEventTime = log.eventTime;
       }
@@ -449,36 +449,38 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
 
     const groups = Array.from(groupMap.values());
 
-    // 1. Within each order group, sort events strictly in logical and chronological order:
-    // STARTED (inicio) -> READY (listo) -> SERVED (servido) -> CANCELLED (cancelado)
-    const stageWeight: Record<string, number> = {
-      inicio: 1,
-      listo: 2,
-      servido: 3,
-      cancelado: 4,
-    };
-
+    // 1. Within each order group, sort events strictly in chronological sequence
     groups.forEach((grp) => {
       grp.events.sort((a, b) => {
         const timeA = new Date(a.eventTime).getTime();
         const timeB = new Date(b.eventTime).getTime();
-
-        // Si hay una diferencia apreciable de tiempo (> 2s), respetar el tiempo real
-        if (Math.abs(timeA - timeB) > 2000) {
-          return timeA - timeB;
-        }
-
-        // Si ocurrieron en la misma ráfaga o segundo (ej: auto-bump al marcar listo),
-        // garantizar el orden de ciclo de vida natural: INICIO -> LISTO -> SERVIDO
-        const weightA = stageWeight[a.eventType] ?? 99;
-        const weightB = stageWeight[b.eventType] ?? 99;
-        if (weightA !== weightB) {
-          return weightA - weightB;
-        }
-
         if (timeA !== timeB) return timeA - timeB;
         return (a.id ?? 0) - (b.id ?? 0);
       });
+
+      // Calcular el estado de ciclo de vida más reciente para el encabezado del grupo
+      const latestEvent = grp.events[grp.events.length - 1];
+      const orderBusinessStatus = latestEvent?.kitchenOrder?.businessStatus?.toLowerCase();
+
+      if (orderBusinessStatus === 'completed' || latestEvent?.eventType === 'servido') {
+        grp.latestStatus = 'SERVED';
+        grp.isCompleted = true;
+      } else if (orderBusinessStatus === 'cancelled' || grp.hasCancellation || latestEvent?.eventType === 'cancelado') {
+        grp.latestStatus = 'CANCELLED';
+        grp.isCompleted = false;
+      } else if (
+        latestEvent?.eventType === 'recall' ||
+        (latestEvent?.message && latestEvent.message.toLowerCase().includes('recalled'))
+      ) {
+        grp.latestStatus = 'RECALLED';
+        grp.isCompleted = false;
+      } else if (orderBusinessStatus === 'pending') {
+        grp.latestStatus = 'PENDING';
+        grp.isCompleted = false;
+      } else {
+        grp.latestStatus = 'IN PREP';
+        grp.isCompleted = false;
+      }
     });
 
     // 2. Table ordering: Newest orders first (de la orden más nueva a la más vieja)
@@ -574,10 +576,11 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
   const typeCounts = useMemo(() => {
     return {
       total: logs.length,
-      inicio: logs.filter((l) => l.eventType === 'inicio').length,
+      inicio: logs.filter((l) => l.eventType === 'inicio' && !l.message?.toLowerCase().includes('recalled')).length,
       listo: logs.filter((l) => l.eventType === 'listo').length,
       servido: logs.filter((l) => l.eventType === 'servido').length,
       cancelado: logs.filter((l) => l.eventType === 'cancelado').length,
+      recall: logs.filter((l) => l.eventType === 'recall' || (l.eventType === 'inicio' && Boolean(l.message?.toLowerCase().includes('recalled')))).length,
     };
   }, [logs]);
 
@@ -607,8 +610,19 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
   };
 
   // Story 4203: Strict Material Symbols Outlined Icon Engine Compliance
-  const getEventTypeBadge = (type: KitchenEventType, size: 'sm' | 'md' = 'sm') => {
+  const getEventTypeBadge = (type: KitchenEventType | string, size: 'sm' | 'md' = 'sm', message?: string | null) => {
     const pad = size === 'md' ? 'px-3 py-1 text-xs' : 'px-2.5 py-0.5 text-[10px]';
+    const isRecall = type === 'recall' || (type === 'inicio' && Boolean(message?.toLowerCase().includes('recalled')));
+
+    if (isRecall) {
+      return (
+        <span className={`inline-flex items-center gap-1.5 rounded-full font-bold uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200 ${pad}`}>
+          <span className="material-symbols-outlined text-[13px] text-purple-600">replay</span>
+          RECALLED
+        </span>
+      );
+    }
+
     switch (type) {
       case 'inicio':
         return (
@@ -1141,6 +1155,26 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
             </span>
           </button>
 
+          {/* RECALLED Pill (Icon: replay) */}
+          <button
+            onClick={() => toggleEventType('recall')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap border ${
+              selectedEventTypes.includes('recall')
+                ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100/60 hover:text-purple-900'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[14px]">replay</span>
+            <span>RECALLED</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                selectedEventTypes.includes('recall') ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'
+              }`}
+            >
+              {typeCounts.recall}
+            </span>
+          </button>
+
           {/* CANCELLED Pill (Icon: cancel) */}
           <button
             onClick={() => toggleEventType('cancelado')}
@@ -1354,15 +1388,25 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                             {/* Column 2: Overall ticket status */}
                             {visibleColumns.eventType && (
                               <td className={`${densityPadding} truncate`}>
-                                {group.hasCancellation ? (
+                                {group.latestStatus === 'CANCELLED' ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-100 text-[#ae001a] border border-red-200 whitespace-nowrap">
                                     <span className="material-symbols-outlined text-[13px]">cancel</span>
                                     CANCELLED
                                   </span>
-                                ) : group.isCompleted ? (
+                                ) : group.latestStatus === 'SERVED' ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 whitespace-nowrap">
                                     <span className="material-symbols-outlined text-[13px]">check_circle</span>
                                     SERVED
+                                  </span>
+                                ) : group.latestStatus === 'RECALLED' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-800 border border-purple-200 whitespace-nowrap">
+                                    <span className="material-symbols-outlined text-[13px]">replay</span>
+                                    RECALLED
+                                  </span>
+                                ) : group.latestStatus === 'PENDING' ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-200 whitespace-nowrap">
+                                    <span className="material-symbols-outlined text-[13px]">schedule</span>
+                                    PENDING
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-200 whitespace-nowrap">
@@ -1467,7 +1511,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                                 {/* Event Type Badge */}
                                 {visibleColumns.eventType && (
                                   <td className={`${densityPadding} truncate`}>
-                                    {getEventTypeBadge(record.eventType)}
+                                    {getEventTypeBadge(record.eventType, 'sm', record.message)}
                                   </td>
                                 )}
 
@@ -1617,7 +1661,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                     </span>
                   </div>
                   <div className="flex items-center gap-2 mt-1">
-                    {getEventTypeBadge(inspectingRecord.eventType, 'sm')}
+                    {getEventTypeBadge(inspectingRecord.eventType, 'sm', inspectingRecord.message)}
                     <span className="text-[11px] text-[#5f5e5e] font-mono">
                       {formatRelativeTime(inspectingRecord.eventTime)}
                     </span>
@@ -1710,7 +1754,13 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                       <div className="p-2.5 bg-white rounded-lg border border-[#e8e2d8]">
                         <span className="text-[9px] uppercase font-bold text-[#5f5e5e] block">Priority</span>
                         <span className="font-bold text-xs text-[#1d1c17] block mt-0.5">
-                          Tier {inspectingRecord.kitchenOrder?.priority ?? 1}
+                          {inspectingRecord.kitchenOrder?.priority === 3
+                            ? 'VIP Rush (+3)'
+                            : inspectingRecord.kitchenOrder?.priority === 2
+                            ? 'Urgent (+2)'
+                            : inspectingRecord.kitchenOrder?.priority === 1
+                            ? 'High (+1)'
+                            : 'Normal (0)'}
                         </span>
                       </div>
                     </div>

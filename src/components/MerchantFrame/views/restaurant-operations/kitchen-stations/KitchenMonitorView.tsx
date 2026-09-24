@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getAccessToken } from '../../../../../lib/auth-storage';
+import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
+import { KitchenDevResetButton } from './KitchenDevResetButton';
+import { KitchenRecallTray, type BumpedOrderRecord } from './KitchenRecallTray';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -11,6 +14,7 @@ export interface TicketItem {
   name: string;
   variantName?: string;
   qty: number;
+  preparedQuantity?: number;
   notes?: string;
   course: CourseType;
   preparationStatus: PreparationStatus;
@@ -27,8 +31,9 @@ export interface KitchenTicket {
   server: string;
   stationName?: string;
   stationId?: number;
-  priority: 'high' | 'medium' | 'normal';
+  priority: 'normal' | 'high' | 'urgent' | 'vip';
   items: TicketItem[];
+  orderNotes?: string | null;
   isPulsing?: boolean;
   alertMessage?: string | null;
 }
@@ -92,6 +97,8 @@ export interface BackendKitchenStation {
   status?: string;
 }
 
+export type KdsCardDensity = 'compact' | 'normal' | 'spacious';
+
 export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackToDashboard }) => {
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -102,11 +109,32 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const [kitchenStations, setKitchenStations] = useState<BackendKitchenStation[]>([]);
   const [manualActiveTicketId, setManualActiveTicketId] = useState<string | null>(null);
   const [isPacingDrawerOpen, setIsPacingDrawerOpen] = useState<boolean>(false);
+  const [isRecallTrayOpen, setIsRecallTrayOpen] = useState<boolean>(false);
+  const [lastBumpedOrder, setLastBumpedOrder] = useState<BumpedOrderRecord | null>(null);
+  const [undoToast, setUndoToast] = useState<{ id: string; backendOrderId?: number; table: string } | null>(null);
+  const [isAllDayBarExpanded, setIsAllDayBarExpanded] = useState<boolean>(true);
+  const [cardDensity, setCardDensity] = useState<KdsCardDensity>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('x7_kds_card_density');
+      if (saved === 'compact' || saved === 'normal' || saved === 'spacious') {
+        return saved;
+      }
+    }
+    return 'compact';
+  });
   const [mainCourseHoldDelayMins, setMainCourseHoldDelayMins] = useState<number>(10);
   const [dessertHoldDelayMins, setDessertHoldDelayMins] = useState<number>(20);
+  const [criticalSlaMinutes, setCriticalSlaMinutes] = useKdsCriticalSla();
   const [autoFireEnabled, setAutoFireEnabled] = useState<boolean>(true);
   const [audioChimeEnabled, setAudioChimeEnabled] = useState<boolean>(true);
   const [activeAlertToast, setActiveAlertToast] = useState<{ id: string; message: string; type: 'fire' | 'pacing' } | null>(null);
+
+  const handleDensityChange = (density: KdsCardDensity) => {
+    setCardDensity(density);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('x7_kds_card_density', density);
+    }
+  };
 
   // Auto-dismiss alert toast after 5 seconds
   useEffect(() => {
@@ -309,18 +337,19 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             ? `Table ${o.order.diningTable.name}`
             : o.order?.table_number
             ? `Table ${o.order.table_number}`
-            : o.notes?.match(/Table \d+/i)?.[0] || `Ticket #KO-${o.id}`;
+            : o.notes?.split('•')?.[0]?.trim() || o.notes?.match(/Table \d+/i)?.[0] || (o.notes && o.notes.length <= 30 ? o.notes.trim() : null) || `Ticket #KO-${o.id}`;
 
           return {
             id: `KO-${o.id}`,
             backendOrderId: o.id,
             table: tableName,
+            orderNotes: o.notes || null,
             timeElapsed: elapsedMins,
             createdAtMs: customerTimeRef,
             server: o.order?.waiter_name || o.order?.waiter?.name || 'Kitchen Staff',
             stationName: o.station?.name || 'General Kitchen',
             stationId: o.stationId ?? o.station?.id,
-            priority: (o.priority ?? 0) >= 2 ? 'high' : (o.priority ?? 0) === 1 ? 'medium' : 'normal',
+            priority: (o.priority ?? 0) >= 3 ? 'vip' : (o.priority ?? 0) === 2 ? 'urgent' : (o.priority ?? 0) === 1 ? 'high' : 'normal',
             items: (o.items || o.kitchenOrderItems || []).map((i) => {
               const prepStatusUpper = (i.preparationStatus || 'pending').toUpperCase() as PreparationStatus;
               let holdSeconds: number | undefined = undefined;
@@ -339,6 +368,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 name: i.product?.name || i.productName || 'Dish Item',
                 variantName: i.variant?.name || i.variantName || undefined,
                 qty: i.quantity || 1,
+                preparedQuantity: i.prepared_quantity ?? i.preparedQuantity ?? 0,
                 notes: i.notes || undefined,
                 course: ((i.course || 'MAIN_COURSE').toUpperCase()) as CourseType,
                 preparationStatus: prepStatusUpper,
@@ -366,6 +396,15 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       fetchBackendOrders(true);
     }, 4000);
     return () => clearInterval(interval);
+  }, [fetchBackendOrders]);
+
+  // Escuchar evento global de reinicio KDS
+  useEffect(() => {
+    const handleReset = () => {
+      fetchBackendOrders(true);
+    };
+    window.addEventListener('x7_kds_data_reset', handleReset);
+    return () => window.removeEventListener('x7_kds_data_reset', handleReset);
   }, [fetchBackendOrders]);
 
   // Manual FIRE of an entire Course for a Ticket
@@ -459,38 +498,37 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     triggerAlert(`🔥 FIRED: "${itemName}" released to station queue!`);
   };
 
-  // Put item back on hold
-  const handleHoldSingleItem = async (ticketId: string, itemId: number, itemName: string) => {
-    const targetTicket = tickets.find((t) => t.id === ticketId);
-    const holdMins = targetTicket?.priority === 'high' ? 4 : targetTicket?.priority === 'medium' ? 7 : 10;
+  // Revert item back to PENDING queue (undo accidental start)
+  const handleRevertItemToPending = async (ticketId: string, itemId: number, itemName: string) => {
     try {
       const token = getAccessToken();
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
-      await fetch(`${API_BASE}/kitchen-order-items/${itemId}/hold?holdMinutes=${holdMins}`, { method: 'POST', headers });
+      await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ preparationStatus: 'pending' }),
+      });
     } catch (e) {
-      console.warn('Backend hold-item failed:', e);
+      console.warn('Backend revert-item failed:', e);
     }
 
     setTickets((prev) =>
-      prev.map((t) => {
-        if (t.id === ticketId) {
-          return {
-            ...t,
-            items: t.items.map((i) =>
-              i.id === itemId
-                ? { ...i, preparationStatus: 'HELD', holdRemainingSeconds: holdMins * 60 }
-                : i
-            ),
-          };
-        }
-        return t;
-      })
+      prev.map((t) =>
+        t.id === ticketId
+          ? {
+              ...t,
+              items: t.items.map((i) =>
+                i.id === itemId ? { ...i, preparationStatus: 'PENDING' } : i
+              ),
+            }
+          : t
+      )
     );
 
-    triggerAlert(`⏸️ HELD: "${itemName}" placed on ${holdMins}m pacing hold.`, 'pacing');
+    triggerAlert(`↩️ REVERTED: "${itemName}" returned to queue.`, 'pacing');
   };
 
   // Advance single item through: PENDING -> IN_PREPARATION -> READY
@@ -744,8 +782,193 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     }
   };
 
-  // Complete and bump entire ticket in backend & UI
+  // Interactive Batch Bumping Engine with FIFO Allocation (Historia X7P-4208)
+  const handleBatchBumpFifo = async (
+    productName: string,
+    variantName?: string,
+    bumpQuantity: number = 1
+  ) => {
+    if (bumpQuantity <= 0) return;
+
+    let remainingToAllocate = bumpQuantity;
+    let autoDispatchTicketId: string | null = null;
+    let autoDispatchBackendOrderId: number | undefined = undefined;
+
+    setTickets((prev) => {
+      const orderedTicketIds = filteredTickets.map((t) => t.id);
+      const ticketMap = new Map(prev.map((t) => [t.id, { ...t, items: [...t.items] }]));
+
+      // 1. Asignar primero a los tickets visibles en su orden exacto de prioridad (filteredTickets)
+      for (const tid of orderedTicketIds) {
+        if (remainingToAllocate <= 0) break;
+        const t = ticketMap.get(tid);
+        if (!t) continue;
+
+        let ticketModified = false;
+        const newItems = t.items.map((item) => {
+          if (remainingToAllocate <= 0) return item;
+
+          const isMatch =
+            item.name.trim().toLowerCase() === productName.trim().toLowerCase() &&
+            (variantName
+              ? item.variantName?.trim().toLowerCase() === variantName.trim().toLowerCase()
+              : !item.variantName || item.variantName.trim().length === 0 || true) &&
+            (activeCourseFilter === 'ALL' || item.course === activeCourseFilter) &&
+            (item.preparationStatus === 'PENDING' || item.preparationStatus === 'IN_PREPARATION');
+
+          if (!isMatch) return item;
+
+          const currentPrepared = item.preparedQuantity || 0;
+          const needed = Math.max(0, item.qty - currentPrepared);
+          if (needed <= 0) return item;
+
+          const bumpForThisItem = Math.min(remainingToAllocate, needed);
+          remainingToAllocate -= bumpForThisItem;
+          const newPrepared = currentPrepared + bumpForThisItem;
+          const isNowReady = newPrepared >= item.qty;
+          ticketModified = true;
+
+          return {
+            ...item,
+            preparedQuantity: newPrepared,
+            preparationStatus: isNowReady ? ('READY' as PreparationStatus) : ('IN_PREPARATION' as PreparationStatus),
+          };
+        });
+
+        if (ticketModified) {
+          if (
+            activeDisplayMode === 'AUTO' &&
+            newItems.every((i) => i.preparationStatus === 'READY')
+          ) {
+            autoDispatchTicketId = t.id;
+            autoDispatchBackendOrderId = t.backendOrderId;
+          }
+          ticketMap.set(tid, { ...t, items: newItems });
+        }
+      }
+
+      // 2. Si todavía queda cantidad por asignar, distribuir en los demás tickets no visibles
+      if (remainingToAllocate > 0) {
+        for (const [tid, t] of ticketMap.entries()) {
+          if (remainingToAllocate <= 0) break;
+          if (orderedTicketIds.includes(tid)) continue;
+
+          let ticketModified = false;
+          const newItems = t.items.map((item) => {
+            if (remainingToAllocate <= 0) return item;
+
+            const isMatch =
+              item.name.trim().toLowerCase() === productName.trim().toLowerCase() &&
+              (variantName
+                ? item.variantName?.trim().toLowerCase() === variantName.trim().toLowerCase()
+                : !item.variantName || item.variantName.trim().length === 0 || true) &&
+              (activeCourseFilter === 'ALL' || item.course === activeCourseFilter) &&
+              (item.preparationStatus === 'PENDING' || item.preparationStatus === 'IN_PREPARATION');
+
+            if (!isMatch) return item;
+
+            const currentPrepared = item.preparedQuantity || 0;
+            const needed = Math.max(0, item.qty - currentPrepared);
+            if (needed <= 0) return item;
+
+            const bumpForThisItem = Math.min(remainingToAllocate, needed);
+            remainingToAllocate -= bumpForThisItem;
+            const newPrepared = currentPrepared + bumpForThisItem;
+            const isNowReady = newPrepared >= item.qty;
+            ticketModified = true;
+
+            return {
+              ...item,
+              preparedQuantity: newPrepared,
+              preparationStatus: isNowReady ? ('READY' as PreparationStatus) : ('IN_PREPARATION' as PreparationStatus),
+            };
+          });
+
+          if (ticketModified) {
+            ticketMap.set(tid, { ...t, items: newItems });
+          }
+        }
+      }
+
+      return prev.map((t) => ticketMap.get(t.id) || t);
+    });
+
+    if (audioChimeEnabled) {
+      playKitchenFireChime();
+    }
+    const displayName = `${bumpQuantity}x ${productName}${variantName ? ` (${variantName})` : ''}`;
+    triggerAlert(`🍳 BATCH COOKED: +${displayName} bumped to oldest order (FIFO)!`, 'fire');
+
+    if (autoDispatchTicketId) {
+      const tid = autoDispatchTicketId;
+      const bId = autoDispatchBackendOrderId;
+      setTimeout(() => {
+        handleCompleteTicket(tid, bId);
+        triggerAlert(`⚡ AUTO-DISPATCHED Ticket #${tid} to Pass / Expo!`, 'fire');
+      }, 400);
+    }
+
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      let targetStationId: number | undefined = undefined;
+      if (selectedStationFilter !== 'ALL') {
+        const matched = kitchenStations.find(
+          (s) => s.name.trim().toLowerCase() === selectedStationFilter.trim().toLowerCase()
+        );
+        if (matched) targetStationId = matched.id;
+      }
+
+      await fetch(`${API_BASE}/kitchen-order-items/batch-bump-fifo`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          stationId: targetStationId,
+          productName,
+          variantName: variantName || undefined,
+          bumpQuantity,
+        }),
+      });
+
+      setTimeout(() => {
+        fetchBackendOrders(true);
+      }, 400);
+    } catch (err) {
+      console.warn('Backend batch-bump-fifo call failed:', err);
+    }
+  };
+
+  // Complete and bump entire ticket in backend & UI (Historia X7P-4209)
   const handleCompleteTicket = async (id: string, backendOrderId?: number) => {
+    const targetTicket = tickets.find((t) => t.id === id);
+    if (targetTicket && backendOrderId) {
+      setLastBumpedOrder({
+        id: backendOrderId,
+        table: targetTicket.table,
+        server: targetTicket.server,
+        stationName: targetTicket.stationName,
+        stationId: targetTicket.stationId,
+        startedAt: targetTicket.createdAtMs ? new Date(targetTicket.createdAtMs).toISOString() : new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        items: targetTicket.items.map((it) => ({
+          id: it.id,
+          productName: it.name,
+          variantName: it.variantName,
+          quantity: it.qty,
+          course: it.course,
+          notes: it.notes,
+        })),
+      });
+      setUndoToast({ id, backendOrderId, table: targetTicket.table });
+      setTimeout(() => {
+        setUndoToast((curr) => (curr?.backendOrderId === backendOrderId ? null : curr));
+      }, 7000);
+    }
+
     if (backendOrderId) {
       try {
         const token = getAccessToken();
@@ -764,6 +987,26 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     }
     setTickets((prev) => prev.filter((ticket) => ticket.id !== id));
     triggerAlert(`✓ Ticket #${id} BUMPED & SERVED!`);
+  };
+
+  // Immediate 1-Tap Undo Action for Accidental Bump
+  const handleImmediateRecall = async (backendOrderId: number) => {
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+      await fetch(`${API_BASE}/kitchen-orders/${backendOrderId}/recall`, {
+        method: 'POST',
+        headers,
+      });
+      setUndoToast(null);
+      triggerAlert(`↺ Ticket #${backendOrderId} RESTORED to active screen!`, 'fire');
+      fetchBackendOrders(true);
+    } catch (e) {
+      console.warn('Immediate recall failed:', e);
+    }
   };
 
   // Trigger immediate auto-pacing run
@@ -805,13 +1048,31 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
   const getPriorityBadge = (priority: KitchenTicket['priority']) => {
     switch (priority) {
+      case 'vip':
+        return {
+          border: 'border-fuchsia-500',
+          badge: 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/50 font-black animate-pulse',
+          label: 'VIP RUSH (+3)',
+        };
+      case 'urgent':
+        return {
+          border: 'border-red-500',
+          badge: 'bg-red-500/20 text-red-400 border border-red-500/40 font-black',
+          label: 'URGENT (+2)',
+        };
       case 'high':
-        return { border: 'border-red-500', badge: 'bg-red-500/20 text-red-400 border border-red-500/40' };
-      case 'medium':
-        return { border: 'border-amber-500', badge: 'bg-amber-500/20 text-amber-300 border border-amber-500/40' };
+        return {
+          border: 'border-amber-500',
+          badge: 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold',
+          label: 'HIGH (+1)',
+        };
       case 'normal':
       default:
-        return { border: 'border-zinc-700', badge: 'bg-zinc-800 text-zinc-300 border border-zinc-700' };
+        return {
+          border: 'border-zinc-700',
+          badge: 'bg-zinc-800 text-zinc-300 border border-zinc-700 font-semibold',
+          label: 'NORMAL (0)',
+        };
     }
   };
 
@@ -872,17 +1133,55 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     [kitchenStations]
   );
 
+  // Effective station name for current active view mode (derived state, reactive and without cascading renders)
+  const effectiveStationFilter = useMemo(() => {
+    if (activeKdsView === 'EXPO') {
+      return selectedStationFilter;
+    }
+    const matched = kitchenStations.filter(
+      (s) => (s.display_mode || s.displayMode) === activeKdsView
+    );
+    const isMatching = matched.some(
+      (s) => s.name.trim().toLowerCase() === selectedStationFilter.trim().toLowerCase()
+    );
+    if (!isMatching && matched.length > 0) {
+      return matched[0].name;
+    }
+    return selectedStationFilter;
+  }, [activeKdsView, kitchenStations, selectedStationFilter]);
+
+  // Resolver estación activa para el Recall Tray garantizando aislamiento por estación
+  const resolvedStation = useMemo(() => {
+    if (activeKdsView === 'EXPO') {
+      if (effectiveStationFilter === 'ALL') return { id: 'ALL' as const, name: 'All Stations' };
+      const st = kitchenStations.find(
+        (s) => s.name.trim().toLowerCase() === effectiveStationFilter.trim().toLowerCase()
+      );
+      return st ? { id: st.id, name: st.name } : { id: 'ALL' as const, name: 'All Stations' };
+    }
+    // Para vistas específicas (MANUAL, AUTO, SUMMARY, GRID):
+    const stByName = kitchenStations.find(
+      (s) => s.name.trim().toLowerCase() === effectiveStationFilter.trim().toLowerCase()
+    );
+    if (stByName) return { id: stByName.id, name: stByName.name };
+    const stByMode = kitchenStations.find(
+      (s) => (s.display_mode || s.displayMode) === activeKdsView
+    );
+    if (stByMode) return { id: stByMode.id, name: stByMode.name };
+    return { id: 'ALL' as const, name: 'All Stations' };
+  }, [activeKdsView, effectiveStationFilter, kitchenStations]);
+
   // Filtered and dynamically prioritized tickets with SLA Critical Shield
   const filteredTickets = (() => {
     const matched = tickets.filter((t) => {
       // 1. Filtrar por Estación y Vista KDS:
       if (activeKdsView === 'EXPO') {
-        if (selectedStationFilter !== 'ALL' && t.stationName !== selectedStationFilter) {
+        if (effectiveStationFilter !== 'ALL' && t.stationName !== effectiveStationFilter) {
           return false;
         }
       } else {
-        if (selectedStationFilter !== 'ALL') {
-          if (t.stationName !== selectedStationFilter) return false;
+        if (effectiveStationFilter !== 'ALL') {
+          if (t.stationName !== effectiveStationFilter) return false;
         } else {
           const stMode = getTicketStationMode(t);
           if (stMode !== activeKdsView) return false;
@@ -893,40 +1192,73 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       return t.items.some((i) => i.course === activeCourseFilter);
     });
 
-    return [...matched].sort((a, b) => {
-      // 1. Pulso activo / Fired recientemente se prioriza al frente
-      if (a.isPulsing !== b.isPulsing) {
-        return (b.isPulsing ? 1 : 0) - (a.isPulsing ? 1 : 0);
-      }
+    // 1. Separar tickets con pulso activo (recién fired / bumped van al frente)
+    const pulsing: KitchenTicket[] = [];
+    const nonPulsing: KitchenTicket[] = [];
 
-      // 2. Prioridad operativa inmediata: Tickets con platos en preparación activa (PREP / IN_PREPARATION / PENDING)
-      // se colocan al frente del KDS antes que tickets donde todos sus platos están retenidos (HELD) o listos (READY).
-      const isPreparingA = a.items.some((i) => i.preparationStatus === 'PENDING' || i.preparationStatus === 'IN_PREPARATION');
-      const isPreparingB = b.items.some((i) => i.preparationStatus === 'PENDING' || i.preparationStatus === 'IN_PREPARATION');
-      if (isPreparingA && !isPreparingB) return -1;
-      if (!isPreparingA && isPreparingB) return 1;
+    matched.forEach((t) => {
+      if (t.isPulsing) pulsing.push(t);
+      else nonPulsing.push(t);
+    });
 
-      // 3. SLA Critical Shield: órdenes con >= 15 min esperando tienen prioridad absoluta
-      const isCritA = (a.timeElapsed ?? 0) >= 15;
-      const isCritB = (b.timeElapsed ?? 0) >= 15;
-      if (isCritA && !isCritB) return -1;
-      if (!isCritA && isCritB) return 1;
-      if (isCritA && isCritB) {
-        return (b.timeElapsed ?? 0) - (a.timeElapsed ?? 0); // la más demorada primero
-      }
+    const prioScoreMap: Record<KitchenTicket['priority'], number> = {
+      vip: 30,
+      urgent: 20,
+      high: 10,
+      normal: 0,
+    };
 
-      // 4. Prioridad de comanda asignada (High / Medium / Normal):
-      const prioScoreMap: Record<string, number> = { high: 20, medium: 10, normal: 0 };
-      const prioDiff = (prioScoreMap[b.priority] || 0) - (prioScoreMap[a.priority] || 0);
-      if (prioDiff !== 0) return prioDiff;
-
-      // 5. Orden de llegada estricto y determinista (FIFO: el más viejo primero):
+    // 2. Ordenar cronológicamente por momento de creación (orden de llegada FIFO)
+    nonPulsing.sort((a, b) => {
       const timeA = a.createdAtMs ?? 0;
       const timeB = b.createdAtMs ?? 0;
       if (timeA !== timeB) return timeA - timeB;
-
       return (a.backendOrderId ?? 0) - (b.backendOrderId ?? 0);
     });
+
+    // 3. Simulación de cola en tiempo real con Escudo SLA:
+    // - Una orden que alcanza 15 min NO salta hacia adelante por encima de órdenes que ya estaban antes en la cola.
+    // - Se queda exactamente donde está, pero activa el Escudo SLA: ninguna orden creada después de ese momento
+    //   puede colocarse por delante de ella (la protege contra nuevas órdenes VIP, Urgent o High entrantes).
+    const queue: KitchenTicket[] = [];
+
+    for (const item of nonPulsing) {
+      const itemTime = item.createdAtMs ?? 0;
+      const isPreparingItem = item.items.some(
+        (i) => i.preparationStatus === 'PENDING' || i.preparationStatus === 'IN_PREPARATION'
+      );
+      const itemScore = (prioScoreMap[item.priority] || 0) * 10 + (isPreparingItem ? 1 : 0);
+
+      // Determinar la barrera mínima permitida: debe ser posterior a cualquier orden que YA tenía SLA
+      // (espera >= criticalSlaMinutes) al momento en que esta nueva orden fue creada.
+      let minInsertIndex = 0;
+      for (let i = 0; i < queue.length; i++) {
+        const qTime = queue[i].createdAtMs ?? 0;
+        const waitingAtArrival = itemTime - qTime;
+        if (waitingAtArrival >= criticalSlaMinutes * 60 * 1000) {
+          minInsertIndex = i + 1;
+        }
+      }
+
+      // Dentro del rango permitido (>= minInsertIndex), si la orden entrante tiene MAYOR prioridad
+      // que la orden en esa posición, se adelanta a ella. Si tiene igual o menor prioridad, se ubica detrás (FIFO).
+      let insertIndex = queue.length;
+      for (let i = minInsertIndex; i < queue.length; i++) {
+        const q = queue[i];
+        const isPreparingQ = q.items.some(
+          (it) => it.preparationStatus === 'PENDING' || it.preparationStatus === 'IN_PREPARATION'
+        );
+        const qScore = (prioScoreMap[q.priority] || 0) * 10 + (isPreparingQ ? 1 : 0);
+        if (itemScore > qScore) {
+          insertIndex = i;
+          break;
+        }
+      }
+
+      queue.splice(insertIndex, 0, item);
+    }
+
+    return [...pulsing, ...queue];
   })();
 
   const visibleStations = useMemo(() => {
@@ -1025,6 +1357,9 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
     filteredTickets.forEach((t) => {
       t.items.forEach((item) => {
+        if (activeCourseFilter !== 'ALL' && item.course !== activeCourseFilter) {
+          return;
+        }
         const key = `${item.name.trim()}__${item.variantName?.trim() || ''}`;
         if (!map.has(key)) {
           map.set(key, {
@@ -1071,6 +1406,77 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     );
   })();
 
+  // Real-Time All-Day Batch Aggregation across active station tickets (Historia X7P-4208)
+  const allDaySummary = (() => {
+    interface AllDayAggregatedItem {
+      key: string;
+      productName: string;
+      variantName?: string;
+      course: CourseType;
+      totalNeeded: number;
+      totalOrdered: number;
+      totalPrepared: number;
+      modifiers: Array<{ note: string; count: number }>;
+    }
+
+    const map = new Map<string, AllDayAggregatedItem>();
+    let totalNeededCount = 0;
+
+    filteredTickets.forEach((ticket) => {
+      ticket.items.forEach((item) => {
+        if (activeCourseFilter !== 'ALL' && item.course !== activeCourseFilter) {
+          return;
+        }
+        if (item.preparationStatus !== 'PENDING' && item.preparationStatus !== 'IN_PREPARATION') {
+          return;
+        }
+
+        const currentPrepared = item.preparedQuantity || 0;
+        const needed = Math.max(0, item.qty - currentPrepared);
+        if (needed <= 0) return;
+
+        totalNeededCount += needed;
+        const key = `${item.name.trim().toLowerCase()}__${(item.variantName || '').trim().toLowerCase()}`;
+
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            productName: item.name,
+            variantName: item.variantName,
+            course: item.course,
+            totalNeeded: 0,
+            totalOrdered: 0,
+            totalPrepared: 0,
+            modifiers: [],
+          });
+        }
+
+        const entry = map.get(key)!;
+        entry.totalNeeded += needed;
+        entry.totalOrdered += item.qty;
+        entry.totalPrepared += currentPrepared;
+
+        if (item.notes && item.notes.trim().length > 0) {
+          const noteText = item.notes.trim();
+          const existingMod = entry.modifiers.find(
+            (m) => m.note.toLowerCase() === noteText.toLowerCase()
+          );
+          if (existingMod) {
+            existingMod.count += needed;
+          } else {
+            entry.modifiers.push({ note: noteText, count: needed });
+          }
+        }
+      });
+    });
+
+    const items = Array.from(map.values()).sort((a, b) => b.totalNeeded - a.totalNeeded);
+    return {
+      items,
+      totalNeededCount,
+    };
+  })();
+
   // Active ticket for MANUAL QUEUE view
   const activeManualTicket = (() => {
     if (manualActiveTicketId) {
@@ -1084,49 +1490,70 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const renderTicketCard = (ticket: KitchenTicket, isFullWidth: boolean = false) => {
     const pColors = getPriorityBadge(ticket.priority);
     const coursesPresent: CourseType[] = ['BEVERAGE', 'APPETIZER', 'MAIN_COURSE', 'DESSERT'];
+    const isCompact = cardDensity === 'compact';
+    const isSpacious = cardDensity === 'spacious';
+    const cleanOrderNotes = (() => {
+      if (!ticket.orderNotes) return null;
+      const trimmed = ticket.orderNotes.trim();
+      if (/^Table\s+\d+\s*•\s*Station\s*#/i.test(trimmed)) return null;
+      if (trimmed.toLowerCase() === ticket.table.toLowerCase()) return null;
+      return trimmed;
+    })();
+
+    const cardWidthClass = isFullWidth
+      ? 'w-full h-full'
+      : isCompact
+      ? 'w-64 h-full max-h-[85vh] flex-shrink-0'
+      : isSpacious
+      ? 'w-80 h-full max-h-[85vh] flex-shrink-0'
+      : 'w-72 h-full max-h-[85vh] flex-shrink-0';
 
     return (
       <div
         key={ticket.id}
-        className={`${
-          isFullWidth ? 'w-full h-full' : 'w-96 max-h-[92%] flex-shrink-0'
-        } bg-[#1a1b20] border-t-4 ${pColors.border} border-x border-b border-zinc-800 rounded-xl flex flex-col shadow-2xl transition-all duration-300 ${
+        className={`${cardWidthClass} bg-[#1a1b20] border-t-4 ${pColors.border} border-x border-b border-zinc-800 rounded-xl flex flex-col shadow-2xl transition-all duration-300 ${
           ticket.isPulsing
             ? 'ring-4 ring-amber-500 bg-amber-950/30 animate-pulse shadow-amber-500/50'
             : 'hover:border-zinc-700'
         }`}
       >
         {/* Ticket Header Card */}
-        <div className="p-4 border-b border-zinc-800 bg-[#212228] rounded-t-lg flex justify-between items-start shrink-0">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-black text-base text-white tracking-wide" style={{ color: '#ffffff' }}>
-                {ticket.table}
-              </h2>
-              <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider ${pColors.badge}`}>
-                {ticket.priority}
+        <div className={`${isCompact ? 'p-2' : 'p-2.5'} border-b border-zinc-800 bg-[#212228] rounded-t-lg flex justify-between items-start shrink-0`}>
+          <div className="min-w-0 flex-1 pr-2">
+            <h2 className={`font-black ${isCompact ? 'text-xs' : 'text-sm'} text-white tracking-tight truncate whitespace-nowrap`} style={{ color: '#ffffff' }}>
+              {ticket.table}
+            </h2>
+            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+              <span className={`text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider ${pColors.badge}`}>
+                {pColors.label}
               </span>
               {activeDisplayMode === 'AUTO' && (
-                <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-emerald-600/30 text-emerald-300 border border-emerald-500/50 flex items-center gap-0.5">
-                  <span className="material-symbols-outlined text-[10px]">bolt</span>
-                  AUTO-DISPATCH
+                <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-emerald-600/30 text-emerald-300 border border-emerald-500/50 flex items-center gap-0.5">
+                  <span className="material-symbols-outlined text-[9px]">bolt</span>
+                  AUTO
                 </span>
               )}
-              {ticket.timeElapsed >= 15 && (
-                <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-red-600 text-white border border-red-500 flex items-center gap-0.5 animate-pulse shadow-xs">
-                  <span className="material-symbols-outlined text-[11px]">shield</span>
-                  SLA SHIELD
+              {ticket.timeElapsed >= criticalSlaMinutes && (
+                <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-red-600 text-white border border-red-500 flex items-center gap-0.5 animate-pulse shadow-xs">
+                  <span className="material-symbols-outlined text-[9px]">shield</span>
+                  SLA
                 </span>
               )}
             </div>
-            <p className="text-xs font-bold mt-1 text-zinc-400">
-              Ticket #{ticket.id} • {ticket.stationName || 'Line Station'} • {ticket.server}
+            <p className={`${isCompact ? 'text-[9px]' : 'text-[10px]'} font-semibold mt-0.5 text-zinc-400 truncate`}>
+              #{ticket.id} • {ticket.stationName || 'Line'}{ticket.server && ticket.server !== 'Kitchen Staff' ? ` • ${ticket.server}` : ''}
             </p>
+            {cleanOrderNotes && (
+              <p className={`${isCompact ? 'text-[9px]' : 'text-[10px]'} text-amber-300 font-medium truncate mt-0.5 flex items-center gap-1`}>
+                <span className="material-symbols-outlined text-[12px] text-amber-400 shrink-0">edit_note</span>
+                <span className="truncate">{cleanOrderNotes}</span>
+              </p>
+            )}
           </div>
 
-          <div className="text-right">
+          <div className="text-right shrink-0">
             <p
-              className={`font-mono font-black text-lg ${
+              className={`font-mono font-black ${isCompact ? 'text-sm' : 'text-base'} leading-tight ${
                 ticket.timeElapsed >= 12
                   ? 'text-red-400 animate-pulse'
                   : ticket.timeElapsed >= 8
@@ -1136,14 +1563,19 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             >
               {ticket.timeElapsed}m
             </p>
-            <p className="text-[10px] uppercase font-black tracking-wider text-zinc-500">ELAPSED</p>
+            <p className="text-[8px] uppercase font-black tracking-wider text-zinc-500">ELAPSED</p>
           </div>
         </div>
 
         {/* Ticket Body: Course Sequences */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+        <div className={`flex-1 overflow-y-auto ${isCompact ? 'p-2 space-y-1.5' : 'p-2.5 space-y-2'} custom-scrollbar`}>
           {(() => {
-            const sortedCourses = [...coursesPresent].sort((c1, c2) => {
+            const availableCourses =
+              activeCourseFilter === 'ALL'
+                ? coursesPresent
+                : coursesPresent.filter((c) => c === activeCourseFilter);
+
+            const sortedCourses = [...availableCourses].sort((c1, c2) => {
               const items1 = ticket.items.filter((i) => i.course === c1);
               const items2 = ticket.items.filter((i) => i.course === c2);
               if (items1.length === 0 && items2.length === 0) return 0;
@@ -1176,12 +1608,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               const hasHeldItems = sortedItemsInCourse.some((i) => i.preparationStatus === 'HELD');
 
               return (
-                <div key={courseType} className="border border-zinc-800/80 rounded-lg p-3 bg-zinc-900/40">
+                <div key={courseType} className={`border border-zinc-800/80 rounded-lg ${isCompact ? 'p-1.5' : 'p-2'} bg-zinc-900/40`}>
                   {/* Course Header with Quick FIRE Button */}
-                  <div className="flex items-center justify-between mb-2.5 pb-2 border-b border-zinc-800">
-                    <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-sm text-zinc-400">{theme.icon}</span>
-                      <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${theme.badge}`}>
+                  <div className={`flex items-center justify-between ${isCompact ? 'mb-1 pb-0.5' : 'mb-1.5 pb-1'} border-b border-zinc-800`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-xs text-zinc-400">{theme.icon}</span>
+                      <span className={`${isCompact ? 'text-[8px]' : 'text-[9px]'} font-black uppercase tracking-wider px-1.5 py-0.2 rounded border ${theme.badge}`}>
                         {theme.title}
                       </span>
                     </div>
@@ -1189,16 +1621,16 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                     {hasHeldItems && (
                       <button
                         onClick={() => handleFireCourse(ticket.id, courseType)}
-                        className="px-2.5 py-1 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-black text-[10px] uppercase tracking-wider rounded transition-all flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                        className={`px-1.5 py-0.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-black ${isCompact ? 'text-[8px]' : 'text-[9px]'} uppercase tracking-wider rounded transition-all flex items-center gap-0.5 cursor-pointer shadow-xs active:scale-95`}
                       >
-                        <span className="material-symbols-outlined text-xs">local_fire_department</span>
+                        <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
                         <span>{theme.fireLabel}</span>
                       </button>
                     )}
                   </div>
 
                   {/* Items in this course */}
-                  <div className="space-y-2.5">
+                  <div className={isCompact ? 'space-y-1' : 'space-y-1.5'}>
                     {sortedItemsInCourse.map((item) => {
                       const isHeld = item.preparationStatus === 'HELD';
                       const isPending = item.preparationStatus === 'PENDING';
@@ -1208,7 +1640,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                       return (
                         <div
                           key={item.id}
-                          className={`group relative rounded-xl p-3 transition-all duration-200 border shadow-xs ${
+                          className={`group relative rounded-lg ${isCompact ? 'p-1.5' : 'p-2'} transition-all duration-200 border shadow-xs ${
                             isHeld
                               ? 'bg-amber-950/25 border-dashed border-amber-500/50 backdrop-blur-xs'
                               : isReady
@@ -1218,11 +1650,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                               : 'bg-zinc-800/80 border-zinc-700/70 hover:border-amber-500/50 hover:bg-zinc-800'
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-2.5">
+                          <div className="flex items-start justify-between gap-1.5">
                             {/* Left: Quantity Badge + Dish Info */}
-                            <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                            <div className="flex items-start gap-2 flex-1 min-w-0">
                               <span
-                                className={`w-7 h-7 rounded-lg flex items-center justify-center font-mono font-black text-xs shrink-0 shadow-xs ${
+                                className={`${isCompact ? 'w-5 h-5 text-[10px]' : 'w-6 h-6 text-[11px]'} rounded-md flex items-center justify-center font-mono font-black shrink-0 shadow-xs ${
                                   isHeld
                                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                                     : isReady
@@ -1239,8 +1671,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-1.5 flex-wrap">
                                   <span
-                                    className={`text-sm font-black tracking-tight leading-snug break-words ${
-                                      isReady ? 'text-emerald-200 line-through/40' : 'text-white'
+                                    className={`${isCompact ? 'text-[11px]' : 'text-xs'} font-bold tracking-tight leading-snug break-words ${
+                                      isReady ? 'text-emerald-300/60 line-through' : 'text-white'
                                     }`}
                                     style={{ color: isReady ? '#a7f3d0' : '#ffffff' }}
                                   >
@@ -1248,43 +1680,18 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                   </span>
 
                                   {item.variantName && (
-                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-zinc-700/80 text-zinc-200 border border-zinc-600/50">
-                                      {item.variantName}
+                                    <span className="text-[10px] font-normal text-zinc-400">
+                                      ({item.variantName})
+                                    </span>
+                                  )}
+
+                                  {item.preparedQuantity !== undefined && item.preparedQuantity > 0 && !isReady && (
+                                    <span className="text-[8px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-0.5">
+                                      <span className="material-symbols-outlined text-[9px]">skillet</span>
+                                      <span>{item.preparedQuantity}/{item.qty} PREP</span>
                                     </span>
                                   )}
                                 </div>
-
-                                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                                  <span
-                                    className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded flex items-center gap-1 border ${
-                                      item.course === 'BEVERAGE'
-                                        ? 'bg-sky-950/50 text-sky-300 border-sky-500/40'
-                                        : item.course === 'APPETIZER'
-                                        ? 'bg-teal-950/50 text-teal-300 border-teal-500/40'
-                                        : item.course === 'DESSERT'
-                                        ? 'bg-purple-950/50 text-purple-300 border-purple-500/40'
-                                        : 'bg-amber-950/50 text-amber-300 border-amber-500/40'
-                                    }`}
-                                  >
-                                    <span>
-                                      {item.course === 'BEVERAGE'
-                                        ? '🍹'
-                                        : item.course === 'APPETIZER'
-                                        ? '🥗'
-                                        : item.course === 'DESSERT'
-                                        ? '🍰'
-                                        : '🍔'}
-                                    </span>
-                                    <span>{item.course.replace('_', ' ')}</span>
-                                  </span>
-                                </div>
-
-                                {item.notes && (
-                                  <div className="mt-2 text-[11px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/40 rounded-lg px-2 py-1 flex items-center gap-1.5">
-                                    <span className="material-symbols-outlined text-[13px] text-amber-400 shrink-0">edit_note</span>
-                                    <span className="italic">{item.notes}</span>
-                                  </div>
-                                )}
                               </div>
                             </div>
 
@@ -1292,61 +1699,46 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                             <div className="flex items-center gap-1 shrink-0 pt-0.5">
                               {isHeld ? (
                                 <div className="flex items-center gap-1">
-                                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[9px] font-black uppercase tracking-wider">
-                                    <span className="material-symbols-outlined text-[11px]">lock</span>
+                                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded text-[8px] font-black uppercase tracking-wider">
+                                    <span className="material-symbols-outlined text-[9px]">lock</span>
                                     HELD
                                   </span>
                                   <button
                                     onClick={() => handleFireSingleItem(ticket.id, item.id, item.name)}
                                     title={`Fire directly to ${theme.prepVerb.toLowerCase()} (In Prep)`}
-                                    className="px-2.5 py-1 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded-md text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                                    className="px-2 py-0.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-0.5 cursor-pointer shadow-xs active:scale-95"
                                   >
-                                    <span className="material-symbols-outlined text-[12px]">local_fire_department</span>
+                                    <span className="material-symbols-outlined text-[9px]">local_fire_department</span>
                                     FIRE
                                   </button>
                                 </div>
                               ) : isPending ? (
                                 <div className="flex items-center gap-1">
-                                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-stone-500/20 text-stone-300 border border-stone-500/40 rounded text-[9px] font-bold uppercase tracking-wider">
-                                    <span className="material-symbols-outlined text-[11px]">schedule</span>
-                                    QUEUE
-                                  </span>
                                   <button
                                     onClick={() => handleToggleItemReady(ticket.id, item.id, item.preparationStatus)}
                                     title={`Start ${theme.prepVerb.toLowerCase()} (Move to IN PREP)`}
-                                    className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50"
+                                    className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50"
                                   >
-                                    <span className="material-symbols-outlined text-[12px]">{theme.prepIcon}</span>
+                                    <span className="material-symbols-outlined text-[10px]">{theme.prepIcon}</span>
                                     <span>{theme.prepVerb}</span>
-                                  </button>
-                                  <button
-                                    onClick={() => handleHoldSingleItem(ticket.id, item.id, item.name)}
-                                    title="Put back on hold"
-                                    className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/60 rounded transition-colors cursor-pointer"
-                                  >
-                                    <span className="material-symbols-outlined text-sm">pause_circle</span>
                                   </button>
                                 </div>
                               ) : isInPrep ? (
                                 <div className="flex items-center gap-1">
-                                  <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/40 rounded text-[9px] font-black uppercase tracking-wider animate-pulse">
-                                    <span className="material-symbols-outlined text-[11px]">{theme.prepIcon}</span>
-                                    {theme.prepVerb}
-                                  </span>
                                   <button
                                     onClick={() => handleToggleItemReady(ticket.id, item.id, item.preparationStatus)}
                                     title="Mark as READY"
-                                    className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
+                                    className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
                                   >
-                                    <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                                    <span className="material-symbols-outlined text-[10px]">check_circle</span>
                                     <span>READY</span>
                                   </button>
                                   <button
-                                    onClick={() => handleHoldSingleItem(ticket.id, item.id, item.name)}
-                                    title="Put back on hold"
-                                    className="p-1 text-zinc-400 hover:text-amber-400 hover:bg-zinc-700/60 rounded transition-colors cursor-pointer"
+                                    onClick={() => handleRevertItemToPending(ticket.id, item.id, item.name)}
+                                    title="Revert to Queue (Undo)"
+                                    className="h-6 w-6 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-amber-400 border border-zinc-700/80 transition-colors cursor-pointer flex items-center justify-center shadow-xs active:scale-95"
                                   >
-                                    <span className="material-symbols-outlined text-sm">pause_circle</span>
+                                    <span className="material-symbols-outlined text-[10px]">undo</span>
                                   </button>
                                 </div>
                               ) : (
@@ -1354,24 +1746,31 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                   <button
                                     onClick={() => handleToggleItemReady(ticket.id, item.id, item.preparationStatus)}
                                     title="Revert back to PREP"
-                                    className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-600/80 hover:bg-emerald-600 text-white border border-emerald-400/50"
+                                    className="h-6 px-2 rounded text-[8.5px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-700/50 hover:bg-emerald-600 text-emerald-200 border border-emerald-500/40"
                                   >
-                                    <span className="material-symbols-outlined text-[12px]">check_circle</span>
-                                    <span>READY</span>
+                                    <span className="material-symbols-outlined text-[10px]">check_circle</span>
+                                    <span>DONE</span>
                                   </button>
                                 </div>
                               )}
                             </div>
                           </div>
 
+                          {/* Full-width Special Kitchen Note Callout */}
+                          {item.notes && (
+                            <div className="mt-1 flex items-start gap-1 text-[10px] text-amber-300 font-medium leading-tight pl-1.5 border-l-2 border-amber-500/60">
+                              <span className="italic break-words">{item.notes}</span>
+                            </div>
+                          )}
+
                           {isHeld && (
-                            <div className="mt-2 pt-1.5 border-t border-amber-500/20 flex items-center justify-between text-[10px]">
-                              <span className="text-zinc-400 font-bold flex items-center gap-1">
-                                <span className="material-symbols-outlined text-xs text-amber-400">schedule</span>
-                                Pacing Target Window:
+                            <div className={`${isCompact ? 'mt-1 pt-1 text-[9px]' : 'mt-1.5 pt-1 text-[9.5px]'} border-t border-amber-500/20 flex items-center justify-between`}>
+                              <span className="text-zinc-400 font-medium flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[11px] text-amber-400">schedule</span>
+                                Pacing Window:
                               </span>
-                              <span className="font-mono font-black text-amber-300 bg-amber-950/70 px-2 py-0.5 rounded border border-amber-500/30 flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                              <span className="font-mono font-bold text-amber-300 text-[9px] flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
                                 Auto-Fire: {formatCountdown(item.holdRemainingSeconds)}
                               </span>
                             </div>
@@ -1387,12 +1786,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         </div>
 
         {/* Ticket Footer Action Button */}
-        <div className="p-3 border-t border-zinc-800 bg-[#212228] rounded-b-lg shrink-0">
+        <div className={`${isCompact ? 'p-1.5' : 'p-2'} border-t border-zinc-800 bg-[#212228] rounded-b-lg shrink-0`}>
           <button
             onClick={() => handleCompleteTicket(ticket.id, ticket.backendOrderId)}
-            className="w-full py-2.5 bg-zinc-800 hover:bg-emerald-600 text-white font-black text-xs uppercase tracking-wider rounded transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-inner"
+            className={`w-full ${isCompact ? 'py-1 text-[10px]' : 'py-1.5 text-[11px]'} bg-zinc-800 hover:bg-emerald-600 text-white font-black uppercase tracking-wider rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-inner`}
           >
-            <span className="material-symbols-outlined text-sm">done_all</span>
+            <span className="material-symbols-outlined text-xs">done_all</span>
             <span>BUMP &amp; SERVE TICKET</span>
           </button>
         </div>
@@ -1435,7 +1834,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           <div className="flex items-center bg-zinc-800/90 hover:bg-zinc-800 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs gap-1.5 shadow-inner">
             <span className="material-symbols-outlined text-sm text-amber-400">soup_kitchen</span>
             <select
-              value={selectedStationFilter}
+              value={effectiveStationFilter}
               onChange={(e) => handleStationChange(e.target.value)}
               aria-label="Filter by kitchen station"
               className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs max-w-[140px] sm:max-w-[200px] truncate"
@@ -1529,6 +1928,49 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             </button>
           </div>
 
+          {/* Card Density Switcher (Compact / Normal / Wide) */}
+          <div className="flex items-center bg-zinc-900/90 border border-zinc-700 rounded-lg p-0.5 text-xs shadow-inner">
+            <button
+              type="button"
+              onClick={() => handleDensityChange('compact')}
+              title="Compact Cards (Fits 4-6 on screen)"
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
+                cardDensity === 'compact'
+                  ? 'bg-[#ae001a] text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[13px]">density_small</span>
+              <span className="hidden lg:inline">COMPACT</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDensityChange('normal')}
+              title="Normal Cards (Balanced)"
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
+                cardDensity === 'normal'
+                  ? 'bg-[#ae001a] text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[13px]">density_medium</span>
+              <span className="hidden lg:inline">NORMAL</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleDensityChange('spacious')}
+              title="Wide Cards (Large touch display)"
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
+                cardDensity === 'spacious'
+                  ? 'bg-[#ae001a] text-white shadow-xs'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[13px]">density_large</span>
+              <span className="hidden lg:inline">WIDE</span>
+            </button>
+          </div>
+
           {/* Audio Chime Toggle */}
           <button
             onClick={() => {
@@ -1547,6 +1989,27 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             </span>
           </button>
 
+          {/* All-Day Bar Quick Switcher (Historia X7P-4208) */}
+          {activeDisplayMode !== 'SUMMARY' && (
+            <button
+              onClick={() => setIsAllDayBarExpanded((prev) => !prev)}
+              className={`px-3 py-2 rounded font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 border cursor-pointer shadow-xs ${
+                isAllDayBarExpanded
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                  : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+              }`}
+              title="Toggle All-Day Aggregated Prep Bar"
+            >
+              <span className="material-symbols-outlined text-base">skillet</span>
+              <span className="hidden md:inline">ALL-DAY</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                allDaySummary.totalNeededCount > 0 ? 'bg-amber-500 text-black' : 'bg-zinc-700 text-zinc-300'
+              }`}>
+                {allDaySummary.totalNeededCount}
+              </span>
+            </button>
+          )}
+
           {/* Pacing SLA Settings Drawer Button */}
           <button
             onClick={() => setIsPacingDrawerOpen(true)}
@@ -1554,6 +2017,21 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           >
             <span className="material-symbols-outlined text-base text-amber-400 animate-spin-slow">timer</span>
             <span className="hidden sm:inline">Pacing Timers</span>
+          </button>
+
+          {/* Recall Tray Button (Historia X7P-4209) */}
+          <button
+            type="button"
+            onClick={() => setIsRecallTrayOpen(true)}
+            className={`px-3.5 py-2 font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 border cursor-pointer shadow-xs ${
+              undoToast
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 ring-2 ring-amber-500/40 animate-pulse'
+                : 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700'
+            }`}
+            title="Recent Bump Recall Tray: Restore recently bumped tickets"
+          >
+            <span className="material-symbols-outlined text-base text-amber-400">history</span>
+            <span className="hidden sm:inline">Recall Tray</span>
           </button>
 
           {/* Back to Dashboard */}
@@ -1566,6 +2044,40 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           </button>
         </div>
       </header>
+
+      {/* Immediate Accidental Bump Undo Toast (Historia X7P-4209) */}
+      {undoToast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-bounce-short">
+          <div className="bg-[#1f2026] border-2 border-amber-500/60 shadow-2xl rounded-2xl px-5 py-3 flex items-center gap-4 text-white backdrop-blur-md">
+            <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400">
+              <span className="material-symbols-outlined text-xl">undo</span>
+            </div>
+            <div>
+              <p className="text-xs font-black uppercase tracking-wider text-white">
+                Ticket #{undoToast.id} Bumped
+              </p>
+              <p className="text-[11px] text-zinc-400 font-medium">
+                Table: <strong className="text-amber-300">{undoToast.table}</strong> • Accidental bump?
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => undoToast.backendOrderId && handleImmediateRecall(undoToast.backendOrderId)}
+              className="py-1.5 px-3.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-sm">replay</span>
+              <span>UNDO (RECALL)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setUndoToast(null)}
+              className="text-zinc-500 hover:text-white p-1 rounded transition-colors"
+            >
+              <span className="material-symbols-outlined text-sm">close</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2. Course Sequence Quick Filter Bar */}
       <div className="bg-[#18191e] border-b border-zinc-800 px-6 py-2 flex items-center justify-between gap-4 shrink-0 overflow-x-auto">
@@ -1619,13 +2131,160 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         </div>
       )}
 
-      {/* 3. Main KDS Workspace Cards Staging Grid */}
+      {/* 3. All-Day Consolidated Batch Prep Summary Bar (Historia X7P-4208) */}
+      {activeDisplayMode !== 'SUMMARY' && (
+        <div className="bg-[#15161b] border-b border-amber-500/30 px-4 py-1.5 shrink-0 transition-all">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-amber-400 text-base">skillet</span>
+              <span className="text-[11px] font-black tracking-wider text-white uppercase flex items-center gap-1.5">
+                ALL-DAY PREP CONSOLIDATOR
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  {allDaySummary.totalNeededCount} {allDaySummary.totalNeededCount === 1 ? 'unit required' : 'units required'}
+                </span>
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-400 font-medium hidden md:inline">
+                Tap <strong className="text-amber-300">+1 / +2 / +4 / ALL</strong> to bump FIFO
+              </span>
+              <button
+                onClick={() => setIsAllDayBarExpanded(!isAllDayBarExpanded)}
+                className="text-zinc-400 hover:text-white flex items-center gap-0.5 text-[10px] font-bold cursor-pointer transition-colors"
+                title={isAllDayBarExpanded ? 'Collapse All-Day Bar' : 'Expand All-Day Bar'}
+              >
+                <span>{isAllDayBarExpanded ? 'Hide' : 'Show'}</span>
+                <span className="material-symbols-outlined text-xs">
+                  {isAllDayBarExpanded ? 'expand_less' : 'expand_more'}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {isAllDayBarExpanded && (
+            <div>
+              {allDaySummary.items.length === 0 ? (
+                <div className="py-1.5 px-3 rounded-md bg-zinc-900/60 border border-dashed border-zinc-800 text-center text-[11px] text-zinc-400 font-medium flex items-center justify-center gap-1.5">
+                  <span className="material-symbols-outlined text-emerald-400 text-sm">check_circle</span>
+                  <span>No pending items for this course on this station.</span>
+                </div>
+              ) : (
+                <div className="flex items-stretch gap-2.5 overflow-x-auto pb-1 custom-scrollbar">
+                  {allDaySummary.items.map((item) => (
+                    <div
+                      key={item.key}
+                      className="min-w-[190px] max-w-[240px] bg-[#1a1c24] hover:bg-[#20232d] border border-zinc-700/80 hover:border-amber-500/60 rounded-lg p-2 flex flex-col justify-between transition-all shadow-xs group shrink-0"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-xs font-black text-white leading-tight truncate" title={item.productName}>
+                              {item.productName}
+                            </h4>
+                            {item.variantName && (
+                              <span className="inline-block mt-0.5 text-[9px] font-bold px-1 py-0.2 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 truncate max-w-full">
+                                {item.variantName}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className="text-base font-black font-mono text-amber-400 leading-none block">
+                              {item.totalNeeded}x
+                            </span>
+                            <span className="text-[8px] uppercase tracking-wider font-bold text-zinc-400">
+                              PENDING
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Prep Progress Bar */}
+                        <div className="mt-1 text-[9px] font-bold text-zinc-400 flex items-center justify-between">
+                          <span>Progress:</span>
+                          <span>
+                            <strong className="text-emerald-400">{item.totalPrepared}</strong>/{item.totalOrdered} done
+                          </span>
+                        </div>
+                        <div className="w-full bg-zinc-800 h-1 rounded-full overflow-hidden mt-0.5">
+                          <div
+                            className="bg-gradient-to-r from-amber-500 to-emerald-500 h-full rounded-full transition-all duration-300"
+                            style={{
+                              width: `${item.totalOrdered > 0 ? Math.min(100, Math.round((item.totalPrepared / item.totalOrdered) * 100)) : 0}%`,
+                            }}
+                          />
+                        </div>
+
+                        {/* Modifiers / Special Notes Breakdown */}
+                        {item.modifiers.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {item.modifiers.map((mod, idx) => (
+                              <span
+                                key={idx}
+                                className="text-[8px] font-bold px-1 py-0.2 rounded bg-amber-950/60 text-amber-200 border border-amber-500/30"
+                              >
+                                {mod.count}x {mod.note}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Quick Action Batch Bump Buttons */}
+                      <div className="mt-1.5 pt-1 border-t border-zinc-800/80 flex items-center gap-1">
+                        <button
+                          onClick={() => handleBatchBumpFifo(item.productName, item.variantName, 1)}
+                          className="flex-1 py-1 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-black font-black text-[10px] rounded border border-amber-500/40 transition-all cursor-pointer text-center active:scale-95"
+                          title={`Bump 1x ${item.productName} to oldest ticket (FIFO)`}
+                        >
+                          +1
+                        </button>
+
+                        {item.totalNeeded >= 2 && (
+                          <button
+                            onClick={() => handleBatchBumpFifo(item.productName, item.variantName, 2)}
+                            className="flex-1 py-1 bg-zinc-800 hover:bg-amber-500 text-zinc-200 hover:text-black font-black text-[10px] rounded border border-zinc-700 transition-all cursor-pointer text-center active:scale-95"
+                            title={`Bump 2x ${item.productName} to oldest tickets (FIFO)`}
+                          >
+                            +2
+                          </button>
+                        )}
+
+                        {item.totalNeeded >= 4 && (
+                          <button
+                            onClick={() => handleBatchBumpFifo(item.productName, item.variantName, 4)}
+                            className="flex-1 py-1 bg-zinc-800 hover:bg-amber-500 text-zinc-200 hover:text-black font-black text-[10px] rounded border border-zinc-700 transition-all cursor-pointer text-center active:scale-95"
+                            title={`Bump 4x ${item.productName} to oldest tickets (FIFO)`}
+                          >
+                            +4
+                          </button>
+                        )}
+
+                        {item.totalNeeded > 1 && (
+                          <button
+                            onClick={() => handleBatchBumpFifo(item.productName, item.variantName, item.totalNeeded)}
+                            className="px-1.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[9px] uppercase rounded border border-emerald-400 transition-all cursor-pointer active:scale-95"
+                            title={`Bump entire batch (${item.totalNeeded}x) to oldest tickets`}
+                          >
+                            ALL
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 4. Main KDS Workspace Cards Staging Grid */}
       <main
-        className={`flex-1 p-6 ${
+        className={`flex-1 px-4 py-2 ${
           activeDisplayMode === 'SUMMARY'
             ? 'overflow-y-auto custom-scrollbar flex flex-col'
             : activeDisplayMode === 'MANUAL'
-            ? 'overflow-hidden flex gap-6 items-stretch'
+            ? 'overflow-hidden flex gap-4 items-stretch'
             : 'overflow-x-auto overflow-y-hidden flex flex-col custom-scrollbar'
         }`}
       >
@@ -2004,7 +2663,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-black text-white truncate">{t.table}</span>
                             <span className={`text-[9px] px-1.5 py-0.2 rounded font-black uppercase ${pColors.badge}`}>
-                              {t.priority}
+                              {pColors.label}
                             </span>
                           </div>
                           <p className="text-[11px] text-zinc-400 truncate mt-0.5">
@@ -2033,31 +2692,27 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           /* ========================================================= */
           /* MODE 3 & 4: AUTO DISPATCH & GRID MATRIX                   */
           /* ========================================================= */
-          <div className="flex flex-col gap-4 w-full h-full">
+          <div className="flex flex-col gap-2.5 w-full h-full">
             {/* Auto Dispatch Banner */}
             {activeDisplayMode === 'AUTO' && (
-              <div className="bg-gradient-to-r from-emerald-950/80 via-zinc-900 to-emerald-950/80 border border-emerald-500/50 rounded-xl p-3 flex items-center justify-between shadow-lg shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/40">
-                    <span className="material-symbols-outlined text-lg animate-pulse">bolt</span>
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-black text-emerald-300 tracking-wider uppercase">
-                      1-TOUCH AUTO-DISPATCH LINE ACTIVE
-                    </h4>
-                    <p className="text-[11px] text-zinc-300">
-                      When the final dish on any ticket is marked READY, the system will automatically bump and archive the ticket.
-                    </p>
-                  </div>
+              <div className="bg-emerald-950/40 border border-emerald-500/40 rounded-lg px-3 py-1 flex items-center justify-between shadow-xs shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-sm text-emerald-400">bolt</span>
+                  <span className="text-[10px] font-black text-emerald-300 uppercase">
+                    1-TOUCH AUTO-DISPATCH LINE:
+                  </span>
+                  <span className="text-[10px] text-zinc-300 hidden md:inline">
+                    When the final dish is marked READY, the ticket will automatically bump and archive.
+                  </span>
                 </div>
-                <span className="text-[10px] font-mono font-black px-2.5 py-1 bg-emerald-500/20 text-emerald-300 rounded-md border border-emerald-500/30">
-                  AUTO-BUMP ACTIVE
+                <span className="text-[8px] font-mono font-black px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
+                  AUTO-BUMP
                 </span>
               </div>
             )}
 
             {/* Horizontal Tickets Grid */}
-            <div className="flex-1 overflow-x-auto overflow-y-hidden flex gap-6 items-start custom-scrollbar pb-2">
+            <div className={`flex-1 overflow-x-auto overflow-y-hidden flex ${cardDensity === 'compact' ? 'gap-3' : 'gap-4'} items-start custom-scrollbar pb-1`}>
               {filteredTickets.map((ticket) => renderTicketCard(ticket))}
             </div>
           </div>
@@ -2094,6 +2749,43 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
             {/* Drawer Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar text-sm">
+              {/* Card Density Setting */}
+              <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3
+                      className="font-black text-white !text-white text-xs uppercase tracking-wider flex items-center gap-1.5"
+                      style={{ color: '#ffffff', fontSize: '12px', lineHeight: '1rem' }}
+                    >
+                      <span className="material-symbols-outlined text-amber-400 text-sm">view_column</span>
+                      KDS Ticket Card Density
+                    </h3>
+                    <p className="text-xs text-zinc-400 font-medium mt-0.5" style={{ color: '#a1a1aa' }}>
+                      Controls ticket width to fit more simultaneous cards on screen.
+                    </p>
+                  </div>
+                  <span className="font-mono text-xs font-black text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/40 uppercase">
+                    {cardDensity}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  {(['compact', 'normal', 'spacious'] as const).map((density) => (
+                    <button
+                      key={density}
+                      type="button"
+                      onClick={() => handleDensityChange(density)}
+                      className={`flex-1 py-1.5 rounded text-xs font-bold border transition-all cursor-pointer uppercase ${
+                        cardDensity === density
+                          ? 'bg-[#ae001a] text-white border-[#ae001a]'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+                      }`}
+                    >
+                      {density === 'compact' ? 'Compact (256px)' : density === 'normal' ? 'Normal (288px)' : 'Wide (320px)'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Main Course Delay Setting */}
               <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
@@ -2176,6 +2868,52 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                       onClick={() => setDessertHoldDelayMins(preset)}
                       className={`flex-1 py-1 rounded text-xs font-bold border transition-all cursor-pointer ${
                         dessertHoldDelayMins === preset
+                          ? 'bg-[#ae001a] text-white border-[#ae001a]'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+                      }`}
+                    >
+                      {preset}m
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Critical Kitchen SLA & Shield Setting */}
+              <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3
+                      className="font-black text-white !text-white text-xs uppercase tracking-wider flex items-center gap-1.5"
+                      style={{ color: '#ffffff', fontSize: '12px', lineHeight: '1rem' }}
+                    >
+                      <span className="material-symbols-outlined text-red-500 text-sm">shield</span>
+                      Critical SLA Shield Target
+                    </h3>
+                    <p className="text-xs text-zinc-400 font-medium mt-0.5" style={{ color: '#a1a1aa' }}>
+                      Orders reaching this wait receive SLA Shield protection &amp; turn red.
+                    </p>
+                  </div>
+                  <span className="font-mono text-base font-black text-red-400 bg-red-950/60 px-2.5 py-1 rounded border border-red-500/40">
+                    {criticalSlaMinutes}m
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="60"
+                  step="1"
+                  value={criticalSlaMinutes}
+                  onChange={(e) => setCriticalSlaMinutes(Number(e.target.value))}
+                  className="w-full accent-[#ae001a] cursor-pointer"
+                />
+                <div className="flex flex-wrap gap-2">
+                  {[2, 5, 10, 15, 20, 30].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setCriticalSlaMinutes(preset)}
+                      className={`flex-1 py-1 rounded text-xs font-bold border transition-all cursor-pointer ${
+                        criticalSlaMinutes === preset
                           ? 'bg-[#ae001a] text-white border-[#ae001a]'
                           : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
                       }`}
@@ -2279,6 +3017,18 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           </div>
         </div>
       )}
+      <KitchenRecallTray
+        isOpen={isRecallTrayOpen}
+        onClose={() => setIsRecallTrayOpen(false)}
+        activeStationId={resolvedStation.id}
+        activeStationName={resolvedStation.name}
+        onOrderRecalled={() => {
+          fetchBackendOrders(true);
+          setUndoToast(null);
+        }}
+        lastBumpedOrder={lastBumpedOrder}
+      />
+      <KitchenDevResetButton onResetComplete={() => fetchBackendOrders(true)} />
     </div>
   );
 };
