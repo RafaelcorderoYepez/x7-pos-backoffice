@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getAccessToken, getStoredUser } from '../../../../../lib/auth-storage';
+import { clearOfflineData } from '../../../../../lib/kds-offline-sync';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -66,6 +67,7 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
       }
 
       const data = await res.json();
+      void clearOfflineData();
       setStatusType('success');
       setStatusMessage(data.message || (mode === 'seed' ? '8 Test Orders Seeded!' : 'All Orders Cleared!'));
 
@@ -122,7 +124,7 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
               <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>
                 {loading ? 'refresh' : 'restart_alt'}
               </span>
-              <span>{loading ? 'Generando...' : 'Reiniciar (8 órdenes)'}</span>
+              <span>{loading ? 'Generating...' : 'Reset (8 Orders)'}</span>
             </button>
 
             <button
@@ -132,7 +134,7 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
               className="w-full py-1.5 px-2 bg-zinc-800/90 hover:bg-red-950/70 hover:border-red-500/50 disabled:opacity-50 text-zinc-300 hover:text-red-200 border border-zinc-700/70 rounded-lg text-[10px] font-semibold tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
             >
               <span className="material-symbols-outlined text-xs text-red-400">delete_sweep</span>
-              <span>Limpiar todo (0)</span>
+              <span>Clear All (0)</span>
             </button>
           </div>
 

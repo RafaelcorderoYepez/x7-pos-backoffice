@@ -10,6 +10,11 @@ import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
 import { KitchenSlaConfigModal } from './KitchenSlaConfigModal';
 import { KitchenDevResetButton } from './KitchenDevResetButton';
+import {
+  enqueueOfflineAction,
+  flushOfflineQueue,
+  getQueuedActions,
+} from '../../../../../lib/kds-offline-sync';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -196,6 +201,25 @@ const suggestCourseForProduct = (productName: string): 'beverage' | 'appetizer' 
   return 'main_course';
 };
 
+const getItemPrepAction = (course?: string, productName?: string) => {
+  const effectiveCourse = course || (productName ? suggestCourseForProduct(productName) : 'main_course');
+  const isBeverage = effectiveCourse === 'beverage' || (productName && suggestCourseForProduct(productName) === 'beverage');
+
+  if (isBeverage) {
+    return {
+      verb: 'POUR',
+      icon: 'local_bar',
+      title: 'Start pouring (Move to IN PREP)',
+    };
+  }
+
+  return {
+    verb: 'PREP',
+    icon: 'restaurant',
+    title: 'Start preparing (Move to IN PREP)',
+  };
+};
+
 export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate }) => {
   const [orders, setOrders] = useState<KitchenOrderTicket[]>([]);
   const [stations, setStations] = useState<KitchenStationOption[]>([]);
@@ -284,6 +308,13 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [lastBumpedOrder, setLastBumpedOrder] = useState<KitchenOrderTicket | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'warning' } | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
+
+  // Offline Resilience
+  const [isOffline, setIsOffline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? !navigator.onLine : false,
+  );
+  const [queuedActionsCount, setQueuedActionsCount] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Real-time clock for elapsed second counters
   const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
@@ -484,6 +515,80 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     window.addEventListener('x7_kds_data_reset', handleReset);
     return () => window.removeEventListener('x7_kds_data_reset', handleReset);
   }, [loadOrders]);
+
+  // Flush de cola offline al reconectar
+  const triggerAutoSync = useCallback(async () => {
+    try {
+      const queued = await getQueuedActions();
+      if (queued.length === 0) {
+        setQueuedActionsCount(0);
+        return;
+      }
+      setIsSyncing(true);
+      const token = getAccessToken();
+      const res = await flushOfflineQueue(API_BASE, token);
+      setIsSyncing(false);
+      if (res.success && res.syncedCount > 0) {
+        showToast(`Synchronized ${res.syncedCount} offline actions with server`, 'success');
+        loadOrders(true);
+      }
+      const remaining = await getQueuedActions();
+      setQueuedActionsCount(remaining.length);
+    } catch (err) {
+      console.warn('Auto re-sync error in KitchenOrdersView:', err);
+      setIsSyncing(false);
+    }
+  }, [loadOrders]);
+
+  // Control de red Online/Offline y heartbeat ping
+  useEffect(() => {
+    getQueuedActions()
+      .then((q) => setQueuedActionsCount(q.length))
+      .catch(() => {});
+
+    const handleOnline = () => {
+      setIsOffline(false);
+      void triggerAutoSync();
+    };
+
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    const pingTimer = setInterval(async () => {
+      if (!navigator.onLine) {
+        setIsOffline(true);
+        return;
+      }
+      try {
+        const token = getAccessToken();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(`${API_BASE}/kitchen-event-logs/ping`, {
+          signal: controller.signal,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+          setIsOffline((wasOffline) => {
+            if (wasOffline) void triggerAutoSync();
+            return false;
+          });
+        }
+      } catch {
+        setIsOffline(true);
+      }
+    }, 3000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(pingTimer);
+    };
+  }, [triggerAutoSync]);
 
   // Station Filtered pool for KPI metrics
   const stationOrders = useMemo(() => {
@@ -753,8 +858,49 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const activeColSpan = Object.values(visibleColumns).filter(Boolean).length;
   const densityPadding = getDensityPadding(rowDensity);
 
-  // Actions
+  // Actions with full Offline Queue support
   const handleStartPrep = async (order: KitchenOrderTicket) => {
+    const nowIso = new Date().toISOString();
+    const applyOptimisticStart = () => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === order.id
+            ? {
+                ...o,
+                businessStatus: 'started',
+                startedAt: nowIso,
+                items: o.items.map(it => ({
+                  ...it,
+                  preparationStatus:
+                    it.preparationStatus === 'held' || it.preparationStatus === 'pending'
+                      ? 'in_preparation'
+                      : it.preparationStatus,
+                })),
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticStart();
+      for (const it of order.items) {
+        if (it.preparationStatus === 'held' || it.preparationStatus === 'pending') {
+          await enqueueOfflineAction({
+            actionType: 'UPDATE_ITEM_STATUS',
+            kitchenOrderId: order.id,
+            kitchenOrderItemId: it.id,
+            status: 'in_preparation',
+            clientTimestamp: nowIso,
+          });
+        }
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} STARTED preparation (Offline mode)`, 'info');
+      return;
+    }
+
     try {
       const token = getAccessToken();
       const headers = {
@@ -769,33 +915,410 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
 
       if (res.ok) {
-        const nowIso = new Date().toISOString();
-        setOrders(prev =>
-          prev.map(o =>
-            o.id === order.id
-              ? {
-                  ...o,
-                  businessStatus: 'started',
-                  startedAt: nowIso,
-                  items: o.items.map(it => ({
-                    ...it,
-                    preparationStatus:
-                      it.preparationStatus === 'held' || it.preparationStatus === 'pending'
-                        ? 'in_preparation'
-                        : it.preparationStatus,
-                  })),
-                }
-              : o
-          )
-        );
+        applyOptimisticStart();
         showToast(`Order #KO-${order.id} STARTED preparation`, 'info');
+      } else {
+        throw new Error('Server returned error');
       }
-    } catch {
-      showToast('Error starting order preparation', 'warning');
+    } catch (err) {
+      console.warn('Network start failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticStart();
+      for (const it of order.items) {
+        if (it.preparationStatus === 'held' || it.preparationStatus === 'pending') {
+          await enqueueOfflineAction({
+            actionType: 'UPDATE_ITEM_STATUS',
+            kitchenOrderId: order.id,
+            kitchenOrderItemId: it.id,
+            status: 'in_preparation',
+            clientTimestamp: nowIso,
+          });
+        }
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} STARTED preparation (Offline mode)`, 'info');
+    }
+  };
+
+  // Handle Undo on the overall order (revert to PENDING after START)
+  const handleUndoOrder = async (order: KitchenOrderTicket) => {
+    const applyOptimisticUndo = () => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === order.id
+            ? {
+                ...o,
+                businessStatus: 'pending',
+                startedAt: null,
+                items: o.items.map(it => {
+                  const isStagedCourse = it.course === 'dessert' || it.course === 'main_course';
+                  return {
+                    ...it,
+                    preparationStatus: isStagedCourse ? 'held' : 'pending',
+                    preparedQuantity: 0,
+                  };
+                }),
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticUndo();
+      for (const it of order.items) {
+        const isStagedCourse = it.course === 'dessert' || it.course === 'main_course';
+        await enqueueOfflineAction({
+          actionType: 'UPDATE_ITEM_STATUS',
+          kitchenOrderId: order.id,
+          kitchenOrderItemId: it.id,
+          status: isStagedCourse ? 'held' : 'pending',
+          preparedQuantity: 0,
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} returned to PENDING (Undo Start - Offline mode)`, 'info');
+      return;
+    }
+
+    try {
+      const token = getAccessToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch(`${API_BASE}/kitchen-orders/${order.id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ businessStatus: 'pending' }),
+      });
+
+      if (res.ok) {
+        showToast(`Order #KO-${order.id} returned to PENDING (Undo Start)`, 'info');
+        loadOrders(true);
+      } else {
+        throw new Error('Server returned error');
+      }
+    } catch (err) {
+      console.warn('Network undo failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticUndo();
+      for (const it of order.items) {
+        const isStagedCourse = it.course === 'dessert' || it.course === 'main_course';
+        await enqueueOfflineAction({
+          actionType: 'UPDATE_ITEM_STATUS',
+          kitchenOrderId: order.id,
+          kitchenOrderItemId: it.id,
+          status: isStagedCourse ? 'held' : 'pending',
+          preparedQuantity: 0,
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} returned to PENDING (Undo Start - Offline mode)`, 'info');
+    }
+  };
+
+  // Handle START on an individual item (when order has > 1 items)
+  const handleStartItem = async (orderId: number, itemId: number, currentPrepStatus: string) => {
+    const applyOptimisticStartItem = () => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === orderId
+            ? {
+                ...o,
+                businessStatus: o.businessStatus === 'pending' ? 'started' : o.businessStatus,
+                items: o.items.map(it =>
+                  it.id === itemId
+                    ? { ...it, preparationStatus: 'in_preparation' }
+                    : it
+                ),
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticStartItem();
+      await enqueueOfflineAction({
+        actionType: currentPrepStatus === 'held' ? 'FIRE_ITEM' : 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: 'in_preparation',
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish started in preparation (Offline mode)`, 'info');
+      return;
+    }
+
+    try {
+      const token = getAccessToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      if (currentPrepStatus === 'held') {
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/fire`, {
+          method: 'POST',
+          headers,
+        });
+        if (!res.ok) throw new Error('Failed to fire item');
+      } else {
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
+        });
+        if (!res.ok) throw new Error('Failed to start item');
+      }
+
+      showToast(`Dish started in preparation`, 'info');
+      loadOrders(true);
+    } catch (err) {
+      console.warn('Network item start failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticStartItem();
+      await enqueueOfflineAction({
+        actionType: currentPrepStatus === 'held' ? 'FIRE_ITEM' : 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: 'in_preparation',
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish started in preparation (Offline mode)`, 'info');
+    }
+  };
+
+  // Handle READY on an individual item
+  const handleReadyItem = async (orderId: number, itemId: number, quantity: number) => {
+    const applyOptimisticReadyItem = () => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === orderId
+            ? {
+                ...o,
+                items: o.items.map(it =>
+                  it.id === itemId
+                    ? { ...it, preparationStatus: 'ready', preparedQuantity: quantity }
+                    : it
+                ),
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticReadyItem();
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: 'ready',
+        preparedQuantity: quantity,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish marked READY (Offline mode)`, 'success');
+      return;
+    }
+
+    try {
+      const token = getAccessToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          preparationStatus: 'ready',
+          preparedQuantity: quantity,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to mark item ready');
+      showToast(`Dish marked READY`, 'success');
+      loadOrders(true);
+    } catch (err) {
+      console.warn('Network ready item failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticReadyItem();
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: 'ready',
+        preparedQuantity: quantity,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish marked READY (Offline mode)`, 'success');
+    }
+  };
+
+  // Handle UNDO on an individual item (after start)
+  const handleUndoItem = async (
+    orderId: number,
+    itemId: number,
+    currentPrepStatus: string,
+    course?: string
+  ) => {
+    const isStagedCourse = course === 'dessert' || course === 'main_course';
+    const targetStatus = currentPrepStatus === 'ready' ? 'in_preparation' : isStagedCourse ? 'held' : 'pending';
+    const targetQty = currentPrepStatus === 'ready' ? undefined : 0;
+
+    const applyOptimisticUndoItem = () => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === orderId
+            ? {
+                ...o,
+                items: o.items.map(it =>
+                  it.id === itemId
+                    ? {
+                        ...it,
+                        preparationStatus: targetStatus as any,
+                        preparedQuantity: targetQty ?? it.preparedQuantity,
+                      }
+                    : it
+                ),
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticUndoItem();
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: targetStatus,
+        preparedQuantity: targetQty,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish status reverted (Undo - Offline mode)`, 'info');
+      return;
+    }
+
+    try {
+      const token = getAccessToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      if (currentPrepStatus === 'ready') {
+        // Ready -> in_preparation
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
+        });
+        if (!res.ok) throw new Error('Failed to undo ready');
+      } else {
+        // in_preparation -> held or pending
+        if (isStagedCourse) {
+          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/hold?holdMinutes=10`, {
+            method: 'POST',
+            headers,
+          });
+          if (!res.ok) throw new Error('Failed to hold item');
+        } else {
+          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({
+              preparationStatus: 'pending',
+              preparedQuantity: 0,
+            }),
+          });
+          if (!res.ok) throw new Error('Failed to revert item');
+        }
+      }
+
+      showToast(`Dish status reverted (Undo)`, 'info');
+      loadOrders(true);
+    } catch (err) {
+      console.warn('Network item undo failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticUndoItem();
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: targetStatus,
+        preparedQuantity: targetQty,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish status reverted (Undo - Offline mode)`, 'info');
     }
   };
 
   const handleBumpOrder = async (order: KitchenOrderTicket) => {
+    const nowIso = new Date().toISOString();
+    const updatedItems = (order.items || []).map(it => ({
+      ...it,
+      preparationStatus: 'ready' as const,
+      preparedQuantity: it.quantity,
+    }));
+
+    const applyOptimisticBump = () => {
+      setLastBumpedOrder({
+        ...order,
+        businessStatus: 'completed',
+        completedAt: nowIso,
+        items: updatedItems,
+      });
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === order.id
+            ? {
+                ...o,
+                businessStatus: 'completed',
+                completedAt: nowIso,
+                items: updatedItems,
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticBump();
+      await enqueueOfflineAction({
+        actionType: 'BUMP_ORDER',
+        kitchenOrderId: order.id,
+        stationId: order.stationId ?? undefined,
+        clientTimestamp: nowIso,
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} BUMPED (Guardado localmente - Modo Offline)`, 'success');
+      return;
+    }
+
     try {
       const token = getAccessToken();
       const headers = {
@@ -810,40 +1333,61 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
 
       if (res.ok) {
-        const nowIso = new Date().toISOString();
-        const updatedItems = (order.items || []).map(it => ({
-          ...it,
-          preparationStatus: 'ready' as const,
-          preparedQuantity: it.quantity,
-        }));
-        setLastBumpedOrder({
-          ...order,
-          businessStatus: 'completed',
-          completedAt: nowIso,
-          items: updatedItems,
-        });
-        setOrders(prev =>
-          prev.map(o =>
-            o.id === order.id
-              ? {
-                  ...o,
-                  businessStatus: 'completed',
-                  completedAt: nowIso,
-                  items: updatedItems,
-                }
-              : o
-          )
-        );
+        applyOptimisticBump();
         showToast(`Order #KO-${order.id} BUMPED (Completed)`, 'success');
+      } else {
+        throw new Error('Failed to bump order');
       }
-    } catch {
-      showToast('Error bumping order', 'warning');
+    } catch (err) {
+      console.warn('Network bump failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticBump();
+      await enqueueOfflineAction({
+        actionType: 'BUMP_ORDER',
+        kitchenOrderId: order.id,
+        stationId: order.stationId ?? undefined,
+        clientTimestamp: nowIso,
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} BUMPED (Guardado localmente - Modo Offline)`, 'success');
     }
   };
 
   const handleRecallOrder = async (targetOrderId?: number) => {
     const idToRecall = targetOrderId ?? lastBumpedOrder?.id;
     if (!idToRecall) return;
+
+    const applyOptimisticRecall = () => {
+      if (lastBumpedOrder?.id === idToRecall) {
+        setLastBumpedOrder(null);
+      }
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === idToRecall
+            ? {
+                ...o,
+                businessStatus: 'started',
+                completedAt: null,
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticRecall();
+      await enqueueOfflineAction({
+        actionType: 'RECALL_ORDER',
+        kitchenOrderId: idToRecall,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${idToRecall} RECALLED (Saved locally - Offline Mode)`, 'info');
+      return;
+    }
+
     try {
       const token = getAccessToken();
       const headers = {
@@ -857,14 +1401,24 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
 
       if (res.ok) {
+        applyOptimisticRecall();
         showToast(`Order #KO-${idToRecall} RECALLED to Active Line`, 'info');
-        if (lastBumpedOrder?.id === idToRecall) {
-          setLastBumpedOrder(null);
-        }
         loadOrders(true);
+      } else {
+        throw new Error('Failed to recall order');
       }
-    } catch {
-      showToast('Error recalling order', 'warning');
+    } catch (err) {
+      console.warn('Network recall failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticRecall();
+      await enqueueOfflineAction({
+        actionType: 'RECALL_ORDER',
+        kitchenOrderId: idToRecall,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${idToRecall} RECALLED (Saved locally - Offline Mode)`, 'info');
     }
   };
 
@@ -1720,7 +2274,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           {filteredOrders.map(order => {
             const isAllHeld = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'held');
             const hasActivePrep = order.items.some(it => it.preparationStatus === 'in_preparation' || it.preparationStatus === 'ready');
-            const isStarted = order.businessStatus === 'started' && hasActivePrep;
+            const isStarted = (order.businessStatus === 'started' || hasActivePrep) && !isAllHeld;
             const isCompleted = order.businessStatus === 'completed';
             const isCancelled = order.businessStatus === 'cancelled';
             const isPending = !isAllHeld && !isStarted && !isCompleted && !isCancelled;
@@ -1851,71 +2405,141 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                         return 4;
                       };
                       return rank(a.preparationStatus) - rank(b.preparationStatus);
-                    }).map(it => (
-                      <div
-                        key={it.id}
-                        className="p-2 rounded-lg bg-[#fcfbf9] border border-[#ebe5da] flex items-start justify-between gap-2 text-xs text-[#1d1c17] transition-colors hover:border-[#ded5c5]"
-                      >
-                        <div className="flex items-start gap-2 flex-1 min-w-0">
-                          {/* Qty pill */}
-                          <span className="w-5 h-5 rounded bg-[#eee8dc] text-[#1d1c17] font-mono font-extrabold text-[11px] flex items-center justify-center shrink-0">
-                            {it.quantity}
-                          </span>
+                    }).map(it => {
+                      const itemAction = getItemPrepAction(it.course, it.productName);
 
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-extrabold text-[#1d1c17] break-words leading-tight">
-                                {it.productName}
-                              </span>
-                              {it.variantName && (
-                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#ede7dc] text-[#554d42]">
-                                  {it.variantName}
+                      return (
+                        <div
+                          key={it.id}
+                          className="p-2 rounded-lg bg-[#fcfbf9] border border-[#ebe5da] flex items-start justify-between gap-2 text-xs text-[#1d1c17] transition-colors hover:border-[#ded5c5]"
+                        >
+                          <div className="flex items-start gap-2 flex-1 min-w-0">
+                            {/* Qty pill */}
+                            <span className="w-5 h-5 rounded bg-[#eee8dc] text-[#1d1c17] font-mono font-extrabold text-[11px] flex items-center justify-center shrink-0">
+                              {it.quantity}
+                            </span>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-extrabold text-[#1d1c17] break-words leading-tight">
+                                  {it.productName}
                                 </span>
+                                {it.variantName && (
+                                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#ede7dc] text-[#554d42]">
+                                    {it.variantName}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Course chip */}
+                              {it.course && (
+                                <div className="mt-1 flex items-center gap-1">
+                                  <span className="inline-flex items-center gap-1 text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-white text-[#5f5e5e] border border-[#e2dcce]">
+                                    <span>
+                                      {it.course === 'beverage'
+                                        ? '🍹'
+                                        : it.course === 'appetizer'
+                                        ? '🥗'
+                                        : it.course === 'dessert'
+                                        ? '🍰'
+                                        : '🍔'}
+                                    </span>
+                                    <span>{it.course.replace('_', ' ')}</span>
+                                  </span>
+                                </div>
                               )}
                             </div>
+                          </div>
 
-                            {/* Course chip */}
-                            {it.course && (
-                              <div className="mt-1 flex items-center gap-1">
-                                <span className="inline-flex items-center gap-1 text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-white text-[#5f5e5e] border border-[#e2dcce]">
-                                  <span>
-                                    {it.course === 'beverage'
-                                      ? '🍹'
-                                      : it.course === 'appetizer'
-                                      ? '🥗'
-                                      : it.course === 'dessert'
-                                      ? '🍰'
-                                      : '🍔'}
-                                  </span>
-                                  <span>{it.course.replace('_', ' ')}</span>
-                                </span>
-                              </div>
+                          {/* Status badge & Item actions */}
+                          <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                            {/* Botón POUR / PREP (o FIRE) individual en el artículo si hay más de 1 artículo */}
+                            {order.items.length > 1 && !isCompleted && !isCancelled && (
+                              <>
+                                {it.preparationStatus === 'held' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartItem(order.id, it.id, it.preparationStatus);
+                                    }}
+                                    className="h-6 px-2 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95"
+                                    title={`Fire directly to ${itemAction.verb.toLowerCase()} (In Prep)`}
+                                  >
+                                    <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
+                                    <span>FIRE</span>
+                                  </button>
+                                )}
+
+                                {it.preparationStatus === 'pending' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartItem(order.id, it.id, it.preparationStatus);
+                                    }}
+                                    className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50"
+                                    title={itemAction.title}
+                                  >
+                                    <span className="material-symbols-outlined text-[10px]">{itemAction.icon}</span>
+                                    <span>{itemAction.verb}</span>
+                                  </button>
+                                )}
+                              </>
                             )}
+
+                            {/* Botón READY individual para marcar listo si está en preparación */}
+                            {!isCompleted && !isCancelled && it.preparationStatus === 'in_preparation' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReadyItem(order.id, it.id, it.quantity);
+                                }}
+                                className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
+                                title="Mark as READY"
+                              >
+                                <span className="material-symbols-outlined text-[10px]">check_circle</span>
+                                <span>READY</span>
+                              </button>
+                            )}
+
+                            {/* Botón UNDO en el artículo (después de haber iniciado: in_preparation o ready) */}
+                            {!isCompleted && !isCancelled && (it.preparationStatus === 'in_preparation' || it.preparationStatus === 'ready') && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUndoItem(order.id, it.id, it.preparationStatus, it.course);
+                                }}
+                                className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-stone-100 hover:bg-amber-100 text-stone-700 hover:text-amber-900 border border-stone-300 hover:border-amber-400"
+                                title={it.preparationStatus === 'ready' ? 'Undo: Return to In Preparation' : 'Undo: Return to Queue'}
+                              >
+                                <span className="material-symbols-outlined text-[10px]">undo</span>
+                                <span>UNDO</span>
+                              </button>
+                            )}
+
+                            {/* Status badge */}
+                            <span
+                              className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                                it.preparationStatus === 'ready'
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : it.preparationStatus === 'held'
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : it.preparationStatus === 'in_preparation'
+                                  ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                  : 'bg-zinc-100 text-[#5f5e5e] border-zinc-200'
+                              }`}
+                            >
+                              {it.preparationStatus === 'ready'
+                                ? 'Ready'
+                                : it.preparationStatus === 'held'
+                                ? 'Held'
+                                : it.preparationStatus === 'in_preparation'
+                                ? 'Prep'
+                                : 'Pending'}
+                            </span>
                           </div>
                         </div>
-
-                        {/* Status badge */}
-                        <span
-                          className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
-                            it.preparationStatus === 'ready'
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                              : it.preparationStatus === 'held'
-                              ? 'bg-amber-100 text-amber-900 border-amber-300'
-                              : it.preparationStatus === 'in_preparation'
-                              ? 'bg-blue-100 text-blue-800 border-blue-300'
-                              : 'bg-zinc-100 text-[#5f5e5e] border-zinc-200'
-                          }`}
-                        >
-                          {it.preparationStatus === 'ready'
-                            ? 'Ready'
-                            : it.preparationStatus === 'held'
-                            ? 'Held'
-                            : it.preparationStatus === 'in_preparation'
-                            ? 'Prep'
-                            : 'Pending'}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1936,6 +2560,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                         className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
                       >
                         Start
+                      </button>
+                    )}
+
+                    {/* Botón Undo general en la comanda (después de haber dado Start) */}
+                    {(isStarted || hasActivePrep) && !isCompleted && !isCancelled && (
+                      <button
+                        onClick={() => handleUndoOrder(order)}
+                        className="px-2.5 py-1 bg-stone-100 hover:bg-amber-100 text-stone-700 hover:text-amber-900 border border-stone-300 hover:border-amber-400 rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1"
+                        title="Undo Start: Return entire order to PENDING and reset items"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">undo</span>
+                        <span>Undo</span>
                       </button>
                     )}
 

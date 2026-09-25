@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAccessToken } from '../../../../../lib/auth-storage';
+import { enqueueOfflineAction } from '../../../../../lib/kds-offline-sync';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -31,8 +32,11 @@ interface KitchenRecallTrayProps {
   onClose: () => void;
   activeStationId?: number | 'ALL';
   activeStationName?: string;
-  onOrderRecalled?: (orderId: number) => void;
+  onOrderRecalled?: (orderId: number, recalledRecord?: BumpedOrderRecord) => void;
   lastBumpedOrder?: BumpedOrderRecord | null;
+  bumpedOrdersHistory?: BumpedOrderRecord[];
+  activeOrderIds?: (number | string)[];
+  isOffline?: boolean;
 }
 
 export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
@@ -42,12 +46,16 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
   activeStationName,
   onOrderRecalled,
   lastBumpedOrder,
+  bumpedOrdersHistory,
+  activeOrderIds = [],
+  isOffline = false,
 }) => {
   const [completedOrders, setCompletedOrders] = useState<BumpedOrderRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [recallingId, setRecallingId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ id: number; message: string; type: 'success' | 'error' } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [viewScope, setViewScope] = useState<'STATION' | 'ALL'>('STATION');
 
   // Timer para refrescar timestamps de forma pura
   useEffect(() => {
@@ -157,40 +165,104 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
     }
   }, [isOpen, fetchRecentBumps]);
 
-  // Combinar órdenes completadas del backend con la última bumpeada localmente
+  // Combinar órdenes completadas del backend con el historial completo de bumps local
   const displayOrders = React.useMemo(() => {
-    let list = completedOrders;
+    const map = new Map<number, BumpedOrderRecord>();
 
-    // Filtrar estrictamente por estación si no es 'ALL'
-    if (activeStationId && activeStationId !== 'ALL') {
-      list = list.filter((o) => (o.stationId || o.station?.id) === activeStationId);
+    // Primero las del backend si existen
+    completedOrders.forEach((o) => map.set(o.id, o));
+
+    // Luego el historial de bumps acumulado localmente (incluyendo offline)
+    if (bumpedOrdersHistory && bumpedOrdersHistory.length > 0) {
+      bumpedOrdersHistory.forEach((o) => {
+        if (!map.has(o.id)) map.set(o.id, o);
+      });
     }
 
-    if (!lastBumpedOrder) return list;
-
-    // Solo anexar lastBumpedOrder si pertenece a la estación actual
-    if (activeStationId && activeStationId !== 'ALL') {
-      if (lastBumpedOrder.stationId && lastBumpedOrder.stationId !== activeStationId) {
-        return list;
-      }
-      if (
-        lastBumpedOrder.stationName &&
-        activeStationName &&
-        lastBumpedOrder.stationName.trim().toLowerCase() !== activeStationName.trim().toLowerCase()
-      ) {
-        return list;
-      }
+    if (lastBumpedOrder && !map.has(lastBumpedOrder.id)) {
+      map.set(lastBumpedOrder.id, lastBumpedOrder);
     }
 
-    const exists = list.some((o) => o.id === lastBumpedOrder.id);
-    if (exists) return list;
-    return [lastBumpedOrder, ...list.slice(0, 9)];
-  }, [completedOrders, lastBumpedOrder, activeStationId, activeStationName]);
+    let list = Array.from(map.values());
+
+    // Ordenar de más reciente a más antiguo
+    list.sort((a, b) => {
+      const timeA = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+      const timeB = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    // Si el filtro es por estación actual
+    if (viewScope === 'STATION' && activeStationId && activeStationId !== 'ALL') {
+      list = list.filter((o) => {
+        if (o.stationId) return o.stationId === activeStationId;
+        if (o.stationName && activeStationName) {
+          return o.stationName.trim().toLowerCase() === activeStationName.trim().toLowerCase();
+        }
+        return false;
+      });
+    }
+
+    // Excluir órdenes que estén actualmente activas en la pantalla KDS
+    if (activeOrderIds && activeOrderIds.length > 0) {
+      const activeSet = new Set(activeOrderIds.map(String));
+      list = list.filter((o) => !activeSet.has(String(o.id)) && (!o.orderId || !activeSet.has(String(o.orderId))));
+    }
+
+    return list.slice(0, 15);
+  }, [completedOrders, bumpedOrdersHistory, lastBumpedOrder, activeStationId, activeStationName, viewScope, activeOrderIds]);
 
   // One-Tap "RECALL ORDER" Action
   const handleRecallOrder = async (orderId: number) => {
     setRecallingId(orderId);
     setFeedback(null);
+
+    const targetOrder = displayOrders.find((o) => o.id === orderId);
+
+    const doOfflineRecall = async () => {
+      await enqueueOfflineAction({
+        actionType: 'RECALL_ORDER',
+        kitchenOrderId: orderId,
+        stationId: targetOrder?.stationId,
+        clientTimestamp: new Date().toISOString(),
+      });
+
+      setFeedback({
+        id: orderId,
+        message: '↺ Ticket restored locally (Offline Mode)!',
+        type: 'success',
+      });
+
+      // Notificar a KDS de la restauración local
+      window.dispatchEvent(
+        new CustomEvent('x7_kds_data_reset', {
+          detail: { action: 'recall', orderId, order: targetOrder, isOffline: true },
+        }),
+      );
+
+      if (onOrderRecalled) {
+        onOrderRecalled(orderId, targetOrder);
+      }
+
+      // Remover de la lista de recientes completadas
+      setTimeout(() => {
+        setCompletedOrders((prev) => prev.filter((o) => o.id !== orderId));
+        setFeedback(null);
+      }, 900);
+    };
+
+    // Si la pantalla KDS está en offline o el navegador no tiene red, encolar localmente
+    if (isOffline || !navigator.onLine) {
+      try {
+        await doOfflineRecall();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Error saving offline recall';
+        setFeedback({ id: orderId, message: msg, type: 'error' });
+      } finally {
+        setRecallingId(null);
+      }
+      return;
+    }
 
     try {
       const token = getAccessToken();
@@ -206,20 +278,24 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.message || 'Error al restaurar la comanda');
+        throw new Error(errJson?.message || 'Failed to restore ticket');
       }
 
       setFeedback({
         id: orderId,
-        message: '¡Comanda restaurada con éxito a la pantalla activa!',
+        message: 'Ticket restored successfully to active screen!',
         type: 'success',
       });
 
       // Notificar a KDS de la restauración
-      window.dispatchEvent(new CustomEvent('x7_kds_data_reset', { detail: { action: 'recall', orderId } }));
+      window.dispatchEvent(
+        new CustomEvent('x7_kds_data_reset', {
+          detail: { action: 'recall', orderId, order: targetOrder, isOffline: false },
+        }),
+      );
 
       if (onOrderRecalled) {
-        onOrderRecalled(orderId);
+        onOrderRecalled(orderId, targetOrder);
       }
 
       // Remover de la lista de recientes completadas
@@ -228,8 +304,13 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
         setFeedback(null);
       }, 900);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error al restaurar';
-      setFeedback({ id: orderId, message: msg, type: 'error' });
+      console.warn('Network recall failed, saving offline fallback:', err);
+      try {
+        await doOfflineRecall();
+      } catch (offlineErr) {
+        const msg = offlineErr instanceof Error ? offlineErr.message : 'Error restoring ticket';
+        setFeedback({ id: orderId, message: msg, type: 'error' });
+      }
     } finally {
       setRecallingId(null);
     }
@@ -246,13 +327,13 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
   };
 
   const calculateCompletedAgo = (completedAt: string | null | undefined, currentNow: number) => {
-    if (!completedAt) return 'Reciente';
+    if (!completedAt) return 'Recent';
     const diffSec = Math.max(0, Math.floor((currentNow - new Date(completedAt).getTime()) / 1000));
-    if (diffSec < 60) return `Hace ${diffSec}s`;
+    if (diffSec < 60) return `${diffSec}s ago`;
     const mins = Math.floor(diffSec / 60);
-    if (mins < 60) return `Hace ${mins}m`;
+    if (mins < 60) return `${mins}m ago`;
     const hours = Math.floor(mins / 60);
-    return `Hace ${hours}h`;
+    return `${hours}h ago`;
   };
 
   if (!isOpen) return null;
@@ -307,6 +388,41 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
             >
               HISTORY ({displayOrders.length}/10)
             </span>
+          </div>
+        </div>
+
+        {/* Station Filter Toggle Bar */}
+        <div className="px-3.5 py-2 bg-[#18191e] border-b border-zinc-800 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 font-semibold truncate">
+            <span>Filter:</span>
+            <span className="text-amber-400 font-bold truncate">
+              {viewScope === 'STATION' ? (activeStationName || `Station #${activeStationId}`) : 'All Kitchen Stations'}
+            </span>
+          </div>
+
+          <div className="flex items-center bg-zinc-900 border border-zinc-700/80 p-0.5 rounded-lg text-[10px] font-bold shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewScope('STATION')}
+              className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                viewScope === 'STATION'
+                  ? 'bg-amber-500 text-black font-black shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              This Station
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewScope('ALL')}
+              className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                viewScope === 'ALL'
+                  ? 'bg-amber-500 text-black font-black shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              All Stations
+            </button>
           </div>
         </div>
 

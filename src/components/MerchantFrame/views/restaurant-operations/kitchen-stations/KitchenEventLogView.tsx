@@ -475,7 +475,10 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         grp.latestStatus = 'RECALLED';
         grp.isCompleted = false;
       } else if (orderBusinessStatus === 'pending') {
-        grp.latestStatus = 'PENDING';
+        const hasActivePrep = grp.events.some(
+          (e) => e.eventType === 'listo' || e.eventType === 'inicio',
+        );
+        grp.latestStatus = hasActivePrep ? 'IN PREP' : 'PENDING';
         grp.isCompleted = false;
       } else {
         grp.latestStatus = 'IN PREP';
@@ -1248,7 +1251,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
               onPrint={() => window.print()}
               printLabel="Print Event Log Directory"
               onCopySummary={() => {
-                const summaryText = `Kitchen Event Log Audit Summary:\n- Total Orders: ${groupedOrders.length}\n- Total Events Today: ${velocityMetrics.totalToday}\n- Order Starts (INICIO): ${velocityMetrics.inicioToday}\n- Orders Completed (LISTO): ${velocityMetrics.listoToday}\n- Servido: ${velocityMetrics.servidoToday}\n- Cancellations: ${velocityMetrics.canceladoToday} (${velocityMetrics.cancellationRate.toFixed(1)}%)`;
+                const summaryText = `Kitchen Event Log Audit Summary:\n- Total Orders: ${groupedOrders.length}\n- Total Events Today: ${velocityMetrics.totalToday}\n- Order Starts (STARTED): ${velocityMetrics.inicioToday}\n- Orders Completed (READY): ${velocityMetrics.listoToday}\n- Orders Served: ${velocityMetrics.servidoToday}\n- Cancellations: ${velocityMetrics.canceladoToday} (${velocityMetrics.cancellationRate.toFixed(1)}%)`;
                 navigator.clipboard.writeText(summaryText);
                 showToast('Summary copied to clipboard', 'info');
               }}

@@ -1,8 +1,24 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
 import { KitchenDevResetButton } from './KitchenDevResetButton';
 import { KitchenRecallTray, type BumpedOrderRecord } from './KitchenRecallTray';
+import {
+  enqueueOfflineAction,
+  getQueuedActions,
+  flushOfflineQueue,
+  cacheTicketsLocally,
+  getCachedTicketsLocally,
+  clearOfflineData,
+} from '../../../../../lib/kds-offline-sync';
+import {
+  StationRerouteModal,
+  type StationRerouteStatus,
+} from './StationRerouteModal';
+import {
+  ThermalTicketModal,
+  type ThermalTicketPayload,
+} from './ThermalTicketModal';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -111,6 +127,15 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const [isPacingDrawerOpen, setIsPacingDrawerOpen] = useState<boolean>(false);
   const [isRecallTrayOpen, setIsRecallTrayOpen] = useState<boolean>(false);
   const [lastBumpedOrder, setLastBumpedOrder] = useState<BumpedOrderRecord | null>(null);
+  const [recentlyBumpedTickets, setRecentlyBumpedTickets] = useState<KitchenTicket[]>([]);
+  const [bumpedOrdersHistory, setBumpedOrdersHistory] = useState<BumpedOrderRecord[]>(() => {
+    try {
+      const s = localStorage.getItem('x7_kds_bumped_history');
+      return s ? JSON.parse(s) : [];
+    } catch {
+      return [];
+    }
+  });
   const [undoToast, setUndoToast] = useState<{ id: string; backendOrderId?: number; table: string } | null>(null);
   const [isAllDayBarExpanded, setIsAllDayBarExpanded] = useState<boolean>(true);
   const [cardDensity, setCardDensity] = useState<KdsCardDensity>(() => {
@@ -128,6 +153,38 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const [autoFireEnabled, setAutoFireEnabled] = useState<boolean>(true);
   const [audioChimeEnabled, setAudioChimeEnabled] = useState<boolean>(true);
   const [activeAlertToast, setActiveAlertToast] = useState<{ id: string; message: string; type: 'fire' | 'pacing' } | null>(null);
+
+  const [isOffline, setIsOffline] = useState<boolean>(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
+  const [queuedActionsCount, setQueuedActionsCount] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const isSyncingRef = useRef<boolean>(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
+  // Dynamic Station Rerouting, Thermal Printer Fallback & High-Volume Load Balancing (Historia X7P-4211)
+  const [stationRerouteStatuses, setStationRerouteStatuses] = useState<StationRerouteStatus[]>([]);
+  const [isRerouteModalOpen, setIsRerouteModalOpen] = useState<boolean>(false);
+  const [thermalTicketPayload, setThermalTicketPayload] = useState<ThermalTicketPayload | null>(null);
+  const [isThermalTicketModalOpen, setIsThermalTicketModalOpen] = useState<boolean>(false);
+
+  const fetchRerouteStatuses = useCallback(async () => {
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`${API_BASE}/kitchen-station/rerouting-status`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setStationRerouteStatuses(data);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch station rerouting statuses:', e);
+    }
+  }, []);
 
   const handleDensityChange = (density: KdsCardDensity) => {
     setCardDensity(density);
@@ -184,8 +241,16 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         console.warn('Could not load kitchen stations in KDS:', err);
       }
     };
-    fetchStations();
-  }, []);
+    const loadAll = async () => {
+      await fetchStations();
+      await fetchRerouteStatuses();
+    };
+    loadAll();
+    const interval = setInterval(() => {
+      fetchRerouteStatuses();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [fetchRerouteStatuses]);
 
   // 1-second countdown ticker for Held Items Pacing Timers
   useEffect(() => {
@@ -323,6 +388,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             variant?: { name?: string };
             variantName?: string;
             quantity?: number;
+            preparedQuantity?: number;
+            prepared_quantity?: number;
             notes?: string;
             course?: string;
             preparationStatus?: string;
@@ -380,32 +447,149 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         });
 
         setTickets(mapped);
+        cacheTicketsLocally(mapped);
+
+        // Purgar del historial local de bumps cualquier orden que el backend confirme que está activa
+        const activeBackendIds = new Set(mapped.map((t) => t.backendOrderId).filter(Boolean));
+        setBumpedOrdersHistory((prev) => {
+          const next = prev.filter((o) => !activeBackendIds.has(o.id));
+          if (next.length !== prev.length) {
+            try {
+              localStorage.setItem('x7_kds_bumped_history', JSON.stringify(next));
+            } catch {
+              /* ignore storage error */
+            }
+          }
+          return next;
+        });
       }
     } catch (err) {
       console.warn('Backend orders sync failed:', err);
+      // Restore from offline IndexedDB cache if server is unreachable
+      const cached = await getCachedTicketsLocally<KitchenTicket>();
+      if (cached && cached.length > 0) {
+        setTickets(cached);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Automatic Queue Flushing upon re-connection (Historia X7P-4210)
+  const triggerAutoSync = useCallback(async () => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    try {
+      const pending = await getQueuedActions();
+      if (pending.length === 0) {
+        setQueuedActionsCount(0);
+        return;
+      }
+
+      setIsSyncing(true);
+      const token = getAccessToken();
+      const res = await flushOfflineQueue(API_BASE, token);
+      setIsSyncing(false);
+
+      if (res.success && res.syncedCount > 0) {
+        setSyncFeedback(`All ${res.syncedCount} offline change(s) synchronized with server`);
+        setTimeout(() => setSyncFeedback(null), 4000);
+        fetchBackendOrders(true);
+      }
+      const remaining = await getQueuedActions();
+      setQueuedActionsCount(remaining.length);
+    } catch (err) {
+      console.warn('Auto re-sync error:', err);
+      setIsSyncing(false);
+    } finally {
+      isSyncingRef.current = false;
+      setIsSyncing(false);
+    }
+  }, [fetchBackendOrders]);
+
+  // Network Disconnection Handling & 2.5s Heartbeat Ping (detects loss within 3s - Historia X7P-4210)
+  useEffect(() => {
+    getQueuedActions()
+      .then((q) => setQueuedActionsCount(q.length))
+      .catch(() => {});
+
+    let isMounted = true;
+
+    const handleOnlineEvent = () => {
+      setIsOffline(false);
+      void triggerAutoSync();
+    };
+
+    const handleOfflineEvent = () => {
+      setIsOffline(true);
+    };
+
+    window.addEventListener('online', handleOnlineEvent);
+    window.addEventListener('offline', handleOfflineEvent);
+
+    // Heartbeat ping every 2500ms to detect server / ping failure within 3 seconds
+    const pingTimer = setInterval(async () => {
+      const token = getAccessToken();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+      try {
+        const res = await fetch(`${API_BASE}/kitchen-event-logs/ping`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (!isMounted) return;
+
+        if (res.ok || res.status === 401 || res.status === 403) {
+          setIsOffline(false);
+          void triggerAutoSync();
+        } else {
+          setIsOffline(true);
+        }
+      } catch {
+        clearTimeout(timeoutId);
+        if (!isMounted) return;
+        setIsOffline(true);
+      }
+    }, 2500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(pingTimer);
+      window.removeEventListener('online', handleOnlineEvent);
+      window.removeEventListener('offline', handleOfflineEvent);
+    };
+  }, [triggerAutoSync]);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
       fetchBackendOrders(false);
     });
     const interval = setInterval(() => {
-      fetchBackendOrders(true);
+      if (!isOffline) {
+        fetchBackendOrders(true);
+      }
     }, 4000);
     return () => clearInterval(interval);
-  }, [fetchBackendOrders]);
+  }, [fetchBackendOrders, isOffline]);
 
   // Escuchar evento global de reinicio KDS
   useEffect(() => {
     const handleReset = () => {
+      void clearOfflineData();
       fetchBackendOrders(true);
     };
     window.addEventListener('x7_kds_data_reset', handleReset);
     return () => window.removeEventListener('x7_kds_data_reset', handleReset);
   }, [fetchBackendOrders]);
+
+  // Sincronizar automáticamente el estado de tickets con la caché local de IndexedDB (offline_tickets)
+  useEffect(() => {
+    if (tickets && tickets.length > 0) {
+      void cacheTicketsLocally(tickets);
+    }
+  }, [tickets]);
 
   // Manual FIRE of an entire Course for a Ticket
   const handleFireCourse = async (ticketId: string, course: CourseType) => {
@@ -414,19 +598,38 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
     // Send API call if backend ID is available
     if (targetTicket.backendOrderId) {
-      try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-        await fetch(
-          `${API_BASE}/kitchen-order-items/order/${targetTicket.backendOrderId}/fire-course?course=${course.toLowerCase()}`,
-          { method: 'POST', headers }
-        );
-        fetchBackendOrders(true);
-      } catch (e) {
-        console.warn('Backend fire-course failed:', e);
+      if (isOffline) {
+        await enqueueOfflineAction({
+          actionType: 'FIRE_COURSE',
+          kitchenOrderId: targetTicket.backendOrderId,
+          course: course.toLowerCase(),
+        });
+        const q = await getQueuedActions();
+        setQueuedActionsCount(q.length);
+      } else {
+        try {
+          const token = getAccessToken();
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          };
+          const res = await fetch(
+            `${API_BASE}/kitchen-order-items/order/${targetTicket.backendOrderId}/fire-course?course=${course.toLowerCase()}`,
+            { method: 'POST', headers }
+          );
+          if (!res.ok) throw new Error('Fire course failed');
+          fetchBackendOrders(true);
+        } catch (e) {
+          console.warn('Backend fire-course failed, storing offline:', e);
+          setIsOffline(true);
+          await enqueueOfflineAction({
+            actionType: 'FIRE_COURSE',
+            kitchenOrderId: targetTicket.backendOrderId,
+            course: course.toLowerCase(),
+          });
+          const q = await getQueuedActions();
+          setQueuedActionsCount(q.length);
+        }
       }
     }
 
@@ -457,28 +660,47 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       // Move the fired ticket to the top of the queue
       const fired = updated.find((t) => t.id === ticketId);
       const rest = updated.filter((t) => t.id !== ticketId);
-      return fired ? [fired, ...rest] : updated;
+      const next = fired ? [fired, ...rest] : updated;
+      cacheTicketsLocally(next);
+      return next;
     });
 
     triggerAlert(`🔥 ${course.replace('_', ' ')} FIRED for ${targetTicket.table}! Moved to top of cook queue.`);
   };
 
-  // Manual FIRE for an individual line item
+  // Manual FIRE for an individual line item (with Offline Resilience)
   const handleFireSingleItem = async (ticketId: string, itemId: number, itemName: string) => {
-    try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-      await fetch(`${API_BASE}/kitchen-order-items/${itemId}/fire`, { method: 'POST', headers });
-      fetchBackendOrders(true);
-    } catch (e) {
-      console.warn('Backend fire-item failed:', e);
+    if (isOffline) {
+      await enqueueOfflineAction({
+        actionType: 'FIRE_ITEM',
+        kitchenOrderItemId: itemId,
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+    } else {
+      try {
+        const token = getAccessToken();
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        };
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/fire`, { method: 'POST', headers });
+        if (!res.ok) throw new Error('Fire item failed');
+        fetchBackendOrders(true);
+      } catch (e) {
+        console.warn('Backend fire-item failed, storing offline:', e);
+        setIsOffline(true);
+        await enqueueOfflineAction({
+          actionType: 'FIRE_ITEM',
+          kitchenOrderItemId: itemId,
+        });
+        const q = await getQueuedActions();
+        setQueuedActionsCount(q.length);
+      }
     }
 
-    setTickets((prev) =>
-      prev.map((t) => {
+    setTickets((prev) => {
+      const next = prev.map((t) => {
         if (t.id === ticketId) {
           return {
             ...t,
@@ -492,46 +714,97 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           };
         }
         return t;
-      })
-    );
+      });
+      cacheTicketsLocally(next);
+      return next;
+    });
 
     triggerAlert(`🔥 FIRED: "${itemName}" released to station queue!`);
   };
 
-  // Revert item back to PENDING queue (undo accidental start)
-  const handleRevertItemToPending = async (ticketId: string, itemId: number, itemName: string) => {
-    try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-      await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ preparationStatus: 'pending' }),
+  // Revert item back to PENDING queue or HELD state (undo accidental start / fire)
+  const handleRevertItemToPending = async (
+    ticketId: string,
+    itemId: number,
+    itemName: string,
+    course?: CourseType
+  ) => {
+    const isStagedCourse = course === 'MAIN_COURSE' || course === 'DESSERT';
+    const targetStatus = isStagedCourse ? 'HELD' : 'PENDING';
+    const delayMins = course === 'DESSERT' ? dessertHoldDelayMins : mainCourseHoldDelayMins;
+
+    if (isOffline) {
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderItemId: itemId,
+        status: targetStatus.toLowerCase(),
       });
-    } catch (e) {
-      console.warn('Backend revert-item failed:', e);
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+    } else {
+      try {
+        const token = getAccessToken();
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        };
+        if (isStagedCourse) {
+          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/hold?holdMinutes=${delayMins}`, {
+            method: 'POST',
+            headers,
+          });
+          if (!res.ok) throw new Error('Hold failed');
+        } else {
+          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({ preparationStatus: 'pending' }),
+          });
+          if (!res.ok) throw new Error('Revert failed');
+        }
+      } catch (e) {
+        console.warn('Backend revert-item failed, storing offline:', e);
+        setIsOffline(true);
+        await enqueueOfflineAction({
+          actionType: 'UPDATE_ITEM_STATUS',
+          kitchenOrderItemId: itemId,
+          status: targetStatus.toLowerCase(),
+        });
+        const q = await getQueuedActions();
+        setQueuedActionsCount(q.length);
+      }
     }
 
-    setTickets((prev) =>
-      prev.map((t) =>
+    setTickets((prev) => {
+      const next = prev.map((t) =>
         t.id === ticketId
           ? {
               ...t,
               items: t.items.map((i) =>
-                i.id === itemId ? { ...i, preparationStatus: 'PENDING' } : i
+                i.id === itemId
+                  ? {
+                      ...i,
+                      preparationStatus: targetStatus as PreparationStatus,
+                      holdRemainingSeconds: isStagedCourse ? delayMins * 60 : undefined,
+                    }
+                  : i
               ),
             }
           : t
-      )
-    );
+      );
+      cacheTicketsLocally(next);
+      return next;
+    });
 
-    triggerAlert(`↩️ REVERTED: "${itemName}" returned to queue.`, 'pacing');
+    triggerAlert(
+      isStagedCourse
+        ? `🔒 STAGED: "${itemName}" returned to HELD status (${delayMins}m hold).`
+        : `↩️ REVERTED: "${itemName}" returned to queue.`,
+      'pacing'
+    );
   };
 
-  // Advance single item through: PENDING -> IN_PREPARATION -> READY
+  // Advance single item through: PENDING -> IN_PREPARATION -> READY (with Offline Resilience)
   const handleToggleItemReady = async (ticketId: string, itemId: number, currentStatus: PreparationStatus) => {
     let nextStatus: PreparationStatus;
     if (currentStatus === 'PENDING') {
@@ -543,19 +816,39 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     } else {
       nextStatus = 'PENDING';
     }
-    try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-      await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ preparationStatus: nextStatus.toLowerCase() }),
+
+    if (isOffline) {
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderItemId: itemId,
+        status: nextStatus.toLowerCase(),
       });
-    } catch (e) {
-      console.warn('Backend toggle-item-ready failed:', e);
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+    } else {
+      try {
+        const token = getAccessToken();
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        };
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ preparationStatus: nextStatus.toLowerCase() }),
+        });
+        if (!res.ok) throw new Error('Status change failed');
+      } catch (e) {
+        console.warn('Backend toggle-item-ready failed, storing offline:', e);
+        setIsOffline(true);
+        await enqueueOfflineAction({
+          actionType: 'UPDATE_ITEM_STATUS',
+          kitchenOrderItemId: itemId,
+          status: nextStatus.toLowerCase(),
+        });
+        const q = await getQueuedActions();
+        setQueuedActionsCount(q.length);
+      }
     }
 
     setTickets((prev) => {
@@ -592,6 +885,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         }, 400);
       }
 
+      cacheTicketsLocally(updated);
       return updated;
     });
   };
@@ -783,6 +1077,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   };
 
   // Interactive Batch Bumping Engine with FIFO Allocation (Historia X7P-4208)
+  // Interactive Batch Bumping Engine with FIFO Allocation (Historia X7P-4208 & X7P-4210)
   const handleBatchBumpFifo = async (
     productName: string,
     variantName?: string,
@@ -790,23 +1085,22 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   ) => {
     if (bumpQuantity <= 0) return;
 
-    let remainingToAllocate = bumpQuantity;
-    let autoDispatchTicketId: string | null = null;
-    let autoDispatchBackendOrderId: number | undefined = undefined;
+    const ticketsToAutoDispatch: Array<{ id: string; backendOrderId?: number }> = [];
 
     setTickets((prev) => {
+      let remaining = bumpQuantity;
       const orderedTicketIds = filteredTickets.map((t) => t.id);
       const ticketMap = new Map(prev.map((t) => [t.id, { ...t, items: [...t.items] }]));
 
       // 1. Asignar primero a los tickets visibles en su orden exacto de prioridad (filteredTickets)
       for (const tid of orderedTicketIds) {
-        if (remainingToAllocate <= 0) break;
+        if (remaining <= 0) break;
         const t = ticketMap.get(tid);
         if (!t) continue;
 
         let ticketModified = false;
         const newItems = t.items.map((item) => {
-          if (remainingToAllocate <= 0) return item;
+          if (remaining <= 0) return item;
 
           const isMatch =
             item.name.trim().toLowerCase() === productName.trim().toLowerCase() &&
@@ -822,8 +1116,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           const needed = Math.max(0, item.qty - currentPrepared);
           if (needed <= 0) return item;
 
-          const bumpForThisItem = Math.min(remainingToAllocate, needed);
-          remainingToAllocate -= bumpForThisItem;
+          const bumpForThisItem = Math.min(remaining, needed);
+          remaining -= bumpForThisItem;
           const newPrepared = currentPrepared + bumpForThisItem;
           const isNowReady = newPrepared >= item.qty;
           ticketModified = true;
@@ -840,22 +1134,21 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             activeDisplayMode === 'AUTO' &&
             newItems.every((i) => i.preparationStatus === 'READY')
           ) {
-            autoDispatchTicketId = t.id;
-            autoDispatchBackendOrderId = t.backendOrderId;
+            ticketsToAutoDispatch.push({ id: t.id, backendOrderId: t.backendOrderId });
           }
           ticketMap.set(tid, { ...t, items: newItems });
         }
       }
 
       // 2. Si todavía queda cantidad por asignar, distribuir en los demás tickets no visibles
-      if (remainingToAllocate > 0) {
+      if (remaining > 0) {
         for (const [tid, t] of ticketMap.entries()) {
-          if (remainingToAllocate <= 0) break;
+          if (remaining <= 0) break;
           if (orderedTicketIds.includes(tid)) continue;
 
           let ticketModified = false;
           const newItems = t.items.map((item) => {
-            if (remainingToAllocate <= 0) return item;
+            if (remaining <= 0) return item;
 
             const isMatch =
               item.name.trim().toLowerCase() === productName.trim().toLowerCase() &&
@@ -871,8 +1164,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             const needed = Math.max(0, item.qty - currentPrepared);
             if (needed <= 0) return item;
 
-            const bumpForThisItem = Math.min(remainingToAllocate, needed);
-            remainingToAllocate -= bumpForThisItem;
+            const bumpForThisItem = Math.min(remaining, needed);
+            remaining -= bumpForThisItem;
             const newPrepared = currentPrepared + bumpForThisItem;
             const isNowReady = newPrepared >= item.qty;
             ticketModified = true;
@@ -899,46 +1192,72 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     const displayName = `${bumpQuantity}x ${productName}${variantName ? ` (${variantName})` : ''}`;
     triggerAlert(`🍳 BATCH COOKED: +${displayName} bumped to oldest order (FIFO)!`, 'fire');
 
-    if (autoDispatchTicketId) {
-      const tid = autoDispatchTicketId;
-      const bId = autoDispatchBackendOrderId;
+    if (ticketsToAutoDispatch.length > 0) {
       setTimeout(() => {
-        handleCompleteTicket(tid, bId);
-        triggerAlert(`⚡ AUTO-DISPATCHED Ticket #${tid} to Pass / Expo!`, 'fire');
+        ticketsToAutoDispatch.forEach((dispatch) => {
+          handleCompleteTicket(dispatch.id, dispatch.backendOrderId);
+          triggerAlert(`⚡ AUTO-DISPATCHED Ticket #${dispatch.id} to Pass / Expo!`, 'fire');
+        });
       }, 400);
     }
 
-    try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
+    let targetStationId: number | undefined = undefined;
+    if (resolvedStation.id !== 'ALL') {
+      targetStationId = typeof resolvedStation.id === 'number' ? resolvedStation.id : undefined;
+    } else if (selectedStationFilter !== 'ALL') {
+      const matched = kitchenStations.find(
+        (s) => s.name.trim().toLowerCase() === selectedStationFilter.trim().toLowerCase()
+      );
+      if (matched) targetStationId = matched.id;
+    }
 
-      let targetStationId: number | undefined = undefined;
-      if (selectedStationFilter !== 'ALL') {
-        const matched = kitchenStations.find(
-          (s) => s.name.trim().toLowerCase() === selectedStationFilter.trim().toLowerCase()
-        );
-        if (matched) targetStationId = matched.id;
-      }
+    if (isOffline) {
+      await enqueueOfflineAction({
+        actionType: 'BATCH_BUMP_FIFO',
+        productName,
+        variantName: variantName || undefined,
+        quantity: bumpQuantity,
+        stationId: targetStationId,
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+    } else {
+      try {
+        const token = getAccessToken();
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        };
 
-      await fetch(`${API_BASE}/kitchen-order-items/batch-bump-fifo`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          stationId: targetStationId,
+        const res = await fetch(`${API_BASE}/kitchen-order-items/batch-bump-fifo`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            stationId: targetStationId,
+            productName,
+            variantName: variantName || undefined,
+            bumpQuantity,
+          }),
+        });
+
+        if (!res.ok) throw new Error('Batch bump failed');
+
+        setTimeout(() => {
+          fetchBackendOrders(true);
+        }, 400);
+      } catch (err) {
+        console.warn('Backend batch-bump-fifo call failed, storing offline:', err);
+        setIsOffline(true);
+        await enqueueOfflineAction({
+          actionType: 'BATCH_BUMP_FIFO',
           productName,
           variantName: variantName || undefined,
-          bumpQuantity,
-        }),
-      });
-
-      setTimeout(() => {
-        fetchBackendOrders(true);
-      }, 400);
-    } catch (err) {
-      console.warn('Backend batch-bump-fifo call failed:', err);
+          quantity: bumpQuantity,
+          stationId: targetStationId,
+        });
+        const q = await getQueuedActions();
+        setQueuedActionsCount(q.length);
+      }
     }
   };
 
@@ -946,7 +1265,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const handleCompleteTicket = async (id: string, backendOrderId?: number) => {
     const targetTicket = tickets.find((t) => t.id === id);
     if (targetTicket && backendOrderId) {
-      setLastBumpedOrder({
+      const bumpedRecord: BumpedOrderRecord = {
         id: backendOrderId,
         table: targetTicket.table,
         server: targetTicket.server,
@@ -962,50 +1281,137 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           course: it.course,
           notes: it.notes,
         })),
+      };
+      setLastBumpedOrder(bumpedRecord);
+      setBumpedOrdersHistory((prev) => {
+        const next = [bumpedRecord, ...prev.filter((o) => o.id !== backendOrderId).slice(0, 19)];
+        try {
+          localStorage.setItem('x7_kds_bumped_history', JSON.stringify(next));
+        } catch {
+          /* ignore storage error */
+        }
+        return next;
       });
       setUndoToast({ id, backendOrderId, table: targetTicket.table });
+      setRecentlyBumpedTickets((prev) => [targetTicket, ...prev.filter((t) => t.id !== id).slice(0, 19)]);
       setTimeout(() => {
         setUndoToast((curr) => (curr?.backendOrderId === backendOrderId ? null : curr));
       }, 7000);
     }
 
+    setTickets((prev) => {
+      const next = prev.filter((ticket) => ticket.id !== id);
+      cacheTicketsLocally(next);
+      return next;
+    });
+
     if (backendOrderId) {
+      if (isOffline) {
+        await enqueueOfflineAction({
+          actionType: 'BUMP_ORDER',
+          kitchenOrderId: backendOrderId,
+        });
+        const q = await getQueuedActions();
+        setQueuedActionsCount(q.length);
+        triggerAlert(`✓ Ticket #${id} BUMPED (Stored locally - Offline)`);
+      } else {
+        try {
+          const token = getAccessToken();
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          };
+          const res = await fetch(`${API_BASE}/kitchen-orders/${backendOrderId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({ businessStatus: 'completed' }),
+          });
+          if (!res.ok) throw new Error('Bump request failed');
+          triggerAlert(`✓ Ticket #${id} BUMPED & SERVED!`);
+        } catch (e) {
+          console.warn('Backend bump order failed, storing offline:', e);
+          setIsOffline(true);
+          await enqueueOfflineAction({
+            actionType: 'BUMP_ORDER',
+            kitchenOrderId: backendOrderId,
+          });
+          const q = await getQueuedActions();
+          setQueuedActionsCount(q.length);
+          triggerAlert(`✓ Ticket #${id} BUMPED (Stored locally - Offline)`);
+        }
+      }
+    } else {
+      triggerAlert(`✓ Ticket #${id} BUMPED!`);
+    }
+  };
+
+  // Immediate 1-Tap Undo Action for Accidental Bump (with Offline Resilience)
+  const handleImmediateRecall = async (backendOrderId: number) => {
+    // Restaurar inmediatamente el ticket en pantalla de forma optimista
+    const cachedToRestore = recentlyBumpedTickets.find(
+      (t) => t.backendOrderId === backendOrderId || t.id === String(backendOrderId),
+    );
+    if (cachedToRestore) {
+      setTickets((prev) => {
+        if (prev.some((t) => t.backendOrderId === backendOrderId || t.id === String(backendOrderId))) return prev;
+        const next = [cachedToRestore, ...prev];
+        cacheTicketsLocally(next);
+        return next;
+      });
+    }
+
+    // Purgar del historial local de bumps
+    setBumpedOrdersHistory((prev) => {
+      const next = prev.filter((o) => o.id !== backendOrderId);
+      try {
+        localStorage.setItem('x7_kds_bumped_history', JSON.stringify(next));
+      } catch {
+        /* ignore storage error */
+      }
+      return next;
+    });
+    setLastBumpedOrder((curr) => (curr?.id === backendOrderId ? null : curr));
+
+    if (isOffline) {
+      await enqueueOfflineAction({
+        actionType: 'RECALL_ORDER',
+        kitchenOrderId: backendOrderId,
+        stationId: cachedToRestore?.stationId || (typeof activeStationId === 'number' ? activeStationId : undefined),
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      setUndoToast(null);
+      triggerAlert(`↺ Ticket #${backendOrderId} RESTORED (Stored locally - Offline)!`, 'fire');
+    } else {
       try {
         const token = getAccessToken();
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         };
-        await fetch(`${API_BASE}/kitchen-orders/${backendOrderId}`, {
-          method: 'PUT',
+        const res = await fetch(`${API_BASE}/kitchen-orders/${backendOrderId}/recall`, {
+          method: 'POST',
           headers,
-          body: JSON.stringify({ businessStatus: 'completed' }),
         });
+        if (!res.ok) throw new Error('Recall failed');
+        setUndoToast(null);
+        triggerAlert(`↺ Ticket #${backendOrderId} RESTORED to active screen!`, 'fire');
+        fetchBackendOrders(true);
       } catch (e) {
-        console.warn('Backend bump order failed:', e);
+        console.warn('Immediate recall failed, storing offline:', e);
+        setIsOffline(true);
+        await enqueueOfflineAction({
+          actionType: 'RECALL_ORDER',
+          kitchenOrderId: backendOrderId,
+          stationId: cachedToRestore?.stationId || (typeof activeStationId === 'number' ? activeStationId : undefined),
+          clientTimestamp: new Date().toISOString(),
+        });
+        const q = await getQueuedActions();
+        setQueuedActionsCount(q.length);
+        setUndoToast(null);
+        triggerAlert(`↺ Ticket #${backendOrderId} RESTORED (Stored locally - Offline)!`, 'fire');
       }
-    }
-    setTickets((prev) => prev.filter((ticket) => ticket.id !== id));
-    triggerAlert(`✓ Ticket #${id} BUMPED & SERVED!`);
-  };
-
-  // Immediate 1-Tap Undo Action for Accidental Bump
-  const handleImmediateRecall = async (backendOrderId: number) => {
-    try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-      await fetch(`${API_BASE}/kitchen-orders/${backendOrderId}/recall`, {
-        method: 'POST',
-        headers,
-      });
-      setUndoToast(null);
-      triggerAlert(`↺ Ticket #${backendOrderId} RESTORED to active screen!`, 'fire');
-      fetchBackendOrders(true);
-    } catch (e) {
-      console.warn('Immediate recall failed:', e);
     }
   };
 
@@ -1151,7 +1557,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   }, [activeKdsView, kitchenStations, selectedStationFilter]);
 
   // Resolver estación activa para el Recall Tray garantizando aislamiento por estación
-  const resolvedStation = useMemo(() => {
+  const resolvedStation = (() => {
     if (activeKdsView === 'EXPO') {
       if (effectiveStationFilter === 'ALL') return { id: 'ALL' as const, name: 'All Stations' };
       const st = kitchenStations.find(
@@ -1169,7 +1575,79 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     );
     if (stByMode) return { id: stByMode.id, name: stByMode.name };
     return { id: 'ALL' as const, name: 'All Stations' };
-  }, [activeKdsView, effectiveStationFilter, kitchenStations]);
+  })();
+
+  // Historia X7P-4211: Reroute status derivation & emergency handlers
+  const activeStationStatus =
+    resolvedStation.id !== 'ALL' && typeof resolvedStation.id === 'number'
+      ? stationRerouteStatuses.find((s) => s.stationId === resolvedStation.id) ||
+        null
+      : stationRerouteStatuses.find((s) => s.isFallbackActive) || null;
+
+  const hasOfflineStations = stationRerouteStatuses.some(
+    (s) => s.isDevicesOffline && s.autoRerouteOnOffline,
+  );
+
+  const hasCapacityOverflowStations = stationRerouteStatuses.some(
+    (s) => s.isCapacityOverflow && s.autoRerouteOnCapacity,
+  );
+
+  const handleTriggerReroute = async (stationId: number) => {
+    try {
+      const token = getAccessToken();
+      const res = await fetch(
+        `${API_BASE}/kitchen-station/${stationId}/reroute-orders`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            reason: 'Autonomous Load Balancing & Hardware Failure Fallback',
+          }),
+        },
+      );
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to reroute orders');
+      }
+
+      const resData = await res.json();
+      triggerAlert(
+        `Dynamic Rerouting Engaged: ${resData.message || 'Orders rerouted to secondary station'}`,
+        'pacing',
+      );
+      await fetchRerouteStatuses();
+      await fetchBackendOrders(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error rerouting orders';
+      triggerAlert(`Reroute failed: ${msg}`, 'fire');
+    }
+  };
+
+  const handleOpenThermalFallback = (stationStatus: StationRerouteStatus) => {
+    const stationTickets = tickets.filter(
+      (t) =>
+        t.stationId === stationStatus.stationId ||
+        t.stationName === stationStatus.stationName,
+    );
+    setThermalTicketPayload({
+      stationName: stationStatus.stationName,
+      stationNumber: stationStatus.stationNumber,
+      printerName:
+        stationStatus.printerName || 'Local Thermal Kitchen Printer',
+      reason:
+        stationStatus.fallbackReason === 'DEVICES_OFFLINE'
+          ? 'Hardware Failure (All Devices Offline >60s)'
+          : 'High-Volume Queue Capacity Limit Breached',
+      tickets:
+        stationTickets.length > 0 ? stationTickets : tickets.slice(0, 3),
+      emittedAt: new Date().toLocaleTimeString(),
+    });
+    setIsThermalTicketModalOpen(true);
+  };
 
   // Filtered and dynamically prioritized tickets with SLA Critical Shield
   const filteredTickets = (() => {
@@ -1539,6 +2017,24 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   SLA
                 </span>
               )}
+              {cleanOrderNotes &&
+                (cleanOrderNotes.includes('[Auto-Rerouted') ||
+                  cleanOrderNotes.includes('[Rerouted')) && (
+                  <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-purple-600/30 text-purple-300 border border-purple-500/50 flex items-center gap-0.5">
+                    <span className="material-symbols-outlined text-[9px]">alt_route</span>
+                    REROUTED
+                  </span>
+                )}
+              {stationRerouteStatuses.find(
+                (s) =>
+                  s.stationId === ticket.stationId ||
+                  s.stationName === ticket.stationName,
+              )?.isCapacityOverflow && (
+                <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-amber-600/30 text-amber-300 border border-amber-500/50 flex items-center gap-0.5 animate-pulse">
+                  <span className="material-symbols-outlined text-[9px]">warning</span>
+                  OVERFLOW
+                </span>
+              )}
             </div>
             <p className={`${isCompact ? 'text-[9px]' : 'text-[10px]'} font-semibold mt-0.5 text-zinc-400 truncate`}>
               #{ticket.id} • {ticket.stationName || 'Line'}{ticket.server && ticket.server !== 'Kitchen Staff' ? ` • ${ticket.server}` : ''}
@@ -1734,7 +2230,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     <span>READY</span>
                                   </button>
                                   <button
-                                    onClick={() => handleRevertItemToPending(ticket.id, item.id, item.name)}
+                                    onClick={() => handleRevertItemToPending(ticket.id, item.id, item.name, item.course)}
                                     title="Revert to Queue (Undo)"
                                     className="h-6 w-6 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-amber-400 border border-zinc-700/80 transition-colors cursor-pointer flex items-center justify-center shadow-xs active:scale-95"
                                   >
@@ -1805,7 +2301,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       <header className="h-16 bg-[#1a1b20] border-b-2 border-[#ae001a] px-6 flex justify-between items-center shrink-0 shadow-lg">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="w-3.5 h-3.5 rounded-full bg-emerald-500 animate-ping"></span>
+            <span
+              className={`w-3.5 h-3.5 rounded-full ${
+                isOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-ping'
+              }`}
+            ></span>
             <span className="material-symbols-outlined text-[#ae001a] text-2xl">table_restaurant</span>
           </div>
           <div>
@@ -1830,6 +2330,46 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
         {/* Action Controls */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Offline Resilience Warning Badge (Historia X7P-4210) */}
+          {isOffline && (
+            <div
+              title={queuedActionsCount > 0 ? `${queuedActionsCount} local action(s) stored in IndexedDB` : 'Working locally'}
+              className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 border border-amber-500/50 text-amber-300 rounded-lg text-xs font-bold shadow-xs animate-pulse shrink-0"
+            >
+              <span className="material-symbols-outlined text-sm text-amber-400">cloud_off</span>
+              <span className="hidden sm:inline">Offline Mode - Local Changes Stored</span>
+              <span className="sm:hidden">Offline Mode</span>
+              {queuedActionsCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-amber-500/40 text-amber-100 text-[10px] font-black rounded-full font-mono border border-amber-500/50">
+                  {queuedActionsCount}
+                </span>
+              )}
+            </div>
+          )}
+          {isSyncing && (
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/20 border border-blue-500/50 text-blue-300 rounded-lg text-xs font-bold shadow-xs shrink-0">
+              <span className="material-symbols-outlined text-sm text-blue-400 animate-spin">sync</span>
+              <span className="hidden sm:inline">Syncing local changes...</span>
+              <span className="sm:hidden">Syncing</span>
+            </div>
+          )}
+          {syncFeedback && !isOffline && !isSyncing && (
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 rounded-lg text-xs font-bold shadow-xs shrink-0 transition-opacity">
+              <span className="material-symbols-outlined text-sm text-emerald-400">cloud_done</span>
+              <span className="hidden sm:inline">{syncFeedback}</span>
+              <span className="sm:hidden">Synced</span>
+            </div>
+          )}
+          {queuedActionsCount > 0 && !isOffline && !isSyncing && (
+            <button
+              onClick={() => triggerAutoSync()}
+              title="Click to force sync offline actions now"
+              className="flex items-center gap-1.5 px-3 py-1 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500 text-amber-200 rounded-lg text-xs font-bold shadow-xs cursor-pointer active:scale-95 shrink-0"
+            >
+              <span className="material-symbols-outlined text-sm text-amber-400 animate-spin">sync</span>
+              <span>Sync {queuedActionsCount} Action(s) Now</span>
+            </button>
+          )}
           {/* Station Filter - Filtered to active view mode */}
           <div className="flex items-center bg-zinc-800/90 hover:bg-zinc-800 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs gap-1.5 shadow-inner">
             <span className="material-symbols-outlined text-sm text-amber-400">soup_kitchen</span>
@@ -2034,6 +2574,32 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             <span className="hidden sm:inline">Recall Tray</span>
           </button>
 
+          {/* Station Fallback & Load Balancing Modal Trigger (Historia X7P-4211) */}
+          <button
+            type="button"
+            onClick={() => setIsRerouteModalOpen(true)}
+            className={`px-3.5 py-2 font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 border cursor-pointer shadow-xs ${
+              hasOfflineStations || hasCapacityOverflowStations
+                ? 'bg-red-500/20 text-red-300 border-red-500/60 ring-2 ring-red-500/40 animate-pulse'
+                : 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700'
+            }`}
+            title="Configure Station Fallback Routes, Load Balancing & Thermal Printer Fallback"
+          >
+            <span
+              className={`material-symbols-outlined text-base ${
+                hasOfflineStations || hasCapacityOverflowStations
+                  ? 'text-red-400'
+                  : 'text-amber-400'
+              }`}
+            >
+              alt_route
+            </span>
+            <span className="hidden md:inline">Fallback &amp; Routing</span>
+            {(hasOfflineStations || hasCapacityOverflowStations) && (
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+            )}
+          </button>
+
           {/* Back to Dashboard */}
           <button
             onClick={onBackToDashboard}
@@ -2128,6 +2694,102 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           <button onClick={() => setActiveAlertToast(null)} className="ml-2 hover:opacity-75 cursor-pointer">
             <span className="material-symbols-outlined text-sm">close</span>
           </button>
+        </div>
+      )}
+
+      {/* 2.1 Hardware Failure Fallback Alert Banner (Historia X7P-4211) - Oculto temporalmente a petición del usuario */}
+      {false as boolean && activeStationStatus?.isDevicesOffline && activeStationStatus.autoRerouteOnOffline && (
+        <div className="bg-gradient-to-r from-red-950 via-zinc-900 to-red-950 border-y-2 border-red-500/80 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 animate-fade-in shadow-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/60 flex items-center justify-center text-red-400 animate-pulse">
+              <span className="material-symbols-outlined text-xl">portable_wifi_off</span>
+            </div>
+            <div>
+              <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 flex-wrap">
+                <span>🚨 HARDWARE FAILURE &amp; FALLBACK ACTIVE:</span>
+                <span className="text-red-400 underline decoration-red-500">{activeStationStatus.stationName}</span>
+                <span className="text-[10px] px-2 py-0.2 rounded-full bg-red-500/30 text-red-200 border border-red-500/50 font-bold">
+                  ALL TERMINALS OFFLINE &gt;60s
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-300 mt-0.5">
+                Orders automatically route to secondary station{' '}
+                <strong className="text-amber-300">
+                  {activeStationStatus.backupStationName || `Station #${activeStationStatus.backupStationId || 'Expo'}`}
+                </strong>
+                {activeStationStatus.printerName ? (
+                  <span> or print on <strong className="text-amber-300">{activeStationStatus.printerName}</strong></span>
+                ) : ''}.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleTriggerReroute(activeStationStatus.stationId)}
+              className="h-8 px-3.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+            >
+              <span className="material-symbols-outlined text-sm">forward_to_inbox</span>
+              <span>Reroute Orders Now</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenThermalFallback(activeStationStatus)}
+              className="h-8 px-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+            >
+              <span className="material-symbols-outlined text-sm text-amber-400">print</span>
+              <span>Thermal Ticket</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsRerouteModalOpen(true)}
+              className="h-8 px-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center active:scale-95"
+            >
+              <span>Configure</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 2.2 Capacity Limit Alert & Amber Overflow Banner (Historia X7P-4211) */}
+      {activeStationStatus?.isCapacityOverflow && (
+        <div className="bg-gradient-to-r from-amber-950/90 via-zinc-900 to-amber-950/90 border-y-2 border-amber-500/80 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 animate-fade-in shadow-xl">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/60 flex items-center justify-center text-amber-400 animate-bounce">
+              <span className="material-symbols-outlined text-xl">warning</span>
+            </div>
+            <div>
+              <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 flex-wrap">
+                <span>⚠️ STATION CAPACITY OVERFLOW BANNER:</span>
+                <span className="text-amber-400 underline decoration-amber-500">{activeStationStatus.stationName}</span>
+                <span className="text-[10px] px-2 py-0.2 rounded-full bg-amber-500/30 text-amber-200 border border-amber-500/50 font-bold">
+                  {activeStationStatus.activeTicketsCount} / {activeStationStatus.maxActiveTicketsCapacity} ACTIVE TICKETS
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-300 mt-0.5">
+                Active queue limit breached (&gt;{activeStationStatus.maxActiveTicketsCapacity} tickets). Dynamic load balancing routes incoming orders to secondary prep station.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleTriggerReroute(activeStationStatus.stationId)}
+              className="h-8 px-3.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+            >
+              <span className="material-symbols-outlined text-sm">balance</span>
+              <span>Balance Load &amp; Reroute</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsRerouteModalOpen(true)}
+              className="h-8 px-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center active:scale-95"
+            >
+              <span>Adjust Threshold</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -3022,12 +3684,98 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         onClose={() => setIsRecallTrayOpen(false)}
         activeStationId={resolvedStation.id}
         activeStationName={resolvedStation.name}
-        onOrderRecalled={() => {
-          fetchBackendOrders(true);
+        isOffline={isOffline}
+        onOrderRecalled={(recalledOrderId, recalledRecord) => {
+          let ticketToRestore = recentlyBumpedTickets.find(
+            (t) => t.backendOrderId === recalledOrderId || t.id === String(recalledOrderId),
+          );
+
+          if (!ticketToRestore && recalledRecord) {
+            ticketToRestore = {
+              id: String(recalledRecord.id),
+              backendOrderId: recalledRecord.id,
+              table: recalledRecord.table || 'Takeout',
+              timeElapsed: 0,
+              createdAtMs: recalledRecord.startedAt ? new Date(recalledRecord.startedAt).getTime() : Date.now(),
+              server: recalledRecord.server || 'Server 1',
+              stationName: recalledRecord.stationName || undefined,
+              stationId: recalledRecord.stationId || undefined,
+              priority: 'normal',
+              items: (recalledRecord.items || []).map((it) => ({
+                id: it.id,
+                name: it.productName,
+                variantName: it.variantName || undefined,
+                qty: it.quantity,
+                preparedQuantity: it.quantity,
+                notes: it.notes || undefined,
+                course: (it.course as CourseType) || 'MAIN_COURSE',
+                preparationStatus: 'IN_PREPARATION',
+              })),
+            };
+          }
+
+          if (ticketToRestore) {
+            setTickets((prev) => {
+              if (prev.some((t) => t.backendOrderId === recalledOrderId || t.id === String(recalledOrderId))) {
+                return prev;
+              }
+              const next = [ticketToRestore!, ...prev];
+              cacheTicketsLocally(next);
+              return next;
+            });
+          }
+
+          if (!isOffline && navigator.onLine) {
+            fetchBackendOrders(true);
+          }
+          // Purgar del historial local de bumps
+          setBumpedOrdersHistory((prev) => {
+            const next = prev.filter((o) => o.id !== recalledOrderId);
+            try {
+              localStorage.setItem('x7_kds_bumped_history', JSON.stringify(next));
+            } catch {
+              /* ignore storage error */
+            }
+            return next;
+          });
+          setLastBumpedOrder((curr) => (curr?.id === recalledOrderId ? null : curr));
           setUndoToast(null);
+          triggerAlert(`↺ Ticket #${recalledOrderId} RESTORED to active screen!`, 'fire');
         }}
         lastBumpedOrder={lastBumpedOrder}
+        bumpedOrdersHistory={bumpedOrdersHistory}
+        activeOrderIds={tickets.map((t) => t.backendOrderId ?? t.id).filter(Boolean)}
       />
+
+      {/* Dynamic Station Rerouting, Thermal Printer Fallback & Load Balancing Modal (Historia X7P-4211) */}
+      <StationRerouteModal
+        isOpen={isRerouteModalOpen}
+        onClose={() => setIsRerouteModalOpen(false)}
+        stations={kitchenStations}
+        initialStationId={resolvedStation.id}
+        rerouteStatuses={stationRerouteStatuses}
+        onConfigSaved={() => {
+          fetchRerouteStatuses();
+          fetchBackendOrders(true);
+        }}
+        onRerouteExecuted={() => {
+          fetchRerouteStatuses();
+          fetchBackendOrders(true);
+        }}
+        onOpenThermalPrint={(payload) => {
+          setThermalTicketPayload(payload);
+          setIsThermalTicketModalOpen(true);
+        }}
+        activeTickets={tickets}
+      />
+
+      {/* Emergency Thermal Printer Paper Fallback Simulation Modal (Historia X7P-4211) */}
+      <ThermalTicketModal
+        isOpen={isThermalTicketModalOpen}
+        onClose={() => setIsThermalTicketModalOpen(false)}
+        payload={thermalTicketPayload}
+      />
+
       <KitchenDevResetButton onResetComplete={() => fetchBackendOrders(true)} />
     </div>
   );
