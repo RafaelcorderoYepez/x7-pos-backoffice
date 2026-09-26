@@ -1454,7 +1454,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
       {/* Floating Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 animate-bounce transition-all duration-300">
+        <div className="fixed top-20 right-6 z-50 animate-fade-in transition-all duration-300">
           <div
             className={`flex items-center gap-3 px-5 py-3 rounded-lg shadow-xl text-white text-sm font-semibold tracking-wide border ${
               toastMessage.type === 'success'

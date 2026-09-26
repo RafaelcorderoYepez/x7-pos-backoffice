@@ -45,7 +45,7 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
 
   if (!isVisible) return null;
 
-  const handleAction = async (mode: 'seed' | 'clear') => {
+  const handleAction = async (mode: 'seed' | 'clear' | 'simple' | 'multi') => {
     setLoading(true);
     setStatusMessage(null);
     setStatusType(null);
@@ -69,7 +69,16 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
       const data = await res.json();
       void clearOfflineData();
       setStatusType('success');
-      setStatusMessage(data.message || (mode === 'seed' ? '8 Test Orders Seeded!' : 'All Orders Cleared!'));
+      setStatusMessage(
+        data.message ||
+          (mode === 'simple'
+            ? '2 Simple Orders Seeded!'
+            : mode === 'multi'
+            ? '1 Multi-Course Order Seeded!'
+            : mode === 'seed'
+            ? '8 Test Orders Seeded!'
+            : 'All Orders Cleared!')
+      );
 
       // Notificar a toda la aplicación para recarga reactiva
       window.dispatchEvent(new CustomEvent('x7_kds_data_reset', { detail: { mode } }));
@@ -115,6 +124,30 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
 
           {/* Actions */}
           <div className="space-y-1.5">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => handleAction('simple')}
+              className="w-full py-1.5 px-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold tracking-wide flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+            >
+              <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>
+                {loading ? 'refresh' : 'lunch_dining'}
+              </span>
+              <span>{loading ? 'Generating...' : 'Reset (2 Simple Orders)'}</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => handleAction('multi')}
+              className="w-full py-1.5 px-2 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold tracking-wide flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+            >
+              <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>
+                {loading ? 'refresh' : 'dinner_dining'}
+              </span>
+              <span>{loading ? 'Generating...' : 'Reset (1 Multi-Course)'}</span>
+            </button>
+
             <button
               type="button"
               disabled={loading}

@@ -136,7 +136,6 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       return [];
     }
   });
-  const [undoToast, setUndoToast] = useState<{ id: string; backendOrderId?: number; table: string } | null>(null);
   const [isAllDayBarExpanded, setIsAllDayBarExpanded] = useState<boolean>(true);
   const [cardDensity, setCardDensity] = useState<KdsCardDensity>(() => {
     if (typeof window !== 'undefined') {
@@ -158,6 +157,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const [queuedActionsCount, setQueuedActionsCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const isSyncingRef = useRef<boolean>(false);
+  const completingTicketIdsRef = useRef<Set<string>>(new Set());
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   // Dynamic Station Rerouting, Thermal Printer Fallback & High-Volume Load Balancing (Historia X7P-4211)
@@ -193,12 +193,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     }
   };
 
-  // Auto-dismiss alert toast after 5 seconds
+  // Auto-dismiss alert toast after 3.5 seconds
   useEffect(() => {
     if (!activeAlertToast) return;
     const timer = setTimeout(() => {
       setActiveAlertToast(null);
-    }, 5000);
+    }, 3500);
     return () => clearTimeout(timer);
   }, [activeAlertToast]);
 
@@ -313,7 +313,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 method: 'POST',
                 headers,
               }).catch((e) => console.warn('Auto-fire backend sync failed:', e));
-              triggerAlert(`⏱️ AUTO-PACING ALERT: ${f.name} on ${f.table} auto-fired to cook line!`, 'pacing');
+              triggerAlert(`⏱️ Auto-fired: ${f.name} (${f.table})`, 'pacing');
             });
           }, 0);
 
@@ -479,8 +479,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const triggerAutoSync = useCallback(async () => {
     if (isSyncingRef.current) return;
     isSyncingRef.current = true;
+    console.log('[X7-KDS-SYNC] triggerAutoSync called. isOffline:', isOffline, 'navigator.onLine:', navigator.onLine);
     try {
       const pending = await getQueuedActions();
+      console.log('[X7-KDS-SYNC] Pending actions in queue:', pending.length, pending.map(a => `${a.actionType}(orderId=${a.kitchenOrderId})`));
       if (pending.length === 0) {
         setQueuedActionsCount(0);
         return;
@@ -488,8 +490,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
       setIsSyncing(true);
       const token = getAccessToken();
+      console.log('[X7-KDS-SYNC] Token present:', !!token, 'API_BASE:', API_BASE);
       const res = await flushOfflineQueue(API_BASE, token);
       setIsSyncing(false);
+      console.log('[X7-KDS-SYNC] flushOfflineQueue result:', JSON.stringify(res));
 
       if (res.success && res.syncedCount > 0) {
         setSyncFeedback(`All ${res.syncedCount} offline change(s) synchronized with server`);
@@ -576,13 +580,23 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
   // Escuchar evento global de reinicio KDS
   useEffect(() => {
-    const handleReset = () => {
-      void clearOfflineData();
-      fetchBackendOrders(true);
+    const handleReset = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      // Si el evento viene de un recall (offline o online), NO borrar la cola de acciones pendientes.
+      // Solo el botón de reset de dev/test debe borrar toda la cola.
+      if (detail?.action === 'recall') {
+        // Solo refrescar órdenes del backend si estamos online
+        if (!isOffline && navigator.onLine) {
+          fetchBackendOrders(true);
+        }
+      } else {
+        void clearOfflineData();
+        fetchBackendOrders(true);
+      }
     };
     window.addEventListener('x7_kds_data_reset', handleReset);
     return () => window.removeEventListener('x7_kds_data_reset', handleReset);
-  }, [fetchBackendOrders]);
+  }, [fetchBackendOrders, isOffline]);
 
   // Sincronizar automáticamente el estado de tickets con la caché local de IndexedDB (offline_tickets)
   useEffect(() => {
@@ -665,15 +679,19 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       return next;
     });
 
-    triggerAlert(`🔥 ${course.replace('_', ' ')} FIRED for ${targetTicket.table}! Moved to top of cook queue.`);
+    triggerAlert(`🔥 Fired: ${course.replace('_', ' ')} (${targetTicket.table})`);
   };
 
   // Manual FIRE for an individual line item (with Offline Resilience)
   const handleFireSingleItem = async (ticketId: string, itemId: number, itemName: string) => {
+    const targetTicket = tickets.find((t) => t.id === ticketId);
+    const backendOrderId = targetTicket?.backendOrderId;
+
     if (isOffline) {
       await enqueueOfflineAction({
         actionType: 'FIRE_ITEM',
         kitchenOrderItemId: itemId,
+        kitchenOrderId: backendOrderId,
       });
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
@@ -693,6 +711,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         await enqueueOfflineAction({
           actionType: 'FIRE_ITEM',
           kitchenOrderItemId: itemId,
+          kitchenOrderId: backendOrderId,
         });
         const q = await getQueuedActions();
         setQueuedActionsCount(q.length);
@@ -719,7 +738,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       return next;
     });
 
-    triggerAlert(`🔥 FIRED: "${itemName}" released to station queue!`);
+    triggerAlert(`🔥 Fired: ${itemName}`);
   };
 
   // Revert item back to PENDING queue or HELD state (undo accidental start / fire)
@@ -733,10 +752,14 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     const targetStatus = isStagedCourse ? 'HELD' : 'PENDING';
     const delayMins = course === 'DESSERT' ? dessertHoldDelayMins : mainCourseHoldDelayMins;
 
+    const targetTicket = tickets.find((t) => t.id === ticketId);
+    const backendOrderId = targetTicket?.backendOrderId;
+
     if (isOffline) {
       await enqueueOfflineAction({
         actionType: 'UPDATE_ITEM_STATUS',
         kitchenOrderItemId: itemId,
+        kitchenOrderId: backendOrderId,
         status: targetStatus.toLowerCase(),
       });
       const q = await getQueuedActions();
@@ -768,6 +791,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         await enqueueOfflineAction({
           actionType: 'UPDATE_ITEM_STATUS',
           kitchenOrderItemId: itemId,
+          kitchenOrderId: backendOrderId,
           status: targetStatus.toLowerCase(),
         });
         const q = await getQueuedActions();
@@ -817,10 +841,14 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       nextStatus = 'PENDING';
     }
 
+    const targetTicket = tickets.find((t) => t.id === ticketId);
+    const backendOrderId = targetTicket?.backendOrderId;
+
     if (isOffline) {
       await enqueueOfflineAction({
         actionType: 'UPDATE_ITEM_STATUS',
         kitchenOrderItemId: itemId,
+        kitchenOrderId: backendOrderId,
         status: nextStatus.toLowerCase(),
       });
       const q = await getQueuedActions();
@@ -844,6 +872,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         await enqueueOfflineAction({
           actionType: 'UPDATE_ITEM_STATUS',
           kitchenOrderItemId: itemId,
+          kitchenOrderId: backendOrderId,
           status: nextStatus.toLowerCase(),
         });
         const q = await getQueuedActions();
@@ -862,7 +891,6 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           );
 
           if (
-            activeDisplayMode === 'AUTO' &&
             nextStatus === 'READY' &&
             updatedItems.every((i) => i.preparationStatus === 'READY')
           ) {
@@ -881,7 +909,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       if (shouldAutoDispatch) {
         setTimeout(() => {
           handleCompleteTicket(ticketId, targetBackendOrderId);
-          triggerAlert(`⚡ AUTO-DISPATCHED Ticket #${ticketId} to Pass / Expo!`, 'fire');
+          triggerAlert(`✓ Ticket #${ticketId} bumped`, 'fire');
         }, 400);
       }
 
@@ -937,7 +965,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       }))
     );
 
-    triggerAlert(`✓ Batch of "${batchItemName}" marked READY!`);
+    triggerAlert(`✓ Ready: ${batchItemName}`);
   };
 
   // Release all held units of a batch directly to prep in SUMMARY view
@@ -959,7 +987,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     for (const ti of targetItems) {
       await handleFireSingleItem(ti.ticketId, ti.itemId, batchItemName);
     }
-    triggerAlert(`🔥 Fired all held units of "${batchItemName}" to preparation!`);
+    triggerAlert(`🔥 Fired: ${batchItemName}`);
   };
 
   // Start preparation for all queued (PENDING) units of a batch in SUMMARY view
@@ -1010,7 +1038,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       }))
     );
 
-    triggerAlert(`⚡ Started preparation for all queued units of "${batchItemName}"!`);
+    triggerAlert(`Started: ${batchItemName}`);
   };
 
   // Revert a completed batch back to cooking in SUMMARY view
@@ -1061,7 +1089,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       }))
     );
 
-    triggerAlert(`↺ Reverted batch of "${batchItemName}" back to cooking!`, 'pacing');
+    triggerAlert(`↺ Reverted: ${batchItemName}`, 'pacing');
   };
 
   // Toggle individual table item in SUMMARY view (HELD -> FIRE, COOKING -> READY, READY -> COOKING)
@@ -1131,7 +1159,6 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
         if (ticketModified) {
           if (
-            activeDisplayMode === 'AUTO' &&
             newItems.every((i) => i.preparationStatus === 'READY')
           ) {
             ticketsToAutoDispatch.push({ id: t.id, backendOrderId: t.backendOrderId });
@@ -1190,13 +1217,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       playKitchenFireChime();
     }
     const displayName = `${bumpQuantity}x ${productName}${variantName ? ` (${variantName})` : ''}`;
-    triggerAlert(`🍳 BATCH COOKED: +${displayName} bumped to oldest order (FIFO)!`, 'fire');
+    triggerAlert(`✓ ${displayName} ready`, 'fire');
 
     if (ticketsToAutoDispatch.length > 0) {
       setTimeout(() => {
         ticketsToAutoDispatch.forEach((dispatch) => {
           handleCompleteTicket(dispatch.id, dispatch.backendOrderId);
-          triggerAlert(`⚡ AUTO-DISPATCHED Ticket #${dispatch.id} to Pass / Expo!`, 'fire');
+          triggerAlert(`✓ Ticket #${dispatch.id} bumped`, 'fire');
         });
       }, 400);
     }
@@ -1263,6 +1290,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
   // Complete and bump entire ticket in backend & UI (Historia X7P-4209)
   const handleCompleteTicket = async (id: string, backendOrderId?: number) => {
+    if (completingTicketIdsRef.current.has(id)) return;
+    completingTicketIdsRef.current.add(id);
+    setTimeout(() => {
+      completingTicketIdsRef.current.delete(id);
+    }, 2500);
+
     const targetTicket = tickets.find((t) => t.id === id);
     if (targetTicket && backendOrderId) {
       const bumpedRecord: BumpedOrderRecord = {
@@ -1292,11 +1325,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         }
         return next;
       });
-      setUndoToast({ id, backendOrderId, table: targetTicket.table });
       setRecentlyBumpedTickets((prev) => [targetTicket, ...prev.filter((t) => t.id !== id).slice(0, 19)]);
-      setTimeout(() => {
-        setUndoToast((curr) => (curr?.backendOrderId === backendOrderId ? null : curr));
-      }, 7000);
     }
 
     setTickets((prev) => {
@@ -1313,7 +1342,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         });
         const q = await getQueuedActions();
         setQueuedActionsCount(q.length);
-        triggerAlert(`✓ Ticket #${id} BUMPED (Stored locally - Offline)`);
+        triggerAlert(`✓ Ticket #${id} bumped`);
       } else {
         try {
           const token = getAccessToken();
@@ -1327,7 +1356,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             body: JSON.stringify({ businessStatus: 'completed' }),
           });
           if (!res.ok) throw new Error('Bump request failed');
-          triggerAlert(`✓ Ticket #${id} BUMPED & SERVED!`);
+          triggerAlert(`✓ Ticket #${id} bumped`);
         } catch (e) {
           console.warn('Backend bump order failed, storing offline:', e);
           setIsOffline(true);
@@ -1337,83 +1366,14 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           });
           const q = await getQueuedActions();
           setQueuedActionsCount(q.length);
-          triggerAlert(`✓ Ticket #${id} BUMPED (Stored locally - Offline)`);
+          triggerAlert(`✓ Ticket #${id} bumped`);
         }
       }
     } else {
-      triggerAlert(`✓ Ticket #${id} BUMPED!`);
+      triggerAlert(`✓ Ticket #${id} bumped`);
     }
   };
 
-  // Immediate 1-Tap Undo Action for Accidental Bump (with Offline Resilience)
-  const handleImmediateRecall = async (backendOrderId: number) => {
-    // Restaurar inmediatamente el ticket en pantalla de forma optimista
-    const cachedToRestore = recentlyBumpedTickets.find(
-      (t) => t.backendOrderId === backendOrderId || t.id === String(backendOrderId),
-    );
-    if (cachedToRestore) {
-      setTickets((prev) => {
-        if (prev.some((t) => t.backendOrderId === backendOrderId || t.id === String(backendOrderId))) return prev;
-        const next = [cachedToRestore, ...prev];
-        cacheTicketsLocally(next);
-        return next;
-      });
-    }
-
-    // Purgar del historial local de bumps
-    setBumpedOrdersHistory((prev) => {
-      const next = prev.filter((o) => o.id !== backendOrderId);
-      try {
-        localStorage.setItem('x7_kds_bumped_history', JSON.stringify(next));
-      } catch {
-        /* ignore storage error */
-      }
-      return next;
-    });
-    setLastBumpedOrder((curr) => (curr?.id === backendOrderId ? null : curr));
-
-    if (isOffline) {
-      await enqueueOfflineAction({
-        actionType: 'RECALL_ORDER',
-        kitchenOrderId: backendOrderId,
-        stationId: cachedToRestore?.stationId || (typeof activeStationId === 'number' ? activeStationId : undefined),
-        clientTimestamp: new Date().toISOString(),
-      });
-      const q = await getQueuedActions();
-      setQueuedActionsCount(q.length);
-      setUndoToast(null);
-      triggerAlert(`↺ Ticket #${backendOrderId} RESTORED (Stored locally - Offline)!`, 'fire');
-    } else {
-      try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-        const res = await fetch(`${API_BASE}/kitchen-orders/${backendOrderId}/recall`, {
-          method: 'POST',
-          headers,
-        });
-        if (!res.ok) throw new Error('Recall failed');
-        setUndoToast(null);
-        triggerAlert(`↺ Ticket #${backendOrderId} RESTORED to active screen!`, 'fire');
-        fetchBackendOrders(true);
-      } catch (e) {
-        console.warn('Immediate recall failed, storing offline:', e);
-        setIsOffline(true);
-        await enqueueOfflineAction({
-          actionType: 'RECALL_ORDER',
-          kitchenOrderId: backendOrderId,
-          stationId: cachedToRestore?.stationId || (typeof activeStationId === 'number' ? activeStationId : undefined),
-          clientTimestamp: new Date().toISOString(),
-        });
-        const q = await getQueuedActions();
-        setQueuedActionsCount(q.length);
-        setUndoToast(null);
-        triggerAlert(`↺ Ticket #${backendOrderId} RESTORED (Stored locally - Offline)!`, 'fire');
-      }
-    }
-  };
 
   // Trigger immediate auto-pacing run
   const handleRunAutoPacingNow = async () => {
@@ -1441,7 +1401,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       }))
     );
 
-    triggerAlert('⚡ All held courses forced & released to line cook stations!');
+    triggerAlert('🔥 All held items fired');
     setIsPacingDrawerOpen(false);
   };
 
@@ -2563,11 +2523,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           <button
             type="button"
             onClick={() => setIsRecallTrayOpen(true)}
-            className={`px-3.5 py-2 font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 border cursor-pointer shadow-xs ${
-              undoToast
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/60 ring-2 ring-amber-500/40 animate-pulse'
-                : 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700'
-            }`}
+            className="px-3.5 py-2 font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 border cursor-pointer shadow-xs bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700"
             title="Recent Bump Recall Tray: Restore recently bumped tickets"
           >
             <span className="material-symbols-outlined text-base text-amber-400">history</span>
@@ -2611,39 +2567,6 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         </div>
       </header>
 
-      {/* Immediate Accidental Bump Undo Toast (Historia X7P-4209) */}
-      {undoToast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-bounce-short">
-          <div className="bg-[#1f2026] border-2 border-amber-500/60 shadow-2xl rounded-2xl px-5 py-3 flex items-center gap-4 text-white backdrop-blur-md">
-            <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400">
-              <span className="material-symbols-outlined text-xl">undo</span>
-            </div>
-            <div>
-              <p className="text-xs font-black uppercase tracking-wider text-white">
-                Ticket #{undoToast.id} Bumped
-              </p>
-              <p className="text-[11px] text-zinc-400 font-medium">
-                Table: <strong className="text-amber-300">{undoToast.table}</strong> • Accidental bump?
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => undoToast.backendOrderId && handleImmediateRecall(undoToast.backendOrderId)}
-              className="py-1.5 px-3.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white text-xs font-black uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
-            >
-              <span className="material-symbols-outlined text-sm">replay</span>
-              <span>UNDO (RECALL)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setUndoToast(null)}
-              className="text-zinc-500 hover:text-white p-1 rounded transition-colors"
-            >
-              <span className="material-symbols-outlined text-sm">close</span>
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* 2. Course Sequence Quick Filter Bar */}
       <div className="bg-[#18191e] border-b border-zinc-800 px-6 py-2 flex items-center justify-between gap-4 shrink-0 overflow-x-auto">
@@ -2688,11 +2611,15 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
       {/* Floating Active Alert Banner */}
       {activeAlertToast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-gradient-to-r from-amber-600 to-red-600 text-white px-6 py-2.5 rounded-full shadow-2xl flex items-center gap-3 font-extrabold text-sm border-2 border-amber-300 animate-bounce">
-          <span className="material-symbols-outlined text-xl animate-spin">bolt</span>
+        <div className="fixed top-18 left-1/2 -translate-x-1/2 z-50 bg-[#1e2025]/95 text-zinc-200 border border-zinc-700/80 shadow-lg rounded-full px-4 py-1.5 flex items-center gap-2.5 font-medium text-xs tracking-wide backdrop-blur-md animate-fade-in transition-all">
+          <span className="material-symbols-outlined text-sm text-zinc-400">info</span>
           <span>{activeAlertToast.message}</span>
-          <button onClick={() => setActiveAlertToast(null)} className="ml-2 hover:opacity-75 cursor-pointer">
-            <span className="material-symbols-outlined text-sm">close</span>
+          <button
+            onClick={() => setActiveAlertToast(null)}
+            className="ml-1 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer flex items-center justify-center"
+            title="Cerrar"
+          >
+            <span className="material-symbols-outlined text-xs">close</span>
           </button>
         </div>
       )}
@@ -3687,12 +3614,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         isOffline={isOffline}
         onOrderRecalled={(recalledOrderId, recalledRecord) => {
           let ticketToRestore = recentlyBumpedTickets.find(
-            (t) => t.backendOrderId === recalledOrderId || t.id === String(recalledOrderId),
+            (t) => t.backendOrderId === recalledOrderId || t.id === `KO-${recalledOrderId}`,
           );
 
           if (!ticketToRestore && recalledRecord) {
             ticketToRestore = {
-              id: String(recalledRecord.id),
+              id: `KO-${recalledRecord.id}`,
               backendOrderId: recalledRecord.id,
               table: recalledRecord.table || 'Takeout',
               timeElapsed: 0,
@@ -3706,7 +3633,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 name: it.productName,
                 variantName: it.variantName || undefined,
                 qty: it.quantity,
-                preparedQuantity: it.quantity,
+                preparedQuantity: 0,
                 notes: it.notes || undefined,
                 course: (it.course as CourseType) || 'MAIN_COURSE',
                 preparationStatus: 'IN_PREPARATION',
@@ -3715,11 +3642,22 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           }
 
           if (ticketToRestore) {
+            const restoredTicket: KitchenTicket = {
+              ...ticketToRestore,
+              id: `KO-${recalledOrderId}`,
+              backendOrderId: recalledOrderId,
+              items: ticketToRestore.items.map((it) => ({
+                ...it,
+                preparationStatus: 'IN_PREPARATION',
+                preparedQuantity: 0,
+              })),
+            };
+
             setTickets((prev) => {
-              if (prev.some((t) => t.backendOrderId === recalledOrderId || t.id === String(recalledOrderId))) {
-                return prev;
-              }
-              const next = [ticketToRestore!, ...prev];
+              const withoutRecalled = prev.filter(
+                (t) => t.backendOrderId !== recalledOrderId && t.id !== `KO-${recalledOrderId}`,
+              );
+              const next = [restoredTicket, ...withoutRecalled];
               cacheTicketsLocally(next);
               return next;
             });
@@ -3739,8 +3677,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             return next;
           });
           setLastBumpedOrder((curr) => (curr?.id === recalledOrderId ? null : curr));
-          setUndoToast(null);
-          triggerAlert(`↺ Ticket #${recalledOrderId} RESTORED to active screen!`, 'fire');
+          triggerAlert(`↺ Ticket #KO-${recalledOrderId} restored`, 'fire');
         }}
         lastBumpedOrder={lastBumpedOrder}
         bumpedOrdersHistory={bumpedOrdersHistory}

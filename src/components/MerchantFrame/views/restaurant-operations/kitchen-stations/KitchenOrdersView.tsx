@@ -897,7 +897,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       }
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Order #KO-${order.id} STARTED preparation (Offline mode)`, 'info');
+      showToast(`Order #KO-${order.id} started`, 'info');
       return;
     }
 
@@ -916,7 +916,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
       if (res.ok) {
         applyOptimisticStart();
-        showToast(`Order #KO-${order.id} STARTED preparation`, 'info');
+        showToast(`Order #KO-${order.id} started`, 'info');
       } else {
         throw new Error('Server returned error');
       }
@@ -937,7 +937,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       }
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Order #KO-${order.id} STARTED preparation (Offline mode)`, 'info');
+      showToast(`Order #KO-${order.id} started`, 'info');
     }
   };
 
@@ -980,7 +980,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       }
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Order #KO-${order.id} returned to PENDING (Undo Start - Offline mode)`, 'info');
+      showToast(`Order #KO-${order.id} reverted to pending`, 'info');
       return;
     }
 
@@ -998,7 +998,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
 
       if (res.ok) {
-        showToast(`Order #KO-${order.id} returned to PENDING (Undo Start)`, 'info');
+        showToast(`Order #KO-${order.id} reverted to pending`, 'info');
         loadOrders(true);
       } else {
         throw new Error('Server returned error');
@@ -1020,7 +1020,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       }
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Order #KO-${order.id} returned to PENDING (Undo Start - Offline mode)`, 'info');
+      showToast(`Order #KO-${order.id} reverted to pending`, 'info');
     }
   };
 
@@ -1055,7 +1055,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Dish started in preparation (Offline mode)`, 'info');
+      showToast(`Dish started`, 'info');
       return;
     }
 
@@ -1081,7 +1081,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         if (!res.ok) throw new Error('Failed to start item');
       }
 
-      showToast(`Dish started in preparation`, 'info');
+      showToast(`Dish started`, 'info');
       loadOrders(true);
     } catch (err) {
       console.warn('Network item start failed, enqueuing offline:', err);
@@ -1096,26 +1096,34 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Dish started in preparation (Offline mode)`, 'info');
+      showToast(`Dish started`, 'info');
     }
   };
 
   // Handle READY on an individual item
   const handleReadyItem = async (orderId: number, itemId: number, quantity: number) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    const willAllBeReady = targetOrder
+      ? targetOrder.items.length > 0 && targetOrder.items.every(it => it.id === itemId || it.preparationStatus === 'ready')
+      : false;
+
     const applyOptimisticReadyItem = () => {
       setOrders(prev =>
-        prev.map(o =>
-          o.id === orderId
-            ? {
-                ...o,
-                items: o.items.map(it =>
-                  it.id === itemId
-                    ? { ...it, preparationStatus: 'ready', preparedQuantity: quantity }
-                    : it
-                ),
-              }
-            : o
-        )
+        prev.map(o => {
+          if (o.id !== orderId) return o;
+          const updatedItems = o.items.map(it =>
+            it.id === itemId
+              ? { ...it, preparationStatus: 'ready' as const, preparedQuantity: quantity }
+              : it
+          );
+          const allItemsReady = updatedItems.length > 0 && updatedItems.every(it => it.preparationStatus === 'ready');
+          return {
+            ...o,
+            businessStatus: allItemsReady ? ('completed' as const) : o.businessStatus,
+            completedAt: allItemsReady ? new Date().toISOString() : o.completedAt,
+            items: updatedItems,
+          };
+        })
       );
     };
 
@@ -1129,9 +1137,17 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         preparedQuantity: quantity,
         clientTimestamp: new Date().toISOString(),
       });
+      if (willAllBeReady) {
+        await enqueueOfflineAction({
+          actionType: 'BUMP_ORDER',
+          kitchenOrderId: orderId,
+          stationId: targetOrder?.stationId ?? undefined,
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Dish marked READY (Offline mode)`, 'success');
+      showToast(willAllBeReady ? `Order #KO-${orderId} bumped` : `Dish ready`, 'success');
       return;
     }
 
@@ -1152,7 +1168,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
 
       if (!res.ok) throw new Error('Failed to mark item ready');
-      showToast(`Dish marked READY`, 'success');
+      showToast(willAllBeReady ? `Order #KO-${orderId} bumped` : `Dish ready`, 'success');
       loadOrders(true);
     } catch (err) {
       console.warn('Network ready item failed, enqueuing offline:', err);
@@ -1166,9 +1182,17 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         preparedQuantity: quantity,
         clientTimestamp: new Date().toISOString(),
       });
+      if (willAllBeReady) {
+        await enqueueOfflineAction({
+          actionType: 'BUMP_ORDER',
+          kitchenOrderId: orderId,
+          stationId: targetOrder?.stationId ?? undefined,
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Dish marked READY (Offline mode)`, 'success');
+      showToast(willAllBeReady ? `Order #KO-${orderId} bumped` : `Dish ready`, 'success');
     }
   };
 
@@ -1216,7 +1240,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Dish status reverted (Undo - Offline mode)`, 'info');
+      showToast(`Dish reverted`, 'info');
       return;
     }
 
@@ -1256,7 +1280,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         }
       }
 
-      showToast(`Dish status reverted (Undo)`, 'info');
+      showToast(`Dish reverted`, 'info');
       loadOrders(true);
     } catch (err) {
       console.warn('Network item undo failed, enqueuing offline:', err);
@@ -1272,7 +1296,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Dish status reverted (Undo - Offline mode)`, 'info');
+      showToast(`Dish reverted`, 'info');
     }
   };
 
@@ -1315,7 +1339,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Order #KO-${order.id} BUMPED (Guardado localmente - Modo Offline)`, 'success');
+      showToast(`Order #KO-${order.id} bumped`, 'success');
       return;
     }
 
@@ -1334,7 +1358,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
       if (res.ok) {
         applyOptimisticBump();
-        showToast(`Order #KO-${order.id} BUMPED (Completed)`, 'success');
+        showToast(`Order #KO-${order.id} bumped`, 'success');
       } else {
         throw new Error('Failed to bump order');
       }
@@ -1350,7 +1374,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Order #KO-${order.id} BUMPED (Guardado localmente - Modo Offline)`, 'success');
+      showToast(`Order #KO-${order.id} bumped`, 'success');
     }
   };
 
@@ -1384,7 +1408,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Order #KO-${idToRecall} RECALLED (Saved locally - Offline Mode)`, 'info');
+      showToast(`Order #KO-${idToRecall} recalled`, 'info');
       return;
     }
 
@@ -1402,7 +1426,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
       if (res.ok) {
         applyOptimisticRecall();
-        showToast(`Order #KO-${idToRecall} RECALLED to Active Line`, 'info');
+        showToast(`Order #KO-${idToRecall} recalled`, 'info');
         loadOrders(true);
       } else {
         throw new Error('Failed to recall order');
@@ -1418,7 +1442,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
       const q = await getQueuedActions();
       setQueuedActionsCount(q.length);
-      showToast(`Order #KO-${idToRecall} RECALLED (Saved locally - Offline Mode)`, 'info');
+      showToast(`Order #KO-${idToRecall} recalled`, 'info');
     }
   };
 
@@ -1495,7 +1519,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
       {/* FLOATING TOAST ALERT */}
       {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 animate-bounce transition-all duration-300">
+        <div className="fixed top-20 right-6 z-50 animate-fade-in transition-all duration-300">
           <div
             className={`flex items-center gap-3 px-5 py-3 rounded-lg shadow-xl text-white text-sm font-semibold tracking-wide border ${
               toastMessage.type === 'success'
@@ -2273,10 +2297,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredOrders.map(order => {
             const isAllHeld = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'held');
-            const hasActivePrep = order.items.some(it => it.preparationStatus === 'in_preparation' || it.preparationStatus === 'ready');
-            const isStarted = (order.businessStatus === 'started' || hasActivePrep) && !isAllHeld;
-            const isCompleted = order.businessStatus === 'completed';
+            const isAllPending = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'pending');
+            const isAllReady = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'ready');
+            const hasActivePrep = order.items.some(it => it.preparationStatus === 'in_preparation');
+            const isCompleted = order.businessStatus === 'completed' || isAllReady;
             const isCancelled = order.businessStatus === 'cancelled';
+            const isStarted = (order.businessStatus === 'started' || hasActivePrep) && !isAllHeld && !isAllPending && !isCompleted && !isCancelled;
             const isPending = !isAllHeld && !isStarted && !isCompleted && !isCancelled;
 
             const startReference = new Date(order.createdAt).getTime();
@@ -2555,12 +2581,85 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
                   <div className="flex items-center gap-2">
                     {(isPending || isAllHeld) && (
-                      <button
-                        onClick={() => handleStartPrep(order)}
-                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
-                      >
-                        Start
-                      </button>
+                      (() => {
+                        if (order.items.length === 1) {
+                          const singleItem = order.items[0];
+                          if (singleItem.preparationStatus === 'held') {
+                            return (
+                              <button
+                                onClick={() => handleStartItem(order.id, singleItem.id, singleItem.preparationStatus)}
+                                className="px-2.5 py-1 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-xs font-bold cursor-pointer transition-all shadow-xs flex items-center gap-1 active:scale-95"
+                                title="Fire directly to preparation"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">local_fire_department</span>
+                                <span>Fire</span>
+                              </button>
+                            );
+                          }
+                          const action = getItemPrepAction(singleItem.course, singleItem.productName);
+                          return (
+                            <button
+                              onClick={() => handleStartPrep(order)}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1 active:scale-95"
+                              title={action.title}
+                            >
+                              <span className="material-symbols-outlined text-[13px]">{action.icon}</span>
+                              <span>{action.verb === 'POUR' ? 'Pour' : 'Prep'}</span>
+                            </button>
+                          );
+                        }
+
+                        if (isAllHeld) {
+                          return (
+                            <button
+                              onClick={() => handleStartPrep(order)}
+                              className="px-2.5 py-1 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-xs font-bold cursor-pointer transition-all shadow-xs flex items-center gap-1 active:scale-95"
+                              title="Fire all items to preparation"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">local_fire_department</span>
+                              <span>Fire All</span>
+                            </button>
+                          );
+                        }
+
+                        const allBeverages = order.items.length > 0 && order.items.every(it => getItemPrepAction(it.course, it.productName).verb === 'POUR');
+                        if (allBeverages) {
+                          return (
+                            <button
+                              onClick={() => handleStartPrep(order)}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1 active:scale-95"
+                              title="Pour all beverages (Move to IN PREP)"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">local_bar</span>
+                              <span>Pour All</span>
+                            </button>
+                          );
+                        }
+
+                        const allFood = order.items.length > 0 && order.items.every(it => getItemPrepAction(it.course, it.productName).verb === 'PREP');
+                        if (allFood) {
+                          return (
+                            <button
+                              onClick={() => handleStartPrep(order)}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1 active:scale-95"
+                              title="Start preparing all items (Move to IN PREP)"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">restaurant</span>
+                              <span>Prep All</span>
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <button
+                            onClick={() => handleStartPrep(order)}
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                            title="Start order preparation"
+                          >
+                            Start
+                          </button>
+                        );
+                      })()
                     )}
 
                     {/* Botón Undo general en la comanda (después de haber dado Start) */}
@@ -2892,8 +2991,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     priority: Number(formPriority),
                     orderId: isNumericOrderId ? Number(ticketRef) : null,
                     notes: combinedNotes || null,
-                    businessStatus: 'started',
-                    startedAt: new Date().toISOString(),
+                    businessStatus: 'pending',
+                    startedAt: null,
                     kitchenOrderItems: validItems.map((it) => ({
                       productName: it.productName.trim(),
                       variantName: it.variantName.trim() || null,

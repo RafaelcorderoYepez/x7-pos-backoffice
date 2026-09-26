@@ -73,36 +73,113 @@ export function openKdsDb(): Promise<IDBDatabase> {
 }
 
 /**
- * Enqueue a user action to IndexedDB while offline
+ * Enqueue a user action to IndexedDB while offline with smart coalescing and deduplication.
+ * Prevents redundant database sync states (e.g. intermediate prep steps superseded by ready/bumped).
  */
 export async function enqueueOfflineAction(
   action: Omit<KdsQueuedAction, 'id' | 'clientTimestamp'> & { clientTimestamp?: string }
 ): Promise<KdsQueuedAction> {
   const db = await openKdsDb();
-  const fullAction: KdsQueuedAction = {
-    ...action,
-    clientTimestamp: action.clientTimestamp || new Date().toISOString(),
-    retries: 0,
-  };
+  const timestamp = action.clientTimestamp || new Date().toISOString();
 
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_ACTIONS, 'readwrite');
     const store = tx.objectStore(STORE_ACTIONS);
-    const req = store.add(fullAction);
+    const getAllReq = store.getAll();
 
-    req.onsuccess = (e) => {
-      fullAction.id = (e.target as IDBRequest).result as number;
-      resolve(fullAction);
+    getAllReq.onsuccess = () => {
+      const existing = (getAllReq.result || []) as KdsQueuedAction[];
+
+      // Prevención de doble-clic rápido accidental (debounce < 300ms misma acción y misma comanda/ítem)
+      const isRapidDoubleClick = existing.some(
+        (a) =>
+          a.actionType === action.actionType &&
+          a.kitchenOrderId === action.kitchenOrderId &&
+          a.kitchenOrderItemId === action.kitchenOrderItemId &&
+          a.course === action.course &&
+          a.clientTimestamp &&
+          Math.abs(new Date(timestamp).getTime() - new Date(a.clientTimestamp).getTime()) < 300
+      );
+      if (isRapidDoubleClick) {
+        console.log('[X7-KDS-SYNC] Debounced rapid duplicate click for:', action.actionType, 'orderId:', action.kitchenOrderId);
+        resolve({ ...action, clientTimestamp: timestamp });
+        return;
+      }
+
+      // 1. Si es BUMP_ORDER:
+      // Removemos acciones intermedias de ítems pendientes para esta comanda
+      if (action.actionType === 'BUMP_ORDER' && action.kitchenOrderId) {
+        existing.forEach((a) => {
+          if (
+            (a.actionType === 'UPDATE_ITEM_STATUS' || a.actionType === 'FIRE_ITEM') &&
+            a.kitchenOrderId === action.kitchenOrderId &&
+            typeof a.id === 'number'
+          ) {
+            store.delete(a.id);
+          }
+        });
+        // IMPORTANTE: NO borramos RECALL_ORDER previos ni cancelamos el BUMP.
+        // Toda la secuencia de movimientos (recall -> bump -> recall -> bump) se preserva auditada.
+      }
+
+      // 2. Si es UPDATE_ITEM_STATUS:
+      if (action.actionType === 'UPDATE_ITEM_STATUS' && action.kitchenOrderItemId) {
+        const existingItemAction = existing.find(
+          (a) => a.actionType === 'UPDATE_ITEM_STATUS' && a.kitchenOrderItemId === action.kitchenOrderItemId
+        );
+        if (existingItemAction && typeof existingItemAction.id === 'number') {
+          existingItemAction.status = action.status;
+          existingItemAction.clientTimestamp = timestamp;
+          if (action.kitchenOrderId) existingItemAction.kitchenOrderId = action.kitchenOrderId;
+          store.put(existingItemAction);
+          resolve(existingItemAction);
+          return;
+        }
+      }
+
+      // 3. Si es FIRE_ITEM:
+      if (action.actionType === 'FIRE_ITEM' && action.kitchenOrderItemId) {
+        const dupFire = existing.find(
+          (a) => a.actionType === 'FIRE_ITEM' && a.kitchenOrderItemId === action.kitchenOrderItemId
+        );
+        if (dupFire) {
+          resolve(dupFire);
+          return;
+        }
+      }
+
+      // 4. Si es FIRE_COURSE:
+      if (action.actionType === 'FIRE_COURSE' && action.course) {
+        const dupCourse = existing.find(
+          (a) => a.actionType === 'FIRE_COURSE' && a.course === action.course && a.stationId === action.stationId
+        );
+        if (dupCourse) {
+          resolve(dupCourse);
+          return;
+        }
+      }
+
+      // Encolar acción preservando orden cronológico completo
+      console.log('[X7-KDS-SYNC] Enqueuing action:', action.actionType, 'orderId:', action.kitchenOrderId, 'itemId:', action.kitchenOrderItemId);
+      const fullAction: KdsQueuedAction = {
+        ...action,
+        clientTimestamp: timestamp,
+        retries: 0,
+      };
+      const addReq = store.add(fullAction);
+      addReq.onsuccess = (e) => {
+        fullAction.id = (e.target as IDBRequest).result as number;
+        resolve(fullAction);
+      };
+      addReq.onerror = () => reject(addReq.error);
     };
 
-    req.onerror = () => reject(req.error);
+    getAllReq.onerror = () => reject(getAllReq.error);
   });
 }
 
 /**
- * Retrieve all pending queued actions from IndexedDB in chronological order
- */
-export async function getQueuedActions(): Promise<KdsQueuedAction[]> {
+ * export async function getQueuedActions(): Promise<KdsQueuedAction[]> {
   const db = await openKdsDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_ACTIONS, 'readonly');
@@ -188,24 +265,43 @@ export async function flushOfflineQueue(
   token: string | null
 ): Promise<{ success: boolean; syncedCount: number; errors: string[] }> {
   const queued = await getQueuedActions();
+  console.log('[X7-KDS-SYNC] flushOfflineQueue called. Queued actions:', queued.length, queued.map(a => `${a.actionType}(orderId=${a.kitchenOrderId})`));
   if (queued.length === 0) {
+    console.log('[X7-KDS-SYNC] No pending actions, skipping sync.');
     return { success: true, syncedCount: 0, errors: [] };
   }
 
-  const payload = {
-    actions: queued.map((a) => ({
+  // Filtrar y normalizar el payload para garantizar compatibilidad estricta con OfflineKitchenActionDto
+  const actionsPayload = queued.map((a) => {
+    const act: Record<string, unknown> = {
       actionType: a.actionType,
-      kitchenOrderId: a.kitchenOrderId,
-      kitchenOrderItemId: a.kitchenOrderItemId,
-      course: a.course,
-      status: a.status,
-      preparedQuantity: a.preparedQuantity,
-      productName: a.productName,
-      variantName: a.variantName,
-      quantity: a.quantity,
-      stationId: a.stationId,
-      clientTimestamp: a.clientTimestamp,
-    })),
+      clientTimestamp: a.clientTimestamp || new Date().toISOString(),
+    };
+    if (typeof a.kitchenOrderId === 'number' && !isNaN(a.kitchenOrderId)) {
+      act.kitchenOrderId = a.kitchenOrderId;
+    } else if (typeof a.kitchenOrderId === 'string' && !isNaN(Number(a.kitchenOrderId))) {
+      act.kitchenOrderId = Number(a.kitchenOrderId);
+    }
+    if (typeof a.kitchenOrderItemId === 'number' && !isNaN(a.kitchenOrderItemId)) {
+      act.kitchenOrderItemId = a.kitchenOrderItemId;
+    } else if (typeof a.kitchenOrderItemId === 'string' && !isNaN(Number(a.kitchenOrderItemId))) {
+      act.kitchenOrderItemId = Number(a.kitchenOrderItemId);
+    }
+    if (typeof a.stationId === 'number' && !isNaN(a.stationId)) {
+      act.stationId = a.stationId;
+    }
+    if (typeof a.quantity === 'number') act.quantity = a.quantity;
+    if (typeof a.preparedQuantity === 'number') act.preparedQuantity = a.preparedQuantity;
+    if (typeof a.status === 'string') act.status = a.status;
+    if (typeof a.course === 'string') act.course = a.course;
+    if (typeof a.productName === 'string') act.productName = a.productName;
+    if (typeof a.variantName === 'string') act.variantName = a.variantName;
+
+    return act;
+  });
+
+  const payload = {
+    actions: actionsPayload,
   };
 
   const headers: Record<string, string> = {
@@ -214,11 +310,13 @@ export async function flushOfflineQueue(
   };
 
   try {
+    console.log('[X7-KDS-SYNC] Sending sync POST to', `${apiBase}/kitchen-event-logs/sync`, 'payload:', JSON.stringify(payload, null, 2));
     const res = await fetch(`${apiBase}/kitchen-event-logs/sync`, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
     });
+    console.log('[X7-KDS-SYNC] Sync response status:', res.status, res.statusText);
 
     if (!res.ok) {
       const errText = await res.text().catch(() => res.statusText);
@@ -226,8 +324,10 @@ export async function flushOfflineQueue(
     }
 
     const data = await res.json();
+    console.log('[X7-KDS-SYNC] Sync response data:', JSON.stringify(data));
     const idsToRemove = queued.map((q) => q.id).filter((id): id is number => typeof id === 'number');
     await removeQueuedActions(idsToRemove);
+    console.log('[X7-KDS-SYNC] Removed', idsToRemove.length, 'actions from queue. Synced count:', data.syncedCount || queued.length);
 
     return {
       success: true,

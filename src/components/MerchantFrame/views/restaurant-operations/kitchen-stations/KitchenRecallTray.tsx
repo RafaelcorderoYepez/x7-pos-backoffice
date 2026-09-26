@@ -220,10 +220,14 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
     const targetOrder = displayOrders.find((o) => o.id === orderId);
 
     const doOfflineRecall = async () => {
+      const resolvedStationId = typeof targetOrder?.stationId === 'number'
+        ? targetOrder.stationId
+        : (typeof activeStationId === 'number' ? activeStationId : undefined);
+
       await enqueueOfflineAction({
         actionType: 'RECALL_ORDER',
         kitchenOrderId: orderId,
-        stationId: targetOrder?.stationId,
+        stationId: resolvedStationId,
         clientTimestamp: new Date().toISOString(),
       });
 
