@@ -179,7 +179,9 @@ export async function enqueueOfflineAction(
 }
 
 /**
- * export async function getQueuedActions(): Promise<KdsQueuedAction[]> {
+ * Retrieve all pending queued actions from IndexedDB in chronological order
+ */
+export async function getQueuedActions(): Promise<KdsQueuedAction[]> {
   const db = await openKdsDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_ACTIONS, 'readonly');

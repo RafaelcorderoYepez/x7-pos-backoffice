@@ -2415,11 +2415,20 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                 {/* Body & Items */}
                 <div className="p-4 flex-1 flex flex-col gap-3">
                   {/* Notes Callout */}
-                  {order.notes && (
-                    <div className="bg-amber-50 border-l-2 border-amber-400 px-2.5 py-1.5 rounded-r text-[11px] text-amber-900 font-medium italic">
-                      {order.notes}
-                    </div>
-                  )}
+                  {/* Notes Callout - Culinary instructions only */}
+                  {(() => {
+                    const cleanNotes = order.notes
+                      ?.replace(/\|\s*\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
+                      ?.replace(/\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
+                      ?.replace(/^Table\s+\d+\s*•\s*Station\s*#[^|]*/i, '')
+                      ?.trim();
+                    if (!cleanNotes) return null;
+                    return (
+                      <div className="bg-amber-50 border-l-2 border-amber-400 px-2.5 py-1.5 rounded-r text-[11px] text-amber-900 font-medium italic">
+                        {cleanNotes}
+                      </div>
+                    );
+                  })()}
 
                   {/* Dishes List */}
                   <div className="space-y-2 flex-1 py-1">

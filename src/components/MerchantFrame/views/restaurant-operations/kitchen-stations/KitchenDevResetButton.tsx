@@ -45,7 +45,7 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
 
   if (!isVisible) return null;
 
-  const handleAction = async (mode: 'seed' | 'clear' | 'simple' | 'multi') => {
+  const handleAction = async (mode: 'seed' | 'clear' | 'simple' | 'multi' | 'multi2') => {
     setLoading(true);
     setStatusMessage(null);
     setStatusType(null);
@@ -75,6 +75,8 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
             ? '2 Simple Orders Seeded!'
             : mode === 'multi'
             ? '1 Multi-Course Order Seeded!'
+            : mode === 'multi2'
+            ? '2 Multi-Course Orders Seeded!'
             : mode === 'seed'
             ? '8 Test Orders Seeded!'
             : 'All Orders Cleared!')
@@ -105,7 +107,7 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
     <div className="fixed bottom-6 right-6 z-50 select-none font-sans">
       {/* Popover Menu */}
       {isOpen && (
-        <div className="absolute bottom-12 right-0 w-52 bg-[#1a1b20] border border-zinc-700/80 rounded-xl shadow-2xl p-2.5 text-white animate-fade-in backdrop-blur-md">
+        <div className="absolute bottom-12 right-0 w-56 bg-[#1a1b20] border border-zinc-700/80 rounded-xl shadow-2xl p-2.5 text-white animate-fade-in backdrop-blur-md">
           {/* Feedback message */}
           {statusMessage && (
             <div
@@ -146,6 +148,18 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
                 {loading ? 'refresh' : 'dinner_dining'}
               </span>
               <span>{loading ? 'Generating...' : 'Reset (1 Multi-Course)'}</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => handleAction('multi2')}
+              className="w-full py-1.5 px-2 bg-gradient-to-r from-indigo-600 to-purple-700 hover:from-indigo-500 hover:to-purple-600 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold tracking-wide flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95"
+            >
+              <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>
+                {loading ? 'refresh' : 'dinner_dining'}
+              </span>
+              <span>{loading ? 'Generating...' : 'Reset (2 Multi-Course)'}</span>
             </button>
 
             <button

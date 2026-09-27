@@ -16,7 +16,7 @@ import { KitchenQuickLinks } from './KitchenQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-export type KitchenEventType = 'inicio' | 'listo' | 'servido' | 'cancelado' | 'recall';
+export type KitchenEventType = 'inicio' | 'listo' | 'servido' | 'cancelado' | 'recall' | 'reroute';
 
 export interface KitchenEventLogUser {
   id: number;
@@ -449,12 +449,30 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
 
     const groups = Array.from(groupMap.values());
 
-    // 1. Within each order group, sort events strictly in chronological sequence
+    // 1. Within each order group, sort events in chronological & lifecycle sequence (reroute before start)
+    const stagePriority: Record<string, number> = {
+      reroute: 1,
+      inicio: 2,
+      listo: 3,
+      servido: 4,
+      recall: 5,
+      cancelado: 6,
+    };
+
     groups.forEach((grp) => {
       grp.events.sort((a, b) => {
+        // Reroute is station intake routing and always precedes preparation start
+        if (a.eventType === 'reroute' && b.eventType === 'inicio') return -1;
+        if (a.eventType === 'inicio' && b.eventType === 'reroute') return 1;
+
         const timeA = new Date(a.eventTime).getTime();
         const timeB = new Date(b.eventTime).getTime();
         if (timeA !== timeB) return timeA - timeB;
+
+        const rankA = stagePriority[a.eventType] ?? 99;
+        const rankB = stagePriority[b.eventType] ?? 99;
+        if (rankA !== rankB) return rankA - rankB;
+
         return (a.id ?? 0) - (b.id ?? 0);
       });
 
@@ -579,6 +597,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
   const typeCounts = useMemo(() => {
     return {
       total: logs.length,
+      reroute: logs.filter((l) => l.eventType === 'reroute').length,
       inicio: logs.filter((l) => l.eventType === 'inicio' && !l.message?.toLowerCase().includes('recalled')).length,
       listo: logs.filter((l) => l.eventType === 'listo').length,
       servido: logs.filter((l) => l.eventType === 'servido').length,
@@ -627,6 +646,13 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
     }
 
     switch (type) {
+      case 'reroute':
+        return (
+          <span className={`inline-flex items-center gap-1.5 rounded-full font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 ${pad}`}>
+            <span className="material-symbols-outlined text-[13px] text-amber-600">alt_route</span>
+            REROUTE
+          </span>
+        );
       case 'inicio':
         return (
           <span className={`inline-flex items-center gap-1.5 rounded-full font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 ${pad}`}>
@@ -1074,23 +1100,23 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         </div>
 
         {/* ROW 3: Event Type Multi-Select Pills */}
-        <div className="flex items-center gap-2 pt-3 border-t border-[#f0ede6] overflow-x-auto">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-1">
-            Event Types:
+        <div className="flex items-center gap-1 pt-2.5 border-t border-[#f0ede6] overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-0.5">
+            Types:
           </span>
 
-          {/* All Types Pill */}
+          {/* All Pill */}
           <button
             onClick={selectAllEventTypes}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap border ${
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.length === 0
                 ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
                 : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
             }`}
           >
-            <span>All Types</span>
+            <span>All</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
                 selectedEventTypes.length === 0 ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
               }`}
             >
@@ -1098,19 +1124,39 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
             </span>
           </button>
 
+          {/* REROUTE Pill (Icon: alt_route) - Positioned before STARTED */}
+          <button
+            onClick={() => toggleEventType('reroute')}
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
+              selectedEventTypes.includes('reroute')
+                ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                : 'bg-amber-50/50 text-amber-800 border-amber-200 hover:bg-amber-100/50 hover:text-amber-900'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[12px]">alt_route</span>
+            <span>REROUTE</span>
+            <span
+              className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
+                selectedEventTypes.includes('reroute') ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {typeCounts.reroute}
+            </span>
+          </button>
+
           {/* STARTED Pill (Icon: play_circle) */}
           <button
             onClick={() => toggleEventType('inicio')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap border ${
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('inicio')
                 ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                 : 'bg-blue-50/50 text-blue-800 border-blue-200 hover:bg-blue-100/50 hover:text-blue-900'
             }`}
           >
-            <span className="material-symbols-outlined text-[14px]">play_circle</span>
+            <span className="material-symbols-outlined text-[12px]">play_circle</span>
             <span>STARTED</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
                 selectedEventTypes.includes('inicio') ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
               }`}
             >
@@ -1121,16 +1167,16 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
           {/* READY Pill (Icon: check_circle) */}
           <button
             onClick={() => toggleEventType('listo')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap border ${
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('listo')
                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                 : 'bg-emerald-50/50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/50 hover:text-emerald-900'
             }`}
           >
-            <span className="material-symbols-outlined text-[14px]">check_circle</span>
+            <span className="material-symbols-outlined text-[12px]">check_circle</span>
             <span>READY</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
                 selectedEventTypes.includes('listo') ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
               }`}
             >
@@ -1141,16 +1187,16 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
           {/* SERVED Pill (Icon: local_shipping) */}
           <button
             onClick={() => toggleEventType('servido')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap border ${
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('servido')
                 ? 'bg-zinc-700 text-white border-zinc-700 shadow-xs'
                 : 'bg-zinc-100 text-zinc-700 border-zinc-300 hover:bg-zinc-200 hover:text-zinc-900'
             }`}
           >
-            <span className="material-symbols-outlined text-[14px]">local_shipping</span>
+            <span className="material-symbols-outlined text-[12px]">local_shipping</span>
             <span>SERVED</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
                 selectedEventTypes.includes('servido') ? 'bg-white/20 text-white' : 'bg-zinc-200 text-zinc-800'
               }`}
             >
@@ -1161,16 +1207,16 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
           {/* RECALLED Pill (Icon: replay) */}
           <button
             onClick={() => toggleEventType('recall')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap border ${
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('recall')
                 ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
                 : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100/60 hover:text-purple-900'
             }`}
           >
-            <span className="material-symbols-outlined text-[14px]">replay</span>
+            <span className="material-symbols-outlined text-[12px]">replay</span>
             <span>RECALLED</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
                 selectedEventTypes.includes('recall') ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'
               }`}
             >
@@ -1181,16 +1227,16 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
           {/* CANCELLED Pill (Icon: cancel) */}
           <button
             onClick={() => toggleEventType('cancelado')}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap border ${
+            className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('cancelado')
                 ? 'bg-[#ae001a] text-white border-[#ae001a] shadow-xs'
                 : 'bg-red-50 text-[#ae001a] border-red-200 hover:bg-red-100/60 hover:text-[#900015]'
             }`}
           >
-            <span className="material-symbols-outlined text-[14px]">cancel</span>
+            <span className="material-symbols-outlined text-[12px]">cancel</span>
             <span>CANCELLED</span>
             <span
-              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+              className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
                 selectedEventTypes.includes('cancelado') ? 'bg-white/20 text-white' : 'bg-red-100 text-[#ae001a]'
               }`}
             >
@@ -1199,26 +1245,26 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
           </button>
 
           {selectedEventTypes.length > 0 && (
-            <span className="text-[11px] text-[#5f5e5e] italic ml-2">
-              (Multi-filter active: {selectedEventTypes.length} selected)
+            <span className="hidden 2xl:inline text-[9.5px] text-[#5f5e5e] italic ml-1 shrink-0">
+              ({selectedEventTypes.length} active)
             </span>
           )}
 
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex items-center gap-1 ml-auto shrink-0 pr-0.5">
             <button
               onClick={expandAllGroups}
-              className="text-xs text-[#5f5e5e] hover:text-[#ae001a] px-2.5 py-1 rounded border border-[#e8e2d8] hover:bg-[#f8f3eb] transition-colors cursor-pointer font-medium flex items-center gap-1"
+              className="text-[10px] text-[#5f5e5e] hover:text-[#ae001a] px-1.5 py-0.5 rounded border border-[#e8e2d8] hover:bg-[#f8f3eb] transition-colors cursor-pointer font-medium flex items-center gap-0.5 shrink-0"
               title="Expand all orders"
             >
-              <span className="material-symbols-outlined text-[15px]">unfold_more</span>
+              <span className="material-symbols-outlined text-[13px]">unfold_more</span>
               <span>Expand All</span>
             </button>
             <button
               onClick={collapseAllGroups}
-              className="text-xs text-[#5f5e5e] hover:text-[#ae001a] px-2.5 py-1 rounded border border-[#e8e2d8] hover:bg-[#f8f3eb] transition-colors cursor-pointer font-medium flex items-center gap-1"
+              className="text-[10px] text-[#5f5e5e] hover:text-[#ae001a] px-1.5 py-0.5 rounded border border-[#e8e2d8] hover:bg-[#f8f3eb] transition-colors cursor-pointer font-medium flex items-center gap-0.5 shrink-0"
               title="Collapse all orders"
             >
-              <span className="material-symbols-outlined text-[15px]">unfold_less</span>
+              <span className="material-symbols-outlined text-[13px]">unfold_less</span>
               <span>Collapse All</span>
             </button>
           </div>

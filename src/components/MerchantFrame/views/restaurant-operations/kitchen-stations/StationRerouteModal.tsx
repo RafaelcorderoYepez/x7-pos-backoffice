@@ -43,6 +43,8 @@ interface StationRerouteModalProps {
     emittedAt: string;
   }) => void;
   activeTickets: KitchenTicket[];
+  isOffline?: boolean;
+  offlineSeconds?: number;
 }
 
 export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
@@ -55,6 +57,8 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
   onRerouteExecuted,
   onOpenThermalPrint,
   activeTickets,
+  isOffline = false,
+  offlineSeconds = 0,
 }) => {
   const [selectedStationId, setSelectedStationId] = useState<number>(() => {
     if (typeof initialStationId === 'number') return initialStationId;
@@ -65,22 +69,40 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
   const selectedStationObj = stations.find((s) => s.id === selectedStationId);
 
   const [editedBackupStationId, setEditedBackupStationId] = useState<number | null | undefined>(undefined);
-  const backupStationId = editedBackupStationId !== undefined ? editedBackupStationId : (currentStatus?.backupStationId ?? null);
+  const backupStationId =
+    editedBackupStationId !== undefined
+      ? editedBackupStationId
+      : (currentStatus?.backupStationId ?? selectedStationObj?.backup_station_id ?? selectedStationObj?.backupStationId ?? null);
 
   const [editedCapacityLimit, setEditedCapacityLimit] = useState<number | undefined>(undefined);
-  const capacityLimit = editedCapacityLimit !== undefined ? editedCapacityLimit : (currentStatus?.maxActiveTicketsCapacity ?? 15);
+  const capacityLimit =
+    editedCapacityLimit !== undefined
+      ? editedCapacityLimit
+      : (currentStatus?.maxActiveTicketsCapacity ?? selectedStationObj?.max_active_tickets_capacity ?? selectedStationObj?.maxActiveTicketsCapacity ?? 15);
 
   const [editedAutoOffline, setEditedAutoOffline] = useState<boolean | undefined>(undefined);
-  const autoOfflineReroute = editedAutoOffline !== undefined ? editedAutoOffline : (currentStatus?.autoRerouteOnOffline ?? true);
+  const autoOfflineReroute =
+    editedAutoOffline !== undefined
+      ? editedAutoOffline
+      : (currentStatus?.autoRerouteOnOffline ?? selectedStationObj?.auto_reroute_on_offline ?? selectedStationObj?.autoRerouteOnOffline ?? true);
 
   const [editedAutoCapacity, setEditedAutoCapacity] = useState<boolean | undefined>(undefined);
-  const autoCapacityReroute = editedAutoCapacity !== undefined ? editedAutoCapacity : (currentStatus?.autoRerouteOnCapacity ?? true);
+  const autoCapacityReroute =
+    editedAutoCapacity !== undefined
+      ? editedAutoCapacity
+      : (currentStatus?.autoRerouteOnCapacity ?? selectedStationObj?.auto_reroute_on_capacity ?? selectedStationObj?.autoRerouteOnCapacity ?? true);
 
   const [editedFallbackAction, setEditedFallbackAction] = useState<string | undefined>(undefined);
-  const fallbackAction = editedFallbackAction !== undefined ? editedFallbackAction : (currentStatus?.fallbackAction || 'BACKUP_STATION');
+  const fallbackAction =
+    editedFallbackAction !== undefined
+      ? editedFallbackAction
+      : (currentStatus?.fallbackAction || selectedStationObj?.fallback_action || selectedStationObj?.fallbackAction || 'BACKUP_STATION');
 
   const [editedPrinterName, setEditedPrinterName] = useState<string | undefined>(undefined);
-  const printerName = editedPrinterName !== undefined ? editedPrinterName : (currentStatus?.printerName || '');
+  const printerName =
+    editedPrinterName !== undefined
+      ? editedPrinterName
+      : (currentStatus?.printerName || selectedStationObj?.printer_name || selectedStationObj?.printerName || '');
 
   const [saving, setSaving] = useState<boolean>(false);
   const [rerouting, setRerouting] = useState<boolean>(false);
@@ -97,6 +119,7 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
     setEditedAutoCapacity(undefined);
     setEditedFallbackAction(undefined);
     setEditedPrinterName(undefined);
+    setFeedbackMessage(null);
   };
 
   if (!isOpen) return null;
@@ -181,7 +204,7 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
           stationNumber: currentStatus?.stationNumber,
           printerName: printerName || 'Local Kitchen Receipt Printer',
           reason: 'Manual Station Redirection / Fallback Active',
-          tickets: stationTickets.length > 0 ? stationTickets : activeTickets.slice(0, 3),
+          tickets: stationTickets,
           emittedAt: new Date().toLocaleTimeString(),
         });
       }
@@ -204,7 +227,7 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
       stationNumber: currentStatus?.stationNumber,
       printerName: printerName || 'Local Thermal Printer',
       reason: 'Manual Test Hardware Fallback Spool',
-      tickets: stationTickets.length > 0 ? stationTickets : activeTickets.slice(0, 3),
+      tickets: stationTickets,
       emittedAt: new Date().toLocaleTimeString(),
     });
   };
@@ -243,6 +266,67 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
           className="p-6 space-y-6 overflow-y-auto max-h-[75vh] no-scrollbar"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
+          {/* Live Offline Watchdog & Seconds Counter Banner */}
+          {isOffline && (
+            <div
+              className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 ${
+                offlineSeconds >= 60
+                  ? 'bg-red-950/60 border-red-500/80 text-red-200 shadow-xl'
+                  : 'bg-amber-500/15 border-amber-500/50 text-amber-200 animate-pulse'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-8.5 h-8.5 rounded-lg flex items-center justify-center shrink-0 ${
+                    offlineSeconds >= 60
+                      ? 'bg-red-500/20 border border-red-500/60 text-red-400 animate-pulse'
+                      : 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-lg">
+                    {offlineSeconds >= 60 ? 'portable_wifi_off' : 'cloud_off'}
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2 flex-wrap">
+                    <span>
+                      {offlineSeconds >= 60
+                        ? '🚨 HARDWARE FAILURE (>60S)'
+                        : '⚠️ OFFLINE WATCHDOG'}
+                    </span>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border shrink-0 ${
+                        offlineSeconds >= 60
+                          ? 'bg-red-500/30 text-red-200 border-red-500/60 animate-pulse'
+                          : 'bg-amber-500/30 text-amber-200 border-amber-500/60'
+                      }`}
+                    >
+                      {offlineSeconds >= 60 ? 'FALLBACK ACTIVE' : `FALLBACK IN ${Math.max(0, 60 - offlineSeconds)}s`}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-zinc-300 mt-0.5 truncate">
+                    {offlineSeconds >= 60
+                      ? 'All terminals offline >60s. Auto-rerouting & thermal backup active.'
+                      : 'Server connection lost. Auto-rerouting activates if not restored.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center shrink-0">
+                <div
+                  className={`px-2.5 py-1.5 rounded-lg font-mono font-black text-xs tracking-wider flex items-center gap-1.5 border shadow-inner ${
+                    offlineSeconds >= 60
+                      ? 'bg-red-900/60 border-red-500/80 text-white animate-pulse'
+                      : 'bg-amber-500/25 border-amber-500/50 text-amber-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">timer</span>
+                  <span>{offlineSeconds >= 60 ? `${offlineSeconds}s OFFLINE` : `${offlineSeconds}s / 60s`}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Station Selector Bar */}
           <div>
             <label className="block text-xs font-black uppercase tracking-wider text-zinc-400 mb-2">
@@ -273,9 +357,20 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
                     <div className="text-xs font-black text-white truncate">{st.name}</div>
                     <div className="mt-1 flex items-center gap-1 text-[9px] font-semibold">
                       {stStatus?.isDevicesOffline ? (
-                        <span className="text-red-400">Offline &gt;60s</span>
+                        <span className="text-red-400 font-bold flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                          Offline &gt;60s
+                        </span>
+                      ) : isOffline ? (
+                        <span className="text-amber-400 font-bold flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          Offline ({offlineSeconds}s/60s)
+                        </span>
                       ) : (
-                        <span className="text-emerald-400">Online</span>
+                        <span className="text-emerald-400 font-bold flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          Online
+                        </span>
                       )}
                       <span>•</span>
                       <span>{stStatus?.activeTicketsCount ?? 0} tkts</span>
@@ -315,11 +410,15 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
                     className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
                       currentStatus.isDevicesOffline
                         ? 'bg-red-500/20 text-red-300 border-red-500/40 animate-pulse'
+                        : isOffline
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
                         : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                     }`}
                   >
                     {currentStatus.isDevicesOffline
-                      ? `🚨 HARDWARE OFFLINE (${currentStatus.onlineDevicesCount}/${currentStatus.devicesCount} devices)`
+                      ? `🚨 HARDWARE OFFLINE (${currentStatus.onlineDevicesCount}/${currentStatus.devicesCount} devices • ${offlineSeconds}s)`
+                      : isOffline
+                      ? `⚠️ OFFLINE PENDING (${offlineSeconds}s / 60s)`
                       : `🟢 HARDWARE ONLINE (${currentStatus.onlineDevicesCount}/${currentStatus.devicesCount})`}
                   </span>
 
@@ -327,7 +426,7 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
                       currentStatus.isCapacityOverflow
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-bounce'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
                         : 'bg-blue-500/20 text-blue-300 border-blue-500/40'
                     }`}
                   >
@@ -404,22 +503,25 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setEditedCapacityLimit(Math.max(1, capacityLimit - 1))}
-                    className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-black text-base flex items-center justify-center border border-zinc-700 cursor-pointer"
+                    className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-black text-base flex items-center justify-center border border-zinc-700 cursor-pointer active:scale-95"
                   >
                     -
                   </button>
                   <input
-                    type="number"
-                    min={1}
-                    max={99}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={capacityLimit}
-                    onChange={(e) => setEditedCapacityLimit(Math.max(1, Number(e.target.value) || 1))}
-                    className="w-20 bg-zinc-800 border border-zinc-700 rounded-xl px-2 py-2 text-center text-xs font-black text-amber-400 focus:outline-none focus:border-amber-500"
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      setEditedCapacityLimit(Math.max(1, Math.min(99, Number(val) || 1)));
+                    }}
+                    className="w-16 h-9 bg-zinc-800 border border-zinc-700 rounded-xl px-2 text-center text-xs font-black text-amber-400 focus:outline-none focus:border-amber-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <button
                     type="button"
-                    onClick={() => setEditedCapacityLimit(capacityLimit + 1)}
-                    className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-black text-base flex items-center justify-center border border-zinc-700 cursor-pointer"
+                    onClick={() => setEditedCapacityLimit(Math.min(99, capacityLimit + 1))}
+                    className="w-9 h-9 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-black text-base flex items-center justify-center border border-zinc-700 cursor-pointer active:scale-95"
                   >
                     +
                   </button>

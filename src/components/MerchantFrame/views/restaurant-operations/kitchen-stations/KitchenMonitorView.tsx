@@ -108,12 +108,26 @@ export interface BackendKitchenStation {
   displayMode?: 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID';
   display_order?: number;
   displayOrder?: number;
+  backup_station_id?: number | null;
+  backupStationId?: number | null;
+  max_active_tickets_capacity?: number;
+  maxActiveTicketsCapacity?: number;
+  auto_reroute_on_offline?: boolean;
+  autoRerouteOnOffline?: boolean;
+  auto_reroute_on_capacity?: boolean;
+  autoRerouteOnCapacity?: boolean;
+  fallback_action?: string;
+  fallbackAction?: string;
+  printer_name?: string | null;
+  printerName?: string | null;
   is_active?: boolean;
   isActive?: boolean;
   status?: string;
 }
 
 export type KdsCardDensity = 'compact' | 'normal' | 'spacious';
+
+const completingTicketIdsDebounce = new Set<string>();
 
 export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackToDashboard }) => {
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
@@ -157,7 +171,6 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const [queuedActionsCount, setQueuedActionsCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const isSyncingRef = useRef<boolean>(false);
-  const completingTicketIdsRef = useRef<Set<string>>(new Set());
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   // Dynamic Station Rerouting, Thermal Printer Fallback & High-Volume Load Balancing (Historia X7P-4211)
@@ -165,6 +178,23 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const [isRerouteModalOpen, setIsRerouteModalOpen] = useState<boolean>(false);
   const [thermalTicketPayload, setThermalTicketPayload] = useState<ThermalTicketPayload | null>(null);
   const [isThermalTicketModalOpen, setIsThermalTicketModalOpen] = useState<boolean>(false);
+  const [offlineSeconds, setOfflineSeconds] = useState<number>(0);
+
+  // Cronómetro de duración desconectado (Offline Duration Tracker):
+  // Al llegar a >= 60 segundos sin red o heartbeat, la terminal KDS reconoce de forma autónoma
+  // el estado de falla de hardware/red e inicia la contingencia con el banner de emergencia.
+  useEffect(() => {
+    if (!isOffline) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setOfflineSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+      setOfflineSeconds(0);
+    };
+  }, [isOffline]);
 
   const fetchRerouteStatuses = useCallback(async () => {
     try {
@@ -210,37 +240,50 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   }, [audioChimeEnabled]);
 
   // Load registered kitchen stations and their configured display_mode from backend
-  useEffect(() => {
-    const fetchStations = async () => {
-      try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-        const res = await fetch(`${API_BASE}/kitchen-station`, { headers });
-        if (res.ok) {
-          const json = await res.json();
-          const list: Record<string, unknown>[] = Array.isArray(json) ? json : json.data || [];
-          const mapped: BackendKitchenStation[] = list.map((s) => ({
-            id: Number(s.id),
-            name: String(s.name || ''),
-            station_type: (s.stationType || s.station_type) as string | undefined,
-            stationType: (s.stationType || s.station_type) as string | undefined,
-            display_mode: (s.displayMode || s.display_mode || 'GRID') as 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID',
-            displayMode: (s.displayMode || s.display_mode || 'GRID') as 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID',
-            display_order: Number(s.displayOrder ?? s.display_order ?? s.id),
-            displayOrder: Number(s.displayOrder ?? s.display_order ?? s.id),
-            is_active: (s.isActive ?? s.is_active ?? true) as boolean,
-            isActive: (s.isActive ?? s.is_active ?? true) as boolean,
-            status: s.status as string | undefined,
-          }));
-          setKitchenStations(mapped.filter((s) => s.status !== 'deleted' && s.isActive !== false));
-        }
-      } catch (err) {
-        console.warn('Could not load kitchen stations in KDS:', err);
+  const fetchStations = useCallback(async () => {
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+      const res = await fetch(`${API_BASE}/kitchen-station`, { headers });
+      if (res.ok) {
+        const json = await res.json();
+        const list: Record<string, unknown>[] = Array.isArray(json) ? json : json.data || [];
+        const mapped: BackendKitchenStation[] = list.map((s) => ({
+          id: Number(s.id),
+          name: String(s.name || ''),
+          station_type: (s.stationType || s.station_type) as string | undefined,
+          stationType: (s.stationType || s.station_type) as string | undefined,
+          display_mode: (s.displayMode || s.display_mode || 'GRID') as 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID',
+          displayMode: (s.displayMode || s.display_mode || 'GRID') as 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID',
+          display_order: Number(s.displayOrder ?? s.display_order ?? s.id),
+          displayOrder: Number(s.displayOrder ?? s.display_order ?? s.id),
+          backup_station_id: (s.backup_station_id ?? s.backupStationId ?? null) as number | null,
+          backupStationId: (s.backupStationId ?? s.backup_station_id ?? null) as number | null,
+          max_active_tickets_capacity: (s.max_active_tickets_capacity ?? s.maxActiveTicketsCapacity ?? 15) as number,
+          maxActiveTicketsCapacity: (s.maxActiveTicketsCapacity ?? s.max_active_tickets_capacity ?? 15) as number,
+          auto_reroute_on_offline: (s.auto_reroute_on_offline ?? s.autoRerouteOnOffline ?? true) as boolean,
+          autoRerouteOnOffline: (s.auto_reroute_on_offline ?? s.autoRerouteOnOffline ?? true) as boolean,
+          auto_reroute_on_capacity: (s.auto_reroute_on_capacity ?? s.autoRerouteOnCapacity ?? true) as boolean,
+          autoRerouteOnCapacity: (s.auto_reroute_on_capacity ?? s.autoRerouteOnCapacity ?? true) as boolean,
+          fallback_action: (s.fallback_action || s.fallbackAction || 'BACKUP_STATION') as string,
+          fallbackAction: (s.fallbackAction || s.fallback_action || 'BACKUP_STATION') as string,
+          printer_name: (s.printer_name || s.printerName || null) as string | null,
+          printerName: (s.printerName || s.printer_name || null) as string | null,
+          is_active: (s.isActive ?? s.is_active ?? true) as boolean,
+          isActive: (s.isActive ?? s.is_active ?? true) as boolean,
+          status: s.status as string | undefined,
+        }));
+        setKitchenStations(mapped.filter((s) => s.status !== 'deleted' && s.isActive !== false));
       }
-    };
+    } catch (err) {
+      console.warn('Could not load kitchen stations in KDS:', err);
+    }
+  }, []);
+
+  useEffect(() => {
     const loadAll = async () => {
       await fetchStations();
       await fetchRerouteStatuses();
@@ -250,7 +293,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       fetchRerouteStatuses();
     }, 10000);
     return () => clearInterval(interval);
-  }, [fetchRerouteStatuses]);
+  }, [fetchStations, fetchRerouteStatuses]);
 
   // 1-second countdown ticker for Held Items Pacing Timers
   useEffect(() => {
@@ -509,7 +552,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       isSyncingRef.current = false;
       setIsSyncing(false);
     }
-  }, [fetchBackendOrders]);
+  }, [fetchBackendOrders, isOffline]);
 
   // Network Disconnection Handling & 2.5s Heartbeat Ping (detects loss within 3s - Historia X7P-4210)
   useEffect(() => {
@@ -1290,10 +1333,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
   // Complete and bump entire ticket in backend & UI (Historia X7P-4209)
   const handleCompleteTicket = async (id: string, backendOrderId?: number) => {
-    if (completingTicketIdsRef.current.has(id)) return;
-    completingTicketIdsRef.current.add(id);
+    if (completingTicketIdsDebounce.has(id)) return;
+    completingTicketIdsDebounce.add(id);
     setTimeout(() => {
-      completingTicketIdsRef.current.delete(id);
+      completingTicketIdsDebounce.delete(id);
     }, 2500);
 
     const targetTicket = tickets.find((t) => t.id === id);
@@ -1499,22 +1542,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     [kitchenStations]
   );
 
-  // Effective station name for current active view mode (derived state, reactive and without cascading renders)
-  const effectiveStationFilter = useMemo(() => {
-    if (activeKdsView === 'EXPO') {
-      return selectedStationFilter;
-    }
-    const matched = kitchenStations.filter(
-      (s) => (s.display_mode || s.displayMode) === activeKdsView
-    );
-    const isMatching = matched.some(
-      (s) => s.name.trim().toLowerCase() === selectedStationFilter.trim().toLowerCase()
-    );
-    if (!isMatching && matched.length > 0) {
-      return matched[0].name;
-    }
-    return selectedStationFilter;
-  }, [activeKdsView, kitchenStations, selectedStationFilter]);
+  // Estación activa seleccionada directamente como fuente de verdad
+  const effectiveStationFilter = selectedStationFilter;
 
   // Resolver estación activa para el Recall Tray garantizando aislamiento por estación
   const resolvedStation = (() => {
@@ -1537,24 +1566,150 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     return { id: 'ALL' as const, name: 'All Stations' };
   })();
 
+  // Historia X7P-4211: Station Terminal Keepalive Heartbeat
+  // Mientras la pantalla esté ONLINE, envía periódicamente el latido del terminal de la estación activa.
+  // Si pasa a OFFLINE (red caída o simulación), el latido se detiene por completo.
+  const sendStationHeartbeat = useCallback(
+    async (stationId: number | string) => {
+      if (isOffline || !navigator.onLine) return;
+      try {
+        const token = getAccessToken();
+        await fetch(`${API_BASE}/kitchen-station/${stationId}/heartbeat`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+      } catch (err) {
+        console.warn('Failed to send station heartbeat:', err);
+      }
+    },
+    [isOffline],
+  );
+
+  useEffect(() => {
+    if (isOffline || !navigator.onLine) return;
+
+    // Latido keepalive para todas las estaciones activas del restaurante mientras la pantalla esté ONLINE
+    void sendStationHeartbeat('ALL').then(() => {
+      void fetchRerouteStatuses();
+    });
+
+    // Latido periódico cada 15 segundos mientras esté ONLINE
+    const heartbeatTimer = setInterval(() => {
+      void sendStationHeartbeat('ALL');
+    }, 15000);
+
+    return () => clearInterval(heartbeatTimer);
+  }, [isOffline, sendStationHeartbeat, fetchRerouteStatuses]);
+
+  // Historia X7P-4211: Effective Station Reroute Statuses
+  // Si la terminal local lleva >= 60 segundos desconectada (offlineSeconds >= 60),
+  // activa autónomamente la contingencia por falla de terminales / red (isDevicesOffline = true).
+  const effectiveStationRerouteStatuses = useMemo<StationRerouteStatus[]>(() => {
+    const baseStatuses: StationRerouteStatus[] =
+      stationRerouteStatuses.length > 0
+        ? stationRerouteStatuses
+        : kitchenStations.map((st) => ({
+            stationId: st.id,
+            stationName: st.name,
+            stationNumber: st.display_order ?? st.displayOrder ?? st.id,
+            stationType: st.station_type ?? st.stationType ?? 'OTHER',
+            displayMode: st.display_mode ?? st.displayMode ?? 'GRID',
+            backupStationId: null,
+            backupStationName: null,
+            maxActiveTicketsCapacity: 15,
+            activeTicketsCount: 0,
+            isCapacityOverflow: false,
+            devicesCount: 1,
+            onlineDevicesCount: isOffline ? 0 : 1,
+            isDevicesOffline: isOffline && offlineSeconds >= 60,
+            printerName: 'Thermal Kitchen Printer #1',
+            autoRerouteOnOffline: true,
+            autoRerouteOnCapacity: true,
+            fallbackAction: 'BOTH',
+            isFallbackActive: isOffline && offlineSeconds >= 60,
+            fallbackReason:
+              isOffline && offlineSeconds >= 60
+                ? ('DEVICES_OFFLINE' as const)
+                : ('NONE' as const),
+          }));
+
+    if (!isOffline || offlineSeconds < 60) {
+      return baseStatuses;
+    }
+
+    // Al llegar a >= 60s offline sin conexión, todas las terminales del restaurante se consideran en contingencia de hardware
+    return baseStatuses.map((st) => ({
+      ...st,
+      isDevicesOffline: true,
+      isFallbackActive: true,
+      fallbackReason: 'DEVICES_OFFLINE' as const,
+      onlineDevicesCount: 0,
+    }));
+  }, [
+    isOffline,
+    offlineSeconds,
+    stationRerouteStatuses,
+    kitchenStations,
+  ]);
+
   // Historia X7P-4211: Reroute status derivation & emergency handlers
+  const failingStations = useMemo(() => {
+    return effectiveStationRerouteStatuses.filter(
+      (s) => s.isDevicesOffline && s.autoRerouteOnOffline,
+    );
+  }, [effectiveStationRerouteStatuses]);
+
+  const isAllStationsView = resolvedStation.id === 'ALL' || effectiveStationFilter === 'ALL';
+  const isMultipleFailuresInAll = isAllStationsView && failingStations.length > 1;
+
   const activeStationStatus =
     resolvedStation.id !== 'ALL' && typeof resolvedStation.id === 'number'
-      ? stationRerouteStatuses.find((s) => s.stationId === resolvedStation.id) ||
+      ? effectiveStationRerouteStatuses.find((s) => s.stationId === resolvedStation.id) ||
         null
-      : stationRerouteStatuses.find((s) => s.isFallbackActive) || null;
+      : failingStations[0] || effectiveStationRerouteStatuses.find((s) => s.isFallbackActive) || null;
 
-  const hasOfflineStations = stationRerouteStatuses.some(
+  const hasOfflineStations = effectiveStationRerouteStatuses.some(
     (s) => s.isDevicesOffline && s.autoRerouteOnOffline,
   );
 
-  const hasCapacityOverflowStations = stationRerouteStatuses.some(
+  const hasCapacityOverflowStations = effectiveStationRerouteStatuses.some(
     (s) => s.isCapacityOverflow && s.autoRerouteOnCapacity,
   );
 
-  const handleTriggerReroute = async (stationId: number) => {
+  const handleTriggerReroute = async (stationId: number, overflowOnly = false) => {
+    if (isOffline) {
+      triggerAlert(
+        'Modo Offline activo: Rebalanceo buffered. Utilice los Tickets Térmicos de contingencia en papel hasta restablecer la red.',
+        'pacing',
+      );
+      return;
+    }
+
     try {
       const token = getAccessToken();
+      const payloadBody: { reason: string; orderIds?: (string | number)[] } = {
+        reason: overflowOnly
+          ? 'Queue Capacity Limit Load Balancing (Overflow Only)'
+          : 'Autonomous Load Balancing & Hardware Failure Fallback',
+      };
+
+      if (overflowOnly) {
+        // En balanceo de carga, solo reenviamos las órdenes que superan la capacidad
+        const stationTickets = tickets.filter(
+          (t) => t.stationId === stationId || t.stationName === activeStationStatus?.stationName,
+        );
+        const limit = activeStationStatus?.maxActiveTicketsCapacity || 15;
+        if (stationTickets.length > limit) {
+          payloadBody.orderIds = stationTickets
+            .slice(limit)
+            .map((t) => t.backendOrderId)
+            .filter(Boolean) as (string | number)[];
+        }
+      }
+
       const res = await fetch(
         `${API_BASE}/kitchen-station/${stationId}/reroute-orders`,
         {
@@ -1563,9 +1718,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({
-            reason: 'Autonomous Load Balancing & Hardware Failure Fallback',
-          }),
+          body: JSON.stringify(payloadBody),
         },
       );
 
@@ -1587,23 +1740,36 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     }
   };
 
-  const handleOpenThermalFallback = (stationStatus: StationRerouteStatus) => {
-    const stationTickets = tickets.filter(
-      (t) =>
-        t.stationId === stationStatus.stationId ||
-        t.stationName === stationStatus.stationName,
-    );
+  const handleOpenThermalFallback = (stationStatus: StationRerouteStatus | null) => {
+    let stationTickets: KitchenTicket[] = [];
+    let stationName = '';
+    let printerName = 'Local Thermal Kitchen Printer';
+
+    if (stationStatus) {
+      stationTickets = tickets.filter(
+        (t) =>
+          t.stationId === stationStatus.stationId ||
+          t.stationName === stationStatus.stationName,
+      );
+      stationName = stationStatus.stationName;
+      printerName = stationStatus.printerName || 'Local Thermal Kitchen Printer';
+    } else if (isMultipleFailuresInAll && failingStations.length > 0) {
+      const failingIds = new Set(failingStations.map((s) => s.stationId));
+      const failingNames = new Set(failingStations.map((s) => s.stationName.trim().toLowerCase()));
+      stationTickets = tickets.filter(
+        (t) =>
+          (t.stationId && failingIds.has(t.stationId)) ||
+          (t.stationName && failingNames.has(t.stationName.trim().toLowerCase())),
+      );
+      stationName = `ALL OFFLINE STATIONS (${failingStations.length})`;
+      printerName = 'Global Kitchen Thermal Backup';
+    }
+
     setThermalTicketPayload({
-      stationName: stationStatus.stationName,
-      stationNumber: stationStatus.stationNumber,
-      printerName:
-        stationStatus.printerName || 'Local Thermal Kitchen Printer',
-      reason:
-        stationStatus.fallbackReason === 'DEVICES_OFFLINE'
-          ? 'Hardware Failure (All Devices Offline >60s)'
-          : 'High-Volume Queue Capacity Limit Breached',
-      tickets:
-        stationTickets.length > 0 ? stationTickets : tickets.slice(0, 3),
+      stationName: stationName || 'General Kitchen Fallback',
+      printerName,
+      reason: 'Hardware Failure (All Devices Offline >60s)',
+      tickets: stationTickets,
       emittedAt: new Date().toLocaleTimeString(),
     });
     setIsThermalTicketModalOpen(true);
@@ -1699,34 +1865,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     return [...pulsing, ...queue];
   })();
 
+  // Todas las estaciones registradas siempre visibles en el selector (sin desaparecer)
   const visibleStations = useMemo(() => {
-    if (activeKdsView === 'EXPO') {
-      const set = new Set<string>();
-      kitchenStations.forEach((s) => {
-        if (s.name) set.add(s.name);
-      });
-      tickets.forEach((t) => {
-        if (t.stationName) set.add(t.stationName);
-      });
-      return Array.from(set);
-    }
-
-    // Filtrar estrictamente solo las estaciones configuradas en el modo de la vista activa
     const set = new Set<string>();
-    kitchenStations
-      .filter((s) => (s.display_mode || s.displayMode) === activeKdsView)
-      .forEach((s) => {
-        if (s.name) set.add(s.name);
-      });
-
-    tickets.forEach((t) => {
-      if (t.stationName && getTicketStationMode(t) === activeKdsView) {
-        set.add(t.stationName);
-      }
+    kitchenStations.forEach((s) => {
+      if (s.name) set.add(s.name);
     });
-
+    tickets.forEach((t) => {
+      if (t.stationName) set.add(t.stationName);
+    });
     return Array.from(set);
-  }, [activeKdsView, kitchenStations, tickets, getTicketStationMode]);
+  }, [kitchenStations, tickets]);
 
   const handleViewSwitch = (view: KdsView) => {
     setActiveKdsView(view);
@@ -1932,9 +2081,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     const isSpacious = cardDensity === 'spacious';
     const cleanOrderNotes = (() => {
       if (!ticket.orderNotes) return null;
-      const trimmed = ticket.orderNotes.trim();
-      if (/^Table\s+\d+\s*•\s*Station\s*#/i.test(trimmed)) return null;
-      if (trimmed.toLowerCase() === ticket.table.toLowerCase()) return null;
+      let trimmed = ticket.orderNotes.trim();
+      trimmed = trimmed
+        .replace(/\|\s*\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
+        .replace(/\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
+        .replace(/^Table\s+\d+\s*•\s*Station\s*#[^|]*/i, '')
+        .trim();
+      if (!trimmed || trimmed.toLowerCase() === ticket.table.toLowerCase()) return null;
       return trimmed;
     })();
 
@@ -1985,7 +2138,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                     REROUTED
                   </span>
                 )}
-              {stationRerouteStatuses.find(
+              {effectiveStationRerouteStatuses.find(
                 (s) =>
                   s.stationId === ticket.stationId ||
                   s.stationName === ticket.stationName,
@@ -2258,19 +2411,19 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   return (
     <div className="fixed inset-0 bg-[#121316] z-50 flex flex-col font-sans text-white select-none overflow-hidden">
       {/* 1. KDS Executive Header & Live Pacing Strip */}
-      <header className="h-16 bg-[#1a1b20] border-b-2 border-[#ae001a] px-6 flex justify-between items-center shrink-0 shadow-lg">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
+      <header className="h-14 sm:h-16 bg-[#1a1b20] border-b-2 border-[#ae001a] px-2 sm:px-3 lg:px-4 flex justify-between items-center shrink-0 shadow-lg select-none">
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span
-              className={`w-3.5 h-3.5 rounded-full ${
+              className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full ${
                 isOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-ping'
               }`}
             ></span>
-            <span className="material-symbols-outlined text-[#ae001a] text-2xl">table_restaurant</span>
+            <span className="material-symbols-outlined text-[#ae001a] text-lg sm:text-2xl">table_restaurant</span>
           </div>
-          <div>
-            <h1 className="font-sans text-base sm:text-lg font-black tracking-wider flex items-center gap-2 text-white" style={{ color: '#ffffff' }}>
-              <span className="text-white font-black text-base sm:text-lg" style={{ color: '#ffffff' }}>
+          <div className="min-w-0">
+            <h1 className="font-sans text-xs sm:text-sm lg:text-base font-black tracking-wider flex items-center gap-2 text-white truncate" style={{ color: '#ffffff' }}>
+              <span className="text-white font-black text-xs sm:text-sm lg:text-base truncate" style={{ color: '#ffffff' }}>
                 {activeKdsView === 'EXPO'
                   ? 'EXPEDITER KDS DISPLAY'
                   : activeDisplayMode === 'SUMMARY'
@@ -2282,66 +2435,70 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   : 'KDS GRID MATRIX'}
               </span>
             </h1>
-            <p className="text-[11px] text-zinc-300 font-bold hidden sm:block" style={{ color: '#d4d4d8' }}>
-              View: <strong className="text-amber-400">{activeKdsView}</strong> • Mode: <strong className="text-emerald-400">{activeDisplayMode}</strong> • Hold/Fire Staging Engine
+            <p className="text-[10px] text-zinc-300 font-bold hidden 2xl:block truncate max-w-[220px]" style={{ color: '#d4d4d8' }}>
+              View: <strong className="text-amber-400">{activeKdsView}</strong> • Mode: <strong className="text-emerald-400">{activeDisplayMode}</strong> • Hold/Fire Engine
             </p>
           </div>
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Offline Resilience Warning Badge (Historia X7P-4210) */}
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          {/* Offline Resilience Warning Badge (Historia X7P-4210 / X7P-4211) */}
           {isOffline && (
             <div
-              title={queuedActionsCount > 0 ? `${queuedActionsCount} local action(s) stored in IndexedDB` : 'Working locally'}
-              className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 border border-amber-500/50 text-amber-300 rounded-lg text-xs font-bold shadow-xs animate-pulse shrink-0"
+              title={
+                queuedActionsCount > 0
+                  ? `${queuedActionsCount} local action(s) stored in IndexedDB`
+                  : offlineSeconds >= 60
+                  ? 'All terminals offline >60s: Local hardware fallback engaged'
+                  : 'Working locally - Monitoring offline timer'
+              }
+              className={`flex items-center h-8 gap-1 px-2 border rounded-lg text-xs font-bold shadow-xs animate-pulse shrink-0 ${
+                offlineSeconds >= 60
+                  ? 'bg-red-500/20 border-red-500/80 text-red-300'
+                  : 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+              }`}
             >
-              <span className="material-symbols-outlined text-sm text-amber-400">cloud_off</span>
-              <span className="hidden sm:inline">Offline Mode - Local Changes Stored</span>
-              <span className="sm:hidden">Offline Mode</span>
-              {queuedActionsCount > 0 && (
-                <span className="px-1.5 py-0.2 bg-amber-500/40 text-amber-100 text-[10px] font-black rounded-full font-mono border border-amber-500/50">
-                  {queuedActionsCount}
-                </span>
-              )}
+              <span className={`material-symbols-outlined text-sm ${offlineSeconds >= 60 ? 'text-red-400' : 'text-amber-400'}`}>
+                {offlineSeconds >= 60 ? 'portable_wifi_off' : 'cloud_off'}
+              </span>
+              <span className="font-mono font-black text-[11px] tracking-wider">
+                {offlineSeconds >= 60 ? `${offlineSeconds}s (>60s)` : `${offlineSeconds}s / 60s`}
+              </span>
             </div>
           )}
           {isSyncing && (
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-blue-500/20 border border-blue-500/50 text-blue-300 rounded-lg text-xs font-bold shadow-xs shrink-0">
+            <div className="flex items-center h-8 gap-1 px-2 bg-blue-500/20 border border-blue-500/50 text-blue-300 rounded-lg text-xs font-bold shadow-xs shrink-0">
               <span className="material-symbols-outlined text-sm text-blue-400 animate-spin">sync</span>
-              <span className="hidden sm:inline">Syncing local changes...</span>
-              <span className="sm:hidden">Syncing</span>
+              <span className="hidden sm:inline">Syncing...</span>
             </div>
           )}
           {syncFeedback && !isOffline && !isSyncing && (
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 rounded-lg text-xs font-bold shadow-xs shrink-0 transition-opacity">
+            <div className="flex items-center h-8 gap-1 px-2 bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 rounded-lg text-xs font-bold shadow-xs shrink-0 transition-opacity">
               <span className="material-symbols-outlined text-sm text-emerald-400">cloud_done</span>
               <span className="hidden sm:inline">{syncFeedback}</span>
-              <span className="sm:hidden">Synced</span>
             </div>
           )}
           {queuedActionsCount > 0 && !isOffline && !isSyncing && (
             <button
               onClick={() => triggerAutoSync()}
               title="Click to force sync offline actions now"
-              className="flex items-center gap-1.5 px-3 py-1 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500 text-amber-200 rounded-lg text-xs font-bold shadow-xs cursor-pointer active:scale-95 shrink-0"
+              className="flex items-center h-8 gap-1 px-2 bg-amber-600/30 hover:bg-amber-600/50 border border-amber-500 text-amber-200 rounded-lg text-xs font-bold shadow-xs cursor-pointer active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm text-amber-400 animate-spin">sync</span>
-              <span>Sync {queuedActionsCount} Action(s) Now</span>
+              <span>Sync {queuedActionsCount}</span>
             </button>
           )}
-          {/* Station Filter - Filtered to active view mode */}
-          <div className="flex items-center bg-zinc-800/90 hover:bg-zinc-800 rounded-lg border border-zinc-700 px-2.5 py-1 text-xs gap-1.5 shadow-inner">
+          {/* Station Filter - Always shows all registered stations */}
+          <div className="flex items-center h-8 bg-zinc-800/90 hover:bg-zinc-800 rounded-lg border border-zinc-700 px-1.5 text-xs gap-1 shadow-inner shrink-0">
             <span className="material-symbols-outlined text-sm text-amber-400">soup_kitchen</span>
             <select
               value={effectiveStationFilter}
               onChange={(e) => handleStationChange(e.target.value)}
               aria-label="Filter by kitchen station"
-              className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs max-w-[140px] sm:max-w-[200px] truncate"
+              className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs max-w-[85px] sm:max-w-[110px] md:max-w-[130px] lg:max-w-[150px] truncate"
             >
-              {activeKdsView === 'EXPO' && (
-                <option value="ALL" className="bg-zinc-900 text-white">All Stations (Expo)</option>
-              )}
+              <option value="ALL" className="bg-zinc-900 text-white">All Stations (Expo)</option>
               {visibleStations.map((st) => {
                 const matched = kitchenStations.find((s) => s.name.trim().toLowerCase() === st.trim().toLowerCase());
                 const targetMode = matched?.display_mode || matched?.displayMode;
@@ -2356,11 +2513,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           </div>
 
           {/* 5 KDS Views Switcher: EXPO + 4 Display Modes */}
-          <div className="flex items-center bg-zinc-900/90 border border-zinc-700 rounded-lg p-0.5 text-xs shadow-inner">
+          <div className="flex items-center h-8 bg-zinc-900/90 border border-zinc-700 rounded-lg p-0.5 text-xs shadow-inner shrink-0">
             {/* 1. EXPO (All Stations Master View) */}
             <button
               onClick={() => handleViewSwitch('EXPO')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-black transition-all cursor-pointer ${
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
                 activeKdsView === 'EXPO'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
@@ -2368,13 +2525,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               title="Expediter Master Display: All kitchen stations unified in real-time pass"
             >
               <span className="material-symbols-outlined text-sm">room_service</span>
-              <span className="hidden xl:inline">EXPO</span>
+              <span className="hidden 2xl:inline">EXPO</span>
             </button>
 
             {/* 2. AUTO DISPATCH */}
             <button
               onClick={() => handleViewSwitch('AUTO')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-black transition-all cursor-pointer ${
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
                 activeKdsView === 'AUTO'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
@@ -2382,13 +2539,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               title="Auto Dispatch Mode: Fast-track cooking line with 1-touch auto bump"
             >
               <span className="material-symbols-outlined text-sm">bolt</span>
-              <span className="hidden xl:inline">AUTO</span>
+              <span className="hidden 2xl:inline">AUTO</span>
             </button>
 
             {/* 3. MANUAL QUEUE */}
             <button
               onClick={() => handleViewSwitch('MANUAL')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-black transition-all cursor-pointer ${
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
                 activeKdsView === 'MANUAL'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
@@ -2396,13 +2553,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               title="Manual Queue Mode: 1-by-1 focus card with FIFO backlog queue"
             >
               <span className="material-symbols-outlined text-sm">queue</span>
-              <span className="hidden xl:inline">QUEUE</span>
+              <span className="hidden 2xl:inline">QUEUE</span>
             </button>
 
             {/* 4. SUMMARY VIEW */}
             <button
               onClick={() => handleViewSwitch('SUMMARY')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-black transition-all cursor-pointer ${
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
                 activeKdsView === 'SUMMARY'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
@@ -2410,13 +2567,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               title="Summary View: Aggregated production batch quantities (Bakery / Mass Prep)"
             >
               <span className="material-symbols-outlined text-sm">summarize</span>
-              <span className="hidden xl:inline">SUMMARY</span>
+              <span className="hidden 2xl:inline">SUMMARY</span>
             </button>
 
             {/* 5. GRID MATRIX */}
             <button
               onClick={() => handleViewSwitch('GRID')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-black transition-all cursor-pointer ${
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
                 activeKdsView === 'GRID'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
@@ -2424,67 +2581,65 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               title="Grid Matrix Mode: Classic multi-ticket station board with SLA timers"
             >
               <span className="material-symbols-outlined text-sm">grid_view</span>
-              <span className="hidden xl:inline">GRID</span>
+              <span className="hidden 2xl:inline">GRID</span>
             </button>
           </div>
 
           {/* Card Density Switcher (Compact / Normal / Wide) */}
-          <div className="flex items-center bg-zinc-900/90 border border-zinc-700 rounded-lg p-0.5 text-xs shadow-inner">
+          <div className="flex items-center h-8 bg-zinc-900/90 border border-zinc-700 rounded-lg p-0.5 text-xs shadow-inner shrink-0">
             <button
               type="button"
               onClick={() => handleDensityChange('compact')}
               title="Compact Cards (Fits 4-6 on screen)"
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
                 cardDensity === 'compact'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
               }`}
             >
-              <span className="material-symbols-outlined text-[13px]">density_small</span>
-              <span className="hidden lg:inline">COMPACT</span>
+              <span className="material-symbols-outlined text-sm">density_small</span>
             </button>
             <button
               type="button"
               onClick={() => handleDensityChange('normal')}
               title="Normal Cards (Balanced)"
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
                 cardDensity === 'normal'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
               }`}
             >
-              <span className="material-symbols-outlined text-[13px]">density_medium</span>
-              <span className="hidden lg:inline">NORMAL</span>
+              <span className="material-symbols-outlined text-sm">density_medium</span>
             </button>
             <button
               type="button"
               onClick={() => handleDensityChange('spacious')}
               title="Wide Cards (Large touch display)"
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
                 cardDensity === 'spacious'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
               }`}
             >
-              <span className="material-symbols-outlined text-[13px]">density_large</span>
-              <span className="hidden lg:inline">WIDE</span>
+              <span className="material-symbols-outlined text-sm">density_large</span>
             </button>
           </div>
 
           {/* Audio Chime Toggle */}
           <button
+            type="button"
             onClick={() => {
               setAudioChimeEnabled(!audioChimeEnabled);
               if (!audioChimeEnabled) playKitchenFireChime();
             }}
             title={audioChimeEnabled ? 'Audio Chime Enabled' : 'Audio Chime Muted'}
-            className={`w-9 h-9 rounded flex items-center justify-center border transition-all cursor-pointer ${
+            className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
               audioChimeEnabled
                 ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-xs'
                 : 'bg-zinc-800 text-zinc-500 border-zinc-700'
             }`}
           >
-            <span className="material-symbols-outlined text-lg">
+            <span className="material-symbols-outlined text-base">
               {audioChimeEnabled ? 'notifications_active' : 'notifications_off'}
             </span>
           </button>
@@ -2492,17 +2647,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           {/* All-Day Bar Quick Switcher (Historia X7P-4208) */}
           {activeDisplayMode !== 'SUMMARY' && (
             <button
+              type="button"
               onClick={() => setIsAllDayBarExpanded((prev) => !prev)}
-              className={`px-3 py-2 rounded font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 border cursor-pointer shadow-xs ${
+              className={`h-8 px-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1 border cursor-pointer shadow-xs shrink-0 ${
                 isAllDayBarExpanded
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                   : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
               }`}
               title="Toggle All-Day Aggregated Prep Bar"
             >
-              <span className="material-symbols-outlined text-base">skillet</span>
-              <span className="hidden md:inline">ALL-DAY</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+              <span className="material-symbols-outlined text-sm">skillet</span>
+              <span className={`px-1 py-0.1 rounded-full text-[9px] font-black ${
                 allDaySummary.totalNeededCount > 0 ? 'bg-amber-500 text-black' : 'bg-zinc-700 text-zinc-300'
               }`}>
                 {allDaySummary.totalNeededCount}
@@ -2512,29 +2667,29 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
           {/* Pacing SLA Settings Drawer Button */}
           <button
+            type="button"
             onClick={() => setIsPacingDrawerOpen(true)}
-            className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 border border-zinc-700 cursor-pointer shadow-xs"
+            className="w-8 h-8 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg transition-all flex items-center justify-center border border-zinc-700 cursor-pointer shadow-xs shrink-0"
+            title="Pacing Timers (SLA Settings)"
           >
             <span className="material-symbols-outlined text-base text-amber-400 animate-spin-slow">timer</span>
-            <span className="hidden sm:inline">Pacing Timers</span>
           </button>
 
           {/* Recall Tray Button (Historia X7P-4209) */}
           <button
             type="button"
             onClick={() => setIsRecallTrayOpen(true)}
-            className="px-3.5 py-2 font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 border cursor-pointer shadow-xs bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700"
+            className="w-8 h-8 rounded-lg transition-all flex items-center justify-center border cursor-pointer shadow-xs bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700 shrink-0"
             title="Recent Bump Recall Tray: Restore recently bumped tickets"
           >
             <span className="material-symbols-outlined text-base text-amber-400">history</span>
-            <span className="hidden sm:inline">Recall Tray</span>
           </button>
 
           {/* Station Fallback & Load Balancing Modal Trigger (Historia X7P-4211) */}
           <button
             type="button"
             onClick={() => setIsRerouteModalOpen(true)}
-            className={`px-3.5 py-2 font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 border cursor-pointer shadow-xs ${
+            className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center border cursor-pointer shadow-xs shrink-0 relative ${
               hasOfflineStations || hasCapacityOverflowStations
                 ? 'bg-red-500/20 text-red-300 border-red-500/60 ring-2 ring-red-500/40 animate-pulse'
                 : 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700'
@@ -2550,19 +2705,19 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             >
               alt_route
             </span>
-            <span className="hidden md:inline">Fallback &amp; Routing</span>
             {(hasOfflineStations || hasCapacityOverflowStations) && (
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
             )}
           </button>
 
           {/* Back to Dashboard */}
           <button
+            type="button"
             onClick={onBackToDashboard}
-            className="px-4 py-2 bg-[#ae001a] hover:bg-[#900015] text-white font-black text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 cursor-pointer shadow-md"
+            className="w-8 h-8 bg-[#ae001a] hover:bg-[#900015] text-white font-black rounded-lg transition-all flex items-center justify-center cursor-pointer shadow-md shrink-0"
+            title="Exit Kitchen Monitor (Back to Dashboard)"
           >
             <span className="material-symbols-outlined text-base">arrow_back</span>
-            <span className="hidden sm:inline">EXIT MONITOR</span>
           </button>
         </div>
       </header>
@@ -2624,46 +2779,67 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         </div>
       )}
 
-      {/* 2.1 Hardware Failure Fallback Alert Banner (Historia X7P-4211) - Oculto temporalmente a petición del usuario */}
-      {false as boolean && activeStationStatus?.isDevicesOffline && activeStationStatus.autoRerouteOnOffline && (
-        <div className="bg-gradient-to-r from-red-950 via-zinc-900 to-red-950 border-y-2 border-red-500/80 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 animate-fade-in shadow-xl">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-red-500/20 border border-red-500/60 flex items-center justify-center text-red-400 animate-pulse">
-              <span className="material-symbols-outlined text-xl">portable_wifi_off</span>
+      {/* 2.1 Hardware Failure Fallback Alert Banner (Historia X7P-4211) */}
+      {((activeStationStatus?.isDevicesOffline && activeStationStatus.autoRerouteOnOffline) || isMultipleFailuresInAll) && (
+        <div className="bg-gradient-to-r from-red-950 via-zinc-900 to-red-950 border-y-2 border-red-500/80 px-3 sm:px-4 lg:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-3 animate-fade-in shadow-xl shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/60 flex items-center justify-center text-red-400 animate-pulse shrink-0">
+              <span className="material-symbols-outlined text-lg">portable_wifi_off</span>
             </div>
-            <div>
-              <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 flex-wrap">
-                <span>🚨 HARDWARE FAILURE &amp; FALLBACK ACTIVE:</span>
-                <span className="text-red-400 underline decoration-red-500">{activeStationStatus.stationName}</span>
-                <span className="text-[10px] px-2 py-0.2 rounded-full bg-red-500/30 text-red-200 border border-red-500/50 font-bold">
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
+                <span className="shrink-0">🚨 HARDWARE FAILURE:</span>
+                <span className="text-red-400 underline decoration-red-500 truncate max-w-[180px] sm:max-w-[280px]">
+                  {isMultipleFailuresInAll
+                    ? `${failingStations.length} STATIONS OFFLINE`
+                    : activeStationStatus?.stationName}
+                </span>
+                <span className="text-[10px] px-2 py-0.2 rounded-full bg-red-500/30 text-red-200 border border-red-500/50 font-bold shrink-0">
                   ALL TERMINALS OFFLINE &gt;60s
                 </span>
               </div>
-              <p className="text-[11px] text-zinc-300 mt-0.5">
-                Orders automatically route to secondary station{' '}
-                <strong className="text-amber-300">
-                  {activeStationStatus.backupStationName || `Station #${activeStationStatus.backupStationId || 'Expo'}`}
-                </strong>
-                {activeStationStatus.printerName ? (
-                  <span> or print on <strong className="text-amber-300">{activeStationStatus.printerName}</strong></span>
-                ) : ''}.
+              <p className="text-[11px] text-zinc-300 mt-0.5 truncate">
+                {isMultipleFailuresInAll ? (
+                  <span>
+                    Affected stations: <strong className="text-amber-300">{failingStations.map((s) => s.stationName).join(', ')}</strong>. Orders route to backup stations or thermal printers.
+                  </span>
+                ) : (
+                  <span>
+                    Orders route to secondary station{' '}
+                    <strong className="text-amber-300">
+                      {activeStationStatus?.backupStationName ||
+                        (activeStationStatus?.backupStationId
+                          ? `Station #${activeStationStatus.backupStationId}`
+                          : 'Expo & Final Quality Check')}
+                    </strong>
+                    {activeStationStatus?.printerName ? (
+                      <span> or print on <strong className="text-amber-300">{activeStationStatus.printerName}</strong></span>
+                    ) : ''}.
+                  </span>
+                )}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => handleTriggerReroute(activeStationStatus.stationId)}
-              className="h-8 px-3.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+              onClick={() => {
+                if (isMultipleFailuresInAll) {
+                  setIsRerouteModalOpen(true);
+                } else if (activeStationStatus) {
+                  handleTriggerReroute(activeStationStatus.stationId);
+                }
+              }}
+              className="h-8 px-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm">forward_to_inbox</span>
-              <span>Reroute Orders Now</span>
+              <span>{isMultipleFailuresInAll ? 'Reroute All' : 'Reroute Orders'}</span>
             </button>
             <button
               type="button"
-              onClick={() => handleOpenThermalFallback(activeStationStatus)}
-              className="h-8 px-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+              onClick={() => handleOpenThermalFallback(isMultipleFailuresInAll ? null : activeStationStatus)}
+              className="h-8 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm text-amber-400">print</span>
               <span>Thermal Ticket</span>
@@ -2671,7 +2847,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             <button
               type="button"
               onClick={() => setIsRerouteModalOpen(true)}
-              className="h-8 px-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center active:scale-95"
+              className="h-8 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center active:scale-95 shrink-0"
             >
               <span>Configure</span>
             </button>
@@ -2681,40 +2857,40 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
       {/* 2.2 Capacity Limit Alert & Amber Overflow Banner (Historia X7P-4211) */}
       {activeStationStatus?.isCapacityOverflow && (
-        <div className="bg-gradient-to-r from-amber-950/90 via-zinc-900 to-amber-950/90 border-y-2 border-amber-500/80 px-6 py-2.5 flex items-center justify-between flex-wrap gap-3 animate-fade-in shadow-xl">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/60 flex items-center justify-center text-amber-400 animate-bounce">
-              <span className="material-symbols-outlined text-xl">warning</span>
+        <div className="bg-gradient-to-r from-amber-950/90 via-zinc-900 to-amber-950/90 border-y-2 border-amber-500/80 px-3 sm:px-4 lg:px-6 py-1.5 sm:py-2 flex items-center justify-between gap-3 animate-fade-in shadow-xl shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/60 flex items-center justify-center text-amber-400 animate-pulse shrink-0">
+              <span className="material-symbols-outlined text-lg">warning</span>
             </div>
-            <div>
-              <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 flex-wrap">
-                <span>⚠️ STATION CAPACITY OVERFLOW BANNER:</span>
-                <span className="text-amber-400 underline decoration-amber-500">{activeStationStatus.stationName}</span>
-                <span className="text-[10px] px-2 py-0.2 rounded-full bg-amber-500/30 text-amber-200 border border-amber-500/50 font-bold">
-                  {activeStationStatus.activeTicketsCount} / {activeStationStatus.maxActiveTicketsCapacity} ACTIVE TICKETS
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
+                <span className="shrink-0">⚠️ CAPACITY OVERFLOW:</span>
+                <span className="text-amber-400 underline decoration-amber-500 truncate max-w-[180px] sm:max-w-[280px]">{activeStationStatus.stationName}</span>
+                <span className="text-[10px] px-2 py-0.2 rounded-full bg-amber-500/30 text-amber-200 border border-amber-500/50 font-bold shrink-0">
+                  {activeStationStatus.activeTicketsCount} / {activeStationStatus.maxActiveTicketsCapacity} ACTIVE
                 </span>
               </div>
-              <p className="text-[11px] text-zinc-300 mt-0.5">
+              <p className="text-[11px] text-zinc-300 mt-0.5 truncate">
                 Active queue limit breached (&gt;{activeStationStatus.maxActiveTicketsCapacity} tickets). Dynamic load balancing routes incoming orders to secondary prep station.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => handleTriggerReroute(activeStationStatus.stationId)}
-              className="h-8 px-3.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95"
+              onClick={() => handleTriggerReroute(activeStationStatus.stationId, true)}
+              className="h-8 px-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm">balance</span>
-              <span>Balance Load &amp; Reroute</span>
+              <span>Balance Load</span>
             </button>
             <button
               type="button"
               onClick={() => setIsRerouteModalOpen(true)}
-              className="h-8 px-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center justify-center active:scale-95"
+              className="h-8 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center active:scale-95 shrink-0"
             >
-              <span>Adjust Threshold</span>
+              <span>Configure</span>
             </button>
           </div>
         </div>
@@ -3685,26 +3861,33 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       />
 
       {/* Dynamic Station Rerouting, Thermal Printer Fallback & Load Balancing Modal (Historia X7P-4211) */}
-      <StationRerouteModal
-        isOpen={isRerouteModalOpen}
-        onClose={() => setIsRerouteModalOpen(false)}
-        stations={kitchenStations}
-        initialStationId={resolvedStation.id}
-        rerouteStatuses={stationRerouteStatuses}
-        onConfigSaved={() => {
-          fetchRerouteStatuses();
-          fetchBackendOrders(true);
-        }}
-        onRerouteExecuted={() => {
-          fetchRerouteStatuses();
-          fetchBackendOrders(true);
-        }}
-        onOpenThermalPrint={(payload) => {
-          setThermalTicketPayload(payload);
-          setIsThermalTicketModalOpen(true);
-        }}
-        activeTickets={tickets}
-      />
+      {isRerouteModalOpen && (
+        <StationRerouteModal
+          key={`reroute-modal-${resolvedStation.id}`}
+          isOpen={isRerouteModalOpen}
+          onClose={() => setIsRerouteModalOpen(false)}
+          stations={kitchenStations}
+          initialStationId={resolvedStation.id}
+          rerouteStatuses={effectiveStationRerouteStatuses}
+          isOffline={isOffline}
+          offlineSeconds={offlineSeconds}
+          onConfigSaved={() => {
+            fetchStations();
+            fetchRerouteStatuses();
+            fetchBackendOrders(true);
+          }}
+          onRerouteExecuted={() => {
+            fetchStations();
+            fetchRerouteStatuses();
+            fetchBackendOrders(true);
+          }}
+          onOpenThermalPrint={(payload) => {
+            setThermalTicketPayload(payload);
+            setIsThermalTicketModalOpen(true);
+          }}
+          activeTickets={tickets}
+        />
+      )}
 
       {/* Emergency Thermal Printer Paper Fallback Simulation Modal (Historia X7P-4211) */}
       <ThermalTicketModal
