@@ -17,7 +17,7 @@ vi.mock('../../../lib/auth-storage', () => ({
 
 const SUPPLIERS: InvoiceSupplierRef[] = [
   { id: 10, name: 'Coca-Cola FEMSA' },
-  { id: 20, name: 'Nestlé Foods' },
+  { id: 20, name: 'Nestle Foods' },
 ];
 
 const PAYMENTS: SupplierPayment[] = [

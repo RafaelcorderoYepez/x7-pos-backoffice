@@ -67,32 +67,47 @@ export const TipPoolsView: React.FC<TipPoolsViewProps> = ({
     loadTipPoolsData();
   };
 
-  const loadTipPoolsData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Executes query targeting primary @Index(['company_id', 'merchant_id', 'shift_id', 'created_at'])
-      // and secondary @Index(['status', 'record_status'])
-      const data = await fetchTipPools({
-        company_id: companyId,
-        merchant_id: resolvedMerchantId,
-        shift_id: shiftIdFilter || undefined,
-        status: selectedStatus,
-        distribution_type: selectedDistributionType,
-        record_status: selectedRecordStatus,
-        search: searchQuery,
-      });
+  const [refreshKey, setRefreshKey] = useState(0);
 
-      setPools(data);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to hydrate tip pools directory.');
-    } finally {
-      setLoading(false);
-    }
+  const loadTipPoolsData = () => {
+    setRefreshKey((k) => k + 1);
   };
 
   useEffect(() => {
-    loadTipPoolsData();
+    let isCancelled = false;
+    void Promise.resolve().then(async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Executes query targeting primary @Index(['company_id', 'merchant_id', 'shift_id', 'created_at'])
+        // and secondary @Index(['status', 'record_status'])
+        const data = await fetchTipPools({
+          company_id: companyId,
+          merchant_id: resolvedMerchantId,
+          shift_id: shiftIdFilter || undefined,
+          status: selectedStatus,
+          distribution_type: selectedDistributionType,
+          record_status: selectedRecordStatus,
+          search: searchQuery,
+        });
+
+        if (!isCancelled) {
+          setPools(data);
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to hydrate tip pools directory.');
+        }
+      } finally {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [
     companyId,
     resolvedMerchantId,
@@ -101,6 +116,7 @@ export const TipPoolsView: React.FC<TipPoolsViewProps> = ({
     selectedStatus,
     selectedRecordStatus,
     shiftIdFilter,
+    refreshKey,
   ]);
 
   const metrics = useMemo(() => calculateTipPoolsSummaryMetrics(pools), [pools]);

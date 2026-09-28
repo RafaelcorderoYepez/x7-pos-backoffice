@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DailyGanttTimelineView } from './DailyGanttTimelineView';
 import type { ShiftAssignment, Collaborator } from '../../../../types/shifts';
+import type { TimeEntry } from '../../../../types/attendance';
 import * as attendanceApi from '../../../../api/attendance';
 
 vi.mock('../../../../api/attendance', async () => {
@@ -56,7 +57,7 @@ const MOCK_SHIFTS: ShiftAssignment[] = [
   },
 ];
 
-const MOCK_TIME_ENTRIES = [
+const MOCK_TIME_ENTRIES: TimeEntry[] = [
   {
     id: 'TE-101',
     collaboratorId: 'emp-101',
@@ -87,7 +88,7 @@ const MOCK_TIME_ENTRIES = [
 
 describe('DailyGanttTimelineView', () => {
   beforeEach(() => {
-    vi.mocked(attendanceApi.loadTimeEntries).mockImplementation(() => Promise.resolve(MOCK_TIME_ENTRIES as any));
+    vi.mocked(attendanceApi.loadTimeEntries).mockImplementation(() => Promise.resolve(MOCK_TIME_ENTRIES));
   });
 
   afterEach(() => {

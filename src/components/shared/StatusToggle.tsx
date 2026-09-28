@@ -1,9 +1,7 @@
 //src/components/shared/StatusToggle.tsx
 import React from 'react';
 
-export function normalizeStatus(status: string): 'active' | 'inactive' {
-  return status === 'active' ? 'active' : 'inactive';
-}
+import { normalizeStatus } from './statusToggleHelpers';
 
 interface StatusToggleButtonProps {
   status: string;

@@ -41,7 +41,9 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({ onNavigate }) 
   };
 
   useEffect(() => {
-    loadData();
+    void Promise.resolve().then(() => {
+      loadData();
+    });
   }, []);
 
   // Filtered Ledger Records

@@ -134,7 +134,9 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
   }, [day]);
 
   useEffect(() => {
-    void fetchReservations();
+    void Promise.resolve().then(() => {
+      void fetchReservations();
+    });
   }, [fetchReservations]);
 
   // Catálogos de apoyo del drawer. Fallan por separado y en silencio: sin clientes el alta

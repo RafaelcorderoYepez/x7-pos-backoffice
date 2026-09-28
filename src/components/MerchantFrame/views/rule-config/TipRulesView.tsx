@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
@@ -674,8 +674,8 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const fetchTipRules = async () => {
-    setLoading(true);
+  const fetchTipRules = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const token = getAccessToken();
@@ -688,12 +688,12 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar las reglas de propinas');
+        throw new Error('Error loading tip rules');
       }
 
       const json = await res.json();
@@ -704,11 +704,13 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchTipRules();
-  }, []);
+    void Promise.resolve().then(() => {
+      fetchTipRules(true);
+    });
+  }, [fetchTipRules]);
 
   const handleCreateSubmit = async (dto: CreateTipRuleDto) => {
     setFormSubmitting(true);
@@ -725,7 +727,7 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -737,9 +739,9 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
       setRules((prev) => [json.data, ...prev]);
       setFormModalOpen(null);
       setToast({ message: 'Tip rule created successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormModalOpen(null);
-      setToast({ message: err.message || 'Failed to create tip rule', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to create tip rule', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
@@ -760,7 +762,7 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -772,9 +774,9 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
       setFormModalOpen(null);
       setToast({ message: 'Tip rule updated successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormModalOpen(null);
-      setToast({ message: err.message || 'Failed to update tip rule', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to update tip rule', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
@@ -790,7 +792,7 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -800,8 +802,8 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
       }
 
       setDetailRule(json.data);
-    } catch (err: any) {
-      setToast({ message: err.message || 'Failed to load tip rule details', type: 'error' });
+    } catch (err: unknown) {
+      setToast({ message: err instanceof Error ? err.message : 'Failed to load tip rule details', type: 'error' });
     }
   };
 
@@ -822,7 +824,7 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -837,9 +839,9 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
         message: nextStatus === 'inactive' ? 'Tip rule deactivated successfully' : 'Tip rule reactivated successfully',
         type: 'success',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setTogglingRule(null);
-      setToast({ message: err.message || 'Failed to update tip rule status', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to update tip rule status', type: 'error' });
     } finally {
       setToggleSubmitting(false);
     }
@@ -883,7 +885,7 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
         <p className="mt-3 text-red-700 font-medium">{error}</p>
         <button
           type="button"
-          onClick={fetchTipRules}
+          onClick={() => { void fetchTipRules(); }}
           className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-[11px] uppercase tracking-widest hover:bg-[#ae001a] transition-colors"
         >
           Retry Connection

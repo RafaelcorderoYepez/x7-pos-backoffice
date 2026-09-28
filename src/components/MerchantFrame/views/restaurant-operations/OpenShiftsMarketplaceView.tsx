@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type {
   OpenShift,
   CollaboratorRole,
@@ -65,8 +65,13 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
 
   const [isActionLoading, setIsActionLoading] = useState(false);
 
+  const showToast = useCallback((type: 'success' | 'error' | 'warning', title: string, message: string) => {
+    setToast({ type, title, message });
+    setTimeout(() => setToast(null), 6000);
+  }, []);
+
   // Load shifts on mount & when filters change
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
       const [shiftsData, assignmentsData] = await Promise.all([
@@ -82,21 +87,19 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
       ]);
       setOpenShifts(shiftsData);
       setAssignedShifts(assignmentsData);
-    } catch (err: any) {
-      showToast('error', 'Data Hydration Error', err.message || 'Failed to load open shifts marketplace.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to load open shifts marketplace.';
+      showToast('error', 'Data Hydration Error', message);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [selectedRole, selectedMode, startDate, endDate, searchQuery, selectedZone, showToast]);
 
   useEffect(() => {
-    loadData();
-  }, [selectedRole, selectedMode, selectedZone, startDate, endDate]);
-
-  const showToast = (type: 'success' | 'error' | 'warning', title: string, message: string) => {
-    setToast({ type, title, message });
-    setTimeout(() => setToast(null), 6000);
-  };
+    void Promise.resolve().then(() => {
+      loadData();
+    });
+  }, [loadData]);
 
   // Calculate active collaborator scheduled weekly hours
   const activeWorkerWeeklyHours = useMemo(() => {
@@ -209,8 +212,9 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
           res.message || `Shift #${shift.referenceId} action confirmed!`
         );
       }
-    } catch (err: any) {
-      showToast('error', 'Claim Request Rejected', err.message || 'Failed to claim shift.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to claim shift.';
+      showToast('error', 'Claim Request Rejected', message);
     } finally {
       setIsActionLoading(false);
     }
@@ -232,8 +236,9 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
         'Pickup Request Approved',
         `Assigned shift #${res.openShift.referenceId} to ${reqCollabName}. Roster updated.`
       );
-    } catch (err: any) {
-      showToast('error', 'Approval Error', err.message || 'Failed to approve pickup request.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to approve pickup request.';
+      showToast('error', 'Approval Error', message);
     } finally {
       setIsActionLoading(false);
     }
@@ -259,8 +264,9 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
         'Pickup Request Rejected',
         `Pickup request for shift #${res.referenceId} was rejected.`
       );
-    } catch (err: any) {
-      showToast('error', 'Rejection Error', err.message || 'Failed to reject request.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to reject request.';
+      showToast('error', 'Rejection Error', message);
     } finally {
       setIsActionLoading(false);
     }
@@ -274,8 +280,9 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
       setCancelConfirmShift(null);
       await loadData();
       showToast('success', 'Open Shift Cancelled', `Shift #${shift.referenceId} removed from marketplace.`);
-    } catch (err: any) {
-      showToast('error', 'Cancellation Error', err.message || 'Failed to cancel shift.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to cancel shift.';
+      showToast('error', 'Cancellation Error', message);
     } finally {
       setIsActionLoading(false);
     }
@@ -487,7 +494,7 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
             </label>
             <select
               value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value as any)}
+              onChange={(e) => setSelectedRole(e.target.value as CollaboratorRole | 'ALL')}
               className="w-full bg-[#fef9f1] border border-[#e8e2d8] rounded px-2.5 py-1.5 text-xs font-semibold text-[#1d1c17] focus:outline-none focus:border-[#ae001a]"
             >
               <option value="ALL">All Roles</option>
@@ -505,7 +512,7 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
             </label>
             <select
               value={selectedMode}
-              onChange={(e) => setSelectedMode(e.target.value as any)}
+              onChange={(e) => setSelectedMode(e.target.value as OpenShiftAllocationMode | 'ALL')}
               className="w-full bg-[#fef9f1] border border-[#e8e2d8] rounded px-2.5 py-1.5 text-xs font-semibold text-[#1d1c17] focus:outline-none focus:border-[#ae001a]"
             >
               <option value="ALL">All Claim Modes</option>

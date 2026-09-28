@@ -21,7 +21,6 @@ interface GlobalHeaderProps {
 
 export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
   activeTab,
-  activeCategory,
   refreshTrigger,
   navCategories,
   notifications,
@@ -36,7 +35,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [tier, setTier] = useState<string>('');
 
-  // Estado para la Lupa de Búsqueda Desplegable en el Menú Lateral / Header
+  // State for expandable search magnifying glass in sidebar / header
   const [isMenuSearchOpen, setIsMenuSearchOpen] = useState<boolean>(false);
   const [menuSearchQuery, setMenuSearchQuery] = useState<string>('');
 
@@ -44,13 +43,15 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
 
   useEffect(() => {
     if (isSidebarCollapsed) {
-      setIsMenuSearchOpen(false);
-      setMenuSearchQuery('');
-      onMenuSearchChange('');
+      void Promise.resolve().then(() => {
+        setIsMenuSearchOpen(false);
+        setMenuSearchQuery('');
+        onMenuSearchChange?.('');
+      });
     }
-  }, [isSidebarCollapsed]);
+  }, [isSidebarCollapsed, onMenuSearchChange]);
 
-  // Lista estandarizada de todas las funcionalidades del backoffice para búsqueda rápida
+  // Standardized list of all backoffice features for quick search
   const ALL_BACKOFFICE_FEATURES: Array<{ id: string; name: string; categoryId: string; categoryName: string }> = [
     { id: 'products', name: 'Products Catalog', categoryId: 'catalog', categoryName: 'POS Product Catalog' },
     { id: 'categories', name: 'Product Categories', categoryId: 'catalog', categoryName: 'POS Product Catalog' },
@@ -110,14 +111,16 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
       }
     };
 
-    fetchHeaderData();
-  }, [refreshTrigger]);
+    void Promise.resolve().then(() => {
+      void fetchHeaderData();
+    });
+  }, [refreshTrigger, API_BASE]);
 
-  // Resolver breadcrumbs y títulos de manera reactiva y dinámica desde navCategories
+  // Resolve breadcrumbs and titles reactively and dynamically from navCategories
   let parentAppName = '';
   let activeFeatureName = '';
 
-  // 1. Intentar resolver parentAppName y activeFeatureName dinámicamente desde navCategories buscando por activeTab
+  // 1. Attempt to resolve parentAppName and activeFeatureName dynamically from navCategories searching by activeTab
   if (navCategories.length > 0) {
     for (const cat of navCategories) {
       for (const app of cat.applications) {
@@ -137,15 +140,15 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     }
   }
 
-  // Command Hubs de módulo (`<appId>-hub`): no están en el catálogo de features, se resuelven
-  // desde module-nav-hubs.ts para que la cabecera no caiga en "SYSTEM / RESERVATIONS HUB".
+  // Module Command Hubs (`<appId>-hub`) are not in the feature catalog; resolve them
+  // from module-nav-hubs.ts so the header doesn't fall back to "SYSTEM / RESERVATIONS HUB".
   const commandHub = navHubById(activeTab);
   if (commandHub) {
     parentAppName = commandHub.category;
     activeFeatureName = commandHub.title;
   }
 
-  // Lista de pestañas por dominio para mapear el Breadcrumb de forma 100% precisa e inmune a clics de acordeón
+  // Domain tabs list to map Breadcrumbs accurately and immune to accordion clicks
   const restaurantOpsTabs = [
     'kitchen-stations',
     'kitchen-display-devices',
@@ -210,7 +213,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     'saas-dashboard',
   ];
 
-  // Forzar la categoría padre real según la vista abierta (activeTab)
+  // Force real parent category according to open view (activeTab)
   if (restaurantOpsTabs.includes(activeTab)) {
     parentAppName = 'Restaurant Operations';
   } else if (productsInventoryTabs.includes(activeTab)) {
@@ -252,7 +255,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
 
 
 
-  // Friendly title para el Headline h2
+  // Friendly title for Headline h2
   let friendlyTitle = activeFeatureName;
   if (activeTab === 'dashboard') {
     friendlyTitle = 'Restaurant Dashboard';
@@ -292,7 +295,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     }
   }
 
-  // Fallback de iniciales para el avatar de usuario si no hay portraitUrl
+  // Initials fallback for user avatar when portraitUrl is missing
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -307,13 +310,13 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
       <div className="w-64 h-full bg-[#222222] flex items-center justify-between px-3 shrink-0 border-r border-white/10 relative">
         {!isMenuSearchOpen ? (
           <>
-            {/* Agrupación Fija a la Izquierda: Hamburguesa + Logo (sin desplazamiento) */}
+            {/* Fixed Left Group: Hamburger + Logo (without shift) */}
             <div className="flex items-center gap-2.5 min-w-0">
-              {/* Botón de Hamburguesa */}
+              {/* Hamburger Button */}
               <button 
                 onClick={onToggleSidebar}
                 className="p-1 hover:bg-white/10 active:scale-95 transition-all text-white rounded flex items-center justify-center cursor-pointer shrink-0"
-                title={isSidebarCollapsed ? "Mostrar menú" : "Ocultar menú"}
+                title={isSidebarCollapsed ? "Show menu" : "Hide menu"}
               >
                 <span className="material-symbols-outlined text-[24px]">menu</span>
               </button>
@@ -350,15 +353,15 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
               className={`p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded transition-all cursor-pointer shrink-0 ml-auto ${
                 isSidebarCollapsed ? 'invisible pointer-events-none' : 'visible opacity-100'
               }`}
-              title="Buscar en menú lateral"
-              aria-label="Buscar en menú lateral"
+              title="Search sidebar menu"
+              aria-label="Search sidebar menu"
             >
               <span className="material-symbols-outlined text-[20px]">search</span>
             </button>
           </>
         ) : (
           <>
-            {/* Logo en tamaño completo original (Solo Icono X7 + Búsqueda) */}
+            {/* Full size original logo (X7 icon only + search) */}
             <div 
               onClick={onLogoClick}
               className="flex items-center cursor-pointer hover:opacity-90 transition-all select-none shrink-0"
@@ -371,7 +374,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
               />
             </div>
 
-            {/* Campo de Búsqueda Desplegado */}
+            {/* Expanded search field */}
             <div className="flex-1 relative flex items-center min-w-0 ml-1">
               <input
                 type="text"
@@ -392,7 +395,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
                   onMenuSearchChange?.('');
                 }}
                 className="absolute right-1 text-white/60 hover:text-white transition-colors cursor-pointer"
-                title="Cerrar búsqueda"
+                title="Close search"
               >
                 <span className="material-symbols-outlined text-[16px]">close</span>
               </button>
@@ -400,7 +403,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
           </>
         )}
 
-        {/* Desplegable en vivo de Resultados de Búsqueda */}
+        {/* Live search results dropdown */}
         {isMenuSearchOpen && menuSearchQuery.trim() !== '' && (
           <div className="absolute top-16 left-0 w-64 bg-[#2a2a2a] text-white shadow-2xl rounded-b border-b border-x border-white/10 z-[10000] p-2 max-h-80 overflow-y-auto text-left font-sans animate-fade-in">
             <div className="text-[10px] font-bold uppercase tracking-wider text-white/50 px-2 py-1 border-b border-white/10 mb-1 flex justify-between items-center">
@@ -441,9 +444,9 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
         )}
       </div>
 
-      {/* Contenido principal del Header con fondo claro */}
+      {/* Main Header content with light background */}
       <div className="flex-1 h-full bg-surface flex justify-between items-center px-xl">
-        {/* Lado Izquierdo: Breadcrumbs & Títulos */}
+        {/* Left Side: Breadcrumbs & Titles */}
         <div className="flex items-center gap-4">
           <div className="flex flex-col text-left">
             {/* Breadcrumb location tracking */}
@@ -522,7 +525,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
                 window.dispatchEvent(new CustomEvent('open-time-clock-kiosk'));
               }}
               className="px-2.5 py-1 bg-[#d51f2c] hover:bg-[#b01a24] text-white rounded font-bold text-xs uppercase flex items-center gap-1 transition-colors duration-200 shadow-sm"
-              title="Time Clock Terminal (Reloj de Fichaje)"
+              title="Time Clock Terminal"
             >
               <span className="material-symbols-outlined text-base">punch_clock</span>
               <span className="hidden lg:inline text-[11px]">Time Clock</span>

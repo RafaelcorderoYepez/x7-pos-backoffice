@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ShiftAssignmentView } from './ShiftAssignmentView';
 import * as shiftsApi from '../../../../api/shifts';
-import type { ShiftAssignment } from '../../../../types/shifts';
+import type { ShiftAssignment, ShiftSwapRequest } from '../../../../types/shifts';
 
 vi.mock('../../../../api/shifts', async () => {
   const actual = await vi.importActual<typeof import('../../../../api/shifts')>('../../../../api/shifts');
@@ -48,7 +48,7 @@ const MOCK_SHIFTS: ShiftAssignment[] = [
   },
 ];
 
-const MOCK_SWAP_REQUESTS = [
+const MOCK_SWAP_REQUESTS: ShiftSwapRequest[] = [
   {
     id: 'SWP-101',
     shiftId: 's-101',
@@ -90,13 +90,13 @@ const MOCK_SWAP_REQUESTS = [
 describe('ShiftAssignmentView', () => {
   beforeEach(() => {
     vi.mocked(shiftsApi.fetchShiftAssignments).mockResolvedValue(MOCK_SHIFTS);
-    vi.mocked(shiftsApi.fetchShiftSwapRequests).mockResolvedValue(MOCK_SWAP_REQUESTS as any);
+    vi.mocked(shiftsApi.fetchShiftSwapRequests).mockResolvedValue(MOCK_SWAP_REQUESTS);
     vi.mocked(shiftsApi.approveShiftSwapRequest).mockResolvedValue({
-      swap: { ...(MOCK_SWAP_REQUESTS[0] as any), status: 'APPROVED' },
+      swap: { ...MOCK_SWAP_REQUESTS[0], status: 'APPROVED' },
       shift: { ...MOCK_SHIFTS[0], collaboratorId: 'emp-102', collaboratorName: 'Sofia Rodriguez', role: 'Waitstaff' },
     });
     vi.mocked(shiftsApi.rejectShiftSwapRequest).mockResolvedValue({
-      ...(MOCK_SWAP_REQUESTS[0] as any),
+      ...MOCK_SWAP_REQUESTS[0],
       status: 'REJECTED',
       rejectionReason: 'Role qualification mismatch',
     });

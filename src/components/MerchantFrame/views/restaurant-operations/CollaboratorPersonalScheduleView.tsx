@@ -123,8 +123,8 @@ const ShiftTradeModal: React.FC<ShiftTradeModalProps> = ({
       });
 
       onSuccess();
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to submit shift trade request.');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to submit shift trade request.');
     } finally {
       setIsSubmitting(false);
     }
@@ -336,8 +336,8 @@ const TimeOffNoticeModal: React.FC<TimeOffNoticeModalProps> = ({
       setErrorMsg(null);
       await submitShiftAbsenceNotice(shift.id, reasonCategory, details);
       onSuccess();
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to submit time-off notice.');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to submit time-off notice.');
     } finally {
       setIsSubmitting(false);
     }
@@ -511,27 +511,40 @@ export const CollaboratorPersonalScheduleView: React.FC<CollaboratorPersonalSche
     return addDaysISO(currentMondayISO, 6);
   }, [currentMondayISO]);
 
+  const [refreshKey, setRefreshKey] = useState(0);
+
   // Load identity-scoped shift assignments and trade requests
-  const loadWorkspaceData = async () => {
-    try {
-      setLoading(true);
-      // Identity-scoped query for logged in collaborator context
-      const [userShifts, swapsData] = await Promise.all([
-        fetchMyShiftAssignments(undefined, undefined, selectedCollaboratorId),
-        fetchShiftSwapRequests({ merchant_id: 'merch-main-01' }),
-      ]);
-      setShifts(userShifts);
-      setSwapRequests(swapsData);
-    } catch (err) {
-      console.error('Error loading personal schedule dataset:', err);
-    } finally {
-      setLoading(false);
-    }
+  const loadWorkspaceData = () => {
+    setRefreshKey((k) => k + 1);
   };
 
   useEffect(() => {
-    loadWorkspaceData();
-  }, [selectedCollaboratorId, currentMondayISO]);
+    let isCancelled = false;
+    void Promise.resolve().then(async () => {
+      try {
+        setLoading(true);
+        // Identity-scoped query for logged in collaborator context
+        const [userShifts, swapsData] = await Promise.all([
+          fetchMyShiftAssignments(undefined, undefined, selectedCollaboratorId),
+          fetchShiftSwapRequests({ merchant_id: 'merch-main-01' }),
+        ]);
+        if (!isCancelled) {
+          setShifts(userShifts);
+          setSwapRequests(swapsData);
+        }
+      } catch (err: unknown) {
+        console.error('Error loading personal schedule dataset:', err);
+      } finally {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedCollaboratorId, currentMondayISO, refreshKey]);
 
   // Current week shifts filtering
   const currentWeekShifts = useMemo(() => {
@@ -589,7 +602,7 @@ export const CollaboratorPersonalScheduleView: React.FC<CollaboratorPersonalSche
 
     const startMonday = getMonday(firstDayOfMonth);
     const days = [];
-    let current = new Date(startMonday);
+    const current = new Date(startMonday);
 
     while (current <= lastDayOfMonth || days.length % 7 !== 0) {
       const dateISO = formatDateISO(current);

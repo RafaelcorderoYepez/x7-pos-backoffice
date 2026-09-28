@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getSaasToken, clearSaasToken } from '../../../lib/saas-auth-storage';
 import type { MerchantOrder, OrderChannel, OrderStatus } from '../../../types/settlements';
@@ -26,25 +26,25 @@ export const OrdersRegistryView: React.FC<OrdersRegistryViewProps> = ({ onNaviga
   const [statusFilter, setStatusFilter] = useState<'' | OrderStatus>('');
   const [detailOrder, setDetailOrder] = useState<MerchantOrder | null>(null);
 
-  const authHeaders = (): Record<string, string> => {
+  const authHeaders = useCallback((): Record<string, string> => {
     const token = getSaasToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     return headers;
-  };
+  }, []);
 
-  const handleUnauthorized = () => {
+  const handleUnauthorized = useCallback(() => {
     clearSaasToken();
-    window.location.href = '/saas-admin';
-  };
+    window.location.assign('/saas-admin');
+  }, []);
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/v1/platform/orders`, { headers: authHeaders() });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las órdenes');
+      if (!res.ok) throw new Error('Error loading orders');
       const json = await res.json();
       setOrders(json.data ?? []);
     } catch (err) {
@@ -53,11 +53,13 @@ export const OrdersRegistryView: React.FC<OrdersRegistryViewProps> = ({ onNaviga
     } finally {
       setLoading(false);
     }
-  };
+  }, [authHeaders, handleUnauthorized]);
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    void Promise.resolve().then(() => {
+      fetchOrders();
+    });
+  }, [fetchOrders]);
 
   const merchantOptions = useMemo(() => {
     const map = new Map<number, string>();

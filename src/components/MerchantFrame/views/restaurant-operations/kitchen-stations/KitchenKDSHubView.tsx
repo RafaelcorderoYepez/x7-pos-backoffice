@@ -42,13 +42,13 @@ export const KitchenKDSHubView: React.FC<KitchenKDSHubViewProps> = ({
           const json = await stRes.json();
           const rawList = Array.isArray(json) ? json : json.data || [];
           setStations(
-            rawList.map((st: any) => ({
+            rawList.map((st: KitchenStation & Record<string, unknown>) => ({
               ...st,
-              is_active: st.isActive ?? st.is_active ?? true,
-              station_type: st.stationType ?? st.station_type ?? 'PREP',
-              display_mode: st.displayMode ?? st.display_mode ?? 'AUTO',
-              display_order: st.displayOrder ?? st.display_order ?? 1,
-              printer_name: st.printerName ?? st.printer_name ?? null,
+              is_active: (st.isActive as boolean | undefined) ?? st.is_active ?? true,
+              station_type: (st.stationType as string | undefined) ?? st.station_type ?? 'PREP',
+              display_mode: (st.displayMode as string | undefined) ?? st.display_mode ?? 'AUTO',
+              display_order: (st.displayOrder as number | undefined) ?? st.display_order ?? 1,
+              printer_name: (st.printerName as string | null | undefined) ?? st.printer_name ?? null,
               status: st.status || 'active',
             }))
           );
@@ -57,7 +57,7 @@ export const KitchenKDSHubView: React.FC<KitchenKDSHubViewProps> = ({
         if (devRes.ok) {
           const devJson = await devRes.json();
           const devList = Array.isArray(devJson) ? devJson : devJson.data || [];
-          setDevicesCount(devList.filter((d: any) => (d.status ?? 'active') === 'active').length);
+          setDevicesCount(devList.filter((d: { status?: string }) => (d.status ?? 'active') === 'active').length);
         }
       } catch (err) {
         console.error('Error loading KDS Hub metrics:', err);
@@ -68,7 +68,7 @@ export const KitchenKDSHubView: React.FC<KitchenKDSHubViewProps> = ({
     fetchData();
   }, []);
 
-  // Métricas calculadas en tiempo real
+  // Real-time calculated metrics
   const activeStations = stations.filter(s => (s.is_active ?? true) && (s.status === 'active' || !s.status));
   const boundPrintersCount = stations.filter(s => s.printer_name && s.printer_name.trim() !== '').length;
   const expoStationsCount = stations.filter(s => (s.station_type === 'EXPO' || s.station_type === 'PACKING') && (s.status === 'active' || !s.status)).length;

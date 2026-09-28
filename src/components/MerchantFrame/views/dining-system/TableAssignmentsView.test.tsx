@@ -17,7 +17,7 @@ vi.mock('../../../../lib/useDiningRealtime', () => ({
   },
 }));
 
-// Horas en local: el formateador de 12 h de la vista lee el reloj del operador.
+// Local times: 12-hour formatter reads operator clock.
 const at = (day: number, h: number, m = 0): string =>
   new Date(2026, 6, day, h, m, 0).toISOString();
 
@@ -144,17 +144,17 @@ describe('TableAssignmentsView', () => {
   });
 
   describe('contexto de turno', () => {
-    it('arranca filtrando por el turno abierto', async () => {
+    it('starts filtering by open shift', async () => {
       await renderView();
 
       await waitFor(() =>
         expect(screen.getByLabelText('Filter by shift')).toHaveValue('7'),
       );
-      // La cobertura del turno cerrado de ayer queda fuera de la vista inicial.
+      // Yesterday's closed shift coverage is excluded from initial view.
       expect(screen.queryByText('Ana Ruiz')).not.toBeInTheDocument();
     });
 
-    it('permite volver a un turno histórico cerrado', async () => {
+    it('allows returning to a closed historical shift', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -164,7 +164,7 @@ describe('TableAssignmentsView', () => {
       expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
     });
 
-    it('marca en el selector qué turnos están abiertos y cuáles cerrados', async () => {
+    it('marks in selector which shifts are open and which closed', async () => {
       await renderView();
       const select = screen.getByLabelText('Filter by shift');
 
@@ -172,7 +172,7 @@ describe('TableAssignmentsView', () => {
       expect(within(select).getByRole('option', { name: /Waiter Shift - Jul 27 · closed/ })).toBeInTheDocument();
     });
 
-    it('muestra el estado vacío literal cuando no hay coberturas', async () => {
+    it('displays literal empty state when there are no assignments', async () => {
       vi.stubGlobal('fetch', defaultFetch({ assignments: [] }));
       render(<TableAssignmentsView merchantId={3} />);
 
@@ -184,7 +184,7 @@ describe('TableAssignmentsView', () => {
   });
 
   describe('parrilla', () => {
-    it('pinta colaborador con su badge de rol y código', async () => {
+    it('renders collaborator with role badge and code', async () => {
       await renderView();
       const grid = within(screen.getByRole('table'));
 
@@ -192,7 +192,7 @@ describe('TableAssignmentsView', () => {
       expect(grid.getByText('waiter · W-12')).toBeInTheDocument();
     });
 
-    it('pinta la mesa con el swatch de su zona', async () => {
+    it('renders table with its zone swatch', async () => {
       await renderView();
 
       expect(screen.getByText('A1')).toBeInTheDocument();
@@ -220,7 +220,7 @@ describe('TableAssignmentsView', () => {
       expect(screen.getByTestId('assignment-status-1').className).toContain('green');
     });
 
-    it('muestra ambas marcas y el badge cerrado en una cobertura liberada', async () => {
+    it('shows both timestamps and closed badge on released coverage', async () => {
       const user = userEvent.setup();
       await renderView();
       await user.selectOptions(screen.getByLabelText('Filter by shift'), '6');
@@ -235,11 +235,11 @@ describe('TableAssignmentsView', () => {
   });
 
   describe('filtros', () => {
-    it('filtra por servicio activo frente a liberadas', async () => {
+    it('filters by active service vs released', async () => {
       const user = userEvent.setup();
       await renderView();
 
-      // Sin turno fijado se ven las dos coberturas.
+      // Without fixed shift both coverages are visible.
       await user.selectOptions(screen.getByLabelText('Filter by shift'), '');
       await screen.findByText('Ana Ruiz');
 
@@ -252,7 +252,7 @@ describe('TableAssignmentsView', () => {
       expect(screen.queryByText('John Doe')).not.toBeInTheDocument();
     });
 
-    it('busca por nombre de zona', async () => {
+    it('searches by zone name', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -266,7 +266,7 @@ describe('TableAssignmentsView', () => {
   });
 
   describe('despacho y traspaso', () => {
-    it('permite acotar las mesas por zona antes de elegir', async () => {
+    it('allows filtering tables by zone before selection', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -274,7 +274,7 @@ describe('TableAssignmentsView', () => {
       const dialog = await screen.findByRole('dialog', { name: /assign table/i });
       const table = within(dialog).getByRole('combobox', { name: /^table/i });
 
-      // Sin filtro se ofrecen las dos mesas del comercio.
+      // Without filter all merchant tables are offered.
       expect(within(table).getByRole('option', { name: /A1/ })).toBeInTheDocument();
       expect(within(table).getByRole('option', { name: /B2/ })).toBeInTheDocument();
 
@@ -283,12 +283,12 @@ describe('TableAssignmentsView', () => {
         '3',
       );
 
-      // VIP Lounge sólo tiene A1.
+      // VIP Lounge only has A1.
       expect(within(table).getByRole('option', { name: /A1/ })).toBeInTheDocument();
       expect(within(table).queryByRole('option', { name: /B2/ })).not.toBeInTheDocument();
     });
 
-    it('cambiar de zona descarta una mesa elegida que ya no pertenece', async () => {
+    it('changing zone discards a selected table that no longer belongs', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -298,7 +298,7 @@ describe('TableAssignmentsView', () => {
       await user.selectOptions(table, '11');
       expect(table).toHaveValue('11');
 
-      // B2 está en Terrace: al filtrar por VIP Lounge deja de ser una elección válida.
+      // B2 is in Terrace: filtering by VIP Lounge makes it no longer a valid choice.
       await user.selectOptions(
         within(dialog).getByRole('combobox', { name: /filter tables by zone/i }),
         '3',
@@ -307,7 +307,7 @@ describe('TableAssignmentsView', () => {
       expect(table).toHaveValue('');
     });
 
-    it('avisa cuando el filtro deja la lista sin mesas', async () => {
+    it('warns when filter leaves table list empty', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -322,7 +322,7 @@ describe('TableAssignmentsView', () => {
       expect(within(dialog).getByText(/no table matches this zone and filter/i)).toBeInTheDocument();
     });
 
-    it('crea la cobertura cuando la mesa está libre en el turno', async () => {
+    it('creates assignment when table is free in shift', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -341,13 +341,13 @@ describe('TableAssignmentsView', () => {
       });
     });
 
-    it('pide confirmación antes de robarle la mesa a otro camarero', async () => {
+    it('prompts confirmation before reassigning table from another waiter', async () => {
       const user = userEvent.setup();
       await renderView();
 
       await user.click(screen.getByRole('button', { name: 'Assign Table' }));
       const dialog = await screen.findByRole('dialog', { name: /assign table/i });
-      // A1 ya la cubre John Doe en el turno 7.
+      // A1 is already covered by John Doe in shift 7.
       await user.selectOptions(within(dialog).getByRole('combobox', { name: /^table/i }), '10');
       await user.selectOptions(within(dialog).getByRole('combobox', { name: /^collaborator/i }), '6');
       await user.click(within(dialog).getByRole('button', { name: /^assign table$/i }));
@@ -356,11 +356,11 @@ describe('TableAssignmentsView', () => {
       expect(within(confirm).getByRole('alert')).toHaveTextContent(
         "Table A1 is currently assigned to John Doe. Reassigning will automatically release John Doe's duty. Proceed?",
       );
-      // Nada se ha escrito todavía.
+      // Nothing written yet.
       expect(callsTo('POST', '/table-assignments')).toHaveLength(0);
     });
 
-    it('al confirmar libera al titular y crea la nueva cobertura', async () => {
+    it('upon confirmation releases holder and creates new coverage', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -381,7 +381,7 @@ describe('TableAssignmentsView', () => {
       expect(callsTo('POST', '/table-assignments')[0].body).toMatchObject({ collaboratorId: 6 });
     });
 
-    it('cae al id numérico cuando el plan no incluye el catálogo de colaboradores', async () => {
+    it('falls back to numeric id when plan does not include collaborator catalog', async () => {
       const user = userEvent.setup();
       await renderView({ collaboratorsStatus: 403 });
 
@@ -397,8 +397,8 @@ describe('TableAssignmentsView', () => {
     });
   });
 
-  describe('liberación', () => {
-    it('avisa de las cuentas abiertas al liberar una mesa ocupada', async () => {
+  describe('release', () => {
+    it('warns about open tabs when releasing an occupied table', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -409,7 +409,7 @@ describe('TableAssignmentsView', () => {
       );
     });
 
-    it('sella releasedAt al confirmar', async () => {
+    it('stamps releasedAt upon confirmation', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -431,7 +431,7 @@ describe('TableAssignmentsView', () => {
   });
 
   describe('tiempo real', () => {
-    it('recarga las coberturas cuando el gateway anuncia un cambio', async () => {
+    it('reloads coverages when gateway announces a change', async () => {
       await renderView();
       const before = fetchMock().mock.calls.filter(([u]) =>
         String(u).includes('/table-assignments?limit=100'),

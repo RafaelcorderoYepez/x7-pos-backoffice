@@ -11,7 +11,7 @@ vi.mock('../../../../lib/auth-storage', () => ({
 }));
 
 // El canal en vivo se sustituye por un testigo: guardamos los manejadores que registra el
-// editor para disparar eventos del gateway a mano (y de paso ningún test abre un socket).
+// editor to trigger gateway events manually (and prevents tests from opening socket).
 let live: UseDiningRealtimeOptions = {};
 vi.mock('../../../../lib/useDiningRealtime', () => ({
   useDiningRealtime: (opts: UseDiningRealtimeOptions) => {
@@ -30,7 +30,7 @@ const PLAN: FloorPlan = {
   status: 'active',
 };
 
-// Zona 3 cuelga de otro plano: /api/floor-zone no está scopeado, el editor debe descartarla.
+// Zone 3 belongs to another plan: /api/floor-zone is not scoped, editor must discard it.
 const ZONES: FloorZone[] = [
   {
     id: 1,
@@ -84,7 +84,7 @@ const TABLES: DiningTable[] = [
     floorPlan: { id: 7, name: 'Main Hall' },
     floorZone: { id: 1, name: 'Main Dining', color: '#123456' },
   },
-  // Mesa de OTRO plano: GET /api/tables no filtra por plano, el editor sí.
+  // Table of ANOTHER plan: GET /api/tables does not filter by plan, editor does.
   {
     id: 103,
     merchant_id: MERCHANT_ID,
@@ -99,7 +99,7 @@ const TABLES: DiningTable[] = [
     floorPlan: { id: 99, name: 'Other Plan' },
     floorZone: { id: 3, name: 'Foreign Zone', color: '#000000' },
   },
-  // Borrado en soft: la fila sigue viniendo del backend pero no debe pintarse.
+  // Soft deleted: row still arrives from backend but should not be rendered.
   {
     id: 104,
     merchant_id: MERCHANT_ID,
@@ -139,7 +139,7 @@ interface BackendOverrides {
   transferTable?: (body: Body) => Promise<Response>;
 }
 
-/** Router mínimo sobre el contrato real: /api/tables, /api/tables/:id y /api/floor-zone. */
+/** Minimal router over real contract: /api/tables, /api/tables/:id and /api/floor-zone. */
 function backend(over: BackendOverrides = {}) {
   const tables = over.tables ?? TABLES;
   const zones = over.zones ?? ZONES;
@@ -238,8 +238,8 @@ function renderEditor(props: Partial<React.ComponentProps<typeof FloorPlanEditor
 }
 
 /**
- * Selección/arrastre por eventos de puntero crudos: jsdom expone el constructor
- * `PointerEvent` y `getBoundingClientRect()` devuelve un rect en ceros, así que
+ * Selection/drag via raw pointer events: jsdom exposes constructor
+ * `PointerEvent` and `getBoundingClientRect()` returns zeroed rect, so
  * `toCanvasCoords` degrada a `clientX / zoom` — coordenadas de lienzo reales y
  * deterministas mientras el zoom siga a 1 (el efecto de "fit" aborta porque el
  * viewport mide 0px sin layout).
@@ -258,7 +258,7 @@ const postCalls = (mock: ReturnType<typeof backend>) =>
     ([url, init]) => String(url).includes('/tables') && init?.method === 'POST',
   );
 
-/** Cuerpos de los PUT enviados a una mesa concreta. */
+/** PUT payloads sent to a specific table. */
 const putCallsOf = (mock: ReturnType<typeof backend>, id: number) =>
   mock.mock.calls
     .filter(([url, init]) => String(url).endsWith(`/tables/${id}`) && init?.method === 'PUT')
@@ -441,12 +441,12 @@ describe('FloorPlanEditor', () => {
       await screen.findByTestId('floor-table-101');
       await user.click(screen.getByRole('button', { name: 'Add square table' }));
 
-      // Las mesas sin guardar viven con id negativo: -1 es la primera.
+      // Unsaved tables have negative IDs: -1 is the first.
       const fresh = await screen.findByTestId('floor-table--1');
       expect(within(fresh).getByText('T1')).toBeInTheDocument();
       expect(within(fresh).getByText('new')).toBeInTheDocument();
       expect(saveButton()).toBeEnabled();
-      // Ya hay zonas, así que añadir no dispara ninguna escritura.
+      // Zones already exist, so adding does not trigger writes.
       expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
     });
 
@@ -517,7 +517,7 @@ describe('FloorPlanEditor', () => {
         floorZone: 1,
         floorPlan: PLAN.id,
       });
-      // int en Postgres y dentro del lienzo: nada de decimales ni de mesas recortadas.
+      // int in Postgres and within canvas: no floats or clipped tables.
       expect(Number.isInteger(body.pos_x)).toBe(true);
       expect(Number.isInteger(body.pos_y)).toBe(true);
       expect(body.pos_x as number).toBeGreaterThanOrEqual(0);
@@ -544,7 +544,7 @@ describe('FloorPlanEditor', () => {
         ),
       );
       const putCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
-      // El backend rechaza cuerpos vacíos y `merchant_id`; sólo debe viajar el diff.
+      // Backend rejects empty bodies and `merchant_id`; only diff should be sent.
       expect(bodyOf(putCall?.[1])).toEqual({ capacity: 8 });
       await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     });
@@ -605,7 +605,7 @@ describe('FloorPlanEditor', () => {
       expect(
         await screen.findByText('Table T1: Table number already exists'),
       ).toBeInTheDocument();
-      // El fallo parcial no refresca: la mesa nueva y la edición siguen en el lienzo.
+      // Partial failure does not refresh: new table and edit remain on canvas.
       expect(screen.getByTestId('floor-table--1')).toBeInTheDocument();
       expect(screen.getByTestId('floor-table-101')).toBeInTheDocument();
       expect(screen.getByLabelText('Capacity')).toHaveValue(9);
@@ -753,7 +753,7 @@ describe('FloorPlanEditor', () => {
     });
   });
 
-  // ================= Fusión de mesas en el lienzo =================
+  // ================= Table Merging on Canvas =================
 
   describe('table joining', () => {
     // A2 cuelga de A1, tal y como lo devuelve el backend: objeto embebido, no escalar.
@@ -766,20 +766,20 @@ describe('FloorPlanEditor', () => {
         .filter(([url, init]) => /\/tables\/\d+/.test(String(url)) && init?.method === 'PUT')
         .map(([url, init]) => ({ url: String(url), body: bodyOf(init as RequestInit) }));
 
-    it('traza el vínculo entre la hija y su madre', async () => {
+    it('traces link between child and mother table', async () => {
       fetchMock = backend({ tables: JOINED });
       vi.stubGlobal('fetch', fetchMock);
       renderEditor();
 
       const link = await screen.findByTestId('join-link-102');
-      // Centro de A2 (200,100 + círculo 80×80) hasta el centro de A1 (20,40 + 80×80).
+      // Center of A2 (200,100 + circle 80x80) to center of A1 (20,40 + 80x80).
       expect(link).toHaveAttribute('x1', '240');
       expect(link).toHaveAttribute('y1', '140');
       expect(link).toHaveAttribute('x2', '60');
       expect(link).toHaveAttribute('y2', '80');
     });
 
-    it('marca la mesa hija con el eslabón y lo dice en su etiqueta accesible', async () => {
+    it('marks child table with link icon and includes in accessible label', async () => {
       fetchMock = backend({ tables: JOINED });
       vi.stubGlobal('fetch', fetchMock);
       renderEditor();
@@ -790,8 +790,8 @@ describe('FloorPlanEditor', () => {
       );
     });
 
-    it('no dibuja vínculo cuando la madre vive en otro plano', async () => {
-      // A1 unida a B1, que está en el plano 99: la unión existe pero no hay a dónde trazarla.
+    it('does not draw link when mother table lives on another floor plan', async () => {
+      // A1 joined to B1 on floor plan 99: link exists but nowhere to trace.
       fetchMock = backend({
         tables: TABLES.map((t) =>
           t.id === 101 ? { ...t, parent_table: { id: 103, number: 'B1' } } : t,
@@ -802,11 +802,11 @@ describe('FloorPlanEditor', () => {
 
       await screen.findByTestId('floor-table-101');
       expect(screen.queryByTestId('join-link-101')).not.toBeInTheDocument();
-      // El badge sí: la mesa está unida y el operador tiene que saberlo.
+      // Badge displayed: table is joined and operator must know.
       expect(screen.getByTestId('join-badge-101')).toBeInTheDocument();
     });
 
-    it('el selector de madre excluye a la propia mesa y a su descendencia', async () => {
+    it('parent selector excludes self and descendants', async () => {
       fetchMock = backend({ tables: JOINED });
       vi.stubGlobal('fetch', fetchMock);
       renderEditor();
@@ -819,7 +819,7 @@ describe('FloorPlanEditor', () => {
       expect(within(parent).queryByRole('option', { name: /A2/ })).not.toBeInTheDocument();
     });
 
-    it('resume el grupo desde la mesa madre', async () => {
+    it('summarizes group from parent table', async () => {
       fetchMock = backend({ tables: JOINED });
       vi.stubGlobal('fetch', fetchMock);
       renderEditor();
@@ -832,7 +832,7 @@ describe('FloorPlanEditor', () => {
       );
     });
 
-    it('unir desde el inspector queda pendiente y viaja en el guardado', async () => {
+    it('joining from inspector remains pending and persists on save', async () => {
       const user = userEvent.setup();
       renderEditor();
 
@@ -851,7 +851,7 @@ describe('FloorPlanEditor', () => {
 
     it('al unirse a una madre ocupada, la hija hereda el estado', async () => {
       const user = userEvent.setup();
-      // A2 está occupied en el fixture: la usamos de madre y unimos A1 (available) a ella.
+      // A2 is occupied in fixture: used as parent and A1 (available) joined to it.
       renderEditor();
 
       await screen.findByTestId('floor-table-101');
@@ -865,7 +865,7 @@ describe('FloorPlanEditor', () => {
       expect(call?.body).toMatchObject({ parent_table_id: 102, status: 'occupied' });
     });
 
-    it('desunir manda el vínculo a null', async () => {
+    it('unlinking sets link to null', async () => {
       const user = userEvent.setup();
       fetchMock = backend({ tables: JOINED });
       vi.stubGlobal('fetch', fetchMock);
@@ -881,14 +881,14 @@ describe('FloorPlanEditor', () => {
       expect(call?.body.parent_table_id).toBeNull();
     });
 
-    it('una mesa sin guardar puede ser la madre: el id temporal se traduce al real', async () => {
+    it('an unsaved table can be parent: temporary id maps to real id', async () => {
       const user = userEvent.setup();
       // El alta devuelve id 501 (ver el router de `backend`), que es el id real que la hija
       // debe acabar apuntando.
       renderEditor();
 
       await screen.findByTestId('floor-table-101');
-      // Dos mesas nuevas: la segunda se une a la primera, ninguna existe aún en base.
+      // Two new tables: second joined to first, neither exists in DB yet.
       await user.click(screen.getByRole('button', { name: /add square table/i }));
       await user.click(screen.getByRole('button', { name: /add circle table/i }));
 
@@ -898,20 +898,20 @@ describe('FloorPlanEditor', () => {
       fireEvent.pointerUp(hija, { clientX: 0, clientY: 0, pointerId: 1 });
 
       const parent = screen.getByRole('combobox', { name: /joined to/i });
-      // La madre sin guardar SÍ se ofrece, marcada como tal.
+      // Unsaved parent table IS offered, marked accordingly.
       expect(within(parent).getByRole('option', { name: /unsaved/ })).toBeInTheDocument();
       await user.selectOptions(parent, within(parent).getByRole('option', { name: /unsaved/ }));
 
       await user.click(saveButton());
 
       await waitFor(() => expect(postCalls(fetchMock).length).toBe(2));
-      // La madre se crea primero y la hija viaja ya con el id REAL devuelto por el alta.
+      // Parent is created first and child links using real ID returned from creation.
       const cuerpos = postCalls(fetchMock).map(([, init]) => bodyOf(init as RequestInit));
       expect(cuerpos[0].parent_table_id).toBeUndefined();
       expect(cuerpos[1].parent_table_id).toBe(501);
     });
 
-    it('una mesa nueva nace ya unida a una guardada', async () => {
+    it('a new table is created already joined to an existing one', async () => {
       const user = userEvent.setup();
       renderEditor();
 
@@ -930,10 +930,10 @@ describe('FloorPlanEditor', () => {
     });
   });
 
-  // ================= Traslado desde el lienzo =================
+  // ================= Canvas Transfer =================
 
   describe('transfer from the canvas', () => {
-    it('sólo ofrece transferir desde una mesa ocupada', async () => {
+    it('only offers transfer from an occupied table', async () => {
       renderEditor();
 
       await screen.findByTestId('floor-table-101');
@@ -948,7 +948,7 @@ describe('FloorPlanEditor', () => {
       ).toBeInTheDocument();
     });
 
-    it('queda bloqueado mientras haya cambios sin guardar', async () => {
+    it('remains locked while unsaved changes exist', async () => {
       const user = userEvent.setup();
       renderEditor();
 
@@ -964,7 +964,7 @@ describe('FloorPlanEditor', () => {
       expect(screen.getByText(/save the layout to enable the transfer/i)).toBeInTheDocument();
     });
 
-    it('envía el traslado y recarga el plano', async () => {
+    it('submits transfer and reloads floor plan', async () => {
       const user = userEvent.setup();
       renderEditor();
 
@@ -973,7 +973,7 @@ describe('FloorPlanEditor', () => {
       await user.click(screen.getByRole('button', { name: /transfer guests from table A2/i }));
 
       const dialog = await screen.findByRole('dialog', { name: /transfer table A2/i });
-      // A1 está disponible; B1 vive en otro plano pero también puede recibir.
+      // A1 is available; B1 lives on another floor plan but can receive.
       await user.selectOptions(within(dialog).getByLabelText(/target table/i), '101');
       await user.click(within(dialog).getByRole('button', { name: /transfer party/i }));
 
@@ -996,7 +996,7 @@ describe('FloorPlanEditor', () => {
   // ================= Canal en vivo =================
 
   describe('live floor updates', () => {
-    it('repinta el estado que llega del gateway', async () => {
+    it('repaints status received from gateway', async () => {
       renderEditor();
       await screen.findByTestId('floor-table-101');
 
@@ -1013,7 +1013,7 @@ describe('FloorPlanEditor', () => {
       });
     });
 
-    it('NO pisa una mesa con cambios sin guardar', async () => {
+    it('DOES NOT overwrite a table with unsaved changes', async () => {
       const user = userEvent.setup();
       renderEditor();
 
@@ -1028,13 +1028,13 @@ describe('FloorPlanEditor', () => {
         emittedAt: new Date().toISOString(),
       });
 
-      // Gana el trabajo del usuario: el evento se descarta para esa mesa.
+      // User work wins: event is discarded for this table.
       await waitFor(() =>
         expect(screen.getByLabelText(/^status$/i)).toHaveValue('reserved'),
       );
     });
 
-    it('quita del lienzo una mesa borrada en otra terminal', async () => {
+    it('removes from canvas a table deleted from another terminal', async () => {
       renderEditor();
       await screen.findByTestId('floor-table-101');
 
@@ -1064,7 +1064,7 @@ describe('FloorPlanEditor', () => {
       await waitFor(() => expect(screen.getByTestId('floor-table-101')).toBeInTheDocument());
     });
 
-    it('con cambios pendientes avisa en vez de recargar y tirar el trabajo', async () => {
+    it('warns about pending changes instead of reloading and discarding work', async () => {
       const user = userEvent.setup();
       renderEditor();
 
@@ -1084,22 +1084,22 @@ describe('FloorPlanEditor', () => {
       expect(
         await screen.findByText(/the floor changed on another terminal/i),
       ).toBeInTheDocument();
-      // Y el trabajo local sigue pendiente: no hubo recarga que se lo llevara por delante.
+      // And local work remains pending: no reload discarded unsaved state.
       expect(saveButton()).toHaveAccessibleName('Save layout (1 pending changes)');
     });
   });
 
-  // ================= Selección múltiple y fusión de grupo =================
+  // ================= Multi-selection and Group Merging =================
 
   describe('multi-selection', () => {
-    /** Ctrl+clic: suma o quita de la selección sin arrastrar. */
+    /** Ctrl+click: adds or removes from selection without dragging. */
     const ctrlClick = (id: number) => {
       const el = screen.getByTestId(`floor-table-${id}`);
       fireEvent.pointerDown(el, { clientX: 0, clientY: 0, pointerId: 1, ctrlKey: true });
       fireEvent.pointerUp(el, { clientX: 0, clientY: 0, pointerId: 1, ctrlKey: true });
     };
 
-    /** Arrastre sobre el suelo vacío: encuadra lo que toque. */
+    /** Drag on empty floor: boxes whatever it touches. */
     const boxSelect = (x1: number, y1: number, x2: number, y2: number) => {
       const canvas = screen.getByTestId('floor-plan-canvas');
       fireEvent.pointerDown(canvas, { clientX: x1, clientY: y1, pointerId: 2 });
@@ -1107,7 +1107,7 @@ describe('FloorPlanEditor', () => {
       fireEvent.pointerUp(canvas, { clientX: x2, clientY: y2, pointerId: 2 });
     };
 
-    it('Ctrl+clic suma mesas a la selección y abre el panel de grupo', async () => {
+    it('Ctrl+click adds tables to selection and opens group panel', async () => {
       renderEditor();
       await screen.findByTestId('floor-table-101');
 
@@ -1120,7 +1120,7 @@ describe('FloorPlanEditor', () => {
       expect(panel).toHaveTextContent('6 seats combined');
     });
 
-    it('Ctrl+clic sobre una mesa ya seleccionada la quita', async () => {
+    it('Ctrl+click on a selected table toggles it off', async () => {
       renderEditor();
       await screen.findByTestId('floor-table-101');
 
@@ -1128,12 +1128,12 @@ describe('FloorPlanEditor', () => {
       ctrlClick(102);
       ctrlClick(102);
 
-      // Vuelve a quedar una sola: el inspector de mesa individual reaparece.
+      // Back to single selection: individual table inspector reappears.
       expect(screen.queryByTestId('floor-plan-multi-inspector')).not.toBeInTheDocument();
       expect(screen.getByTestId('floor-plan-inspector')).toBeInTheDocument();
     });
 
-    it('Ctrl+clic NO mueve la mesa', async () => {
+    it('Ctrl+click DOES NOT drag the table', async () => {
       renderEditor();
       await screen.findByTestId('floor-table-101');
       const before = screen.getByTestId('floor-table-101').style.left;
@@ -1144,28 +1144,28 @@ describe('FloorPlanEditor', () => {
       expect(saveButton()).toBeDisabled();
     });
 
-    it('el arrastre sobre el suelo vacío encuadra las mesas que toca', async () => {
+    it('drag on empty floor boxes the tables it touches', async () => {
       renderEditor();
       await screen.findByTestId('floor-table-101');
 
-      // A1 está en (20,40) y A2 en (200,100): el marco cubre a ambas.
+      // A1 is at (20,40) and A2 at (200,100): selection box covers both.
       boxSelect(0, 0, 400, 300);
 
       expect(screen.getByTestId('floor-plan-multi-inspector')).toHaveTextContent('2 tables');
     });
 
-    it('el marco deja fuera lo que no toca', async () => {
+    it('marquee excludes untouched tables', async () => {
       renderEditor();
       await screen.findByTestId('floor-table-101');
 
-      // Sólo alcanza a A1 (20,40 + 80×80); A2 empieza en x=200.
+      // Only reaches A1 (20,40 + 80x80); A2 starts at x=200.
       boxSelect(0, 0, 150, 150);
 
       expect(screen.queryByTestId('floor-plan-multi-inspector')).not.toBeInTheDocument();
       expect(screen.getByTestId('floor-plan-inspector')).toBeInTheDocument();
     });
 
-    it('un clic sin arrastre sólo deselecciona', async () => {
+    it('a click without drag only deselects', async () => {
       renderEditor();
       await screen.findByTestId('floor-table-101');
       selectTable(101);
@@ -1185,11 +1185,11 @@ describe('FloorPlanEditor', () => {
       await user.click(saveButton());
 
       await waitFor(() => expect(putCallsOf(fetchMock, 102).length).toBe(1));
-      // La madre es la primera de la selección (A1, id 101) y A2 cuelga de ella.
+      // Parent is the first of selection (A1, id 101) and A2 links to it.
       expect(putCallsOf(fetchMock, 102)[0].parent_table_id).toBe(101);
     });
 
-    it('deja elegir otra madre del grupo', async () => {
+    it('allows choosing a different parent for the group', async () => {
       const user = userEvent.setup();
       renderEditor();
       await screen.findByTestId('floor-table-101');
@@ -1203,7 +1203,7 @@ describe('FloorPlanEditor', () => {
       expect(putCallsOf(fetchMock, 101)[0].parent_table_id).toBe(102);
     });
 
-    it('desune el grupo entero de una vez', async () => {
+    it('unlinks whole group at once', async () => {
       const user = userEvent.setup();
       fetchMock = backend({
         tables: TABLES.map((t) =>

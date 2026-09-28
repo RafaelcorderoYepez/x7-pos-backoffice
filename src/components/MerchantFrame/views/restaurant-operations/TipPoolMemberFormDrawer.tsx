@@ -45,8 +45,6 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
   defaultTipPoolId,
   existingMembers = [],
 }) => {
-  if (!isOpen) return null;
-
   const isEditMode = member !== null;
 
   // Form Field State
@@ -67,25 +65,18 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
   const [pools, setPools] = useState<TipPool[]>([]);
   const [collaborators] = useState<CollaboratorOption[]>(MOCK_COLLABORATOR_OPTIONS);
   const [allActiveMembers, setAllActiveMembers] = useState<TipPoolMember[]>(existingMembers);
-  const [loadingPools, setLoadingPools] = useState<boolean>(false);
+  const [loadingPools, setLoadingPools] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLoadingPools(true);
-    fetchTipPools({ company_id: companyId, merchant_id: merchantId, record_status: 'ACTIVE' })
-      .then((res) => setPools(res))
-      .catch(() => setPools([]))
-      .finally(() => setLoadingPools(false));
+  // Adjust state during render when props change
+  const [prevMember, setPrevMember] = useState(member);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
 
-    fetchTipPoolMembers({ record_status: 'ACTIVE' })
-      .then((membersList) => setAllActiveMembers(membersList))
-      .catch(() => setAllActiveMembers(existingMembers));
-  }, [companyId, merchantId, existingMembers]);
-
-  useEffect(() => {
-    if (!isOpen) return;
+  if (member !== prevMember || isOpen !== prevIsOpen) {
+    setPrevMember(member);
+    setPrevIsOpen(isOpen);
     if (member) {
       setTipPoolId(String(member.tip_pool_id));
       setCollaboratorId(String(member.collaborator_id));
@@ -93,15 +84,41 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
       setWeight(String(member.weight));
       setRecordStatus(member.record_status);
     } else {
-      setTipPoolId((prev) => prev || (defaultTipPoolId ? String(defaultTipPoolId) : pools[0] ? String(pools[0].id) : ''));
-      setCollaboratorId((prev) => prev || (collaborators[0] ? String(collaborators[0].id) : ''));
+      setTipPoolId(defaultTipPoolId ? String(defaultTipPoolId) : pools[0] ? String(pools[0].id) : '');
+      setCollaboratorId(collaborators[0] ? String(collaborators[0].id) : '');
       setRole('WAITER');
       setWeight('1.00');
       setRecordStatus('ACTIVE');
     }
     setErrorMessage(null);
     setSuccessMessage(null);
-  }, [member, isOpen, defaultTipPoolId]);
+  }
+
+  useEffect(() => {
+    let ignore = false;
+    fetchTipPools({ company_id: companyId, merchant_id: merchantId, record_status: 'ACTIVE' })
+      .then((res) => {
+        if (!ignore) setPools(res);
+      })
+      .catch(() => {
+        if (!ignore) setPools([]);
+      })
+      .finally(() => {
+        if (!ignore) setLoadingPools(false);
+      });
+
+    fetchTipPoolMembers({ record_status: 'ACTIVE' })
+      .then((membersList) => {
+        if (!ignore) setAllActiveMembers(membersList);
+      })
+      .catch(() => {
+        if (!ignore) setAllActiveMembers(existingMembers);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [companyId, merchantId, existingMembers]);
 
   const filteredCollaborators = useMemo(() => {
     if (!collaboratorSearchTerm.trim()) return collaborators;
@@ -203,12 +220,14 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
           onClose();
         }, 500);
       }
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to save tip pool member assignment.');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to save tip pool member assignment.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return createPortal(
     <div

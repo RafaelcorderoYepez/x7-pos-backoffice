@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { TimeClockKioskView } from './TimeClockKioskView';
 import { StaffManagementQuickLinks } from './StaffManagementQuickLinks';
@@ -59,7 +59,7 @@ const ROLES_LIST: CollaboratorRole[] = [
   'Cashier',
 ];
 
-export const STATUS_STYLES: Record<
+const STATUS_STYLES: Record<
   ShiftStatus,
   { containerClass: string; badgeClass: string; label: string }
 > = {
@@ -89,7 +89,7 @@ export const STATUS_STYLES: Record<
   },
 };
 
-export function checkRestPeriodViolation(
+function checkRestPeriodViolation(
   shifts: ShiftAssignment[],
   collaboratorId: string,
   dateStr: string,
@@ -124,7 +124,7 @@ export function checkRestPeriodViolation(
   return false;
 }
 
-export function calculateProjectedWeeklyHours(
+function calculateProjectedWeeklyHours(
   shifts: ShiftAssignment[],
   collaboratorId: string,
   candidateHours: number,
@@ -274,8 +274,8 @@ const ShiftModal: React.FC<ShiftModalProps> = ({
       };
       await onSave(dto, initialShift?.id);
       onClose();
-    } catch (err: any) {
-      setSubmitError(err.message || 'Error saving shift assignment');
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : 'Error saving shift assignment');
     } finally {
       setSaving(false);
     }
@@ -925,7 +925,9 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
 
   useEffect(() => {
     if (initialViewMode) {
-      setViewMode(initialViewMode);
+      void Promise.resolve().then(() => {
+        setViewMode(initialViewMode);
+      });
     }
   }, [initialViewMode]);
   const [roleFilter, setRoleFilter] = useState<string>('all');
@@ -951,7 +953,9 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
   };
 
   useEffect(() => {
-    loadSwaps();
+    void Promise.resolve().then(() => {
+      loadSwaps();
+    });
   }, []);
 
   const pendingSwapsCount = useMemo(
@@ -999,7 +1003,7 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
   const endDateISO = weekDays[6];
 
   // Load shifts for week
-  const loadShifts = async () => {
+  const loadShifts = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchShiftAssignments(startDateISO, endDateISO);
@@ -1009,11 +1013,13 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [startDateISO, endDateISO]);
 
   useEffect(() => {
-    loadShifts();
-  }, [startDateISO, endDateISO]);
+    void Promise.resolve().then(() => {
+      loadShifts();
+    });
+  }, [loadShifts]);
 
   // Date Navigation handlers
   const handlePrevWeek = () => {

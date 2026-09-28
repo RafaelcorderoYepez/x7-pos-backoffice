@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import { QuickLaunchPanel } from '../../shared/QuickLaunchPanel';
 import { EmergencySupportModal } from '../../modals/QuickActionModals';
-import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, getDensityPadding, type TableDensity } from '../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, type TableDensity } from '../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../shared/tableOptionsHelpers';
 
 interface PurchaseOrder {
   id: number;
@@ -24,7 +25,7 @@ interface Supplier {
   updated_at: string;
   isActive?: boolean;
   purchaseOrders?: PurchaseOrder[];
-  products?: any[];
+  products?: unknown[];
 }
 
 interface SuppliersViewProps {
@@ -37,7 +38,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Filtro de búsqueda por nombre
+  // Search filter by name
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All Status');
 
@@ -69,7 +70,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
   const [formAddress, setFormAddress] = useState<string>('');
   const [formStatus, setFormStatus] = useState<'Active' | 'Inactive'>('Active');
 
-  // Errores de validación del formulario
+  // Form validation errors
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
@@ -77,7 +78,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
 
-  // Estados para modal de confirmación de activación/desactivación
+  // State for activation/deactivation confirmation modal
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
   const [confirmTargetSupplier, setConfirmTargetSupplier] = useState<Supplier | null>(null);
   const [isToggling, setIsToggling] = useState<boolean>(false);
@@ -99,7 +100,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     setTimeout(() => setToast(null), 3000);
   };
 
-  const fetchSuppliers = async () => {
+  const fetchSuppliers = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -115,29 +116,31 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar proveedores del servidor');
+        throw new Error('Error loading suppliers from server');
       }
 
       const json = await res.json();
       setSuppliers(json.data || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching suppliers:', err);
       setError('Failed to load suppliers. Please check if the backend is running.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [API_BASE]);
 
   useEffect(() => {
-    fetchSuppliers();
-  }, [activeCompanyId]);
+    void Promise.resolve().then(() => {
+      fetchSuppliers();
+    });
+  }, [fetchSuppliers, activeCompanyId]);
 
-  // Buscar un proveedor individual por ID para obtener relaciones (como purchaseOrders) y metadatos frescos
+  // Fetch a single supplier by ID to retrieve relations (like purchaseOrders) and fresh metadata
   const fetchSupplierDetail = async (id: number) => {
     try {
       const token = getAccessToken();
@@ -178,7 +181,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     return Object.keys(errors).length === 0;
   };
 
-  // Abrir Modal para Crear
+  // Open Modal to Create
   const handleOpenAdd = () => {
     setDrawerMode('add');
     setFormName('');
@@ -191,9 +194,9 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     setIsFormModalOpen(true);
   };
 
-  // Abrir Modal para Editar
+  // Open Modal to Edit
   const handleOpenEdit = (supplier: Supplier, e: React.MouseEvent) => {
-    e.stopPropagation(); // Evitar abrir el Detail Drawer al hacer clic en editar
+    e.stopPropagation(); // Prevent opening Detail Drawer when clicking edit
     setDrawerMode('edit');
     setSelectedSupplier(supplier);
     setFormName(supplier.name);
@@ -206,7 +209,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     setIsFormModalOpen(true);
   };
 
-  // Activar/Desactivar proveedor rápidamente
+  // Toggle supplier active/inactive quickly
   const handleToggleActive = (supplier: Supplier, e: React.MouseEvent) => {
     e.stopPropagation(); // Evitar abrir el Detail Drawer al hacer clic en activar/desactivar
     setConfirmTargetSupplier(supplier);
@@ -225,7 +228,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       };
 
-      const nextActive = confirmTargetSupplier.isActive === false; // Si era inactivo (false), el siguiente estado es activo (true)
+      const nextActive = confirmTargetSupplier.isActive === false; // If inactive (false), next state is active (true)
 
       const res = await fetch(`${API_BASE}/v1/inventory/suppliers/${confirmTargetSupplier.id}`, {
         method: 'PATCH',
@@ -235,7 +238,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error al cambiar el estado del proveedor');
+        throw new Error(errorJson.message || 'Error updating supplier status');
       }
 
       showToast(`Supplier status updated to ${nextActive ? 'Active' : 'Inactive'}`, 'success');
@@ -247,16 +250,17 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
       );
       setIsConfirmModalOpen(false);
       setConfirmTargetSupplier(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setToggleError(err.message || 'Error al cambiar el estado del proveedor');
-      showToast(err.message || 'Error al cambiar el estado del proveedor', 'error');
+      const msg = err instanceof Error ? err.message : 'Error updating supplier status';
+      setToggleError(msg);
+      showToast(msg, 'error');
     } finally {
       setIsToggling(false);
     }
   };
 
-  // Guardar Formulario (Crear / Editar)
+  // Save Form (Create / Edit)
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -294,7 +298,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error guardando proveedor');
+        throw new Error(errorJson.message || 'Error saving supplier');
       }
 
       showToast(
@@ -304,10 +308,10 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
         'success'
       );
       setIsFormModalOpen(false);
-      fetchSuppliers(); // Re-hidratación silenciosa en segundo plano
-    } catch (err: any) {
+      fetchSuppliers(); // Silent background re-hydration
+    } catch (err: unknown) {
       console.error(err);
-      showToast(err.message || 'Failed to save supplier', 'error');
+      showToast(err instanceof Error ? err.message : 'Failed to save supplier', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -324,7 +328,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
       taxIdLower.includes(queryLower) ||
       emailLower.includes(queryLower);
     
-    // s.isActive puede no venir definido, si no está se asume true
+    // s.isActive might be undefined; defaults to true
     const isSupplierActive = s.isActive !== false;
     
     if (statusFilter === 'Active') {
@@ -400,7 +404,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
         document.body
       )}
 
-      {/* Título de Sección */}
+      {/* Section Title */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div className="flex items-center gap-2.5">
           <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
@@ -415,7 +419,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
         </p>
       </div>
 
-      {/* Barra de búsqueda y Filtros */}
+      {/* Search Bar and Filters */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary">
@@ -701,7 +705,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
                               type="button"
                               onClick={(e) => handleOpenEdit(supplier, e)}
                               className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                              title="Editar proveedor"
+                              title="Edit supplier"
                             >
                               <span className="material-symbols-outlined text-[20px]">edit</span>
                             </button>
@@ -709,7 +713,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
                               type="button"
                               onClick={(e) => void handleToggleActive(supplier, e)}
                               className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                              title={supplier.isActive !== false ? "Desactivar proveedor" : "Activar proveedor"}
+                              title={supplier.isActive !== false ? "Deactivate supplier" : "Activate supplier"}
                             >
                               <span className="material-symbols-outlined text-[20px]">
                                 {supplier.isActive !== false ? 'block' : 'check_circle_outline'}
@@ -1015,7 +1019,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
         onClose={() => setIsSupportOpen(false)}
       />
 
-      {/* Modal de confirmación de activación/desactivación */}
+      {/* Activation/deactivation confirmation modal */}
       {isConfirmModalOpen && confirmTargetSupplier && (
         <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
           {/* Backdrop */}

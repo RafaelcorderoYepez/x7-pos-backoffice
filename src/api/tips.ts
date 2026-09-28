@@ -200,7 +200,7 @@ export async function fetchTips(params: FetchTipsParams): Promise<Tip[]> {
     }
 
     return tips.map(normalizeTip);
-  } catch (err) {
+  } catch {
     return filterMockTips(params);
   }
 }
@@ -223,7 +223,7 @@ export async function fetchPaymentOptionsForOrder(orderId: number): Promise<Paym
     }
     const json = await response.json();
     return Array.isArray(json) ? json : json.data ?? [];
-  } catch (err) {
+  } catch {
     return [
       { id: 8841, reference: '#PAY-8841', method: 'CARD', amount: 45.0 },
       { id: 8842, reference: '#PAY-8842', method: 'CARD', amount: 62.5 },
@@ -258,8 +258,8 @@ export async function updateTip(id: number, payload: Partial<Tip>): Promise<Tip>
     const updated = normalizeTip(json.data || json);
     updateMockTip(id, updated);
     return updated;
-  } catch (err: any) {
-    if (err.message && err.message.includes('Settled tips cannot be edited')) {
+  } catch (err: unknown) {
+    if (err instanceof Error && err.message.includes('Settled tips cannot be edited')) {
       throw err;
     }
     return updateMockTip(id, payload);

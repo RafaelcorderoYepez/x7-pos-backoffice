@@ -264,6 +264,18 @@ body.restaurant-active {
   letter-spacing: -0.02em !important;
 }
 
+/* Forzar que cualquier elemento explícitamente blanco o encabezado con text-white mantenga color blanco */
+.restaurant-active .text-white,
+.restaurant-active .!text-white,
+.restaurant-active :is(h1, h2, h3, h4, h5, h6).text-white,
+.restaurant-active :is(h1, h2, h3, h4, h5, h6).\!text-white,
+.saas-active .text-white,
+.saas-active .!text-white,
+.saas-active :is(h1, h2, h3, h4, h5, h6).text-white,
+.saas-active :is(h1, h2, h3, h4, h5, h6).\!text-white {
+  color: #ffffff !important;
+}
+
 /* Categorias de Producto: Transiciones y botones rápidos */
 .category-row:hover {
   background-color: #f8f3eb;

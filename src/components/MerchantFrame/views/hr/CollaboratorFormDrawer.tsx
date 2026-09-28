@@ -1,8 +1,8 @@
-// Alta y edición de la ficha de un colaborador.
+// Create and edit collaborator profile.
 //
-// La cuenta de plataforma sólo se elige al dar de alta: el índice único de user_id hace que
-// reasignarla equivalga a cambiar de persona la ficha entera, con su histórico de comandas
-// y cajas detrás. Por eso al editar el selector queda bloqueado.
+// User account linked only on creation: once linked, avoid accidental
+// reassignment altering identity while retaining orders/cash drawers history.
+// Selector is locked in edit mode.
 
 import React, { useMemo, useState } from 'react';
 import type {
@@ -42,7 +42,7 @@ interface CollaboratorFormDrawerProps {
   mode: 'create' | 'edit';
   initial?: Collaborator;
   users: MerchantUser[];
-  // Motivo por el que no hay cuentas, si la carga falló. Vacío = la carga fue bien.
+  // Reason why accounts list is empty, if fetch failed. Empty = successful.
   usersError?: string;
   collaborators: Collaborator[];
   shifts: ShiftRef[];
@@ -73,15 +73,14 @@ export const CollaboratorFormDrawer: React.FC<CollaboratorFormDrawerProps> = ({
   const [shiftId, setShiftId] = useState<string>(
     initial?.shift_id != null ? String(initial.shift_id) : '',
   );
-  // El nombre por defecto sólo se propone mientras el usuario no lo haya tocado: una vez
-  // escrito un nombre de sala, cambiar de cuenta no debe pisárselo.
+  // Default name proposed only if untouched by user: once edited,
+  // switching accounts must not overwrite custom name.
   const [nameTouched, setNameTouched] = useState(mode === 'edit');
   const [userQuery, setUserQuery] = useState('');
 
   useModalDismiss(onCancel);
 
-  // Sólo cuentas sin ficha. Al editar se conserva la propia, o el select se quedaría sin la
-  // opción que ya tiene seleccionada.
+  // Only unassigned accounts. In edit mode retain current account to avoid empty select.
   const selectableUsers = useMemo(
     () => availableUsersFor(users, collaborators, initial?.id),
     [users, collaborators, initial],
@@ -194,7 +193,7 @@ export const CollaboratorFormDrawer: React.FC<CollaboratorFormDrawerProps> = ({
             </>
           ) : (
             <>
-              {/* Reasignar la cuenta cambiaría de persona una ficha con histórico detrás. */}
+              {/* Reassigning account would change identity of collaborator profile with historical audit trail. */}
               <input
                 id="clb-user"
                 type="text"
@@ -232,7 +231,7 @@ export const CollaboratorFormDrawer: React.FC<CollaboratorFormDrawerProps> = ({
             }}
             aria-invalid={Boolean(nameError)}
             className={inputClass}
-            placeholder="e.g., Juan (sala)"
+            placeholder="e.g., John (dining)"
           />
           <p className="text-[11px] text-[#5f5e5e]">
             Defaults to the account username, but the store can call them whatever the floor

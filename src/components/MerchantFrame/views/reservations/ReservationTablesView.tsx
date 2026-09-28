@@ -95,7 +95,9 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
   }, [day]);
 
   useEffect(() => {
-    void fetchDay();
+    void Promise.resolve().then(() => {
+      void fetchDay();
+    });
   }, [fetchDay]);
 
   // Inventario y CRM: fallan por separado y en silencio. Sin inventario no hay tablero, pero

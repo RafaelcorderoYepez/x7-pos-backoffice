@@ -11,22 +11,38 @@ export const TablesOccupancyCard: React.FC<TablesOccupancyCardProps> = ({ refres
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchOccupancy = async () => {
+  const [prevTrigger, setPrevTrigger] = useState(refreshTrigger);
+
+  if (refreshTrigger !== prevTrigger) {
+    setPrevTrigger(refreshTrigger);
     setLoading(true);
     setError(null);
-    try {
-      const data = await restaurantService.getTableOccupancy();
-      setOccupancy(data);
-    } catch (err) {
-      setError('Error');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }
 
   useEffect(() => {
-    fetchOccupancy();
+    let ignore = false;
+    restaurantService.getTableOccupancy()
+      .then(data => {
+        if (!ignore) {
+          setOccupancy(data);
+          setError(null);
+        }
+      })
+      .catch(err => {
+        if (!ignore) {
+          setError('Error');
+          console.error(err);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [refreshTrigger]);
 
   if (loading) {
@@ -46,7 +62,7 @@ export const TablesOccupancyCard: React.FC<TablesOccupancyCardProps> = ({ refres
           <p className="font-label-caps text-label-caps text-red-500 font-bold uppercase">ACTIVE TABLES</p>
           <span className="material-symbols-outlined text-red-500">table_restaurant</span>
         </div>
-        <p className="text-[11px] text-red-600 font-medium">Error al cargar ocupación</p>
+        <p className="text-[11px] text-red-600 font-medium">Error loading occupancy</p>
       </div>
     );
   }

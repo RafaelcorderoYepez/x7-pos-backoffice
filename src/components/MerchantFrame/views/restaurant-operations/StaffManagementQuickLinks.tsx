@@ -26,7 +26,7 @@ export interface StaffShortcutAnchor {
   icon: string;
 }
 
-export const STAFF_SHORTCUT_ANCHORS: StaffShortcutAnchor[] = [
+const STAFF_SHORTCUT_ANCHORS: StaffShortcutAnchor[] = [
   {
     key: 'my-schedule',
     route: '/staff-management/schedule/me',

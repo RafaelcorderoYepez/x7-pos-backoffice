@@ -9,7 +9,7 @@ vi.mock('../../../../lib/auth-storage', () => ({
 }));
 
 // El editor real monta un lienzo a pantalla completa: lo sustituimos por un testigo para
-// poder afirmar que la zona salta al editor sin arrastrar toda su maquinaria.
+// assert that zone jumps to editor without dragging all machinery.
 vi.mock('./FloorPlanEditor', () => ({
   FloorPlanEditor: ({ plan, onClose }: { plan: { name: string }; onClose: () => void }) => (
     <div data-testid="floor-plan-editor-stub">
@@ -55,7 +55,7 @@ const ZONES = [
   },
 ];
 
-// Dos mesas en Main Dining, ninguna en VIP Lounge ni en Terrace.
+// Two tables in Main Dining, none in VIP Lounge or Terrace.
 const TABLES = [
   { id: 100, number: 'T1', floorZone: { id: 10 }, floorPlan: { id: 1 } },
   { id: 101, number: 'T2', floorZone: { id: 10 }, floorPlan: { id: 1 } },
@@ -79,7 +79,7 @@ function defaultFetch(zones: unknown[] = ZONES, tables: unknown[] = TABLES) {
   });
 }
 
-/** Abre el drawer de creación desde la barra de herramientas. */
+/** Opens creation drawer from toolbar. */
 async function openCreate(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Create Floor Zone' }));
   return screen.findByRole('dialog', { name: /create floor zone/i });
@@ -96,8 +96,8 @@ describe('FloorZonesView', () => {
     vi.clearAllMocks();
   });
 
-  describe('hidratación y parrilla', () => {
-    it('muestra el estado vacío literal cuando no hay zonas', async () => {
+  describe('hydration and grid', () => {
+    it('displays literal empty state when there are no zones', async () => {
       vi.stubGlobal('fetch', defaultFetch([]));
       render(<FloorZonesView merchantId={3} />);
 
@@ -107,7 +107,7 @@ describe('FloorZonesView', () => {
       );
     });
 
-    it('renderiza id, nombre, plano padre y contador de mesas', async () => {
+    it('renders id, name, parent plan, and table count', async () => {
       render(<FloorZonesView merchantId={3} />);
 
       await screen.findByText('Main Dining');
@@ -115,11 +115,11 @@ describe('FloorZonesView', () => {
       expect(grid.getByText('#10')).toBeInTheDocument();
       expect(grid.getAllByRole('button', { name: /main floor plan/i }).length).toBeGreaterThan(0);
       expect(grid.getByText('2 Tables')).toBeInTheDocument();
-      // VIP Lounge y Terrace no tienen mesas.
+      // VIP Lounge and Terrace have no tables.
       expect(grid.getAllByText('0 Tables')).toHaveLength(2);
     });
 
-    it('pinta el swatch con el color almacenado', async () => {
+    it('renders swatch with stored color', async () => {
       render(<FloorZonesView merchantId={3} />);
 
       await screen.findByText('Main Dining');
@@ -128,7 +128,7 @@ describe('FloorZonesView', () => {
       expect(screen.getByText('#2563EB')).toBeInTheDocument();
     });
 
-    it('cae a un color por defecto cuando el almacenado no es representable', async () => {
+    it('falls back to default color when stored color is invalid', async () => {
       vi.stubGlobal(
         'fetch',
         defaultFetch([{ ...ZONES[0], color: 'javascript:alert(1)' }]),
@@ -139,16 +139,16 @@ describe('FloorZonesView', () => {
       expect(screen.getByTestId('zone-swatch-10')).toHaveStyle({ backgroundColor: '#ae001a' });
     });
 
-    it('normaliza los estados legacy del backend a la tríada de la UI', async () => {
+    it('normalizes backend legacy states to UI triad', async () => {
       render(<FloorZonesView merchantId={3} />);
 
       await screen.findByText('VIP Lounge');
-      // Acotado a la parrilla: el selector de estado repite las mismas etiquetas.
+      // Scoped to grid: status dropdown uses the same labels.
       // 'inactive' del backend se muestra como Draft.
       expect(within(screen.getByRole('table')).getByText('Draft')).toBeInTheDocument();
     });
 
-    it('aísla las zonas de otros comercios', async () => {
+    it('isolates zones from other merchants', async () => {
       vi.stubGlobal(
         'fetch',
         defaultFetch([...ZONES, { ...ZONES[0], id: 99, name: 'Ajena', merchant: { id: 77 } }]),
@@ -160,8 +160,8 @@ describe('FloorZonesView', () => {
     });
   });
 
-  describe('búsqueda y filtros', () => {
-    it('busca por nombre de zona', async () => {
+  describe('search and filters', () => {
+    it('searches by zone name', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -172,7 +172,7 @@ describe('FloorZonesView', () => {
       expect(screen.queryByText('Main Dining')).not.toBeInTheDocument();
     });
 
-    it('busca por nombre del plano padre', async () => {
+    it('searches by parent floor plan name', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -183,7 +183,7 @@ describe('FloorZonesView', () => {
       expect(screen.queryByText('Main Dining')).not.toBeInTheDocument();
     });
 
-    it('filtra por plano padre', async () => {
+    it('filters by parent floor plan', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -194,7 +194,7 @@ describe('FloorZonesView', () => {
       expect(screen.queryByText('Main Dining')).not.toBeInTheDocument();
     });
 
-    it('filtra por estado', async () => {
+    it('filters by status', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -205,7 +205,7 @@ describe('FloorZonesView', () => {
       expect(screen.queryByText('Main Dining')).not.toBeInTheDocument();
     });
 
-    it('ofrece limpiar filtros desde la parrilla vacía', async () => {
+    it('offers to clear filters from empty grid', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -220,8 +220,8 @@ describe('FloorZonesView', () => {
     });
   });
 
-  describe('creación y validación', () => {
-    it('mantiene el envío bloqueado sin nombre y sin plano', async () => {
+  describe('creation and validation', () => {
+    it('keeps submission disabled without name and without floor plan', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -231,13 +231,13 @@ describe('FloorZonesView', () => {
       expect(submit).toBeDisabled();
 
       await user.type(within(dialog).getByLabelText(/zone name/i), 'Bar Area');
-      expect(submit).toBeDisabled(); // aún falta el plano
+      expect(submit).toBeDisabled(); // floor plan still missing
 
       await user.selectOptions(within(dialog).getByLabelText(/parent floor plan/i), '1');
       await waitFor(() => expect(submit).toBeEnabled());
     });
 
-    it('bloquea un nombre duplicado en el mismo plano con el mensaje literal', async () => {
+    it('blocks duplicate name in same floor plan with literal message', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -254,7 +254,7 @@ describe('FloorZonesView', () => {
       expect(within(dialog).getByRole('button', { name: 'Create Floor Zone' })).toBeDisabled();
     });
 
-    it('permite el mismo nombre en un plano distinto', async () => {
+    it('permits same name in a different floor plan', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -268,7 +268,7 @@ describe('FloorZonesView', () => {
       );
     });
 
-    it('avisa cuando el color ya lo usa otra zona del mismo plano', async () => {
+    it('warns when color is already used by another zone in same plan', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -284,7 +284,7 @@ describe('FloorZonesView', () => {
       ).toBeInTheDocument();
     });
 
-    it('publica la zona con el comercio de la sesión', async () => {
+    it('publishes zone with session merchant', async () => {
       const user = userEvent.setup();
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
@@ -317,12 +317,12 @@ describe('FloorZonesView', () => {
       expect(await screen.findByText(/floor zone created successfully/i)).toBeInTheDocument();
     });
 
-    it('muestra el rechazo del backend inline sin cerrar el drawer', async () => {
+    it('displays backend rejection inline without closing drawer', async () => {
       const user = userEvent.setup();
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/floor-zone') && opts?.method === 'POST') {
-          return jsonRes({ message: 'Backend rechazó la zona' }, 400);
+          return jsonRes({ message: 'Backend rejected the zone' }, 400);
         }
         if (u.includes('/floor-zone')) return jsonRes({ data: ZONES });
         if (u.includes('/floor-plan')) return jsonRes({ data: PLANS });
@@ -338,12 +338,12 @@ describe('FloorZonesView', () => {
       await user.selectOptions(within(dialog).getByLabelText(/parent floor plan/i), '1');
       await user.click(within(dialog).getByRole('button', { name: 'Create Floor Zone' }));
 
-      expect(await screen.findByText('Backend rechazó la zona')).toBeInTheDocument();
+      expect(await screen.findByText('Backend rejected the zone')).toBeInTheDocument();
       expect(screen.getByRole('dialog', { name: /create floor zone/i })).toBeInTheDocument();
     });
   });
 
-  describe('edición y guard de mesas asignadas', () => {
+  describe('editing and assigned tables guard', () => {
     it('edita con PATCH y sin reasignar el comercio', async () => {
       const user = userEvent.setup();
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
@@ -377,7 +377,7 @@ describe('FloorZonesView', () => {
       });
     });
 
-    it('impide archivar una zona con mesas asignadas', async () => {
+    it('prevents archiving a zone with assigned tables', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -395,7 +395,7 @@ describe('FloorZonesView', () => {
       expect(within(dialog).getByRole('button', { name: /save floor zone/i })).toBeDisabled();
     });
 
-    it('impide borrar una zona con mesas y no abre el diálogo', async () => {
+    it('prevents deleting a zone with tables and does not open dialog', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -410,7 +410,7 @@ describe('FloorZonesView', () => {
       expect(screen.queryByRole('dialog', { name: /delete floor zone/i })).not.toBeInTheDocument();
     });
 
-    it('borra una zona sin mesas', async () => {
+    it('deletes a zone with no tables', async () => {
       const user = userEvent.setup();
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
@@ -440,7 +440,7 @@ describe('FloorZonesView', () => {
       await waitFor(() => expect(screen.queryByText('Terrace')).not.toBeInTheDocument());
     });
 
-    it('bloquea el borrado cuando el censo de mesas no está disponible', async () => {
+    it('blocks deletion when table census is not available', async () => {
       const user = userEvent.setup();
       vi.stubGlobal(
         'fetch',
@@ -463,7 +463,7 @@ describe('FloorZonesView', () => {
   });
 
   describe('eje del editor en vivo y hub', () => {
-    it('abre el editor del plano padre desde la zona', async () => {
+    it('opens parent floor plan editor from zone', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -474,7 +474,7 @@ describe('FloorZonesView', () => {
       expect(within(stub).getByText('Main Floor Plan')).toBeInTheDocument();
     });
 
-    it('abre el editor también desde la píldora del plano', async () => {
+    it('opens editor also from floor plan pill', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
 
@@ -499,7 +499,7 @@ describe('FloorZonesView', () => {
       expect(hub.getByRole('button', { name: 'FLOOR PLANS' })).toBeInTheDocument();
     });
 
-    it('navega a otro workspace desde el hub', async () => {
+    it('navigates to another workspace from hub', async () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
       render(<FloorZonesView merchantId={3} onNavigate={onNavigate} />);

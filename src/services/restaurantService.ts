@@ -80,7 +80,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const checkAuth = () => {
   if (simulate401 || !isUserAuthenticated) {
-    const err: any = new Error('Unauthorized');
+    const err = new Error('Unauthorized') as Error & { status?: number };
     err.status = 401;
     throw err;
   }
@@ -251,7 +251,7 @@ const originalFetch = window.fetch;
 window.fetch = async function (input, _init) {
   let url = '';
   try {
-    url = typeof input === 'string' ? input : (input ? (input as any).url || (input as any).href || '' : '');
+    url = typeof input === 'string' ? input : (input instanceof Request ? input.url : (input instanceof URL ? input.href : ''));
   } catch (e) {
     console.error('Error parsing fetch input url:', e);
   }

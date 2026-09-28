@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
-import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-export type KitchenItemPrepStatus = 'pending' | 'in_preparation' | 'ready';
+export type KitchenItemPrepStatus = 'held' | 'pending' | 'in_preparation' | 'ready';
 
 export interface KitchenOrderItemDetail {
   id: number;
@@ -18,6 +19,9 @@ export interface KitchenOrderItemDetail {
   quantity: number;
   preparedQuantity: number;
   preparationStatus: KitchenItemPrepStatus;
+  course?: 'appetizer' | 'main_course' | 'dessert' | 'beverage';
+  holdUntil?: string | null;
+  firedAt?: string | null;
   status: 'active' | 'deleted';
   startedAt?: string | null;
   completedAt?: string | null;
@@ -59,7 +63,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   const [error, setError] = useState<string | null>(null);
 
   // Filters
-  const [activeTab, setActiveTab] = useState<'ALL' | 'PENDING' | 'IN_PREPARATION' | 'READY'>('ALL');
+  const [activeTab, setActiveTab] = useState<'ALL' | 'HELD' | 'PENDING' | 'IN_PREPARATION' | 'READY'>('ALL');
   const [selectedStationId, setSelectedStationId] = useState<number | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [refreshInterval, setRefreshInterval] = useState<number>(10); // 10s default
@@ -89,17 +93,26 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   } | null>(null);
 
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastIdRef = useRef(0);
+
+  // Real-time clock for elapsed second counters
+  const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const showToast = (text: string, type: 'success' | 'info' | 'warning' | 'auto_bump' = 'success') => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    setToastMessage({ text, type, id: Date.now() });
+    toastIdRef.current += 1;
+    setToastMessage({ text, type, id: toastIdRef.current });
     toastTimeoutRef.current = setTimeout(() => {
       setToastMessage(null);
     }, 4500);
   };
 
   // 1. Fetch stations
-  const fetchStations = async () => {
+  const fetchStations = useCallback(async () => {
     try {
       const token = getAccessToken();
       const res = await fetch(`${API_BASE}/kitchen-station?status=active&limit=100`, {
@@ -112,7 +125,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       const data = await res.json();
       const rawList = data.data || data || [];
       setStations(
-        rawList.map((s: any) => ({
+        rawList.map((s: { id: number; name: string; stationType?: string; station_type?: string }) => ({
           id: s.id,
           name: s.name,
           stationType: s.stationType || s.station_type,
@@ -121,10 +134,10 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     } catch {
       // ignore station fetch error
     }
-  };
+  }, []);
 
   // 2. Fetch all kitchen order items
-  const loadItems = async (isBackground = false) => {
+  const loadItems = useCallback(async (isBackground = false) => {
     if (!isBackground) setLoading(true);
     setError(null);
     try {
@@ -150,19 +163,22 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       const resData = await res.json();
       const rawItems: KitchenOrderItemDetail[] = resData.data || [];
       setItems(rawItems);
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (!isBackground) {
-        setError(err.message || 'Error loading kitchen items');
+        const msg = err instanceof Error ? err.message : 'Error loading kitchen items';
+        setError(msg);
       }
     } finally {
       if (!isBackground) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchStations();
-    loadItems();
-  }, []);
+    void Promise.resolve().then(() => {
+      fetchStations();
+      loadItems(false);
+    });
+  }, [fetchStations, loadItems]);
 
   // Polling interval
   useEffect(() => {
@@ -171,7 +187,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       loadItems(true);
     }, refreshInterval * 1000);
     return () => clearInterval(interval);
-  }, [refreshInterval]);
+  }, [refreshInterval, loadItems]);
 
   // Handle Tap-to-Increment (+1)
   const handleIncrement = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
@@ -258,8 +274,9 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
           cur === item.quantity ? 'success' : 'info'
         );
       }
-    } catch (err: any) {
-      showToast(err.message || 'Error updating item quantity', 'warning');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error updating item quantity';
+      showToast(msg, 'warning');
     } finally {
       setActionInProgressId(null);
     }
@@ -304,8 +321,9 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       const updatedItem = data.data || data;
       setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem } : it)));
       showToast(`${item.product.name}: Decremented to ${newPrepared}/${item.quantity}`, 'info');
-    } catch (err: any) {
-      showToast(err.message || 'Error decrementing item', 'warning');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error decrementing item';
+      showToast(msg, 'warning');
     } finally {
       setActionInProgressId(null);
     }
@@ -348,8 +366,43 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
       // Check if ticket might be completed
       loadItems(true);
-    } catch (err: any) {
-      showToast(err.message || 'Error marking item ready', 'warning');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error marking item ready';
+      showToast(msg, 'warning');
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  // Handle Fire Item (Held -> Pending)
+  const handleFireItem = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (actionInProgressId === item.id) return;
+
+    setActionInProgressId(item.id);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}/fire`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || 'Failed to fire item');
+      }
+
+      const data = await res.json();
+      const updatedItem = data.data || data;
+      setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem, preparationStatus: 'pending' } : it)));
+      showToast(`🔥 Fired "${item.product?.name || 'Item'}" to active preparation queue!`, 'success');
+      loadItems(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error firing item';
+      showToast(msg, 'warning');
     } finally {
       setActionInProgressId(null);
     }
@@ -396,8 +449,9 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       const updatedItem = data.data || data;
       setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem } : it)));
       showToast(`Reset ${item.product.name} to PENDING (0/${item.quantity})`, 'info');
-    } catch (err: any) {
-      showToast(err.message || 'Error resetting item', 'warning');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error resetting item';
+      showToast(msg, 'warning');
     } finally {
       setActionInProgressId(null);
     }
@@ -429,16 +483,17 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
       showToast(`↺ RECALLED #KO-${kitchenOrderId} back to Active Preparation!`, 'info');
       await loadItems();
-    } catch (err: any) {
-      showToast(err.message || 'Error recalling order', 'warning');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error recalling order';
+      showToast(msg, 'warning');
     }
   };
 
   // 3. Computed Metrics & Filtered Data
   const activeItems = useMemo(() => {
     return items.filter(it => {
-      const orderStatus = (it.kitchenOrder as any)?.businessStatus?.toLowerCase();
-      const logicalOrderStatus = (it.kitchenOrder as any)?.status?.toLowerCase();
+      const orderStatus = (it.kitchenOrder as { businessStatus?: string } | null | undefined)?.businessStatus?.toLowerCase();
+      const logicalOrderStatus = (it.kitchenOrder as { status?: string } | null | undefined)?.status?.toLowerCase();
       return (
         it.status !== 'deleted' &&
         orderStatus !== 'cancelled' &&
@@ -455,17 +510,20 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   // Global counts for badges
   const counts = useMemo(() => {
     const total = stationFilteredItems.length;
+    const held = stationFilteredItems.filter(i => i.preparationStatus === 'held').length;
     const pending = stationFilteredItems.filter(i => i.preparationStatus === 'pending').length;
     const inPrep = stationFilteredItems.filter(i => i.preparationStatus === 'in_preparation').length;
     const ready = stationFilteredItems.filter(i => i.preparationStatus === 'ready').length;
-    return { total, pending, inPrep, ready };
+    return { total, held, pending, inPrep, ready };
   }, [stationFilteredItems]);
 
   // Filter by Tab and Search
   const filteredItems = useMemo(() => {
     let result = stationFilteredItems;
 
-    if (activeTab === 'PENDING') {
+    if (activeTab === 'HELD') {
+      result = result.filter(i => i.preparationStatus === 'held');
+    } else if (activeTab === 'PENDING') {
       result = result.filter(i => i.preparationStatus === 'pending');
     } else if (activeTab === 'IN_PREPARATION') {
       result = result.filter(i => i.preparationStatus === 'in_preparation');
@@ -517,20 +575,40 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         return tierA - tierB;
       }
 
-      // Tier 1: Active orders -> High priority first
+      // Tier 1: Active orders -> Items in preparation / pending first!
       if (tierA === 1) {
+        // 1. PRIORIDAD OPERATIVA DE COCINA:
+        // Lo que se está cocinando / pendiente va primero que lo pausado (HELD) o ya listo
+        const getPrepRank = (status?: string): number => {
+          switch (status) {
+            case 'in_preparation':
+              return 1;
+            case 'pending':
+              return 2;
+            case 'ready':
+              return 3;
+            case 'held':
+              return 4;
+            default:
+              return 5;
+          }
+        };
+
+        const rankA = getPrepRank(a.preparationStatus);
+        const rankB = getPrepRank(b.preparationStatus);
+        if (rankA !== rankB) {
+          return rankA - rankB;
+        }
+
+        // 2. Prioridad de orden si ambos tienen el mismo estado de preparación
         const prioA = a.kitchenOrder?.priority ?? 0;
         const prioB = b.kitchenOrder?.priority ?? 0;
         if (prioB !== prioA) return prioB - prioA;
 
-        // FIFO: Oldest created first, newest last (la más vieja primero, la más nueva el último)
+        // 3. FIFO para el mismo estado de preparación: el más antiguo primero
         const timeA = new Date(a.createdAt).getTime();
         const timeB = new Date(b.createdAt).getTime();
         if (timeA !== timeB) return timeA - timeB;
-
-        // Ready items in active orders placed slightly below pending/in-prep
-        if (a.preparationStatus === 'ready' && b.preparationStatus !== 'ready') return 1;
-        if (b.preparationStatus === 'ready' && a.preparationStatus !== 'ready') return -1;
 
         return a.id - b.id;
       }
@@ -557,7 +635,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   // Format Elapsed Time
   const formatElapsedTime = (dateStr: string): string => {
     const start = new Date(dateStr).getTime();
-    const diffSec = Math.max(0, Math.floor((Date.now() - start) / 1000));
+    const diffSec = Math.max(0, Math.floor((currentTime - start) / 1000));
     const mins = Math.floor(diffSec / 60);
     const secs = diffSec % 60;
     if (mins >= 60) {
@@ -604,7 +682,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         </div>
       )}
 
-      {/* 1. Header Card Workspace (Solo para el título) */}
+      {/* 1. Header Card Workspace (Title only) */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div>
           <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
@@ -616,7 +694,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         </div>
       </div>
 
-      {/* 1.5 Real-Time Summary KPI Banner (4 Cuadrados idénticos a Kitchen Stations en una fila horizontal) */}
+      {/* 1.5 Real-Time Summary KPI Banner (4 identical cards to Kitchen Stations in horizontal row) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Line Items */}
         <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
@@ -702,9 +780,9 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         </div>
       </div>
 
-      {/* 2. Toolbar Multicriterio idéntico a Kitchen Orders */}
+      {/* 2. Multi-criteria Toolbar identical to Kitchen Orders */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda a la izquierda y View Switcher + Auto-Refresh a la derecha */}
+        {/* Row 1: Search on left and View Switcher + Auto-Refresh on right */}
         <div className="flex flex-row items-center justify-between gap-3 w-full">
           <div className="relative flex-1 min-w-0">
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e] font-sans">
@@ -737,7 +815,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
           {/* View Switcher Toggle & Auto-Refresh al lado derecho */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* View Switcher Toggle (Mismo diseño y color que Kitchen Orders / Devices) */}
+            {/* View Switcher Toggle (Same design and color as Kitchen Orders / Devices) */}
             <div className="flex items-center bg-[#f2ede5] p-1 rounded border border-[#e8e2d8] shrink-0">
               <button
                 type="button"
@@ -786,7 +864,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
           </div>
         </div>
 
-        {/* Fila 2: Status Tabs (Segmented Pill Buttons al medio, entre Búsqueda y Filtros, sin línea divisoria) */}
+        {/* Row 2: Status Tabs (Segmented Pill Buttons in middle, between Search and Filters, without divider line) */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
             <button
@@ -808,6 +886,29 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                 }`}
               >
                 {counts.total}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('HELD');
+                setCurrentPage(1);
+              }}
+              className={`px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wide transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                activeTab === 'HELD'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-[#5f5e5e] hover:text-[#1d1c17] hover:bg-[#f2ede5]'
+              }`}
+            >
+              <span className="material-symbols-outlined text-xs">lock_clock</span>
+              <span>Held Courses</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                  activeTab === 'HELD' ? 'bg-white text-amber-700' : 'bg-[#e8e2d8] text-[#5f5e5e]'
+                }`}
+              >
+                {counts.held}
               </span>
             </button>
 
@@ -880,7 +981,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
           </div>
         </div>
 
-        {/* Fila 3: Filtro de Estación con diseño idéntico a Kitchen Orders */}
+        {/* Row 3: Station Filter with identical design to Kitchen Orders */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <select
@@ -946,12 +1047,13 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredItems.map(item => {
+            const isHeld = item.preparationStatus === 'held';
             const isReady = item.preparationStatus === 'ready';
             const isInPrep = item.preparationStatus === 'in_preparation';
             const isOrderClosed =
               item.kitchenOrder?.businessStatus === 'completed' ||
               item.kitchenOrder?.businessStatus === 'cancelled';
-            const canTapCard = !isOrderClosed && !isReady;
+            const canTapCard = !isOrderClosed && !isReady && !isHeld;
 
             const progressPercent = item.quantity > 0
               ? Math.min(100, Math.round((item.preparedQuantity / item.quantity) * 100))
@@ -968,6 +1070,8 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                     ? 'bg-zinc-50/80 border-zinc-200 opacity-85 cursor-default'
                     : isReady
                     ? 'bg-emerald-50/40 border-emerald-300 hover:border-emerald-400 cursor-default'
+                    : isHeld
+                    ? 'bg-amber-50/40 border-dashed border-amber-400 hover:border-amber-500'
                     : isInPrep
                     ? 'bg-blue-50/40 border-blue-300 hover:border-blue-400 cursor-pointer'
                     : 'bg-white border-[#e8e2d8] hover:border-[#ae001a]/50 hover:shadow-sm cursor-pointer'
@@ -1005,6 +1109,13 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                         }`}
                       >
                         P+{(item.kitchenOrder?.priority ?? 0)}
+                      </span>
+                    )}
+
+                    {/* Course badge */}
+                    {item.course && (
+                      <span className="text-[10px] uppercase font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                        {item.course.replace('_', ' ')}
                       </span>
                     )}
 
@@ -1112,6 +1223,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                         <span className="material-symbols-outlined text-xs">check_circle</span>
                         READY
                       </span>
+                    ) : isHeld ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-400 uppercase tracking-wider animate-pulse">
+                        <span className="material-symbols-outlined text-xs">lock_clock</span>
+                        HELD
+                      </span>
                     ) : isInPrep ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-black bg-blue-100 text-blue-800 border border-blue-300 uppercase tracking-wider">
                         <span className="material-symbols-outlined text-xs animate-spin">progress_activity</span>
@@ -1146,6 +1262,18 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                         <span className="material-symbols-outlined text-xs">lock</span>
                         <span>{item.kitchenOrder?.businessStatus === 'cancelled' ? 'Cancelled' : 'Order Closed'}</span>
                       </div>
+                    </div>
+                  ) : isHeld ? (
+                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={e => handleFireItem(item, e)}
+                        disabled={isActionLoading}
+                        title="Fire item immediately to line cooks"
+                        className="px-3 h-7 rounded text-xs font-black uppercase tracking-wider flex items-center gap-1 shadow-xs transition-all cursor-pointer bg-amber-600 hover:bg-amber-700 text-white"
+                      >
+                        <span className="material-symbols-outlined text-xs font-black">local_fire_department</span>
+                        <span>Fire Item</span>
+                      </button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -1330,6 +1458,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                       />
                     ) : (
                       paginatedItems.map(item => {
+                    const isHeld = item.preparationStatus === 'held';
                     const isReady = item.preparationStatus === 'ready';
                     const isInPrep = item.preparationStatus === 'in_preparation';
                     const isOrderClosed =
@@ -1344,6 +1473,8 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                             ? 'bg-zinc-50/60 opacity-85'
                             : isReady
                             ? 'bg-emerald-50/30'
+                            : isHeld
+                            ? 'bg-amber-50/30'
                             : isInPrep
                             ? 'bg-blue-50/30'
                             : ''
@@ -1358,6 +1489,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                               {item.variant?.name && (
                                 <span className="text-[#5f5e5e] text-xs font-normal ml-1">
                                   ({item.variant.name})
+                                </span>
+                              )}
+                              {item.course && (
+                                <span className="ml-2 text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 inline-block">
+                                  {item.course.replace('_', ' ')}
                                 </span>
                               )}
                             </div>
@@ -1440,6 +1576,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                                 <span className="material-symbols-outlined text-xs">check</span>
                                 READY
                               </span>
+                            ) : isHeld ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-400 uppercase">
+                                <span className="material-symbols-outlined text-xs">lock_clock</span>
+                                HELD
+                              </span>
                             ) : isInPrep ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-300 uppercase">
                                 IN PREP
@@ -1482,6 +1623,18 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                                   <span className="material-symbols-outlined text-xs">lock</span>
                                   {item.kitchenOrder?.businessStatus === 'cancelled' ? 'Cancelled' : 'Closed'}
                                 </span>
+                              </div>
+                            ) : isHeld ? (
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  onClick={e => handleFireItem(item, e)}
+                                  disabled={actionInProgressId === item.id}
+                                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold inline-flex items-center gap-1 shadow-xs cursor-pointer"
+                                  title="Fire item to Active Queue"
+                                >
+                                  <span className="material-symbols-outlined text-xs">local_fire_department</span>
+                                  <span>Fire</span>
+                                </button>
                               </div>
                             ) : (
                               <div className="inline-flex items-center gap-1.5">
@@ -1590,6 +1743,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
             label: 'ORDER ITEMS',
             icon: 'lunch_dining',
             active: true,
+            onClick: () => onNavigate?.('kitchen-order-items'),
           },
           {
             id: 'kitchen-event-log',

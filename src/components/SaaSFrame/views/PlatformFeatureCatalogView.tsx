@@ -1,6 +1,7 @@
 //src/components/SaaSDashboard/PlatformFeatureCatalogView.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { StatusToggleButton, ConfirmStatusToggleDialog, normalizeStatus } from '../../shared/StatusToggle';
+import { StatusToggleButton, ConfirmStatusToggleDialog } from '../../shared/StatusToggle';
+import { normalizeStatus } from '../../shared/statusToggleHelpers';
 import { saasService } from '../../../services/saasService';
 import type { PlatformFeature } from '../../../types/subscription';
 

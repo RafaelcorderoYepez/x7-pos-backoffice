@@ -231,7 +231,9 @@ export const CompanyRegistryView: React.FC<CompanyRegistryViewProps> = ({
   };
 
   useEffect(() => {
-    loadCompanies();
+    void Promise.resolve().then(() => {
+      loadCompanies();
+    });
   }, []);
 
   useEffect(() => {

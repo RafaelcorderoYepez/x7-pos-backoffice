@@ -53,7 +53,9 @@ export const CompanyConfigurationsView: React.FC = () => {
   };
 
   useEffect(() => {
-    void loadConfigurations();
+    void Promise.resolve().then(() => {
+      void loadConfigurations();
+    });
   }, []);
 
   return (

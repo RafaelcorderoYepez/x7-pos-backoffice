@@ -30,7 +30,7 @@ export const HeaderQuickTabs: React.FC<HeaderQuickTabsProps> = ({
     <div
       className={`bg-[#222222] px-4 py-3 text-white flex flex-row items-center justify-between gap-4 rounded-t shadow-sm ${className}`}
     >
-      {/* Sección Izquierda: Título y Contador Badge */}
+      {/* Left Section: Title and Badge Counter */}
       <div className="flex items-center gap-3 min-w-0">
         {title && (
           <span className="text-label-caps font-bold text-white uppercase tracking-wider font-sans text-xs sm:text-sm truncate">
@@ -44,7 +44,7 @@ export const HeaderQuickTabs: React.FC<HeaderQuickTabsProps> = ({
         )}
       </div>
 
-      {/* Sección Derecha: Pestañas de Navegación Rápida y/o Menú de Opciones */}
+      {/* Right Section: Quick Navigation Tabs and/or Options Menu */}
       <div className="flex items-center gap-3 shrink-0">
         {hasTabs && (
           <div className="flex items-center gap-1.5 overflow-x-auto">
@@ -77,7 +77,7 @@ export const HeaderQuickTabs: React.FC<HeaderQuickTabsProps> = ({
           </div>
         )}
 
-        {/* Elemento Opcional a la Derecha (ej: Menú de tres puntos TableOptionsMenu) */}
+        {/* Optional Right Element (e.g., TableOptionsMenu 3-dot menu) */}
         {rightElement && (
           <div className="flex items-center shrink-0">
             {rightElement}

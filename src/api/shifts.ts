@@ -7,8 +7,6 @@ import type {
   ShiftSwapRequest,
   ShiftSwapStatus,
   OpenShift,
-  OpenShiftAllocationMode,
-  OpenShiftPickupStatus,
   OpenShiftPickupRequest,
   CreateOpenShiftDto,
   OpenShiftFilterParams,
@@ -623,7 +621,7 @@ export const INITIAL_OPEN_SHIFTS: OpenShift[] = [
 
 
 let localShiftsStore: ShiftAssignment[] = [...INITIAL_SHIFTS];
-let localSwapStore: ShiftSwapRequest[] = [...INITIAL_SWAP_REQUESTS];
+const localSwapStore: ShiftSwapRequest[] = [...INITIAL_SWAP_REQUESTS];
 let localOpenShiftsStore: OpenShift[] = [...INITIAL_OPEN_SHIFTS];
 
 export async function fetchOpenShifts(

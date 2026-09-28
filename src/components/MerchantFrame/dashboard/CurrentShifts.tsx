@@ -11,22 +11,36 @@ export const CurrentShifts: React.FC<CurrentShiftsProps> = ({ refreshTrigger }) 
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchShifts = async () => {
+  const [prevTrigger, setPrevTrigger] = useState(refreshTrigger);
+  if (refreshTrigger !== prevTrigger) {
+    setPrevTrigger(refreshTrigger);
     setLoading(true);
-    setError(null);
-    try {
-      const data = await restaurantService.getActiveShifts();
-      setShifts(data);
-    } catch (err) {
-      setError('Error al obtener turnos');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }
 
   useEffect(() => {
-    fetchShifts();
+    let ignore = false;
+    restaurantService.getActiveShifts()
+      .then((data) => {
+        if (!ignore) {
+          setShifts(data);
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          setError('Error fetching shifts');
+          console.error(err);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [refreshTrigger]);
 
   if (loading) {
@@ -66,7 +80,7 @@ export const CurrentShifts: React.FC<CurrentShiftsProps> = ({ refreshTrigger }) 
             onClick={fetchShifts}
             className="px-3 py-1.5 bg-[#d51f2c] text-white font-bold text-[10px] uppercase hover:opacity-90 transition-all"
           >
-            Reintentar
+            Retry
           </button>
         </div>
       </div>

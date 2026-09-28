@@ -7,13 +7,13 @@ import type {
   LedgerAccount,
   UpdateLedgerAccountDto,
 } from '../../../../types/accounting';
+import { LedgerAccountTree } from './LedgerAccountTree';
 import {
   TYPE_BADGE_CLASSES,
   resolveParentLabel,
   buildTree,
   getDescendantIds,
-  LedgerAccountTree,
-} from './LedgerAccountTree';
+} from './ledgerAccountTreeHelpers';
 import { StatusToggleButton, ConfirmStatusToggleDialog } from '../../../shared/StatusToggle';
 import { LedgerQuickLinks } from './LedgerQuickLinks';
 
@@ -382,16 +382,18 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
       const json = await res.json();
       const loaded = json.data ?? [];
       setAccounts(loaded);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching ledger accounts:', err);
-      setError(err?.message || 'Failed to load ledger accounts');
+      setError(err instanceof Error ? err.message : 'Failed to load ledger accounts');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLedgerAccounts();
+    void Promise.resolve().then(() => {
+      fetchLedgerAccounts();
+    });
   }, []);
 
   const handleCreateSubmit = async (dto: CreateLedgerAccountDto) => {
@@ -409,7 +411,7 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -421,9 +423,9 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
       setAccounts((prev) => [...prev, json.data]);
       setFormModalOpen(null);
       setToast({ message: 'Ledger account created successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormModalOpen(null);
-      setToast({ message: err.message || 'Failed to create ledger account', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to create ledger account', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
@@ -444,7 +446,7 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -456,9 +458,9 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
       setAccounts((prev) => prev.map((a) => (a.id === json.data.id ? json.data : a)));
       setFormModalOpen(null);
       setToast({ message: 'Ledger account updated successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormModalOpen(null);
-      setToast({ message: err.message || 'Failed to update ledger account', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to update ledger account', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
@@ -481,7 +483,7 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -498,9 +500,9 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
           : 'Ledger account reactivated successfully',
         type: 'success',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setTogglingAccount(null);
-      setToast({ message: err.message || 'Failed to update ledger account status', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to update ledger account status', type: 'error' });
     } finally {
       setToggleSubmitting(false);
     }
@@ -561,7 +563,7 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
   return (
     <div className="flex flex-col gap-6 animate-fade-in text-left">
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda al 100% de ancho */}
+        {/* Row 1: Full-width search */}
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e]">
             search

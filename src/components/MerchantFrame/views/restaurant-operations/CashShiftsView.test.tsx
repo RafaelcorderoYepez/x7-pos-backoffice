@@ -1,7 +1,8 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CashShiftsView, formatDateTime } from './CashShiftsView';
+import { CashShiftsView } from './CashShiftsView';
+import { formatDateTime } from './cashShiftsHelpers';
 import type { CashShift } from '../../../../types/cash-shift';
 import type { CashDrawer } from '../../../../types/cash-drawer';
 
@@ -98,7 +99,7 @@ describe('CashShiftsView — data fetch', () => {
         }),
       );
     });
-    const calledUrl = (fetch as any).mock.calls[0][0] as string;
+    const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
     expect(calledUrl.endsWith('/cash-shifts')).toBe(true);
   });
 

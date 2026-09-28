@@ -85,7 +85,7 @@ const TEST_TIP_POOL_MEMBERS: TipPoolMember[] = [
     collaborator: {
       id: 102,
       first_name: 'Sofia',
-      last_name: 'Rodríguez',
+      last_name: 'Rodriguez',
       role: 'BARTENDER',
     },
     tip_pool: {
@@ -105,7 +105,7 @@ const TEST_TIP_POOL_MEMBERS: TipPoolMember[] = [
     collaborator: {
       id: 106,
       first_name: 'Gabriel',
-      last_name: 'Fernández',
+      last_name: 'Fernandez',
       role: 'HOST',
     },
     tip_pool: {
@@ -152,7 +152,7 @@ describe('Tip Pool Members Directory Workspace', () => {
       await waitFor(() => {
         expect(screen.getByText('Mateo Silva')).toBeInTheDocument();
         expect(screen.getByText('Carlos Mendoza')).toBeInTheDocument();
-        expect(screen.getByText('Sofia Rodríguez')).toBeInTheDocument();
+        expect(screen.getByText('Sofia Rodriguez')).toBeInTheDocument();
         expect(screen.getAllByText('Dinner Front of House Equal Pool').length).toBeGreaterThan(0);
         expect(screen.getByText('Bar & Lounge Points Distribution')).toBeInTheDocument();
       });

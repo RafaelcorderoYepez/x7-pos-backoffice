@@ -50,7 +50,9 @@ export const LaborCostForecastingView: React.FC<LaborCostForecastingViewProps> =
   };
 
   useEffect(() => {
-    loadForecastData();
+    void Promise.resolve().then(() => {
+      loadForecastData();
+    });
   }, []);
 
   const handleSaveBudgetTargets = async (e: React.FormEvent) => {

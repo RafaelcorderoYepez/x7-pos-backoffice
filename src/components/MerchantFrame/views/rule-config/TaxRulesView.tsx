@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type { MerchantTaxRule, TaxType, CreateTaxRuleDto, UpdateTaxRuleDto } from '../../../../types/configuration';
@@ -378,8 +378,8 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const fetchTaxRules = async () => {
-    setLoading(true);
+  const fetchTaxRules = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const token = getAccessToken();
@@ -392,7 +392,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -404,17 +404,19 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
       const json = await res.json();
       const loaded = json.data ?? [];
       setRules(loaded);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching tax rules:', err);
-      setError(err?.message || 'Failed to load tax rules');
+      setError(err instanceof Error ? err.message : 'Failed to load tax rules');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchTaxRules();
-  }, []);
+    void Promise.resolve().then(() => {
+      fetchTaxRules(true);
+    });
+  }, [fetchTaxRules]);
 
   const handleCreateSubmit = async (dto: CreateTaxRuleDto) => {
     setFormSubmitting(true);
@@ -431,7 +433,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -446,9 +448,9 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
       setRules((prev) => [json.data, ...prev]);
 
       setToast({ message: 'Tax rule created successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormModalOpen(null);
-      setToast({ message: err.message || 'Failed to create tax rule', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to create tax rule', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
@@ -469,7 +471,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -484,9 +486,9 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
 
       setToast({ message: 'Tax rule updated successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormModalOpen(null);
-      setToast({ message: err.message || 'Failed to update tax rule', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to update tax rule', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
@@ -509,7 +511,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -531,9 +533,9 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
         message: nextStatus === 'inactive' ? 'Tax rule deactivated successfully' : 'Tax rule reactivated successfully',
         type: 'success',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setTogglingRule(null);
-      setToast({ message: err.message || 'Failed to update tax rule status', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to update tax rule status', type: 'error' });
     } finally {
       setToggleSubmitting(false);
     }
@@ -549,7 +551,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -559,8 +561,8 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
       }
 
       setDetailRule(json.data);
-    } catch (err: any) {
-      setToast({ message: err.message || 'Failed to load tax rule details', type: 'error' });
+    } catch (err: unknown) {
+      setToast({ message: err instanceof Error ? err.message : 'Failed to load tax rule details', type: 'error' });
     }
   };
 
@@ -606,7 +608,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
         <p className="mt-3 text-red-700 font-medium">{error}</p>
         <button
           type="button"
-          onClick={fetchTaxRules}
+          onClick={() => { void fetchTaxRules(); }}
           className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-[11px] uppercase tracking-widest hover:bg-[#ae001a] transition-colors"
         >
           Retry Connection
@@ -619,7 +621,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
     <div className="flex flex-col gap-6 animate-fade-in text-left">
       {/* Filtros */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda al 100% de ancho */}
+        {/* Row 1: Full-width search */}
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e]">
             search
@@ -673,7 +675,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
             )}
             <button
               type="button"
-              onClick={fetchTaxRules}
+              onClick={() => { void fetchTaxRules(); }}
               className="p-2.5 bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1] text-secondary hover:text-[#ae001a] transition-all flex items-center justify-center cursor-pointer"
               title="Reload table data"
               aria-label="Reload table data"

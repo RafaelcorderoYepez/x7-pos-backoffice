@@ -8,12 +8,11 @@ vi.mock('../../../../lib/auth-storage', () => ({
   clearAuthSession: vi.fn(),
 }));
 
-// Reloj fijo: las píldoras de caducidad se miden contra este día. Sin esto, la fila que hoy
-// caduca en 16 días saldría vencida dentro de tres semanas y el test moriría solo.
+// Fixed clock: expiration pills are measured against this baseline date.
 const NOW = new Date(2026, 5, 15, 10, 0, 0);
 
 const COLLABORATORS = [
-  { id: 4, user_id: 9, merchant_id: 3, name: 'Juan Pérez', role: 'waiter', status: 'active' },
+  { id: 4, user_id: 9, merchant_id: 3, name: 'Juan Perez', role: 'waiter', status: 'active' },
   { id: 5, user_id: 10, merchant_id: 3, name: 'Ana Rivas', role: 'cook', status: 'active' },
   { id: 6, user_id: 11, merchant_id: 3, name: 'Luis Soto', role: 'host', status: 'active' },
   { id: 7, user_id: 12, merchant_id: 3, name: 'Marta Gil', role: 'cashier', status: 'active' },
@@ -46,7 +45,7 @@ const CONTRACTS = [
     active: true,
     start_date: '2026-01-01',
     end_date: null,
-    collaborator: { id: 4, name: 'Juan Pérez', role: 'waiter' },
+    collaborator: { id: 4, name: 'Juan Perez', role: 'waiter' },
   },
   {
     ...base,
@@ -61,7 +60,7 @@ const CONTRACTS = [
     working_hours_per_week: 20,
     active: true,
     start_date: '2026-01-01',
-    // Dentro de la ventana de renovación respecto a NOW.
+    // Within renewal window relative to NOW.
     end_date: '2026-07-01',
     collaborator: { id: 5, name: 'Ana Rivas', role: 'cook' },
   },
@@ -181,7 +180,7 @@ const renderView = async (overrides: Overrides = {}) => {
   );
 };
 
-// Un input[type=date] no se teclea de forma portable: el orden de los campos depende del
+// input[type=date] not portably typed: field order depends on browser locale.
 // idioma del navegador. Se fija el valor y se emite el change, que es lo que React escucha.
 const fireDate = (input: HTMLElement, value: string) =>
   fireEvent.change(input, { target: { value } });
@@ -204,7 +203,7 @@ describe('ContractsView — directory grid', () => {
     await renderView();
 
     const row = rowOf('#CTR-12');
-    expect(within(row).getByText('Juan Pérez')).toBeInTheDocument();
+    expect(within(row).getByText('Juan Perez')).toBeInTheDocument();
     expect(within(row).getByText('Waiter')).toBeInTheDocument();
     expect(within(row).getByText('#CLB-4')).toBeInTheDocument();
   });
@@ -335,7 +334,7 @@ describe('ContractsView — search and filters', () => {
       '30',
     );
 
-    // El indefinido no caduca nunca, así que sale de la lista.
+    // Indefinite contract never expires, excluded from list.
     expect(screen.getByText('#CTR-13')).toBeInTheDocument();
     expect(screen.queryByText('#CTR-12')).not.toBeInTheDocument();
   });
@@ -408,7 +407,7 @@ describe('ContractsView — form drawer', () => {
     ).toBeDisabled();
   });
 
-  // Este es el guard que impide un segundo acuerdo en vigor para la misma persona.
+  // Guard preventing second active agreement for same person.
   it('warns before submitting when the collaborator is already under contract', async () => {
     const user = userEvent.setup();
     await renderView();
@@ -429,7 +428,7 @@ describe('ContractsView — form drawer', () => {
     await renderView();
 
     const dialog = await openCreate(user);
-    // #CTR-14 sigue marcado activo pero venció: no debe estorbar a su renovación.
+    // #CTR-14 marked active but expired: must not block renewal.
     await user.selectOptions(within(dialog).getByLabelText(/Collaborator \*/), '6');
     await user.type(within(dialog).getByLabelText(/Wage rate \*/), '20');
 
@@ -444,8 +443,8 @@ describe('ContractsView — form drawer', () => {
     await renderView();
 
     const dialog = await openCreate(user);
-    // `accept` filtra el PNG en el diálogo del sistema, así que la única vía real es
-    // arrastrarlo: se emite el change directamente sobre el input.
+    // `accept` filters PNG in file dialog; test validates drag-and-drop or manual selection.
+    // drag-and-drop: change event is fired directly on the input.
     fireEvent.change(within(dialog).getByLabelText('Signed contract document'), {
       target: { files: [new File(['x'], 'foto.png', { type: 'image/png' })] },
     });
@@ -474,7 +473,7 @@ describe('ContractsView — form drawer', () => {
       expect(callsTo('POST', '/collaborator-contracts/99/document')).toHaveLength(1),
     );
     const init = callsTo('POST', '/document')[0][1] as RequestInit;
-    // El boundary lo pone el navegador: fijar Content-Type a mano rompería la subida.
+    // Boundary set by browser: setting Content-Type manually breaks upload.
     expect((init.headers as Record<string, string>)['Content-Type']).toBeUndefined();
     expect(init.body).toBeInstanceOf(FormData);
   });

@@ -43,12 +43,12 @@ const ROLES_ORDER: CollaboratorRole[] = [
   'Cashier',
 ];
 
-export function getMinutesFromTimeStr(timeStr: string): number {
+function getMinutesFromTimeStr(timeStr: string): number {
   return parseTimeToMinutes(timeStr);
 }
 
-export function formatMinutesToTimeStr(totalMinutes: number): string {
-  let m = Math.max(0, Math.min(1439, Math.round(totalMinutes)));
+function formatMinutesToTimeStr(totalMinutes: number): string {
+  const m = Math.max(0, Math.min(1439, Math.round(totalMinutes)));
   let hours = Math.floor(m / 60);
   const minutes = m % 60;
   const isPM = hours >= 12;
@@ -73,7 +73,7 @@ export const DailyGanttTimelineView: React.FC<DailyGanttTimelineViewProps> = ({
   const [selectedRole, setSelectedRole] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
-  const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
+  const [currentTimeMs, setCurrentTimeMs] = useState<number>(() => Date.now());
   const [activeInspectorShift, setActiveInspectorShift] = useState<ShiftAssignment | null>(null);
 
   // Dragging state for shift resizing/moving
@@ -167,7 +167,7 @@ export const DailyGanttTimelineView: React.FC<DailyGanttTimelineViewProps> = ({
     const todaysShifts = shifts.filter((s) => s.date === date);
 
     todaysShifts.forEach((s) => {
-      let startMin = getMinutesFromTimeStr(s.startTime);
+      const startMin = getMinutesFromTimeStr(s.startTime);
       let endMin = getMinutesFromTimeStr(s.endTime);
       if (endMin <= startMin) endMin += 24 * 60; // Overnight shift
 
@@ -263,14 +263,14 @@ export const DailyGanttTimelineView: React.FC<DailyGanttTimelineViewProps> = ({
 
       if (dragType === 'move') {
         const duration = dragInitialEndMin - dragInitialStartMin;
-        let newStart = Math.max(0, Math.min(1440 - duration, dragInitialStartMin + deltaMinutes));
+        const newStart = Math.max(0, Math.min(1440 - duration, dragInitialStartMin + deltaMinutes));
         setDragStartMin(newStart);
         setDragEndMin(newStart + duration);
       } else if (dragType === 'resize-left') {
-        let newStart = Math.max(0, Math.min(dragInitialEndMin - 30, dragInitialStartMin + deltaMinutes));
+        const newStart = Math.max(0, Math.min(dragInitialEndMin - 30, dragInitialStartMin + deltaMinutes));
         setDragStartMin(newStart);
       } else if (dragType === 'resize-right') {
-        let newEnd = Math.max(dragInitialStartMin + 30, Math.min(1440, dragInitialEndMin + deltaMinutes));
+        const newEnd = Math.max(dragInitialStartMin + 30, Math.min(1440, dragInitialEndMin + deltaMinutes));
         setDragEndMin(newEnd);
       }
     };
@@ -647,7 +647,7 @@ export const DailyGanttTimelineView: React.FC<DailyGanttTimelineViewProps> = ({
                             {/* Render Dynamic Gantt Shift Bars */}
                             {collabShifts.map((shift) => {
                               const isDraggingThis = draggingShiftId === shift.id;
-                              let startM = isDraggingThis ? dragStartMin : getMinutesFromTimeStr(shift.startTime);
+                              const startM = isDraggingThis ? dragStartMin : getMinutesFromTimeStr(shift.startTime);
                               let endM = isDraggingThis ? dragEndMin : getMinutesFromTimeStr(shift.endTime);
                               if (endM <= startM) endM += 24 * 60;
 

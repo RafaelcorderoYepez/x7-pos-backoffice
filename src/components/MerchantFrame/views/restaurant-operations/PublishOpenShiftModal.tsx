@@ -35,8 +35,6 @@ export const PublishOpenShiftModal: React.FC<PublishOpenShiftModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  if (!isOpen) return null;
-
   const handleRoleChange = (newRole: CollaboratorRole) => {
     setRole(newRole);
     switch (newRole) {
@@ -89,12 +87,14 @@ export const PublishOpenShiftModal: React.FC<PublishOpenShiftModalProps> = ({
       });
       onShiftPublished(created);
       onClose();
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to publish open shift block.');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to publish open shift block.');
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div

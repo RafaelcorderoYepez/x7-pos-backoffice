@@ -183,7 +183,7 @@ export async function fetchTipPools(params: FetchTipPoolsParams): Promise<TipPoo
     }
 
     return pools.map(normalizeTipPool);
-  } catch (err) {
+  } catch {
     return filterMockTipPools(params);
   }
 }

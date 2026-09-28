@@ -8,29 +8,16 @@ import type {
   LedgerAccount,
   UpdateJournalEntryLineDto,
 } from '../../../../types/accounting';
-import { formatCurrency, formatEntryDate, STATUS_BADGE_CLASSES } from './JournalEntriesView';
+import { formatCurrency, formatEntryDate, STATUS_BADGE_CLASSES } from './journalEntriesHelpers';
 import { LedgerQuickLinks } from './LedgerQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-export interface FlattenedJournalEntryLine {
-  key: string;
-  line: JournalEntryLine;
-  entry: JournalEntry;
-}
-
-export function flattenJournalEntryLines(entries: JournalEntry[]): FlattenedJournalEntryLine[] {
-  if (!Array.isArray(entries)) return [];
-  return entries.flatMap((entry) =>
-    (entry?.lines || []).map((line) => ({ key: `${entry?.id ?? '0'}-${line?.id ?? Math.random()}`, line, entry })),
-  );
-}
-
-export function isLeafAccount(account: LedgerAccount | null | undefined, accounts: LedgerAccount[]): boolean {
-  if (!account) return false;
-  if (!Array.isArray(accounts)) return true;
-  return !accounts.some((a) => a && a.parent_account_id === account.id && a.is_active);
-}
+import {
+  flattenJournalEntryLines,
+  isLeafAccount,
+  type FlattenedJournalEntryLine,
+} from './journalEntryLinesHelpers';
 
 interface SearchComboboxProps<T> {
   ariaLabel: string;
@@ -543,7 +530,7 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -555,9 +542,9 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
       const json = await res.json();
       const loaded = json.data ?? [];
       setEntries(loaded);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching journal entry lines:', err);
-      setError(err?.message || 'Failed to load journal entry lines');
+      setError(err instanceof Error ? err.message : 'Failed to load journal entry lines');
     } finally {
       setLoading(false);
     }
@@ -584,9 +571,10 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
   };
 
   useEffect(() => {
-    fetchJournalEntries();
-    fetchLedgerAccounts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void Promise.resolve().then(() => {
+      fetchJournalEntries();
+      fetchLedgerAccounts();
+    });
   }, []);
 
   useEffect(() => {
@@ -707,7 +695,7 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -723,8 +711,8 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
         message: isEdit ? 'Journal entry line updated successfully' : 'Journal entry line created successfully',
         type: 'success',
       });
-    } catch (err: any) {
-      setFormError(err.message || 'Failed to save journal entry line');
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Failed to save journal entry line');
     } finally {
       setFormSubmitting(false);
     }
@@ -773,7 +761,7 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
       )}
 
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda al 100% de ancho */}
+        {/* Row 1: Full-width search */}
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e]">
             search

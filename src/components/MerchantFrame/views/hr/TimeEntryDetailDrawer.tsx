@@ -1,9 +1,6 @@
-// Inspector de un fichaje: la jornada dibujada contra su turno, el desglose de horas y el
-// histórico de correcciones.
+// Time entry inspector: shift drawn against scheduled hours, breakdown, and audit history.
 //
-// La línea de tiempo se calcula sobre una ventana que abarca tanto lo programado como lo
-// realmente fichado: si alguien entró antes de su turno o salió mucho después, la barra
-// tiene que enseñarlo en vez de recortarlo.
+// Timeline is calculated across a window covering scheduled and actual hours.
 
 import React from 'react';
 import type { TimeEntry, TimeEntryRevision } from '../../../../types/time-entry';
@@ -35,7 +32,7 @@ interface TimeEntryDetailDrawerProps {
   onRetry: () => void;
 }
 
-/** Porcentaje de una marca dentro de la ventana dibujada. */
+/** Timestamp percentage within timeline window. */
 const pct = (value: number, from: number, to: number): number =>
   to <= from ? 0 : Math.min(100, Math.max(0, ((value - from) / (to - from)) * 100));
 
@@ -55,8 +52,8 @@ export const TimeEntryDetailDrawer: React.FC<TimeEntryDetailDrawerProps> = ({
   const schedIn = entry.shift?.startTime ? new Date(entry.shift.startTime).getTime() : null;
   const schedOut = entry.shift?.endTime ? new Date(entry.shift.endTime).getTime() : null;
 
-  // Ventana visible: lo primero que ocurrió hasta lo último, con un margen del 5% a cada
-  // lado para que las marcas extremas no queden pegadas al borde.
+  // Visible window: earliest to latest event, with 5% margin
+  // padding so edge timestamps do not clip against borders.
   const points = [inMs, outMs, schedIn, schedOut].filter(
     (v): v is number => v != null && !Number.isNaN(v),
   );
@@ -102,7 +99,7 @@ export const TimeEntryDetailDrawer: React.FC<TimeEntryDetailDrawerProps> = ({
           </p>
         </div>
 
-        {/* ---------------- Línea de tiempo ---------------- */}
+        {/* ---------------- Timeline ---------------- */}
         <div className="p-6 border-b border-[#e8e2d8]">
           <p className="text-[11px] font-bold text-[#5f5e5e] uppercase mb-3">Timeline</p>
           <div
@@ -121,7 +118,7 @@ export const TimeEntryDetailDrawer: React.FC<TimeEntryDetailDrawerProps> = ({
                 }}
               />
             )}
-            {/* Jornada realmente fichada, encima. */}
+            {/* Actual clocked shift, rendered on top. */}
             <div
               data-testid="timeline-worked"
               title="Worked interval"
@@ -165,7 +162,7 @@ export const TimeEntryDetailDrawer: React.FC<TimeEntryDetailDrawerProps> = ({
           </div>
         </div>
 
-        {/* ---------------- Histórico de correcciones ---------------- */}
+        {/* ---------------- Corrections History ---------------- */}
         <div className="p-6">
           <p className="text-[11px] font-bold text-[#5f5e5e] uppercase mb-3">
             Audit history

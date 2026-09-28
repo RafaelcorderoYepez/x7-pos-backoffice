@@ -100,7 +100,9 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
   }, [day]);
 
   useEffect(() => {
-    void fetchDay();
+    void Promise.resolve().then(() => {
+      void fetchDay();
+    });
   }, [fetchDay]);
 
   useEffect(() => {

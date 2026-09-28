@@ -22,19 +22,15 @@ export const TipDetailDrawer: React.FC<TipDetailDrawerProps> = ({
   onSaved,
   onNavigate,
 }) => {
-  if (!tip) return null;
-
-  const isSettled = tip.status === 'SETTLED';
-
   // Form State
-  const [amount, setAmount] = useState<string>(String(tip.amount));
-  const [method, setMethod] = useState<TipMethod>(tip.method);
+  const [amount, setAmount] = useState<string>(tip ? String(tip.amount) : '0');
+  const [method, setMethod] = useState<TipMethod>(tip ? tip.method : 'CREDIT_CARD');
   const [paymentId, setPaymentId] = useState<string>(
-    tip.payment_id !== null && tip.payment_id !== undefined ? String(tip.payment_id) : ''
+    tip?.payment_id !== null && tip?.payment_id !== undefined ? String(tip.payment_id) : ''
   );
-  const [status, setStatus] = useState<TipStatus>(tip.status);
-  const [recordStatus, setRecordStatus] = useState<TipRecordStatus>(tip.record_status);
-  const [notes, setNotes] = useState<string>(tip.notes || '');
+  const [status, setStatus] = useState<TipStatus>(tip ? tip.status : 'PENDING');
+  const [recordStatus, setRecordStatus] = useState<TipRecordStatus>(tip ? tip.record_status : 'ACTIVE');
+  const [notes, setNotes] = useState<string>(tip?.notes || '');
 
   // Payment Options & Status State
   const [paymentOptions, setPaymentOptions] = useState<PaymentOption[]>([]);
@@ -43,7 +39,11 @@ export const TipDetailDrawer: React.FC<TipDetailDrawerProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Adjust state during render when tip changes
+  const [prevTip, setPrevTip] = useState(tip);
+
+  if (tip !== prevTip) {
+    setPrevTip(tip);
     if (tip) {
       setAmount(String(tip.amount));
       setMethod(tip.method);
@@ -51,17 +51,31 @@ export const TipDetailDrawer: React.FC<TipDetailDrawerProps> = ({
       setStatus(tip.status);
       setRecordStatus(tip.record_status);
       setNotes(tip.notes || '');
+      setLoadingPayments(true);
       setErrorMessage(null);
       setSuccessMessage(null);
-
-      // Load valid payment transaction options for the order
-      setLoadingPayments(true);
-      fetchPaymentOptionsForOrder(tip.order_id)
-        .then((options) => setPaymentOptions(options))
-        .catch(() => setPaymentOptions([]))
-        .finally(() => setLoadingPayments(false));
     }
-  }, [tip]);
+  }
+
+  const orderId = tip?.order_id;
+  useEffect(() => {
+    if (!orderId) return;
+    let ignore = false;
+    fetchPaymentOptionsForOrder(orderId)
+      .then((options) => {
+        if (!ignore) setPaymentOptions(options);
+      })
+      .catch(() => {
+        if (!ignore) setPaymentOptions([]);
+      })
+      .finally(() => {
+        if (!ignore) setLoadingPayments(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [orderId]);
 
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -98,14 +112,15 @@ export const TipDetailDrawer: React.FC<TipDetailDrawerProps> = ({
       setTimeout(() => {
         onClose();
       }, 700);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to update tip entry.');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to update tip entry.');
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleSoftDelete = async () => {
+    if (!tip) return;
     setErrorMessage(null);
     setSuccessMessage(null);
     setSubmitting(true);
@@ -122,12 +137,14 @@ export const TipDetailDrawer: React.FC<TipDetailDrawerProps> = ({
       if (onSaved) {
         onSaved(updated);
       }
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to update record status.');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to update record status.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!tip) return null;
 
   return createPortal(
     <div className="font-sans">

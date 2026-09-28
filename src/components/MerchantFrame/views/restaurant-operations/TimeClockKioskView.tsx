@@ -125,15 +125,6 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
     photoUrl?: string;
   } | null>(null);
 
-  // Auto-reset splash screen timer (5 seconds)
-  useEffect(() => {
-    if (!lastPunchSuccess) return;
-    const timer = setTimeout(() => {
-      resetTerminal();
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [lastPunchSuccess]);
-
   const resetTerminal = () => {
     setPinInput('');
     setBadgeInput('');
@@ -149,6 +140,15 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
     setLastPunchSuccess(null);
     setCapturedPhotoUrl(undefined);
   };
+
+  // Auto-reset splash screen timer (5 seconds)
+  useEffect(() => {
+    if (!lastPunchSuccess) return;
+    const timer = setTimeout(() => {
+      resetTerminal();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [lastPunchSuccess]);
 
   // Keypad Handlers
   const handleKeypadDigit = (digit: string) => {
