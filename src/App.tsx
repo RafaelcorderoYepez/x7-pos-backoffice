@@ -278,6 +278,38 @@ export default function App() {
           }
         />
         <Route
+          path="/store-operations/tips-settlements"
+          element={
+            <ProtectedRoute>
+              <MerchantFrame />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tips/settlements"
+          element={
+            <ProtectedRoute>
+              <MerchantFrame />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/store-operations/tips-cash-movements"
+          element={
+            <ProtectedRoute>
+              <MerchantFrame />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/tips/cash-movements"
+          element={
+            <ProtectedRoute>
+              <MerchantFrame />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/store-operations/*"
           element={
             <ProtectedRoute>

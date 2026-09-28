@@ -42,6 +42,11 @@ describe('TipPoolMemberFormDrawer', () => {
         created_at: '2026-08-25T10:00:00.000Z',
       },
     ]);
+    vi.spyOn(tipPoolMembersApi, 'fetchCollaboratorOptions').mockResolvedValue([
+      { id: 101, name: 'Mateo Silva (WAITER)' },
+      { id: 102, name: 'Sofia Rodriguez (BARTENDER)' },
+    ]);
+    vi.spyOn(tipPoolMembersApi, 'fetchTipPoolMembers').mockResolvedValue([]);
   });
 
   afterEach(() => {

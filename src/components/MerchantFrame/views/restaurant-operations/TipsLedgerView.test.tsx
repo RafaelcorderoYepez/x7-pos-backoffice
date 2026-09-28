@@ -72,6 +72,27 @@ const TEST_TIPS: Tip[] = [
   },
 ];
 
+function filterTestTips(params: any = {}): Tip[] {
+  let filtered = [...TEST_TIPS];
+  if (params.record_status) {
+    filtered = filtered.filter((t) => t.record_status === params.record_status);
+  }
+  if (params.method && params.method !== 'ALL') {
+    filtered = filtered.filter((t) => t.method === params.method);
+  }
+  if (params.search) {
+    const s = params.search.toLowerCase();
+    filtered = filtered.filter(
+      (t) =>
+        `#tip-${t.id}`.toLowerCase().includes(s) ||
+        `#ord-${t.order_id}`.toLowerCase().includes(s) ||
+        (t.payment_id && `#pay-${t.payment_id}`.toLowerCase().includes(s)) ||
+        String(t.id).includes(s)
+    );
+  }
+  return filtered;
+}
+
 describe('Tips Ledger Directory Workspace', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -129,7 +150,7 @@ describe('Tips Ledger Directory Workspace', () => {
   describe('2. Search & Multi-Filter Matrix', () => {
     it('filters rows in real-time by alphanumeric search against Tip ID, Order ID, and Payment ID', async () => {
       vi.spyOn(tipsApi, 'fetchTips').mockImplementation((params) => {
-        return Promise.resolve(tipsApi.filterMockTips({ ...params, status: 'ALL' }));
+        return Promise.resolve(filterTestTips({ ...params, status: 'ALL' }));
       });
 
       render(<TipsLedgerView companyId="cmp-01" merchantId="mch-01" />);
@@ -159,7 +180,7 @@ describe('Tips Ledger Directory Workspace', () => {
 
     it('filters tips dynamically by TipMethod enum values (CARD, CASH, ONLINE, QR_PAYMENT)', async () => {
       vi.spyOn(tipsApi, 'fetchTips').mockImplementation((params) => {
-        return Promise.resolve(tipsApi.filterMockTips({ ...params, status: 'ALL' }));
+        return Promise.resolve(filterTestTips({ ...params, status: 'ALL' }));
       });
 
       render(<TipsLedgerView companyId="cmp-01" merchantId="mch-01" />);
@@ -183,7 +204,7 @@ describe('Tips Ledger Directory Workspace', () => {
 
     it('toggles between ACTIVE and DELETED record statuses', async () => {
       vi.spyOn(tipsApi, 'fetchTips').mockImplementation((params) => {
-        return Promise.resolve(tipsApi.filterMockTips({ ...params, status: 'ALL' }));
+        return Promise.resolve(filterTestTips({ ...params, status: 'ALL' }));
       });
 
       render(<TipsLedgerView companyId="cmp-01" merchantId="mch-01" />);
@@ -324,6 +345,9 @@ describe('Tips Ledger Directory Workspace', () => {
     });
 
     it('updates payment_id link and binds tip record to card processing transaction', async () => {
+      vi.spyOn(tipsApi, 'fetchPaymentOptionsForOrder').mockResolvedValue([
+        { id: 8841, order_id: 8003, method: 'CARD', amount: 10, status: 'SUCCESS' },
+      ]);
       vi.spyOn(tipsApi, 'fetchTips').mockResolvedValue([
         {
           id: 4003,

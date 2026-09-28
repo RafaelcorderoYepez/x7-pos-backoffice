@@ -64,6 +64,8 @@ import { TipsLedgerView } from './views/restaurant-operations/TipsLedgerView';
 import { TipPoolsView } from './views/restaurant-operations/TipPoolsView';
 import { TipPoolMembersView } from './views/restaurant-operations/TipPoolMembersView';
 import { TipAllocationsView } from './views/restaurant-operations/TipAllocationsView';
+import { TipSettlementsView } from './views/restaurant-operations/TipSettlementsView';
+import { CashTipMovementsView } from './views/restaurant-operations/CashTipMovementsView';
 import { OpenShiftsMarketplaceView } from './views/restaurant-operations/OpenShiftsMarketplaceView';
 import { LaborCostForecastingView } from './views/restaurant-operations/LaborCostForecastingView';
 import { LedgerAccountsView } from './views/financial-engine/LedgerAccountsView';
@@ -243,7 +245,13 @@ export const MerchantFrame: React.FC = () => {
     } else if (path === '/store-operations/tips-pool-members' || path === '/store-operations/tip-pool-members' || path === '/tips/pool-members') {
       setActiveCategory('restaurant-operations');
       setActiveTab('tips-pool-members');
-    } else if (path === '/tips/cash-movements' || path === '/store-operations/cash-movements') {
+    } else if (path === '/store-operations/tips-settlements' || path === '/store-operations/tip-settlements' || path === '/tips/settlements') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-settlements');
+    } else if (path === '/tips/cash-movements' || path === '/store-operations/tips-cash-movements' || path === '/store-operations/cash-tip-movements') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-cash-movements');
+    } else if (path === '/store-operations/cash-movements') {
       setActiveCategory('restaurant-operations');
       setActiveTab('cash-movements');
     } else if (path === '/dashboard/raw-materials' || path === '/inventory/raw-materials') {
@@ -715,9 +723,19 @@ export const MerchantFrame: React.FC = () => {
         setActiveCategory('restaurant-operations');
         setActiveTab('tips-pool-members');
         try { navigate('/tips/pool-members'); } catch (e) {}
-      } else if (target === '/tips/cash-movements' || target === 'tips-cash-movements' || target === 'cash-movements') {
+      } else if (
+        target === '/store-operations/tips-settlements' ||
+        target === '/store-operations/tip-settlements' ||
+        target === '/tips/settlements' ||
+        target === 'tips-settlements' ||
+        target === 'tip-settlements'
+      ) {
         setActiveCategory('restaurant-operations');
-        setActiveTab('cash-movements');
+        setActiveTab('tips-settlements');
+        try { navigate('/tips/settlements'); } catch (e) {}
+      } else if (target === '/tips/cash-movements' || target === 'tips-cash-movements' || target === 'cash-tip-movements') {
+        setActiveCategory('restaurant-operations');
+        setActiveTab('tips-cash-movements');
         try { navigate('/tips/cash-movements'); } catch (e) {}
       } else {
         setActiveTab(target);
@@ -752,8 +770,6 @@ export const MerchantFrame: React.FC = () => {
       return <LaborCostForecastingView onNavigate={handleStaffNavigate} />;
     }
 
-    if (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries' || activeTab === 'attendance-ledger' || activeTab === 'ledger') {
-      return <TimeEntriesView onNavigate={handleStaffNavigate} />;
     if (
       (activeCategory === 'restaurant-operations' && (activeTab === 'collaborators-time-entries' || activeTab === 'time-entries')) ||
       activeTab === 'attendance-ledger' ||
@@ -776,6 +792,14 @@ export const MerchantFrame: React.FC = () => {
 
     if (activeTab === 'tips-allocations' || activeTab === 'tip-allocations' || activeTab === '/tips/allocations' || activeTab === '/store-operations/tips-allocations') {
       return <TipAllocationsView onNavigate={handleStaffNavigate} />;
+    }
+
+    if (activeTab === 'tips-settlements' || activeTab === 'tip-settlements' || activeTab === '/tips/settlements' || activeTab === '/store-operations/tips-settlements') {
+      return <TipSettlementsView onNavigate={handleStaffNavigate} />;
+    }
+
+    if (activeTab === 'tips-cash-movements' || activeTab === 'cash-tip-movements' || activeTab === '/tips/cash-movements') {
+      return <CashTipMovementsView onNavigate={handleStaffNavigate} />;
     }
 
     if (activeTab === 'time-clock' || activeTab === 'time-clock-kiosk' || activeTab === 'kiosk') {

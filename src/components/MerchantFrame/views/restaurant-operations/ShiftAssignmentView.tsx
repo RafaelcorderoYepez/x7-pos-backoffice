@@ -18,7 +18,7 @@ import {
   updateShiftAssignment,
   deleteShiftAssignment,
   publishWeeklyRoster,
-  INITIAL_COLLABORATORS,
+  fetchCollaborators,
   SHIFT_PRESETS,
   findOverlappingShift,
   parseShiftInterval,
@@ -934,12 +934,17 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [shifts, setShifts] = useState<ShiftAssignment[]>([]);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [publishToast, setPublishToast] = useState<string | null>(null);
 
   // Shift Swap State
   const [swapRequests, setSwapRequests] = useState<ShiftSwapRequest[]>([]);
   const [selectedSwap, setSelectedSwap] = useState<ShiftSwapRequest | null>(null);
+
+  useEffect(() => {
+    fetchCollaborators().then(setCollaborators).catch(() => setCollaborators([]));
+  }, []);
 
   const loadSwaps = async () => {
     try {
@@ -1041,7 +1046,7 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
 
   // Filter Collaborators
   const filteredCollaborators = useMemo(() => {
-    return INITIAL_COLLABORATORS.filter((c) => {
+    return collaborators.filter((c) => {
       if (roleFilter !== 'all' && c.role !== roleFilter) return false;
       if (departmentFilter !== 'all' && c.department !== departmentFilter) return false;
       if (
@@ -1053,13 +1058,13 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
       }
       return true;
     });
-  }, [roleFilter, departmentFilter, searchQuery]);
+  }, [collaborators, roleFilter, departmentFilter, searchQuery]);
 
   // Unique departments for filter dropdown
   const departments = useMemo(() => {
-    const set = new Set(INITIAL_COLLABORATORS.map((c) => c.department));
+    const set = new Set(collaborators.map((c) => c.department));
     return Array.from(set);
-  }, []);
+  }, [collaborators]);
 
   // Filter shifts based on statusFilter
   const filteredShifts = useMemo(() => {
@@ -1674,7 +1679,7 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
         <DailyGanttTimelineView
           date={startDateISO}
           shifts={shifts}
-          collaborators={filteredCollaborators.length > 0 ? filteredCollaborators : INITIAL_COLLABORATORS}
+          collaborators={filteredCollaborators.length > 0 ? filteredCollaborators : collaborators}
           onDateChange={(newDate) => {
             const picked = new Date(`${newDate}T00:00:00`);
             setCurrentWeekMonday(getMonday(picked));
@@ -1684,7 +1689,7 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
             await loadShifts();
           }}
           onReassignShift={async (shiftId, newCollabId) => {
-            const targetCollab = INITIAL_COLLABORATORS.find((c) => c.id === newCollabId);
+            const targetCollab = collaborators.find((c) => c.id === newCollabId);
             if (targetCollab) {
               await updateShiftAssignment(shiftId, {
                 collaboratorId: targetCollab.id,
@@ -1736,7 +1741,7 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
               ? { collaboratorId: selectedCell.collabId, date: selectedCell.date }
               : undefined)
           }
-          collaborators={INITIAL_COLLABORATORS}
+          collaborators={collaborators}
           allShifts={shifts}
           selectedDate={selectedCell?.date}
           selectedCollaboratorId={selectedCell?.collabId}
@@ -1751,7 +1756,7 @@ export const ShiftAssignmentView: React.FC<ShiftAssignmentViewProps> = ({
         <SwapReviewModal
           swap={selectedSwap}
           allShifts={shifts}
-          collaborators={INITIAL_COLLABORATORS}
+          collaborators={collaborators}
           onClose={() => setSelectedSwap(null)}
           onApprove={handleApproveSwap}
           onReject={handleRejectSwap}

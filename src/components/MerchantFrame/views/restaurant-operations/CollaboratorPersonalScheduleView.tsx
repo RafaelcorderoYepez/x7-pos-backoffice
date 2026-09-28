@@ -7,7 +7,7 @@ import type {
   ShiftSwapRequest,
 } from '../../../../types/shifts';
 import {
-  INITIAL_COLLABORATORS,
+  fetchCollaborators,
   fetchMyShiftAssignments,
   fetchShiftSwapRequests,
   createShiftSwapRequest,
@@ -495,16 +495,28 @@ export const CollaboratorPersonalScheduleView: React.FC<CollaboratorPersonalSche
   // Selected shift for details drawer in Monthly view
   const [focusedShift, setFocusedShift] = useState<ShiftAssignment | null>(null);
 
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+
+  useEffect(() => {
+    fetchCollaborators().then(setCollaborators).catch(() => setCollaborators([]));
+  }, []);
+
   const activeCollaborator = useMemo(() => {
     return (
-      INITIAL_COLLABORATORS.find((c) => c.id === selectedCollaboratorId) ??
-      INITIAL_COLLABORATORS[1]
+      collaborators.find((c) => c.id === selectedCollaboratorId) ??
+      collaborators[0] ?? {
+        id: selectedCollaboratorId,
+        name: 'Sofia Rodriguez',
+        role: 'Waitstaff',
+        department: 'Dining Room',
+        avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop',
+      }
     );
-  }, [selectedCollaboratorId]);
+  }, [collaborators, selectedCollaboratorId]);
 
   const peerCollaborators = useMemo(() => {
-    return INITIAL_COLLABORATORS.filter((c) => c.id !== selectedCollaboratorId);
-  }, [selectedCollaboratorId]);
+    return collaborators.filter((c) => c.id !== selectedCollaboratorId);
+  }, [collaborators, selectedCollaboratorId]);
 
   // Calculated Sunday of current week
   const currentSundayISO = useMemo(() => {
@@ -706,7 +718,7 @@ export const CollaboratorPersonalScheduleView: React.FC<CollaboratorPersonalSche
               onChange={(e) => setSelectedCollaboratorId(e.target.value)}
               className="bg-transparent text-xs font-bold text-[#222222] focus:outline-none cursor-pointer"
             >
-              {INITIAL_COLLABORATORS.map((collab) => (
+              {collaborators.map((collab) => (
                 <option key={collab.id} value={collab.id}>
                   {collab.name} ({collab.role})
                 </option>

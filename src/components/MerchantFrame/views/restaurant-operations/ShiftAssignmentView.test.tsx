@@ -8,6 +8,7 @@ vi.mock('../../../../api/shifts', async () => {
   const actual = await vi.importActual<typeof import('../../../../api/shifts')>('../../../../api/shifts');
   return {
     ...actual,
+    fetchCollaborators: vi.fn(),
     fetchShiftAssignments: vi.fn(),
     publishWeeklyRoster: vi.fn(),
     createShiftAssignment: vi.fn(),
@@ -89,6 +90,12 @@ const MOCK_SWAP_REQUESTS = [
 
 describe('ShiftAssignmentView', () => {
   beforeEach(() => {
+    vi.mocked(shiftsApi.fetchCollaborators).mockResolvedValue([
+      { id: 'emp-101', name: 'Carlos Mendoza', role: 'Supervisor', department: 'Floor Management' },
+      { id: 'emp-102', name: 'Sofia Rodriguez', role: 'Waitstaff', department: 'Dining Room' },
+      { id: 'emp-103', name: 'Mateo Silva', role: 'Kitchen', department: 'Back of House' },
+      { id: 'emp-104', name: 'Ana Gomez', role: 'Bartender', department: 'Bar' },
+    ]);
     vi.mocked(shiftsApi.fetchShiftAssignments).mockResolvedValue(MOCK_SHIFTS);
     vi.mocked(shiftsApi.fetchShiftSwapRequests).mockResolvedValue(MOCK_SWAP_REQUESTS as any);
     vi.mocked(shiftsApi.approveShiftSwapRequest).mockResolvedValue({
