@@ -95,6 +95,11 @@ import { CollaboratorsView } from './views/hr/CollaboratorsView';
 import { TimeEntriesView as HrTimeEntriesView } from './views/hr/TimeEntriesView';
 import { ContractsView } from './views/hr/ContractsView';
 import { TableAssignmentsView } from './views/dining-system/TableAssignmentsView';
+import { ReservationsView } from './views/reservations/ReservationsView';
+import { ReservationTablesView } from './views/reservations/ReservationTablesView';
+import { ReservationNotesView } from './views/reservations/ReservationNotesView';
+import { ReservationGuestsView } from './views/reservations/ReservationGuestsView';
+import { featureIdForReservationPath } from '../../lib/reservation-navigation';
 import { RawMaterialsView } from './views/products-inventory/raw-materials/RawMaterialsView';
 import { RawMaterialCategoriesView } from './views/products-inventory/category/RawMaterialCategoriesView';
 import { RecipesView } from './views/products-inventory/recipes/RecipesView';
@@ -133,33 +138,118 @@ const COMING_SOON_STUBS: Record<string, ComingSoonStub> = {
   },
 };
 
+interface NavigationLocationState {
+  activeTab?: string;
+  activeCategory?: string;
+  merchantId?: string | number;
+}
+
+const getNavFromPath = (
+  path: string,
+  locationState?: NavigationLocationState | null,
+  profileRole?: string
+): { category: string; tab: string } | null => {
+  if (path === '/legal/privacy-policy') {
+    return { category: 'legal', tab: 'privacy-policy' };
+  } else if (path === '/legal/terms-of-service') {
+    return { category: 'legal', tab: 'terms-of-service' };
+  } else if (path === '/support/help-center') {
+    return { category: 'support', tab: 'help-center' };
+  } else if (path === '/dashboard/products') {
+    return { category: 'inventory', tab: 'products' };
+  } else if (path === '/dashboard/categories') {
+    return { category: 'inventory', tab: 'categories' };
+  } else if (path === '/dashboard/merchants') {
+    return { category: 'platformsaas', tab: 'merchant-directory' };
+  } else if (path === '/dashboard/users') {
+    return { category: 'platformsaas', tab: 'user-management' };
+  } else if (path === '/dashboard/company-profile') {
+    return { category: 'platformsaas', tab: 'company-profile' };
+  } else if (path === '/dashboard/company-configurations') {
+    return { category: 'platformsaas', tab: 'company-configurations' };
+  } else if (path === '/staff-management/schedule/roster') {
+    return { category: 'restaurant-operations', tab: 'staff-roster' };
+  } else if (path === '/staff-management/schedule/assignments') {
+    return { category: 'restaurant-operations', tab: 'shift-assignment' };
+  } else if (path === '/staff-management/schedule/daily' || path === '/staff-management/schedule/timeline') {
+    return { category: 'restaurant-operations', tab: 'daily-timeline' };
+  } else if (path === '/staff-management/schedule/shifts' || path === '/staff-management/schedule/scheduler') {
+    return { category: 'restaurant-operations', tab: 'shifts' };
+  } else if (path === '/staff-management/schedule/swaps') {
+    return { category: 'restaurant-operations', tab: 'staff-swaps' };
+  } else if (path === '/staff-management/schedule/marketplace' || path === '/staff-management/schedule/open-shifts') {
+    return { category: 'restaurant-operations', tab: 'open-shifts' };
+  } else if (path === '/staff-management/schedule/labor-forecasting' || path === '/staff-management/schedule/forecasting') {
+    return { category: 'restaurant-operations', tab: 'labor-forecasting' };
+  } else if (path === '/staff-management/attendance/ledger') {
+    return { category: 'restaurant-operations', tab: 'collaborators-time-entries' };
+  } else if (path === '/staff-management/schedule/me') {
+    return { category: 'restaurant-operations', tab: 'my-schedule' };
+  } else if (path === '/staff-management/attendance/kiosk') {
+    return { category: 'restaurant-operations', tab: 'time-clock-kiosk' };
+  } else if (path.startsWith('/reservations/')) {
+    return { category: 'restaurant-operations', tab: featureIdForReservationPath(path) };
+  } else if (path === '/store-operations/tips-ledger' || path === '/tips/ledger') {
+    return { category: 'restaurant-operations', tab: 'tips-ledger' };
+  } else if (path === '/store-operations/tips-allocations' || path === '/tips/allocations') {
+    return { category: 'restaurant-operations', tab: 'tips-allocations' };
+  } else if (path === '/store-operations/tips-pools' || path === '/store-operations/tip-pools' || path === '/tips/pools') {
+    return { category: 'restaurant-operations', tab: 'tips-pools' };
+  } else if (path === '/store-operations/tips-pool-members' || path === '/store-operations/tip-pool-members' || path === '/tips/pool-members') {
+    return { category: 'restaurant-operations', tab: 'tips-pool-members' };
+  } else if (path === '/tips/cash-movements' || path === '/store-operations/cash-movements') {
+    return { category: 'restaurant-operations', tab: 'cash-movements' };
+  } else if (path === '/dashboard/raw-materials' || path === '/inventory/raw-materials') {
+    return { category: 'inventory', tab: 'raw-materials' };
+  } else if (path === '/dashboard/raw-material-categories') {
+    return { category: 'inventory', tab: 'raw-material-categories' };
+  } else if (path === '/dashboard/recipes' || path === '/inventory/recipes') {
+    return { category: 'inventory', tab: 'recipes' };
+  } else if (path === '/inventory/stocks') {
+    return { category: 'inventory', tab: 'stock-movements' };
+  } else if (path === '/inventory/movements') {
+    return { category: 'inventory', tab: 'movements' };
+  } else if (path === '/dashboard') {
+    const stateTab = locationState?.activeTab;
+    const stateCategory = locationState?.activeCategory;
+    if (stateTab && stateCategory) {
+      return { category: stateCategory, tab: stateTab };
+    }
+    if (profileRole === 'SaaS Owner') {
+      return { category: 'saas', tab: 'saas-dashboard' };
+    }
+    return { category: 'core', tab: 'dashboard' };
+  }
+  return null;
+};
+
 export const MerchantFrame: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
 
 
-  // Estados de carga e inicialización de sesión
+  // Session loading and initialization state
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isAuthLocked, setIsAuthLocked] = useState<boolean>(false);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
-  // Estados de navegación SPA
-  const [activeCategory, setActiveCategory] = useState<string>('saas'); // Categoria activa
-  const [activeTab, setActiveTab] = useState<string>('saas-dashboard'); // Sub-item o vista activa
+  // SPA navigation states
+  const [activeCategory, setActiveCategory] = useState<string>('core'); // Active category
+  const [activeTab, setActiveTab] = useState<string>('dashboard'); // Active sub-item or view
   const [linesEntryFilter, setLinesEntryFilter] = useState<JournalEntry | null>(null);
-  // Contexto padre al saltar de un voucher de pago a su desglose de líneas.
+  // Parent context when jumping from a payment voucher to its line item breakdown.
   const [itemsPaymentFilter, setItemsPaymentFilter] = useState<SupplierPayment | null>(null);
-  // Contexto de origen al saltar a la matriz de asignaciones (pago o nota de crédito).
+  // Origin context when jumping to allocations matrix (payment or credit note).
   const [allocationsContext, setAllocationsContext] = useState<{
     payment?: SupplierPayment | null;
     creditNote?: SupplierCreditNote | null;
   } | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
 
-  // Traduce los nombres de tab internos de las vistas SaaS compartidas (SaaSFrame)
-  // a los tab ids reales de MerchantFrame (definidos en Features.txt), ya que ambos
-  // shells reusan los mismos componentes de vista con vocabularios de navegación distintos.
+  // Translates internal tab names from shared SaaS views (SaaSFrame)
+  // to the real tab ids of MerchantFrame (defined in Features.txt), since both
+  // shells reuse the same view components with different navigation vocabularies.
   const SAAS_VIEW_TAB_MAP: Record<string, string> = {
     'subscription': 'sub-plans-core',
     'subscription-applications': 'apps-config',
@@ -173,7 +263,20 @@ export const MerchantFrame: React.FC = () => {
     setActiveTab(SAAS_VIEW_TAB_MAP[view] ?? view);
   };
 
-  // Sincronizar ruta de navegador física con el estado de navegación interna SPA
+  // Synchronize physical browser URL path with SPA internal navigation state during render phase
+  const [prevRouteKey, setPrevRouteKey] = useState<string>('');
+  const currentRouteKey = `${location.pathname}:${location.search}:${profile?.role ?? ''}:${location.state?.activeTab ?? ''}:${location.state?.activeCategory ?? ''}`;
+
+  if (currentRouteKey !== prevRouteKey) {
+    setPrevRouteKey(currentRouteKey);
+    const routeNav = getNavFromPath(location.pathname, location.state, profile?.role);
+    if (routeNav) {
+      setActiveCategory(routeNav.category);
+      setActiveTab(routeNav.tab);
+    }
+  }
+
+  // Handle external side effects (sessionStorage) on route change
   useEffect(() => {
     const path = location.pathname;
     if (path === '/legal/privacy-policy') {
@@ -276,31 +379,17 @@ export const MerchantFrame: React.FC = () => {
       if (stateMerchantId != null) {
         sessionStorage.setItem('x7:branch-context', String(stateMerchantId));
       }
-      if (stateTab && stateCategory) {
-        setActiveCategory(stateCategory);
-        setActiveTab(stateTab);
-      } else {
-        if (profile) {
-          if (profile.role === 'SaaS Owner') {
-            setActiveCategory('saas');
-            setActiveTab('saas-dashboard');
-          } else {
-            setActiveCategory('core');
-            setActiveTab('dashboard');
-          }
-        }
-      }
     }
-  }, [location.pathname, profile?.role]);
+  }, [location.pathname, location.state]);
   const [showKitchenKDS, setShowKitchenKDS] = useState<boolean>(false);
 
-  // Navegación Dinámica por Plan y Permisos
+  // Dynamic Navigation by Plan and Permissions
   const [navCategories, setNavCategories] = useState<NavCategory[]>([]);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const [expandedApps, setExpandedApps] = useState<Record<string, boolean>>({});
   const [sidebarSearchQuery, setSidebarSearchQuery] = useState<string>('');
 
-  // Filtrado reactivo en tiempo real del menú lateral (estricto a nivel de elemento/feature)
+  // Real-time reactive filtering of sidebar menu (strict at element/feature level)
   const filteredNavCategories = useMemo(() => {
     const query = sidebarSearchQuery.trim().toLowerCase();
     if (!query) return navCategories;
@@ -330,25 +419,29 @@ export const MerchantFrame: React.FC = () => {
       .filter((cat): cat is NavCategory => cat !== null);
   }, [navCategories, sidebarSearchQuery]);
 
-  const loadNavigation = async (userProfile: UserProfile) => {
-    try {
-      const menu = await navigationService.loadAndParseNavigation(userProfile.Plan_id, userProfile.role);
-      setNavCategories(menu);
-    } catch (err) {
-      console.error('Error cargando el menú dinámico', err);
-    }
-  };
-
   useEffect(() => {
+    let ignore = false;
     if (profile) {
-      loadNavigation(profile);
+      navigationService
+        .loadAndParseNavigation(profile.Plan_id, profile.role)
+        .then((menu) => {
+          if (!ignore) {
+            setNavCategories(menu);
+          }
+        })
+        .catch((err) => {
+          console.error('Error loading dynamic menu', err);
+        });
     }
+    return () => {
+      ignore = true;
+    };
   }, [profile, refreshTrigger]);
 
-  // Las categorías y aplicaciones del menú lateral permanecen cerradas/colapsadas por defecto al iniciar sesión
+  // Sidebar categories and applications remain closed/collapsed by default on login
 
 
-  // Estados de UI
+  // UI States
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [demo401Toggle, setDemo401Toggle] = useState<boolean>(getSimulate401());
@@ -357,77 +450,62 @@ export const MerchantFrame: React.FC = () => {
 
   const [apiFailedToggle, setApiFailedToggle] = useState<boolean>(getSimulateApiFailure());
 
-  // Estados de Modales
+  // Modal States
   const [isReservationOpen, setIsReservationOpen] = useState<boolean>(false);
   const [isVoidOpen, setIsVoidOpen] = useState<boolean>(false);
   const [isEODOpen, setIsEODOpen] = useState<boolean>(false);
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
   const [isQuickOrderOpen, setIsQuickOrderOpen] = useState<boolean>(false);
 
-  // 1. Inicialización y chequeo de sesión (AC 1.1 y 1.2)
-  const hydrateSession = async () => {
-    try {
-      setIsAuthLocked(false);
-      setAuthenticatedState(true);
-      const userProfile = await restaurantService.getUserProfile();
-      setProfile(userProfile);
-      await restaurantService.getEstablishmentTier();
+  // 1. Session initialization and check (AC 1.1 and 1.2)
+  useEffect(() => {
+    let ignore = false;
 
-      // Auto-inicializar vistas según el rol
-      if (userProfile.role === 'SaaS Owner') {
-        setActiveTab('saas-dashboard');
-      } else {
-        const isSaaSTab = [
-          'saas-dashboard',
-          'subscription',
-          'companies',
-          'merchants',
-          'users',
-          'reports',
-        ].includes(activeTab);
-
-        const merchantCompanyPaths = [
-          '/dashboard/company-profile',
-          '/dashboard/company-configurations',
-          '/dashboard/merchants',
-          '/dashboard/users',
-        ];
-        const isMerchantCompanyRoute = merchantCompanyPaths.includes(
-          location.pathname,
-        );
-
-        if ((activeCategory === 'saas' || isSaaSTab) && !isMerchantCompanyRoute) {
-          setActiveCategory('core');
-          setActiveTab('dashboard');
+    async function initSession() {
+      try {
+        setAuthenticatedState(true);
+        const userProfile = await restaurantService.getUserProfile();
+        if (ignore) return;
+        setIsAuthLocked(false);
+        setProfile(userProfile);
+        await restaurantService.getEstablishmentTier();
+      } catch (err: unknown) {
+        if (ignore) return;
+        if (typeof err === 'object' && err !== null && 'status' in err && (err as { status?: number }).status === 401) {
+          setIsAuthLocked(true); // AC 1.3: Session lock
+        } else {
+          console.error('Error during session hydration', err);
         }
       }
-    } catch (err: any) {
-      if (err.status === 401) {
-        setIsAuthLocked(true); // AC 1.3: Bloqueo de sesión
-      } else {
-        console.error('Error durante la hidratación de sesión', err);
-      }
     }
-  };
 
-  useEffect(() => {
-    hydrateSession();
+    initSession();
+
+    return () => {
+      ignore = true;
+    };
   }, [refreshTrigger]);
 
   // Cargar notificaciones (AC 5.1)
-  const fetchNotifications = async () => {
-    try {
-      const data = await restaurantService.getNotifications();
-      setNotifications(data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   useEffect(() => {
+    let ignore = false;
+
     if (!isAuthLocked) {
-      fetchNotifications();
+      restaurantService
+        .getNotifications()
+        .then((data) => {
+          if (!ignore) {
+            setNotifications(data);
+          }
+        })
+        .catch((err) => {
+          console.error('Error loading notifications', err);
+        });
     }
+
+    return () => {
+      ignore = true;
+    };
   }, [isAuthLocked, refreshTrigger]);
 
   useEffect(() => {
@@ -443,11 +521,11 @@ export const MerchantFrame: React.FC = () => {
 
 
 
-  // Activar clases dinámicas de layout en el root y body según la pestaña activa
+  // Activate dynamic layout classes on root and body according to active tab
   useEffect(() => {
     const rootEl = document.getElementById('root');
     const bodyEl = document.body;
-    // Modo SaaS si el rol es SaaS Owner, si el tab es exclusivo de SaaS, o si la categoría activa es saas
+    // SaaS mode if role is SaaS Owner, if tab is SaaS-exclusive, or if active category is saas
     const exclusiveSaaS = [
       'saas-dashboard',
       'companies-dashboard',
@@ -476,7 +554,7 @@ export const MerchantFrame: React.FC = () => {
       rootEl?.classList.remove('restaurant-active', 'saas-active');
       bodyEl?.classList.remove('restaurant-active', 'saas-active');
     };
-  }, [activeTab]);
+  }, [activeTab, activeCategory, profile?.role]);
 
   const handleToggleApiFailure = () => {
     const newState = !apiFailedToggle;
@@ -515,7 +593,7 @@ export const MerchantFrame: React.FC = () => {
     return <KitchenMonitorView onBackToDashboard={() => setShowKitchenKDS(false)} />;
   }
 
-  // Renderizado dinámico de vistas SPA (AC 4.2)
+  // Dynamic SPA view rendering (AC 4.2)
   const renderSPAView = () => {
     // Check if this tab is a coming soon stub
     const stub = COMING_SOON_STUBS[activeTab];
@@ -539,7 +617,7 @@ export const MerchantFrame: React.FC = () => {
           <div className="p-6 bg-[#f1ece4] border border-[#e8e2d8] rounded mb-6 text-left">
             <p className="font-bold text-primary text-sm uppercase tracking-wider mb-2">Feature Coming Soon</p>
             <p className="text-body-md text-[#5f5e5e] leading-relaxed">
-              Esta sección está bajo desarrollo activo. En una futura actualización, estará disponible con todas sus funcionalidades en <strong>X7 Point of Sale</strong>.
+              This section is under active development. In a future update, it will be available with full functionality in <strong>X7 Point of Sale</strong>.
             </p>
           </div>
 
@@ -557,7 +635,7 @@ export const MerchantFrame: React.FC = () => {
               }}
               className="px-6 py-2.5 bg-[#222222] text-white font-bold text-xs uppercase tracking-wider hover:bg-primary transition-all rounded shadow-md"
             >
-              Volver al Dashboard
+              Back to Dashboard
             </button>
           </div>
         </div>
@@ -567,7 +645,7 @@ export const MerchantFrame: React.FC = () => {
     if (activeTab === 'saas-dashboard') {
       return (
         <div className="space-y-8 animate-fade-in text-left">
-          {/* Header del Dashboard de SaaS en el Canvas central */}
+          {/* SaaS Dashboard Header in central canvas */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
             <div>
               <h1 className="font-sans text-h1 text-[#222222] uppercase tracking-tighter">
@@ -655,37 +733,45 @@ export const MerchantFrame: React.FC = () => {
       return <CashDrawerHistoryView onNavigate={(view) => setActiveTab(view)} />;
     }
 
+    const safeNavigate = (path: string) => {
+      try {
+        navigate(path);
+      } catch {
+        // Router navigation suppressed if context not available
+      }
+    };
+
     const handleStaffNavigate = (target: string) => {
       if (target === '/staff-management/schedule/me' || target === 'my-schedule' || target === 'personal-schedule') {
         setActiveTab('my-schedule');
-        try { navigate('/staff-management/schedule/me'); } catch (e) {}
+        safeNavigate('/staff-management/schedule/me');
       } else if (target === '/staff-management/schedule/roster' || target === 'staff-roster' || target === 'roster') {
         setActiveTab('staff-roster');
-        try { navigate('/staff-management/schedule/roster'); } catch (e) {}
+        safeNavigate('/staff-management/schedule/roster');
       } else if (target === '/staff-management/schedule/assignments' || target === 'shift-assignment' || target === 'assignments') {
         setActiveTab('shift-assignment');
-        try { navigate('/staff-management/schedule/assignments'); } catch (e) {}
+        safeNavigate('/staff-management/schedule/assignments');
       } else if (target === '/staff-management/schedule/daily' || target === '/staff-management/schedule/timeline' || target === 'daily-timeline' || target === 'daily') {
         setActiveTab('daily-timeline');
-        try { navigate('/staff-management/schedule/daily'); } catch (e) {}
+        safeNavigate('/staff-management/schedule/daily');
       } else if (target === '/staff-management/schedule/shifts' || target === '/staff-management/schedule/scheduler' || target === 'shifts' || target === 'scheduler') {
         setActiveTab('shifts');
-        try { navigate('/staff-management/schedule/shifts'); } catch (e) {}
+        safeNavigate('/staff-management/schedule/shifts');
       } else if (target === '/staff-management/schedule/swaps' || target === 'staff-swaps' || target === 'swaps') {
         setActiveTab('staff-swaps');
-        try { navigate('/staff-management/schedule/swaps'); } catch (e) {}
+        safeNavigate('/staff-management/schedule/swaps');
       } else if (target === '/staff-management/schedule/marketplace' || target === '/staff-management/schedule/open-shifts' || target === 'open-shifts' || target === 'marketplace') {
         setActiveTab('open-shifts');
-        try { navigate('/staff-management/schedule/marketplace'); } catch (e) {}
+        safeNavigate('/staff-management/schedule/marketplace');
       } else if (target === '/staff-management/schedule/labor-forecasting' || target === 'labor-forecasting' || target === 'forecasting') {
         setActiveTab('labor-forecasting');
-        try { navigate('/staff-management/schedule/labor-forecasting'); } catch (e) {}
+        safeNavigate('/staff-management/schedule/labor-forecasting');
       } else if (target === '/staff-management/attendance/ledger' || target === 'collaborators-time-entries' || target === 'time-entries' || target === 'ledger') {
         setActiveTab('collaborators-time-entries');
-        try { navigate('/staff-management/attendance/ledger'); } catch (e) {}
+        safeNavigate('/staff-management/attendance/ledger');
       } else if (target === '/staff-management/attendance/kiosk' || target === 'time-clock' || target === 'time-clock-kiosk' || target === 'kiosk') {
         setActiveTab('time-clock-kiosk');
-        try { navigate('/staff-management/attendance/kiosk'); } catch (e) {}
+        safeNavigate('/staff-management/attendance/kiosk');
       } else if (
         target === '/store-operations/tips-ledger' ||
         target === '/tips/ledger' ||
@@ -694,7 +780,7 @@ export const MerchantFrame: React.FC = () => {
       ) {
         setActiveCategory('restaurant-operations');
         setActiveTab('tips-ledger');
-        try { navigate('/store-operations/tips-ledger'); } catch (e) {}
+        safeNavigate('/store-operations/tips-ledger');
       } else if (
         target === '/store-operations/tips-allocations' ||
         target === '/tips/allocations' ||
@@ -703,7 +789,7 @@ export const MerchantFrame: React.FC = () => {
       ) {
         setActiveCategory('restaurant-operations');
         setActiveTab('tips-allocations');
-        try { navigate('/tips/allocations'); } catch (e) {}
+        safeNavigate('/tips/allocations');
       } else if (
         target === '/tips/pools' ||
         target === 'tips-pools' ||
@@ -712,7 +798,7 @@ export const MerchantFrame: React.FC = () => {
       ) {
         setActiveCategory('restaurant-operations');
         setActiveTab('tips-pools');
-        try { navigate('/tips/pools'); } catch (e) {}
+        safeNavigate('/tips/pools');
       } else if (
         target === '/tips/pool-members' ||
         target === 'tips-pool-members' ||
@@ -943,10 +1029,10 @@ export const MerchantFrame: React.FC = () => {
     }
 
     if (activeTab === 'floor-plans') {
-      // `UserProfile` no expone merchant_id (solo name/role/portraitUrl/Plan_id/company_id, y
-      // company_id es el ámbito de Accounts Payable, no el merchant del dining-system), así que
-      // el merchant real se resuelve desde la sesión almacenada (el mismo id que viaja en el JWT
-      // con el que la vista llama a /api/floor-plan). Si no hay sesión, la vista aplica su default.
+      // `UserProfile` does not expose merchant_id (only name/role/portraitUrl/Plan_id/company_id, and
+      // company_id is the Accounts Payable scope, not the dining-system merchant), so
+      // the real merchant is resolved from stored session (the same id that travels in the JWT
+      // with which the view calls /api/floor-plan). If no session, the view applies its default.
       return (
         <FloorPlansView
           onNavigate={(view) => setActiveTab(view)}
@@ -1000,7 +1086,46 @@ export const MerchantFrame: React.FC = () => {
       );
     }
 
-    // El feature id de las zonas es `table-zones` (Features.txt), no 'floor-zones'.
+    // Reservations book. Among the 5 sub-modules in the epic, only state history
+    // remains without a dedicated view: the bottom navigation bar routes to its featureId
+    // and MerchantFrame handles it via the generic stub until implemented.
+    if (activeTab === 'reservations') {
+      return (
+        <ReservationsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-tables') {
+      return (
+        <ReservationTablesView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-notes') {
+      return (
+        <ReservationNotesView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-guests') {
+      return (
+        <ReservationGuestsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    // Zone feature id is `table-zones` (Features.txt), not 'floor-zones'.
     if (activeTab === 'table-zones') {
       return (
         <FloorZonesView
@@ -1073,7 +1198,7 @@ export const MerchantFrame: React.FC = () => {
 
 
     if (activeTab !== 'dashboard') {
-      // Resolver nombre e icono dinámicamente desde navCategories
+      // Dynamically resolve name and icon from navCategories
       let featureName = activeTab.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       let featureIcon = 'widgets';
       let appName = '';
@@ -1093,7 +1218,7 @@ export const MerchantFrame: React.FC = () => {
 
       return (
         <div className="bg-white border border-[#e8e2d8] rounded shadow-sm overflow-hidden">
-          {/* Header de la vista */}
+          {/* View Header */}
           <div className="bg-[#222222] px-8 py-6 flex items-center gap-5">
             <div className="w-12 h-12 bg-[#d51f2c] rounded flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-white text-2xl">{featureIcon}</span>
@@ -1108,7 +1233,7 @@ export const MerchantFrame: React.FC = () => {
             </div>
           </div>
 
-          {/* Cuerpo del stub */}
+          {/* Stub body */}
           <div className="p-10 text-center">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-full mb-6">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
@@ -1116,8 +1241,8 @@ export const MerchantFrame: React.FC = () => {
             </div>
 
             <p className="text-body-md text-[#5f5e5e] max-w-md mx-auto leading-relaxed">
-              El módulo <strong className="text-[#222222]">{featureName}</strong> está en desarrollo activo.
-              Estará disponible en una próxima versión de <strong className="text-[#d51f2c]">X7 Point of Sale</strong>.
+              The module <strong className="text-[#222222]">{featureName}</strong> is under active development.
+              It will be available in an upcoming release of <strong className="text-[#d51f2c]">X7 Point of Sale</strong>.
             </p>
 
             <div className="flex justify-center gap-3 mt-8">
@@ -1132,7 +1257,7 @@ export const MerchantFrame: React.FC = () => {
                 }}
                 className="px-5 py-2.5 bg-[#222222] text-white font-bold text-xs uppercase tracking-wider hover:bg-[#d51f2c] transition-all rounded shadow-sm"
               >
-                Volver al Dashboard
+                Back to Dashboard
               </button>
             </div>
           </div>
@@ -1147,7 +1272,7 @@ export const MerchantFrame: React.FC = () => {
           {/* Daily Sales Card */}
           <SalesMetricCard refreshTrigger={refreshTrigger} />
 
-          {/* Ocupación de mesas y rendimiento apilados */}
+          {/* Stacked tables occupancy and performance */}
           <div className="col-span-12 lg:col-span-4 grid grid-rows-2 gap-6">
             <TablesOccupancyCard refreshTrigger={refreshTrigger} />
             <KitchenPerformanceCard refreshTrigger={refreshTrigger} />
@@ -1245,7 +1370,7 @@ export const MerchantFrame: React.FC = () => {
               <p className="text-[10px] text-white/40">"{sidebarSearchQuery}"</p>
             </div>
           ) : profile?.role === 'SaaS Owner' ? (
-            // Menú dinámico para SaaS Owner — usa filteredNavCategories
+            // Dynamic menu for SaaS Owner — uses filteredNavCategories
             filteredNavCategories.map((cat) => {
               const isCatExpanded = sidebarSearchQuery.trim() !== '' || !!expandedCategories[cat.id];
               const hasActiveTab = cat.applications.some(app =>
@@ -1255,7 +1380,7 @@ export const MerchantFrame: React.FC = () => {
 
               return (
                 <div key={cat.id} className="w-full text-left">
-                  {/* L1: Categoría */}
+                  {/* L1: Category */}
                   <div
                     onClick={() => {
                       const isCurrentlyExpanded = !!expandedCategories[cat.id];
@@ -1364,7 +1489,7 @@ export const MerchantFrame: React.FC = () => {
             filteredNavCategories.map((cat) => {
               const isCatExpanded = sidebarSearchQuery.trim() !== '' || !!expandedCategories[cat.id];
               
-              // Determinar si alguna característica dentro de esta categoría está activa
+              // Determine if any feature within this category is active
               const hasActiveTab = cat.applications.some(app => 
                 app.features.some(f => f.id === activeTab)
               );
@@ -1372,7 +1497,7 @@ export const MerchantFrame: React.FC = () => {
 
               return (
                 <div key={cat.id} className="w-full text-left">
-                  {/* Nivel 1: Categoría */}
+                  {/* Level 1: Category */}
                   <div
                     onClick={() => {
                       const isCurrentlyExpanded = !!expandedCategories[cat.id];
@@ -1444,7 +1569,7 @@ export const MerchantFrame: React.FC = () => {
                               <span>{app.name}</span>
                             </div>
 
-                            {/* Nivel 3: Características (Omitido para Kitchen Display System ya que se navega internamente desde el hub) */}
+                            {/* Level 3: Features (Omitted for Kitchen Display System since it navigates internally from the hub) */}
                             {isAppExpanded && !isKDSApp && (
                               <div className="ml-14 mt-1 border-l border-white/10 space-y-1">
                                 {app.features.map((feat) => {
@@ -1568,17 +1693,17 @@ export const MerchantFrame: React.FC = () => {
         </button>
       )}
 
-      {/* Modales de Acciones Rápidas */}
+      {/* Quick Action Modals */}
       <NewReservationModal isOpen={isReservationOpen} onClose={() => setIsReservationOpen(false)} />
       <VoidTransactionModal isOpen={isVoidOpen} onClose={() => setIsVoidOpen(false)} />
       <EODReportModal isOpen={isEODOpen} onClose={() => setIsEODOpen(false)} />
       <EmergencySupportModal isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
       <NewQuickOrderModal isOpen={isQuickOrderOpen} onClose={() => setIsQuickOrderOpen(false)} />
 
-      {/* Modal Bloqueante de Login Gateway por 401 Unauthorized (AC 1.3) */}
+      {/* Blocking Login Gateway Modal for 401 Unauthorized (AC 1.3) */}
       <LoginGatewayModal isOpen={false} onLoginSuccess={handleLoginSuccess} />
 
-      {/* Botón Flotante de Controles de Demo en la esquina inferior izquierda del canvas */}
+      {/* Floating Demo Controls Button on bottom-left corner of canvas */}
       <div className={`fixed bottom-16 z-[9999] transition-all duration-300 ease-in-out ${
         isSidebarCollapsed ? 'left-6' : 'left-[272px]'
       }`}>
@@ -1594,10 +1719,10 @@ export const MerchantFrame: React.FC = () => {
           <div className="absolute bottom-12 left-0 w-64 bg-[#222222] border border-white/10 p-4 rounded shadow-2xl space-y-3 animate-fade-in text-left">
             <div>
               <p className="font-bold text-[#d51f2c] uppercase text-[10px] tracking-wider">Demo Simulation Controls</p>
-              <p className="text-[9px] text-white/50 mb-2">Simula condiciones en caliente.</p>
+              <p className="text-[9px] text-white/50 mb-2">Simulate live conditions.</p>
             </div>
 
-            {/* Simulación de Rol (Entorno) */}
+            {/* Role Simulation (Environment) */}
             <div className="border-t border-white/10 pt-2">
               <p className="font-bold text-white uppercase text-[9px] tracking-wider mb-1">Role / Environment</p>
               <select
@@ -1626,7 +1751,7 @@ export const MerchantFrame: React.FC = () => {
               </select>
             </div>
 
-            {/* Simulación de Plan (Solo para Merchant) */}
+            {/* Plan Simulation (Merchant Only) */}
             {profile?.role !== 'SaaS Owner' && (
               <div className="border-t border-white/10 pt-2">
                 <p className="font-bold text-white uppercase text-[9px] tracking-wider mb-1">Merchant Plan (Tier)</p>
@@ -1654,7 +1779,7 @@ export const MerchantFrame: React.FC = () => {
               </div>
             )}
 
-            {/* Simulación de Fallo de API en SaaS */}
+            {/* API Failure Simulation in SaaS */}
             {profile?.role === 'SaaS Owner' ? (
               <div className="border-t border-white/10 pt-2">
                 <p className="font-bold text-white uppercase text-[9px] tracking-wider mb-1">SaaS Status</p>
@@ -1666,7 +1791,7 @@ export const MerchantFrame: React.FC = () => {
                     apiFailedToggle ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
                   }`}
                 >
-                  {apiFailedToggle ? 'Simular API Online' : 'Simular Error de API'}
+                  {apiFailedToggle ? 'Simulate Online API' : 'Simulate API Failure'}
                 </button>
               </div>
             ) : (
@@ -1680,7 +1805,7 @@ export const MerchantFrame: React.FC = () => {
                     demo401Toggle ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
                   }`}
                 >
-                  {demo401Toggle ? 'Simular Sesión Ok (200)' : 'Forzar Expiración (401)'}
+                  {demo401Toggle ? 'Simulate Session OK (200)' : 'Force Expiration (401)'}
                 </button>
               </div>
             )}

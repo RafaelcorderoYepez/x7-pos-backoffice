@@ -43,39 +43,64 @@ export const TipsLedgerView: React.FC<TipsLedgerViewProps> = ({
   // Detail & Adjustment Drawer State
   const [activeDrawerTip, setActiveDrawerTip] = useState<Tip | null>(null);
 
-  const loadTipsData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      let statusFilter: TipStatus | 'ALL' | TipStatus[] | 'NON_SETTLED' = selectedStatus;
-      if (selectedStatus === 'NON_SETTLED') {
-        statusFilter = ['PENDING', 'ALLOCATED'];
-      }
+  const [refreshKey, setRefreshKey] = useState(0);
 
-      // Executes query targeting primary @Index(['company_id', 'merchant_id', 'created_at'])
-      // and secondary @Index(['order_id', 'status', 'record_status'])
-      const data = await fetchTips({
-        company_id: companyId,
-        merchant_id: resolvedMerchantId,
-        status: statusFilter,
-        method: selectedMethod,
-        record_status: selectedRecordStatus,
-        search: searchQuery,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-      });
-
-      setTips(data);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to hydrate tips directory.');
-    } finally {
-      setLoading(false);
-    }
+  const loadTipsData = () => {
+    setRefreshKey((k) => k + 1);
   };
 
   useEffect(() => {
-    loadTipsData();
-  }, [companyId, resolvedMerchantId, searchQuery, selectedMethod, selectedStatus, selectedRecordStatus, dateFrom, dateTo]);
+    let isCancelled = false;
+    void Promise.resolve().then(async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        let statusFilter: TipStatus | 'ALL' | TipStatus[] | 'NON_SETTLED' = selectedStatus;
+        if (selectedStatus === 'NON_SETTLED') {
+          statusFilter = ['PENDING', 'ALLOCATED'];
+        }
+
+        // Executes query targeting primary @Index(['company_id', 'merchant_id', 'created_at'])
+        // and secondary @Index(['order_id', 'status', 'record_status'])
+        const data = await fetchTips({
+          company_id: companyId,
+          merchant_id: resolvedMerchantId,
+          status: statusFilter,
+          method: selectedMethod,
+          record_status: selectedRecordStatus,
+          search: searchQuery,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        });
+
+        if (!isCancelled) {
+          setTips(data);
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to hydrate tips directory.');
+        }
+      } finally {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    companyId,
+    resolvedMerchantId,
+    searchQuery,
+    selectedMethod,
+    selectedStatus,
+    selectedRecordStatus,
+    dateFrom,
+    dateTo,
+    refreshKey,
+  ]);
 
   const metrics = useMemo(() => calculateTipsSummaryMetrics(tips), [tips]);
 

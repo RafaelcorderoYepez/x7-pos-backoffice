@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
@@ -11,7 +11,7 @@ import { CashManagementQuickLinks } from './CashManagementQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-export const STATUS_BADGE_CLASSES: Record<CashDrawerStatus, string> = {
+const STATUS_BADGE_CLASSES: Record<CashDrawerStatus, string> = {
   Open: 'bg-green-500/10 text-green-600',
   Close: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
   Pause: 'bg-amber-500/10 text-amber-600',
@@ -21,7 +21,7 @@ export const STATUS_BADGE_CLASSES: Record<CashDrawerStatus, string> = {
 // The backend stores balances as Postgres `decimal` columns with no server-side
 // coercion, so they arrive over the wire as numeric strings (e.g. "12345.00").
 // Normalize at the fetch boundary so every `CashDrawer` in state has real numbers.
-export function normalizeDrawer(raw: CashDrawer): CashDrawer {
+function normalizeDrawer(raw: CashDrawer): CashDrawer {
   return {
     ...raw,
     openingBalance: Number(raw.openingBalance),
@@ -30,11 +30,11 @@ export function normalizeDrawer(raw: CashDrawer): CashDrawer {
   };
 }
 
-export function formatCurrency(n: number): string {
+function formatCurrency(n: number): string {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function formatDateTime(value: string): string {
+function formatDateTime(value: string): string {
   const d = new Date(value);
   return isNaN(d.getTime()) ? '—' : d.toLocaleString();
 }
@@ -327,7 +327,7 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
     return () => clearTimeout(handler);
   }, [shiftIdFilter]);
 
-  const fetchCashDrawers = async (overrides?: { status?: '' | CashDrawerStatus; shiftId?: string }) => {
+  const fetchCashDrawers = useCallback(async (overrides?: { status?: '' | CashDrawerStatus; shiftId?: string }) => {
     const effectiveStatus = overrides?.status ?? statusFilter;
     const effectiveShiftId = overrides?.shiftId ?? debouncedShiftIdFilter;
     const requestId = ++latestRequestIdRef.current;
@@ -345,12 +345,12 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar las sesiones de caja');
+        throw new Error('Error loading cash drawer sessions');
       }
 
       const json = await res.json();
@@ -364,7 +364,7 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
     } finally {
       if (requestId === latestRequestIdRef.current) setLoading(false);
     }
-  };
+  }, [statusFilter, debouncedShiftIdFilter]);
 
   useEffect(() => {
     if (skipNextFilterEffectFetchRef.current) {
@@ -373,8 +373,10 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
       skipNextFilterEffectFetchRef.current = false;
       return;
     }
-    fetchCashDrawers();
-  }, [statusFilter, debouncedShiftIdFilter]);
+    void Promise.resolve().then(() => {
+      fetchCashDrawers();
+    });
+  }, [fetchCashDrawers]);
 
   const filteredDrawers = React.useMemo(() => {
     const term = searchQuery.trim().toLowerCase();
@@ -500,8 +502,8 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
       await fetchCashDrawers();
       setFormModalOpen(false);
       setToast({ message: 'Cash drawer opened successfully', type: 'success' });
-    } catch (err: any) {
-      setCreateError(err.message || 'Failed to open cash drawer');
+    } catch (err: unknown) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to open cash drawer');
     } finally {
       setFormSubmitting(false);
     }
@@ -539,7 +541,7 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -553,8 +555,8 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
       await fetchCashDrawers();
       setClosingDrawer(null);
       setToast({ message: 'Cash drawer closed successfully', type: 'success' });
-    } catch (err: any) {
-      setCloseError(err.message || 'Failed to close cash drawer');
+    } catch (err: unknown) {
+      setCloseError(err instanceof Error ? err.message : 'Failed to close cash drawer');
     } finally {
       setCloseSubmitting(false);
     }

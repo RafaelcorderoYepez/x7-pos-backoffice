@@ -40,7 +40,7 @@ const formatDate = (value?: string | null): string => {
 const remainingBalance = (cn: Pick<SupplierCreditNote, 'total_amount' | 'applied_amount'>): number =>
   Math.max(0, num(cn.total_amount) - num(cn.applied_amount));
 
-// Una nota de crédito con monto aplicado bloquea sus campos estructurales.
+// A credit note with applied amount locks structural fields.
 const isApplied = (cn: Pick<SupplierCreditNote, 'applied_amount'>): boolean => num(cn.applied_amount) > 0;
 
 const STATUS_BADGE_STYLES: Record<SupplierCreditNoteStatus, string> = {
@@ -77,7 +77,7 @@ const CreditNoteFormDrawer: React.FC<CreditNoteFormDrawerProps> = ({
   const [status, setStatus] = useState<SupplierCreditNoteStatus>(initial?.status ?? 'draft');
 
   const appliedAmount = num(initial?.applied_amount);
-  // Lock de auditoría: si ya hay monto aplicado, supplier_id y total_amount son read-only.
+  // Audit lock: if applied amount exists, supplier_id and total_amount are read-only.
   const locked = mode === 'edit' && appliedAmount > 0;
 
   // Guard: no permitir marcar FULLY_APPLIED salvo que applied === total.
@@ -458,7 +458,7 @@ const ConfirmDeleteDialog: React.FC<ConfirmDeleteDialogProps> = ({
 interface SupplierCreditNotesViewProps {
   onNavigate?: (view: string) => void;
   companyId?: number;
-  // Salta a la matriz de asignaciones ya filtrada por esta nota de crédito.
+  // Jumps to allocations matrix filtered by this credit note.
   onViewAllocations?: (creditNote: SupplierCreditNote) => void;
 }
 
@@ -504,7 +504,7 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
     window.location.href = '/login';
   };
 
-  // Resuelve el nombre del proveedor (el backend no lo embebe en la nota).
+  // Resolves supplier name (backend does not embed supplier object).
   const supplierNameById = useMemo(() => {
     const map = new Map<number, string>();
     suppliers.forEach((s) => map.set(s.id, s.name));
@@ -524,7 +524,7 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
     try {
       const res = await fetch(`${API_BASE}/supplier-credit-notes?limit=100`, { headers: authHeaders() });
       if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error al cargar las notas de crédito');
+      if (!res.ok) throw new Error('Error loading credit notes');
       const json = await res.json();
       const active = (json.data ?? []).filter((cn: SupplierCreditNote) => !cn.deleted_at);
       setCreditNotes(active);
@@ -548,8 +548,10 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
   };
 
   useEffect(() => {
-    fetchCreditNotes();
-    fetchSuppliers();
+    void Promise.resolve().then(() => {
+      fetchCreditNotes();
+      fetchSuppliers();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompanyId]);
 
@@ -599,9 +601,9 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
       setCreditNotes((prev) => [json.data, ...prev]);
       setFormDrawer(null);
       setToast({ message: 'Credit note issued successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormDrawer(null);
-      setToast({ message: err.message || 'Failed to issue credit note', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to issue credit note', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
@@ -621,15 +623,15 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
       setCreditNotes((prev) => prev.map((cn) => (cn.id === json.data.id ? json.data : cn)));
       setFormDrawer(null);
       setToast({ message: 'Credit note updated successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormDrawer(null);
-      setToast({ message: err.message || 'Failed to update credit note', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to update credit note', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
   };
 
-  // Bloqueo de borrado: no se puede soft-delete si tiene monto aplicado.
+  // Deletion lock: cannot soft-delete if it has applied amount.
   const handleDeleteClick = (cn: SupplierCreditNote) => {
     if (isApplied(cn)) {
       setToast({
@@ -657,9 +659,9 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
       setCreditNotes((prev) => prev.filter((cn) => cn.id !== deletingNote.id));
       setDeletingNote(null);
       setToast({ message: 'Credit note deleted successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setDeletingNote(null);
-      setToast({ message: err.message || 'Failed to delete credit note', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to delete credit note', type: 'error' });
     } finally {
       setDeleteSubmitting(false);
     }

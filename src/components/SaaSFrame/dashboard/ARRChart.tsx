@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import 'chart.js/auto';
 import { Line } from 'react-chartjs-2';
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -11,24 +11,49 @@ export const ARRChart: React.FC = () => {
   const [revenueData, setRevenueData] = useState<RevenueData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const chartRef = useRef<any>(null);
-
-  const fetchRevenue = async (selectedPeriod: '1M' | '6M' | '1Y') => {
+  const handleRetry = useCallback(() => {
     setLoading(true);
     setError(null);
-    try {
-      const data = await saasService.getRevenue(selectedPeriod);
-      setRevenueData(data);
-    } catch (err) {
-      setError('Error al cargar datos de ingresos');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    saasService.getRevenue(period)
+      .then(data => {
+        setRevenueData(data);
+        setError(null);
+      })
+      .catch(err => {
+        setError('Error loading revenue data');
+        console.error(err);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [period]);
 
   useEffect(() => {
-    fetchRevenue(period);
+    let ignore = false;
+    Promise.resolve().then(async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await saasService.getRevenue(period);
+        if (!ignore) {
+          setRevenueData(data);
+          setError(null);
+        }
+      } catch (err: unknown) {
+        if (!ignore) {
+          setError('Error loading revenue data');
+          console.error(err);
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      ignore = true;
+    };
   }, [period]);
 
   const getChartData = (): ChartData<'line'> => {
@@ -44,7 +69,7 @@ export const ARRChart: React.FC = () => {
           data: revenueData.values,
           borderColor: '#222222',
           borderWidth: 3,
-          backgroundColor: (context: any) => {
+          backgroundColor: (context: { chart: { ctx: CanvasRenderingContext2D; chartArea?: { top: number; bottom: number } } }) => {
             const chart = context.chart;
             const { ctx, chartArea } = chart;
             if (!chartArea) {
@@ -121,12 +146,13 @@ export const ARRChart: React.FC = () => {
             size: 11,
           },
           color: '#666666',
-          callback: function (value: any) {
-            if (value >= 1e6) {
-              return '$' + (value / 1e6).toFixed(1) + 'M';
+          callback: function (value: string | number) {
+            const numVal = typeof value === 'number' ? value : parseFloat(value);
+            if (numVal >= 1e6) {
+              return '$' + (numVal / 1e6).toFixed(1) + 'M';
             }
-            if (value >= 1e3) {
-              return '$' + (value / 1e3).toFixed(0) + 'k';
+            if (numVal >= 1e3) {
+              return '$' + (numVal / 1e3).toFixed(0) + 'k';
             }
             return '$' + value;
           },
@@ -163,7 +189,7 @@ export const ARRChart: React.FC = () => {
               <div className="h-5 bg-zinc-200 rounded w-36"></div>
             </div>
             <div className="relative w-full h-[300px] bg-[#f9f7f4] border border-dashed border-[#e8e2d8] rounded flex items-center justify-center">
-              <div className="text-label-caps text-[#666666]">Cargando gráfico de ingresos...</div>
+              <div className="text-label-caps text-[#666666]">Loading revenue chart...</div>
             </div>
           </div>
         ) : error || !revenueData ? (
@@ -174,12 +200,12 @@ export const ARRChart: React.FC = () => {
             </div>
             <div className="relative w-full h-[300px] bg-red-50/20 border border-dashed border-red-200 rounded flex flex-col items-center justify-center gap-3">
               <span className="material-symbols-outlined text-red-400 text-3xl">error</span>
-              <span className="text-label-caps text-red-500">Error al cargar la visualización del ARR</span>
+              <span className="text-label-caps text-red-500">Error loading ARR visualization</span>
               <button
-                onClick={() => fetchRevenue(period)}
+                onClick={handleRetry}
                 className="px-3 py-1 bg-[#d51f2c] text-white font-bold text-[10px] uppercase hover:opacity-90 transition-all"
               >
-                Reintentar
+                Retry
               </button>
             </div>
           </div>
@@ -192,7 +218,7 @@ export const ARRChart: React.FC = () => {
               </span>
             </div>
             <div className="relative w-full h-[300px] bg-[#f9f7f4] border border-[#e8e2d8] p-4 rounded">
-              <Line ref={chartRef} data={getChartData()} options={chartOptions} />
+              <Line data={getChartData()} options={chartOptions} />
             </div>
           </div>
         )}

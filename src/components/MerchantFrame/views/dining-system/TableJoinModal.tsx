@@ -1,9 +1,9 @@
-// Unión de mesas para grupos grandes: se eligen las mesas que se acercan a una mesa madre.
+// Joining tables for large groups: tables placed near a parent table are selected.
 //
-// La lista de candidatas la calcula eligibleParentTables() al revés: aquí lo que se excluye
-// es la propia madre y su descendencia, para que no se pueda cerrar un ciclo (A madre de B,
-// B madre de A). El backend sólo vigila el ciclo de un salto, así que este filtro es el que
-// sostiene la regla en cadenas largas.
+// Candidate list is calculated by eligibleParentTables() inversely: here what is excluded
+// is the parent table itself and its descendants, preventing circular loops (A parent of B,
+// B parent of A). The backend only checks single-hop cycles, so this filter is what
+// enforces the rule across deeper hierarchies.
 
 import React, { useMemo, useState } from 'react';
 import type { DiningTable } from '../../../../types/dining-system';
@@ -37,7 +37,7 @@ export const TableJoinModal: React.FC<TableJoinModalProps> = ({
   useModalDismiss(onCancel);
 
   // Candidatas: ni la madre, ni su descendencia (candado circular), ni las que ya cuelgan
-  // de otra mesa — esas hay que desunirlas antes para no robárselas a su grupo.
+  // from another table — those must be separated first so they are not stolen from their group.
   const candidates = useMemo(() => {
     const blocked = descendantTableIds(tables, parent.id);
     return tables.filter(

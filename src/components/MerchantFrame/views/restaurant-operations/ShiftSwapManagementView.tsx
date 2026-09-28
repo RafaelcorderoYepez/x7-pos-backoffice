@@ -24,7 +24,7 @@ export interface ShiftSwapManagementViewProps {
 
 export type ViewLayoutMode = 'grid' | 'table';
 
-export const STATUS_CONFIG: Record<
+const STATUS_CONFIG: Record<
   ShiftSwapStatus,
   { label: string; bg: string; text: string; border: string; icon: string }
 > = {
@@ -129,7 +129,9 @@ export const ShiftSwapManagementView: React.FC<ShiftSwapManagementViewProps> = (
   }, [activeMerchantId, statusFilter, startDate, endDate, searchQuery]);
 
   useEffect(() => {
-    loadData();
+    void Promise.resolve().then(() => {
+      loadData();
+    });
   }, [loadData]);
 
   const showToast = (text: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -1010,7 +1012,7 @@ export const ShiftSwapManagementView: React.FC<ShiftSwapManagementViewProps> = (
           activeMerchantId={activeMerchantId}
           onClose={() => setShowCreateModal(false)}
           onCreated={async (newSwap) => {
-            showCreateModal && setShowCreateModal(false);
+            setShowCreateModal(false);
             showToast(`New trade request #${newSwap.id} created successfully!`, 'success');
             await loadData();
           }}

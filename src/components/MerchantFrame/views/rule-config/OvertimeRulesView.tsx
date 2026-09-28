@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
@@ -20,13 +20,13 @@ function fuzzyMatch(query: string, target: string): boolean {
   return qi === query.length;
 }
 
-export function formatThreshold(rule: MerchantOvertimeRule): string {
+function formatThreshold(rule: MerchantOvertimeRule): string {
   const threshold = rule.thresholdHours == null ? '--' : `${rule.thresholdHours}h`;
   const max = rule.maxHours == null ? '--' : `${rule.maxHours}`;
   return `${threshold} Threshold / ${max} Max`;
 }
 
-export function formatRateMechanics(rule: MerchantOvertimeRule): string {
+function formatRateMechanics(rule: MerchantOvertimeRule): string {
   switch (rule.rateMethod) {
     case 'percentage':
       return `${rule.rateValue}%`;
@@ -509,8 +509,8 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
     return () => clearTimeout(t);
   }, [toast]);
 
-  const fetchOvertimeRules = async () => {
-    setLoading(true);
+  const fetchOvertimeRules = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const token = getAccessToken();
@@ -523,12 +523,12 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar las reglas de horas extra');
+        throw new Error('Error loading overtime rules');
       }
 
       const json = await res.json();
@@ -539,11 +539,13 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchOvertimeRules();
-  }, []);
+    void Promise.resolve().then(() => {
+      fetchOvertimeRules(true);
+    });
+  }, [fetchOvertimeRules]);
 
   const handleCreateSubmit = async (dto: CreateOvertimeRuleDto) => {
     setFormSubmitting(true);
@@ -560,7 +562,7 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -572,9 +574,9 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
       setRules((prev) => [json.data, ...prev]);
       setFormModalOpen(null);
       setToast({ message: 'Overtime rule created successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormModalOpen(null);
-      setToast({ message: err.message || 'Failed to create overtime rule', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to create overtime rule', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
@@ -595,7 +597,7 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -607,9 +609,9 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
       setFormModalOpen(null);
       setToast({ message: 'Overtime rule updated successfully', type: 'success' });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setFormModalOpen(null);
-      setToast({ message: err.message || 'Failed to update overtime rule', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to update overtime rule', type: 'error' });
     } finally {
       setFormSubmitting(false);
     }
@@ -625,7 +627,7 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -635,8 +637,8 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
       }
 
       setDetailRule(json.data);
-    } catch (err: any) {
-      setToast({ message: err.message || 'Failed to load overtime rule details', type: 'error' });
+    } catch (err: unknown) {
+      setToast({ message: err instanceof Error ? err.message : 'Failed to load overtime rule details', type: 'error' });
     }
   };
 
@@ -657,7 +659,7 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -675,9 +677,9 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
             : 'Overtime rule reactivated successfully',
         type: 'success',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setTogglingRule(null);
-      setToast({ message: err.message || 'Failed to update overtime rule status', type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : 'Failed to update overtime rule status', type: 'error' });
     } finally {
       setToggleSubmitting(false);
     }
@@ -725,7 +727,7 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
         <p className="mt-3 text-red-700 font-medium">{error}</p>
         <button
           type="button"
-          onClick={fetchOvertimeRules}
+          onClick={() => { void fetchOvertimeRules(); }}
           className="mt-4 px-4 py-2 bg-[#222222] text-white font-bold text-[11px] uppercase tracking-widest hover:bg-[#ae001a] transition-colors"
         >
           Retry Connection

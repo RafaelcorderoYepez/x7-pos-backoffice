@@ -7,7 +7,9 @@ import { useEffect, useRef } from 'react';
 // (renderizado condicional), de modo que mount/unmount coincida con open/close.
 export function useModalDismiss(onDismiss: () => void): void {
   const dismissRef = useRef(onDismiss);
-  dismissRef.current = onDismiss;
+  useEffect(() => {
+    dismissRef.current = onDismiss;
+  });
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {

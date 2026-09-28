@@ -1,5 +1,4 @@
 import React from 'react';
-import { QuickLaunchPanel, type QuickLaunchAction } from '../../shared/QuickLaunchPanel';
 
 export type TipsManagementModuleKey =
   | 'tips-ledger'
@@ -28,7 +27,7 @@ export interface TipShortcutAnchor {
   icon: string;
 }
 
-export const TIP_SHORTCUT_ANCHORS: TipShortcutAnchor[] = [
+const TIP_SHORTCUT_ANCHORS: TipShortcutAnchor[] = [
   {
     key: 'tips-ledger',
     route: '/tips/ledger',
@@ -71,24 +70,6 @@ export const TipsManagementQuickLinks: React.FC<TipsManagementQuickLinksProps> =
   activeModule = 'tips-ledger',
   onNavigate,
 }) => {
-  const actions: QuickLaunchAction[] = TIP_SHORTCUT_ANCHORS.map((anchor) => {
-    const isActive =
-      activeModule === anchor.key ||
-      activeModule === anchor.route ||
-      (activeModule === 'tips-ledger' && anchor.key === 'tips-ledger') ||
-      ((activeModule === 'merchant-tips-rules' || activeModule === 'tips-rules') && anchor.key === 'tips-pools');
-
-    return {
-      id: anchor.key,
-      label: anchor.label,
-      icon: anchor.icon,
-      active: isActive,
-      onClick: () => {
-        onNavigate?.(anchor.route);
-      },
-    };
-  });
-
   return (
     <nav
       aria-label="Tips management navigation hub bar"

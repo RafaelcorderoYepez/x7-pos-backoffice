@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 import { getMerchantUsers } from '../../../../../api/users';
@@ -10,8 +10,8 @@ import {
   NoColumnsEmptyState,
   TableEmptyState,
   TablePaginationFooter,
-  getDensityPadding,
 } from '../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -100,9 +100,8 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
   const [stations, setStations] = useState<StationOption[]>([]);
   const [staffUsers, setStaffUsers] = useState<MerchantUser[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(10);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [currentNow] = useState(() => Date.now());
 
   // Multi-dimensional Filter Bar State
   const [searchQuery, setSearchQuery] = useState<string>(() => {
@@ -184,7 +183,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         if (!res.ok) return;
         const data = await res.json();
         const rawList = data.data || data || [];
-        setStations(rawList.map((st: any) => ({ id: st.id, name: st.name, code: st.code })));
+        setStations(rawList.map((st: { id: number; name: string; code?: string }) => ({ id: st.id, name: st.name, code: st.code })));
       } catch (e) {
         console.error('Failed to load stations', e);
       }
@@ -261,9 +260,8 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
   };
 
   // 5. Fetch Event Logs from Backend
-  const fetchEventLogs = async (silent: boolean = false) => {
+  const fetchEventLogs = useCallback(async (silent: boolean = false) => {
     if (!silent) setLoading(true);
-    setRefreshing(true);
     try {
       const token = getAccessToken();
       const headers: Record<string, string> = {
@@ -271,60 +269,57 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
-      const params = new URLSearchParams({
-        limit: '100',
-        sortBy: 'eventTime',
-        sortOrder: 'DESC',
-      });
-
-      if (selectedStationId !== 'ALL') {
-        params.append('stationId', selectedStationId.toString());
-      }
-      if (selectedUserId !== 'ALL') {
-        params.append('userId', selectedUserId.toString());
-      }
-      if (selectedEventTypes.length > 0 && selectedEventTypes.length < 4) {
-        params.append('eventTypes', selectedEventTypes.join(','));
-      }
-      if (startTime) {
-        params.append('startTime', new Date(startTime).toISOString());
-      }
-      if (endTime) {
-        params.append('endTime', new Date(endTime).toISOString());
-      }
-
-      // Entity ID detection in search query (#KO-11, #ITM-5, #KEL-4, or numbers)
-      const numMatch = searchQuery.match(/\d+/);
-      if (numMatch && (searchQuery.includes('#') || searchQuery.trim().length <= 5)) {
-        params.append('searchId', numMatch[0]);
-      }
+      const params = new URLSearchParams();
+      if (selectedStationId !== 'ALL') params.append('stationId', selectedStationId.toString());
+      if (selectedUserId !== 'ALL') params.append('userId', selectedUserId.toString());
+      if (selectedEventTypes.length > 0) params.append('eventTypes', selectedEventTypes.join(','));
+      if (startTime) params.append('startTime', startTime);
+      if (endTime) params.append('endTime', endTime);
+      params.append('limit', '100');
 
       const res = await fetch(`${API_BASE}/kitchen-event-logs?${params.toString()}`, { headers });
       if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        const detailMsg =
-          (Array.isArray(errJson?.errors) ? errJson.errors.join(', ') : errJson?.message) ||
-          `Server returned HTTP ${res.status}`;
-        throw new Error(detailMsg);
+        throw new Error(`Failed to load event logs (${res.status})`);
       }
-      const json = await res.json();
-      const records: KitchenEventLogRecord[] = Array.isArray(json.data) ? json.data : [];
-      setLogs(records);
-      setLastUpdated(new Date());
-    } catch (err: any) {
+
+      const resData = await res.json();
+      const rawLogs = resData.data || resData || [];
+
+      const parsed: KitchenEventLogRecord[] = rawLogs.map((item: Record<string, unknown>) => ({
+        id: Number(item.id),
+        kitchenOrderId: (item.kitchenOrderId || item.kitchen_order_id || null) as number | null,
+        kitchenOrderItemId: (item.kitchenOrderItemId || item.kitchen_order_item_id || null) as number | null,
+        stationId: (item.stationId || item.station_id || null) as number | null,
+        userId: (item.userId || item.user_id || null) as number | null,
+        eventType: (item.eventType || item.event_type || 'inicio') as KitchenEventType,
+        eventTime: String(item.eventTime || item.event_time || item.createdAt || item.created_at || new Date().toISOString()),
+        message: (item.notes || item.message || null) as string | null,
+        status: (item.status === 'deleted' ? 'deleted' : 'active') as 'active' | 'deleted',
+        createdAt: String(item.createdAt || item.created_at || new Date().toISOString()),
+        updatedAt: String(item.updatedAt || item.updated_at || new Date().toISOString()),
+        user: (item.user as KitchenEventLogUser) || (item.userName ? { id: Number(item.userId || 0), name: String(item.userName) } : null),
+        station: (item.station as KitchenEventLogStation) || (item.stationName ? { id: Number(item.stationId || 0), name: String(item.stationName) } : null),
+        kitchenOrder: (item.kitchenOrder as KitchenEventLogOrder) || null,
+        kitchenOrderItem: (item.kitchenOrderItem as KitchenEventLogOrderItem) || null,
+      }));
+
+      setLogs(parsed);
+    } catch (err: unknown) {
       console.error('Failed to fetch kitchen event logs', err);
       if (!silent) {
-        showToast(`Error syncing event logs: ${err.message || 'Network error'}`, 'warning');
+        const msg = err instanceof Error ? err.message : 'Network error';
+        showToast(`Error syncing event logs: ${msg}`, 'warning');
       }
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  };
+  }, [selectedStationId, selectedUserId, selectedEventTypes, startTime, endTime]);
 
   useEffect(() => {
-    fetchEventLogs();
-  }, [selectedStationId, selectedUserId, selectedEventTypes, startTime, endTime]);
+    void Promise.resolve().then(() => {
+      fetchEventLogs(true);
+    });
+  }, [fetchEventLogs]);
 
   // Auto-refresh timer
   useEffect(() => {
@@ -333,7 +328,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
       fetchEventLogs(true);
     }, autoRefreshInterval * 1000);
     return () => clearInterval(interval);
-  }, [autoRefreshInterval, selectedStationId, selectedUserId, selectedEventTypes, startTime, endTime]);
+  }, [autoRefreshInterval, fetchEventLogs]);
 
   // Client-side instant search filtering
   const filteredLogs = useMemo(() => {
@@ -382,7 +377,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
     return result;
   }, [logs, searchQuery]);
 
-  // Agrupamiento por orden (patrón estilo stock)
+  // Grouping by order (stock style pattern)
   const groupedOrders = useMemo(() => {
     const groupMap = new Map<string, GroupedOrderEvents>();
 
@@ -421,27 +416,52 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
 
     const groups = Array.from(groupMap.values());
 
-    // 1. Dentro de cada grupo de orden, ordenar eventos estrictamente en el orden en que ocurrieron (cronológico)
+    // 1. Within each order group, sort events strictly in logical and chronological order:
+    // STARTED (inicio) -> READY (listo) -> SERVED (servido) -> CANCELLED (cancelado)
+    const stageWeight: Record<string, number> = {
+      inicio: 1,
+      listo: 2,
+      servido: 3,
+      cancelado: 4,
+    };
+
     groups.forEach((grp) => {
       grp.events.sort((a, b) => {
         const timeA = new Date(a.eventTime).getTime();
         const timeB = new Date(b.eventTime).getTime();
+
+        // Si hay una diferencia apreciable de tiempo (> 2s), respetar el tiempo real
+        if (Math.abs(timeA - timeB) > 2000) {
+          return timeA - timeB;
+        }
+
+        // Si ocurrieron en la misma ráfaga o segundo (ej: auto-bump al marcar listo),
+        // garantizar el orden de ciclo de vida natural: INICIO -> LISTO -> SERVIDO
+        const weightA = stageWeight[a.eventType] ?? 99;
+        const weightB = stageWeight[b.eventType] ?? 99;
+        if (weightA !== weightB) {
+          return weightA - weightB;
+        }
+
         if (timeA !== timeB) return timeA - timeB;
         return (a.id ?? 0) - (b.id ?? 0);
       });
     });
 
-    // 2. Orden de la tabla: Órdenes con eventos más recientes primero
+    // 2. Table ordering: Newest orders first (de la orden más nueva a la más vieja)
     groups.sort((a, b) => {
       if (!a.orderId) return 1;
       if (!b.orderId) return -1;
-      return new Date(b.lastEventTime).getTime() - new Date(a.lastEventTime).getTime();
+      if (b.orderId !== a.orderId) {
+        return b.orderId - a.orderId;
+      }
+      return new Date(b.firstEventTime).getTime() - new Date(a.firstEventTime).getTime();
     });
 
     return groups;
   }, [filteredLogs]);
 
-  // Estado de grupos expandidos (por defecto todas las órdenes cerradas/contraídas)
+  // Expanded groups state (all orders collapsed by default)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const toggleGroup = (key: string) => {
@@ -543,7 +563,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
 
   const formatRelativeTime = (dateStr: string) => {
     if (!dateStr) return '';
-    const diffSec = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000));
+    const diffSec = Math.max(0, Math.floor((currentNow - new Date(dateStr).getTime()) / 1000));
     if (diffSec < 60) return `${diffSec}s ago`;
     const mins = Math.floor(diffSec / 60);
     if (mins < 60) return `${mins}m ago`;
@@ -594,7 +614,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
     }
   };
 
-  const handleCopyPayload = (data: any) => {
+  const handleCopyPayload = (data: unknown) => {
     navigator.clipboard.writeText(JSON.stringify(data, null, 2));
     setCopySuccessJson(true);
     setTimeout(() => setCopySuccessJson(false), 2000);
@@ -717,7 +737,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         </div>
       </div>
 
-      {/* 1.5 Story 4203: Real-Time Event Metrics Velocity KPI Bar (4 Cuadrados idénticos en fila estática con Detección de Incidentes) */}
+      {/* 1.5 Story 4203: Real-Time Event Metrics Velocity KPI Bar (4 identical cards in static row with Incident Detection) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Events Today */}
         <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 transition-all duration-200 hover:border-[#d5cfc4]">
@@ -934,18 +954,18 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
             <span className="text-[11px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-1">
               Date Range:
             </span>
-            {[
+            {([
               { id: 'all', label: 'All Time' },
               { id: 'today', label: 'Today' },
               { id: 'last24h', label: 'Last 24h' },
               { id: 'last7d', label: 'Last 7 Days' },
               { id: 'custom', label: 'Custom' },
-            ].map((p) => {
+            ] as const).map((p) => {
               const isActive = datePreset === p.id;
               return (
                 <button
                   key={p.id}
-                  onClick={() => handlePresetChange(p.id as any)}
+                  onClick={() => handlePresetChange(p.id)}
                   className={`px-2.5 py-1 rounded text-xs font-semibold transition-all duration-200 cursor-pointer border ${
                     isActive
                       ? 'bg-[#1d1c17] text-white border-[#1d1c17]'
@@ -1137,7 +1157,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
 
       {/* 3. Standard Canonical Table Container */}
       <div className="bg-white border border-[#e8e2d8] rounded shadow-sm relative overflow-hidden">
-        {/* HeaderQuickTabs con Título Oficial, Badge de Conteo y TableOptionsMenu */}
+        {/* HeaderQuickTabs with Official Title, Count Badge, and TableOptionsMenu */}
         <HeaderQuickTabs
           title="KITCHEN EVENT LOG AUDIT DIRECTORY"
           badgeCount={
@@ -1264,7 +1284,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
 
                       return (
                         <React.Fragment key={group.orderKey}>
-                          {/* Fila Principal de la Orden (Cabecera de Grupo estilo Stock) */}
+                          {/* Order Main Row (Group Header) */}
                           <tr
                             onClick={() => toggleGroup(group.orderKey)}
                             className={`group transition-colors duration-150 cursor-pointer border-t-2 border-[#e8e2d8] ${
@@ -1298,7 +1318,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                               </td>
                             )}
 
-                            {/* Columna 2: Estado general de la comanda */}
+                            {/* Column 2: Overall ticket status */}
                             {visibleColumns.eventType && (
                               <td className={`${densityPadding} truncate`}>
                                 {group.hasCancellation ? (
@@ -1345,7 +1365,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                               </td>
                             )}
 
-                            {/* Columna 4: Estación */}
+                            {/* Column 4: Station */}
                             {visibleColumns.station && (
                               <td className={`${densityPadding} truncate`}>
                                 <div className="truncate text-xs font-bold text-[#1d1c17]" title={group.stationName}>
@@ -1391,7 +1411,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                                 onClick={() => setInspectingRecord(record)}
                                 className="transition-colors duration-150 hover:bg-[#fef9f1] bg-[#fcfaf7]/70 cursor-pointer group/sub"
                               >
-                                {/* Event Timestamp con indentación */}
+                                {/* Event Timestamp with indentation */}
                                 {visibleColumns.eventTime && (
                                   <td className={`${densityPadding} pl-6 truncate relative`}>
                                     <div className="absolute left-0 top-0 bottom-0 w-1 bg-[#ae001a]/40" />

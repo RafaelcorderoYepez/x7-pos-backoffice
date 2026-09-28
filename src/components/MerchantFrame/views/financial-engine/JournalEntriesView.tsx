@@ -7,45 +7,24 @@ import type {
   JournalEntryStatus,
   LedgerAccount,
 } from '../../../../types/accounting';
+import { JournalEntryLinesEditor } from './JournalEntryLinesEditor';
 import {
-  JournalEntryLinesEditor,
   createEmptyLine,
   toCreateLineDtos,
   linesAreValidAndBalanced,
   type JournalEntryLineDraft,
-} from './JournalEntryLinesEditor';
+} from './journalEntryLinesEditorHelpers';
 import type { CreateJournalEntryDto } from '../../../../types/accounting';
 import { LedgerQuickLinks } from './LedgerQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-export const STATUS_BADGE_CLASSES: Record<JournalEntryStatus, string> = {
-  DRAFT: 'bg-amber-500/10 text-amber-600',
-  POSTED: 'bg-green-500/10 text-green-600',
-  VOIDED: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
-};
-
-export const REFERENCE_TYPE_OPTIONS: JournalEntryReferenceType[] = [
-  'ORDER',
-  'PAYMENT',
-  'PAYROLL',
-  'TAX',
-  'INVENTORY',
-  'ADJUSTMENT',
-  'MANUAL',
-];
-
-export function formatCurrency(n: number | null | undefined): string {
-  const val = typeof n === 'number' && !isNaN(n) ? n : (parseFloat(String(n ?? 0)) || 0);
-  return `$${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-export function formatEntryDate(value?: string | null): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
+import {
+  STATUS_BADGE_CLASSES,
+  REFERENCE_TYPE_OPTIONS,
+  formatCurrency,
+  formatEntryDate,
+} from './journalEntriesHelpers';
 
 interface JournalEntryDetailDrawerProps {
   entry: JournalEntry;
@@ -569,9 +548,9 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
         message: `Journal entry ${type === 'post' ? 'posted' : 'voided'} successfully`,
         type: 'success',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setConfirmAction(null);
-      setToast({ message: err.message || `Failed to update journal entry`, type: 'error' });
+      setToast({ message: err instanceof Error ? err.message : `Failed to update journal entry`, type: 'error' });
     } finally {
       setActionSubmitting(false);
     }
@@ -598,7 +577,7 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -610,8 +589,8 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
       setEntries((prev) => [json.data, ...prev]);
       closeFormModal();
       setToast({ message: 'Journal entry created successfully', type: 'success' });
-    } catch (err: any) {
-      setFormError(err.message || 'Failed to create journal entry');
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Failed to create journal entry');
     } finally {
       setFormSubmitting(false);
     }
@@ -632,7 +611,7 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -644,8 +623,8 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
       setEntries((prev) => prev.map((e) => (e.id === json.data.id ? json.data : e)));
       closeFormModal();
       setToast({ message: 'Journal entry updated successfully', type: 'success' });
-    } catch (err: any) {
-      setFormError(err.message || 'Failed to update journal entry');
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Failed to update journal entry');
     } finally {
       setFormSubmitting(false);
     }
@@ -663,7 +642,7 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -675,9 +654,9 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
       const json = await res.json();
       const loaded = json.data ?? [];
       setEntries(loaded);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching journal entries:', err);
-      setError(err?.message || 'Failed to load journal entries');
+      setError(err instanceof Error ? err.message : 'Failed to load journal entries');
     } finally {
       setLoading(false);
     }
@@ -704,8 +683,10 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
   };
 
   useEffect(() => {
-    fetchJournalEntries();
-    fetchLedgerAccounts();
+    void Promise.resolve().then(() => {
+      fetchJournalEntries();
+      fetchLedgerAccounts();
+    });
   }, []);
 
   const matchesFilters = (entry: JournalEntry): boolean => {
@@ -764,7 +745,7 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
   return (
     <div className="flex flex-col gap-6 animate-fade-in text-left">
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda al 100% de ancho */}
+        {/* Row 1: Full-width search */}
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e]">
             search

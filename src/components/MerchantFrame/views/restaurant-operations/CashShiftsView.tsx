@@ -8,46 +8,14 @@ import { CashManagementQuickLinks } from './CashManagementQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-export const STATUS_BADGE_CLASSES: Record<CashShiftStatus, string> = {
-  OPEN: 'bg-green-500/10 text-green-600',
-  CLOSED: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
-  DISCREPANCY: 'bg-orange-500/10 text-orange-700',
-  AUDITED: 'bg-purple-500/10 text-purple-700',
-};
-
-// The backend stores balances as Postgres `decimal` columns with no server-side
-// coercion, so they arrive over the wire as numeric strings (e.g. "120.00").
-// Normalize at the fetch boundary so every `CashShift` in state has real numbers.
-export function normalizeShift(raw: CashShift): CashShift {
-  return {
-    ...raw,
-    openingBalance: Number(raw.openingBalance),
-    systemAmount: raw.systemAmount == null ? null : Number(raw.systemAmount),
-    declaredAmount: raw.declaredAmount == null ? null : Number(raw.declaredAmount),
-    difference: raw.difference == null ? null : Number(raw.difference),
-  };
-}
-
-export function formatCurrency(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-export function formatDateTime(value: string): string {
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleString();
-}
-
-export function varianceColorClass(difference: number | null): string {
-  if (difference == null) return 'text-[#5f5e5e]';
-  if (difference === 0) return 'text-[#1d1c17]';
-  return difference > 0 ? 'text-green-600 font-bold' : 'text-[#ae001a] font-bold';
-}
-
-export function formatVariance(difference: number): string {
-  return difference === 0
-    ? formatCurrency(0)
-    : `${difference > 0 ? '+' : '-'}${formatCurrency(Math.abs(difference))}`;
-}
+import {
+  STATUS_BADGE_CLASSES,
+  normalizeShift,
+  formatCurrency,
+  formatDateTime,
+  varianceColorClass,
+  formatVariance,
+} from './cashShiftsHelpers';
 
 interface CashShiftDetailModalProps {
   shift: CashShift;
@@ -401,12 +369,12 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar los turnos de caja');
+        throw new Error('Error loading cash shifts');
       }
 
       const json = await res.json();
@@ -420,8 +388,9 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
   };
 
   useEffect(() => {
-    fetchCashShifts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void Promise.resolve().then(() => {
+      fetchCashShifts();
+    });
   }, []);
 
   const drawerOptions = React.useMemo(
@@ -515,7 +484,7 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -527,8 +496,8 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
       await fetchCashShifts();
       setFormModalOpen(false);
       setToast({ message: 'Cash shift opened successfully', type: 'success' });
-    } catch (err: any) {
-      setCreateError(err.message || 'Failed to open cash shift');
+    } catch (err: unknown) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to open cash shift');
     } finally {
       setFormSubmitting(false);
     }
@@ -566,7 +535,7 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -578,8 +547,8 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
       await fetchCashShifts();
       setClosingShift(null);
       setResultShift(normalizeShift(json.data));
-    } catch (err: any) {
-      setCloseError(err.message || 'Failed to close cash shift');
+    } catch (err: unknown) {
+      setCloseError(err instanceof Error ? err.message : 'Failed to close cash shift');
     } finally {
       setCloseSubmitting(false);
     }

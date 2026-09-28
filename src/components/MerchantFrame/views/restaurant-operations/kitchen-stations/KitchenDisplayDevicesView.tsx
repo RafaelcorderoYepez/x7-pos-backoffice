@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
+import { getAccessToken } from '../../../../../lib/auth-storage';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { AppModal } from '../../../shared/AppModal';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
-import { TableOptionsMenu, NoColumnsEmptyState, TableEmptyState, TablePaginationFooter, getDensityPadding } from '../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, NoColumnsEmptyState, TableEmptyState, TablePaginationFooter } from '../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 
 export type KitchenDisplayDeviceStatus = 'active' | 'deleted';
@@ -56,7 +57,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
-  // Tabla: Densidad, Columnas Visibles y Paginación
+  // Table: Density, Visible Columns, and Pagination
   const [visibleColumns, setVisibleColumns] = useState<{
     deviceIdentity: boolean;
     stationBinding: boolean;
@@ -79,12 +80,33 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Reset de página al cambiar filtros o tamaño de página
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, stationFilter, connectivityFilter, statusFilter, pageSize]);
+  // Reset page when filters or page size change
+  const [prevFilterState, setPrevFilterState] = useState({
+    searchQuery,
+    stationFilter,
+    connectivityFilter,
+    statusFilter,
+    pageSize,
+  });
 
-  // Drawer de Edición y Creación
+  if (
+    searchQuery !== prevFilterState.searchQuery ||
+    stationFilter !== prevFilterState.stationFilter ||
+    connectivityFilter !== prevFilterState.connectivityFilter ||
+    statusFilter !== prevFilterState.statusFilter ||
+    pageSize !== prevFilterState.pageSize
+  ) {
+    setPrevFilterState({
+      searchQuery,
+      stationFilter,
+      connectivityFilter,
+      statusFilter,
+      pageSize,
+    });
+    setCurrentPage(1);
+  }
+
+  // Edit and Create Drawer
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit'>('add');
   const [editingDevice, setEditingDevice] = useState<KitchenDisplayDevice | null>(null);
@@ -99,12 +121,12 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Modal de Eliminación (Soft Delete)
+  // Delete Modal (Soft Delete)
   const [deleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
   const [deviceToDelete, setDeviceToDelete] = useState<KitchenDisplayDevice | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  // Estado y Feedback de Resincronización
+  // Resynchronization State and Feedback
   const [syncingDeviceId, setSyncingDeviceId] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'warning' | 'info' } | null>(null);
 
@@ -124,7 +146,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   }, []);
 
   // Cargar lista de estaciones de cocina para los selectores y calcular conteos
-  const fetchStationsList = async () => {
+  const fetchStationsList = useCallback(async () => {
     try {
       const token = getAccessToken();
       const headers: Record<string, string> = {
@@ -140,7 +162,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         const json = await resStations.json();
         const rawList = Array.isArray(json) ? json : json.data || [];
         setStations(
-          rawList.map((s: any) => ({
+          rawList.map((s: { id: number; name: string }) => ({
             id: s.id,
             name: s.name,
           }))
@@ -154,7 +176,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         const rawDevs = Array.isArray(devJson) ? devJson : devJson.data || [];
         const countMap: Record<number, number> = {};
         let unassigned = 0;
-        rawDevs.forEach((d: any) => {
+        rawDevs.forEach((d: { station_id?: number; stationId?: number; station?: { id: number } }) => {
           const sId = d.station_id ?? d.stationId ?? d.station?.id;
           if (sId) {
             countMap[sId] = (countMap[sId] || 0) + 1;
@@ -170,10 +192,10 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       console.error('Error fetching kitchen stations from database:', err);
       setStations([]);
     }
-  };
+  }, [API_BASE]);
 
   // Fetch de Dispositivos KDS desde PostgreSQL
-  const fetchDevices = async (silent = false) => {
+  const fetchDevices = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     setError(null);
     try {
@@ -201,7 +223,28 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       if (res.ok) {
         const json = await res.json();
         const rawList = Array.isArray(json) ? json : json.data || [];
-        const dataList = rawList.map((dev: any) => ({
+        const dataList = rawList.map((dev: {
+          id: number;
+          merchant_id?: number;
+          merchantId?: number;
+          station_id?: number;
+          stationId?: number;
+          station?: { id: number; name: string };
+          name: string;
+          device_identifier?: string;
+          deviceIdentifier?: string;
+          ip_address?: string;
+          ipAddress?: string;
+          is_online?: boolean;
+          isOnline?: boolean;
+          last_sync?: string;
+          lastSync?: string;
+          status?: string;
+          created_at?: string;
+          createdAt?: string;
+          updated_at?: string;
+          updatedAt?: string;
+        }) => ({
           id: dev.id,
           merchant_id: dev.merchant_id ?? dev.merchantId ?? 1,
           station_id: dev.station_id ?? dev.stationId ?? dev.station?.id ?? null,
@@ -226,15 +269,17 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [statusFilter, connectivityFilter, stationFilter, API_BASE]);
 
   useEffect(() => {
-    fetchStationsList();
-    fetchDevices();
-  }, [statusFilter, connectivityFilter, stationFilter]);
+    void Promise.resolve().then(() => {
+      fetchStationsList();
+      fetchDevices(true);
+    });
+  }, [fetchStationsList, fetchDevices]);
 
 
-  // Filtrado alfanumérico en memoria
+  // In-memory alphanumeric filtering
   const filteredDevices = devices.filter((dev) => {
     const q = searchQuery.toLowerCase().trim();
     if (q) {
@@ -267,18 +312,18 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const unassignedCount = activeDevices.filter((d) => !d.station_id).length;
 
   const FIVE_MINS_MS = 5 * 60 * 1000;
+  const [currentNow] = useState(() => Date.now());
   const outOfSyncCount = activeDevices.filter((d) => {
     if (!d.last_sync) return true;
     const syncTime = new Date(d.last_sync).getTime();
-    return Date.now() - syncTime > FIVE_MINS_MS;
+    return currentNow - syncTime > FIVE_MINS_MS;
   }).length;
 
   // Calculador de tiempo relativo ("2 mins ago", "1 hr ago", etc.)
   const formatTimeAgo = (isoString: string | null) => {
     if (!isoString) return 'Never Synced';
     const date = new Date(isoString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
+    const diffMs = currentNow - date.getTime();
     const diffMins = Math.floor(diffMs / (1000 * 60));
 
     if (diffMins < 1) return 'Just now';
@@ -297,7 +342,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     });
   };
 
-  // Abrir Drawer para Crear
+  // Open Drawer to Create
   const handleOpenAddDrawer = () => {
     setDrawerMode('add');
     setEditingDevice(null);
@@ -311,7 +356,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     setIsDrawerOpen(true);
   };
 
-  // Abrir Drawer para Editar
+  // Open Drawer to Edit
   const handleOpenEditDrawer = (device: KitchenDisplayDevice) => {
     setDrawerMode('edit');
     setEditingDevice(device);
@@ -325,7 +370,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     setIsDrawerOpen(true);
   };
 
-  // Guardar Formulario (Crear o Editar)
+  // Save Form (Create or Edit)
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
@@ -361,7 +406,6 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     setIsSubmitting(true);
     setFormError(null);
 
-    const stationObj = formStationId ? stations.find((s) => s.id === Number(formStationId)) : null;
     const isDeletedStatus = formStatus === 'deleted';
 
     try {
@@ -394,14 +438,15 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         const msg = Array.isArray(errJson?.message) ? errJson.message[0] : (errJson?.message || 'Failed to save device in database');
         setFormError(msg);
       }
-    } catch (err: any) {
-      setFormError(err.message || 'Network error saving device');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Network error saving device';
+      setFormError(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Resincronización de Dispositivo KDS en tiempo real (Ping y persistencia de lastSync en PostgreSQL)
+  // Real-time KDS Device Resynchronization (Ping and lastSync persistence in PostgreSQL)
   const handleResyncDevice = async (device: KitchenDisplayDevice) => {
     setSyncingDeviceId(device.id);
     const nowIso = new Date().toISOString();
@@ -435,7 +480,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           type: 'warning',
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error resyncing device:', err);
       setToastMessage({
         text: `Network error resynchronizing "${device.name}".`,
@@ -446,7 +491,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     }
   };
 
-  // Eliminar Dispositivo (Soft Delete en PostgreSQL DB)
+  // Delete Device (Soft Delete in PostgreSQL DB)
   const handleConfirmDelete = async () => {
     if (!deviceToDelete) return;
     setIsDeleting(true);
@@ -491,7 +536,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
       </div>
 
-      {/* 1.5 Real-Time Health Summary KPI Banner (Estrictamente 4 Cuadrados en 1 sola línea horizontal) */}
+      {/* 1.5 Real-Time Health Summary KPI Banner (Strictly 4 cards in 1 horizontal row) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Registered Active Devices */}
         <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
@@ -580,7 +625,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
       {/* 2. Toolbar Multicriterio a 2 Filas */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda a la izquierda y View Switcher a la derecha en la MISMA línea horizontal */}
+        {/* Row 1: Search on left and View Switcher on right in SAME horizontal line */}
         <div className="flex flex-row items-center justify-between gap-3 w-full">
           <div className="relative flex-1 min-w-0">
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e] font-sans">
@@ -596,7 +641,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             />
           </div>
 
-          {/* View Switcher Toggle (Table View vs Quick-Launch Cards) pegado a la derecha en la misma línea */}
+          {/* View Switcher Toggle (Table View vs Quick-Launch Cards) aligned right on same line */}
           <div className="flex items-center bg-[#f2ede5] p-1 rounded border border-[#e8e2d8] shrink-0">
             <button
               type="button"
@@ -675,7 +720,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Botón Principal Añadir */}
+            {/* Primary Add Button */}
             <button
               type="button"
               onClick={handleOpenAddDrawer}
@@ -1112,7 +1157,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
                 </table>
               </div>
 
-              {/* Pie de paginación */}
+              {/* Pagination footer */}
               <TablePaginationFooter
                 currentPage={currentPage}
                 totalItems={filteredDevices.length}
@@ -1124,7 +1169,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
       )}
 
-      {/* 4. Quick Launch Panel Componente Estándar */}
+      {/* 4. Standard Quick Launch Panel Component */}
       <div className="mt-6">
         <KitchenQuickLinks current="kitchen-display-devices" onNavigate={onNavigate} />
       </div>
@@ -1176,7 +1221,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         ]}
       />
 
-      {/* Drawer Slide-over para Agregar / Editar Dispositivo KDS */}
+      {/* Slide-over Drawer to Add / Edit KDS Device */}
       {isDrawerOpen &&
         createPortal(
           <div className="fixed inset-0 z-50 flex justify-end font-sans">
@@ -1341,7 +1386,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         )
       }
 
-      {/* Modal Confirmación de Eliminación Lógica */}
+      {/* Soft Delete Confirmation Modal */}
       {deleteModalOpen && deviceToDelete && (
         <AppModal
           onClose={() => setDeleteModalOpen(false)}

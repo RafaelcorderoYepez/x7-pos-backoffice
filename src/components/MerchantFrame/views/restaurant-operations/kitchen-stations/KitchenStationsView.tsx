@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { AppModal } from '../../../shared/AppModal';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
-import { TableOptionsMenu, NoColumnsEmptyState, TableEmptyState, TablePaginationFooter, getDensityPadding } from '../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, NoColumnsEmptyState, TableEmptyState, TablePaginationFooter } from '../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 
 export type KitchenStationType = 'HOT' | 'COLD' | 'BAR' | 'DESSERT' | 'PREP' | 'PACKING' | 'EXPO';
@@ -44,7 +45,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
-  // Estados para Personalizar Columnas, Densidad y Paginación en la Tabla
+  // States for Customizing Columns, Density, and Pagination in Table
   const [visibleColumns, setVisibleColumns] = useState<{
     refDate: boolean;
     nameSequence: boolean;
@@ -68,11 +69,32 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchQuery, stationTypeFilter, displayModeFilter, statusFilter, pageSize]);
+  const [prevFilterState, setPrevFilterState] = useState({
+    searchQuery,
+    stationTypeFilter,
+    displayModeFilter,
+    statusFilter,
+    pageSize,
+  });
 
-  // Estados de Drawer / Modal de Edición y Creación
+  if (
+    searchQuery !== prevFilterState.searchQuery ||
+    stationTypeFilter !== prevFilterState.stationTypeFilter ||
+    displayModeFilter !== prevFilterState.displayModeFilter ||
+    statusFilter !== prevFilterState.statusFilter ||
+    pageSize !== prevFilterState.pageSize
+  ) {
+    setPrevFilterState({
+      searchQuery,
+      stationTypeFilter,
+      displayModeFilter,
+      statusFilter,
+      pageSize,
+    });
+    setCurrentPage(1);
+  }
+
+  // Edit and Create Drawer / Modal States
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit'>('add');
   const [editingStation, setEditingStation] = useState<KitchenStation | null>(null);
@@ -88,7 +110,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Estado para Modal de Eliminación (Soft Delete)
+  // Delete Modal State (Soft Delete)
   const [deleteModalOpen, setDeleteModalOpen] = useState<boolean>(false);
   const [stationToDelete, setStationToDelete] = useState<KitchenStation | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
@@ -102,7 +124,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     }
   }, []);
 
-  const fetchStations = async (silent = false) => {
+  const fetchStations = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     setError(null);
     try {
@@ -124,14 +146,14 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
       if (res.ok) {
         const json = await res.json();
-        const rawList = Array.isArray(json) ? json : json.data || [];
-        const dataList = rawList.map((st: any) => ({
+        const rawList: Record<string, unknown>[] = Array.isArray(json) ? json : json.data || [];
+        const dataList = rawList.map((st) => ({
           ...st,
           is_active: st.isActive ?? st.is_active ?? true,
           isActive: st.isActive ?? st.is_active ?? true,
@@ -145,6 +167,10 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
           printerName: st.printerName ?? st.printer_name ?? null,
           created_at: st.createdAt ?? st.created_at ?? new Date().toISOString(),
           createdAt: st.createdAt ?? st.created_at ?? new Date().toISOString(),
+          active_routing: st.activeRouting ?? st.active_routing ?? true,
+          activeRouting: st.activeRouting ?? st.active_routing ?? true,
+          status: st.status ?? 'active',
+          name: st.name ?? '',
         }));
         setStations(dataList);
       } else {
@@ -157,13 +183,15 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [statusFilter, stationTypeFilter, displayModeFilter, API_BASE]);
 
   useEffect(() => {
-    fetchStations();
-  }, [stationTypeFilter, displayModeFilter, statusFilter]);
+    void Promise.resolve().then(() => {
+      fetchStations(true);
+    });
+  }, [fetchStations]);
 
-  // Filtrado alfanumérico en cliente para respuesta ultrarrápida
+  // Client-side alphanumeric filtering for ultra-fast response
   const filteredStations = stations.filter((station) => {
     const matchesSearch =
       searchQuery.trim() === '' ||
@@ -183,12 +211,12 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
 
   const activeColSpan = Object.values(visibleColumns).filter(Boolean).length;
 
-  // Toggle interactivo is_active instantáneo (Real-Time Toggle)
+  // Instant interactive is_active toggle (Real-Time Toggle)
   const handleToggleActive = async (station: KitchenStation) => {
     const currentActive = station.isActive ?? station.is_active ?? true;
     const nextActive = !currentActive;
 
-    // Actualización optimista en cliente
+    // Optimistic client update
     setStations((prev) =>
       prev.map((item) => (item.id === station.id ? { ...item, is_active: nextActive, isActive: nextActive } : item))
     );
@@ -216,7 +244,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     }
   };
 
-  // Abrir Drawer de creación
+  // Open create Drawer
   const handleOpenAddDrawer = () => {
     setDrawerMode('add');
     setEditingStation(null);
@@ -231,7 +259,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     setIsDrawerOpen(true);
   };
 
-  // Abrir Drawer de edición
+  // Open edit Drawer
   const handleOpenEditDrawer = (station: KitchenStation) => {
     setDrawerMode('edit');
     setEditingStation(station);
@@ -246,7 +274,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     setIsDrawerOpen(true);
   };
 
-  // Enviar formulario (Crear / Editar)
+  // Submit form (Create / Edit)
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
@@ -305,17 +333,17 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
           ? Array.isArray(errorJson.message)
             ? errorJson.message.join(', ')
             : errorJson.message
-          : 'Error al guardar la estación de cocina.';
+          : 'Error saving kitchen station.';
         setFormError(msg);
       }
-    } catch (err) {
-      setFormError('Error de red al conectar con el servidor.');
+    } catch {
+      setFormError('Network error connecting to server.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Confirmar eliminación (Soft Delete)
+  // Confirm deletion (Soft Delete)
   const handleConfirmDelete = async () => {
     if (!stationToDelete) return;
     setIsDeleting(true);
@@ -336,7 +364,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
       } else {
         setStations((prev) => prev.filter((s) => s.id !== stationToDelete.id));
       }
-    } catch (err) {
+    } catch {
       setStations((prev) => prev.filter((s) => s.id !== stationToDelete.id));
     } finally {
       setIsDeleting(false);
@@ -345,7 +373,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     }
   };
 
-  // Helper para insignias de tipo de estación
+  // Helper for station type badges
   const getStationTypeBadge = (type: KitchenStationType) => {
     switch (type) {
       case 'HOT':
@@ -431,7 +459,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     }
   };
 
-  // Métricas KPI en tiempo real
+  // Real-time KPI metrics
   const totalActiveCount = stations.filter(
     (s) => (s.is_active ?? s.isActive) && s.status === 'active'
   ).length;
@@ -458,7 +486,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
         </div>
       </div>
 
-      {/* 1.5 Real-Time Station KPI Health Header Strip (3 Cuadrados alineados en 1 sola línea horizontal) */}
+      {/* 1.5 Real-Time Station KPI Health Header Strip (3 cards aligned in 1 horizontal row) */}
       <div className="grid grid-cols-3 gap-4 w-full">
         {/* KPI 1: Active Stations */}
         <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
@@ -523,7 +551,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
 
       {/* 2. Toolbar Multicriterio a 2 Filas */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda a la izquierda y View Switcher a la derecha en la MISMA línea horizontal */}
+        {/* Row 1: Search on left and View Switcher on right in SAME horizontal line */}
         <div className="flex flex-row items-center justify-between gap-3 w-full">
           <div className="relative flex-1 min-w-0">
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e] font-sans">
@@ -539,7 +567,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
             />
           </div>
 
-          {/* View Switcher Toggle (Table View vs Quick-Launch Cards) pegado a la derecha en la misma línea */}
+          {/* View Switcher Toggle (Table View vs Quick-Launch Cards) aligned right on same line */}
           <div className="flex items-center bg-[#f2ede5] p-1 rounded border border-[#e8e2d8] shrink-0">
             <button
               type="button"
@@ -617,7 +645,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Botón Principal Añadir */}
+            {/* Primary Add Button */}
             <button
               type="button"
               onClick={handleOpenAddDrawer}
@@ -1006,7 +1034,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
                 </table>
               </div>
 
-              {/* Pie de paginación con controles Anterior / Siguiente */}
+              {/* Pagination footer with Previous / Next controls */}
               <TablePaginationFooter
                 currentPage={currentPage}
                 totalItems={filteredStations.length}
@@ -1018,7 +1046,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
         </div>
       )}
 
-      {/* 4. Quick Launch Panel Componente Estándar (QuickLaunchPanel) */}
+      {/* 4. Standard Quick Launch Panel Component (QuickLaunchPanel) */}
       <div className="mt-6">
         <KitchenQuickLinks current="kitchen-stations" onNavigate={onNavigate} />
       </div>
@@ -1070,7 +1098,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
         ]}
       />
 
-      {/* Portal: Drawer Modal (Creación y Edición de Estación KDS) */}
+      {/* Portal: Drawer Modal (Create and Edit KDS Station) */}
       {isDrawerOpen &&
         createPortal(
           <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-6 md:pb-12 backdrop-blur-sm font-sans">
@@ -1236,7 +1264,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
           document.body
         )}
 
-      {/* Modal de Confirmación de Eliminación (Soft Delete) */}
+      {/* Soft Delete Confirmation Modal */}
       {deleteModalOpen && (
         <AppModal
           onClose={() => setDeleteModalOpen(false)}

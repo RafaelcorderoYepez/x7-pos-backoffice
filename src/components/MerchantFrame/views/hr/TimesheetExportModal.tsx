@@ -1,10 +1,8 @@
-// Configuración y descarga del parte de horas para nómina.
+// Timesheet configuration and download for payroll.
 //
-// El fichero se arma en el navegador con los fichajes ya cargados: no hay endpoint de
-// export, y pedirlo al servidor sólo para volver a sumar lo mismo añadiría una ruta más sin
-// ganar exactitud. El formato es CSV — que Excel abre nativamente — y no .xlsx: generar un
-// libro real exigiría una dependencia nueva, y decir "Excel" sirviendo CSV sería mentir
-// sobre lo que el fichero es.
+// File is built client-side from loaded entries: no specialized server
+// export endpoint needed. CSV format opens natively in spreadsheet editors
+// without requiring heavyweight binary spreadsheet dependencies.
 
 import React, { useMemo, useState } from 'react';
 import type { TimeEntry } from '../../../../types/time-entry';
@@ -70,7 +68,7 @@ export const TimesheetExportModal: React.FC<TimesheetExportModalProps> = ({
 
   const download = () => {
     const csv = buildTimesheetCsv(rows);
-    // BOM al frente: sin él, Excel abre el CSV en ANSI y destroza los acentos de los nombres.
+    // UTF-8 BOM prefix: prevents Excel from opening CSV in ANSI.
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -165,8 +163,8 @@ export const TimesheetExportModal: React.FC<TimesheetExportModalProps> = ({
               placeholder="All departments"
               className={inputClass}
             />
-            {/* Honesto sobre la limitación: el departamento vive en la ficha del
-                colaborador y /api/collaborator-time-entries no lo embebe, así que hoy no
+            {/* Department limitation note: department lives in collaborator profile
+                and /api/collaborator-time-entries does not embed it, so today we cannot
                 puede filtrar de verdad. */}
             <p className="text-[11px] text-[#5f5e5e]">
               Department is not carried by the time entry payload yet, so it does not narrow

@@ -61,38 +61,52 @@ export const TipPoolMembersView: React.FC<TipPoolMembersViewProps> = ({
       .catch(() => setAvailablePools([]));
   }, [companyId, resolvedMerchantId]);
 
-  const loadMembersData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Executes query targeting primary composite index @Index(['tip_pool_id', 'collaborator_id'])
-      // and secondary filters role, record_status, search
-      const data = await fetchTipPoolMembers({
-        tip_pool_id: selectedTipPoolId || undefined,
-        collaborator_id: selectedCollaboratorId || undefined,
-        role: selectedRole,
-        record_status: selectedRecordStatus,
-        search: searchQuery,
-      });
+  const [refreshKey, setRefreshKey] = useState(0);
 
-      setMembers(data);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to hydrate tip pool members directory.');
-    } finally {
-      setLoading(false);
-    }
+  const loadMembersData = () => {
+    setRefreshKey((k) => k + 1);
   };
 
   useEffect(() => {
-    loadMembersData();
+    let isCancelled = false;
+    void Promise.resolve().then(async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Executes query targeting primary composite index @Index(['tip_pool_id', 'collaborator_id'])
+        // and secondary filters role, record_status, search
+        const data = await fetchTipPoolMembers({
+          tip_pool_id: selectedTipPoolId || undefined,
+          collaborator_id: selectedCollaboratorId || undefined,
+          role: selectedRole,
+          record_status: selectedRecordStatus,
+          search: searchQuery,
+        });
+
+        if (!isCancelled) {
+          setMembers(data);
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to hydrate tip pool members directory.');
+        }
+      } finally {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [
-    companyId,
-    resolvedMerchantId,
-    searchQuery,
-    selectedRole,
-    selectedRecordStatus,
     selectedTipPoolId,
     selectedCollaboratorId,
+    selectedRole,
+    selectedRecordStatus,
+    searchQuery,
+    refreshKey,
   ]);
 
   const metrics = useMemo(() => calculateTipPoolMembersSummaryMetrics(members), [members]);
@@ -127,9 +141,9 @@ export const TipPoolMembersView: React.FC<TipPoolMembersViewProps> = ({
       member.record_status === 'ACTIVE' ? 'DELETED' : 'ACTIVE';
     try {
       await updateTipPoolMember(member.id, { record_status: nextStatus });
-      await loadMembersData();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to toggle member active status.');
+      loadMembersData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to toggle member active status.');
     }
   };
 

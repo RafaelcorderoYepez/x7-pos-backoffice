@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
-import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { AppModal } from '../../../shared/AppModal';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 
@@ -27,7 +28,10 @@ export interface KitchenOrderItemLine {
   variantName?: string | null;
   quantity: number;
   preparedQuantity: number;
-  preparationStatus: 'pending' | 'in_preparation' | 'ready';
+  preparationStatus: 'held' | 'pending' | 'in_preparation' | 'ready';
+  course?: 'appetizer' | 'main_course' | 'dessert' | 'beverage';
+  holdUntil?: string | null;
+  firedAt?: string | null;
   notes?: string | null;
 }
 
@@ -123,7 +127,7 @@ const DEFAULT_PRODUCT_VARIANTS: Record<string, string[]> = {
   'Ensalada Caesar con Pollo': [
     'Con Pollo a la Plancha',
     'Con Pollo Crispy',
-    'Sin Crotónes (Gluten Free)',
+    'No Croutons (Gluten Free)',
   ],
   'Pizza Margherita': [
     'Mediana 12"',
@@ -133,7 +137,7 @@ const DEFAULT_PRODUCT_VARIANTS: Record<string, string[]> = {
   'Tacos al Pastor (3 uds)': [
     'Tradicionales',
     'Con Queso (Gringas)',
-    'Sin Piña',
+    'No Pineapple',
   ],
   'Sushi Roll California': [
     'Roll 8 Piezas',
@@ -152,9 +156,38 @@ const DEFAULT_PRODUCT_VARIANTS: Record<string, string[]> = {
   ],
   'Croissant de Mantequilla': [
     'Natural',
-    'Relleno de Jamón & Queso',
+    'Ham & Cheese Filling',
     'Relleno de Chocolate',
   ],
+};
+
+const suggestCourseForProduct = (productName: string): 'beverage' | 'appetizer' | 'main_course' | 'dessert' => {
+  const p = (productName || '').toLowerCase().trim();
+  if (
+    p.includes('cappuccino') || p.includes('latte') || p.includes('cafe') || p.includes('coffee') ||
+    p.includes('espresso') || p.includes('tea') || p.includes('tea') || p.includes('beer') ||
+    p.includes('cerveza') || p.includes('vino') || p.includes('wine') || p.includes('soda') ||
+    p.includes('juice') || p.includes('jugo') || p.includes('water') || p.includes('agua') ||
+    p.includes('cocktail') || p.includes('drink') || p.includes('beverage') || p.includes('limonada')
+  ) {
+    return 'beverage';
+  }
+  if (
+    p.includes('cake') || p.includes('torta') || p.includes('pastel') || p.includes('helado') ||
+    p.includes('ice cream') || p.includes('dessert') || p.includes('postre') || p.includes('pie') ||
+    p.includes('brownie') || p.includes('cheesecake') || p.includes('croissant')
+  ) {
+    return 'dessert';
+  }
+  if (
+    p.includes('salad') || p.includes('ensalada') || p.includes('bruschetta') || p.includes('nacho') ||
+    p.includes('soup') || p.includes('sopa') || p.includes('wings') || p.includes('alitas') ||
+    p.includes('calamari') || p.includes('fries') || p.includes('papas') || p.includes('carpaccio') ||
+    p.includes('taco') || p.includes('sushi') || p.includes('roll')
+  ) {
+    return 'appetizer';
+  }
+  return 'main_course';
 };
 
 export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate }) => {
@@ -163,10 +196,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [catalogProducts, setCatalogProducts] = useState<string[]>(DEFAULT_MENU_PRODUCTS);
   const [productVariantsMap, setProductVariantsMap] = useState<Record<string, string[]>>(DEFAULT_PRODUCT_VARIANTS);
   const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(10);
-  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
   // Workspace Mode (Live Bump Screen vs Historical Audit Table)
   const [workspaceMode, setWorkspaceMode] = useState<'bump' | 'audit'>('bump');
@@ -230,12 +261,13 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       productName: string;
       variantName: string;
       quantity: number;
+      course: 'beverage' | 'appetizer' | 'main_course' | 'dessert';
       notes: string;
       isCustomProduct?: boolean;
       isCustomVariant?: boolean;
     }>
   >([
-    { productName: '', variantName: '', quantity: 1, notes: '' }
+    { productName: '', variantName: '', quantity: 1, course: 'main_course', notes: '' }
   ]);
   const [isCreating, setIsCreating] = useState<boolean>(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -246,7 +278,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const topRef = useRef<HTMLDivElement>(null);
 
   // Real-time clock for elapsed second counters
-  const [currentTime, setCurrentTime] = useState<number>(Date.now());
+  const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(timer);
@@ -275,12 +307,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         const res = await fetch(`${API_BASE}/kitchen-station?status=active&limit=100`, { headers });
         if (!res.ok) return;
         const data = await res.json();
-        const rawList = data.data || data || [];
+        const rawList: Record<string, unknown>[] = data.data || data || [];
         setStations(
-          rawList.map((s: any) => ({
-            id: s.id,
-            name: s.name,
-            stationType: s.stationType || s.station_type,
+          rawList.map((s) => ({
+            id: Number(s.id),
+            name: String(s.name || ''),
+            stationType: (s.stationType || s.station_type) as KitchenStationType | undefined,
           }))
         );
       } catch {
@@ -305,14 +337,14 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
         if (prodRes && prodRes.ok) {
           const data = await prodRes.json();
-          const rawList = data.data || data || [];
-          rawList.forEach((p: any) => {
+          const rawList: Record<string, unknown>[] = data.data || data || [];
+          rawList.forEach((p) => {
             if (p?.name && typeof p.name === 'string' && p.name.trim().length > 0) {
               productNames.push(p.name);
               if (Array.isArray(p.variants) && p.variants.length > 0) {
-                const varNames = p.variants
-                  .map((v: any) => v.name)
-                  .filter((n: any) => typeof n === 'string' && n.trim().length > 0);
+                const varNames = (p.variants as Record<string, unknown>[])
+                  .map((v) => v.name)
+                  .filter((n): n is string => typeof n === 'string' && n.trim().length > 0);
                 if (varNames.length > 0) {
                   newMap[p.name] = Array.from(new Set([...(newMap[p.name] || []), ...varNames]));
                 }
@@ -323,10 +355,10 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
         if (varRes && varRes.ok) {
           const varData = await varRes.json();
-          const varList = varData.data || varData || [];
-          varList.forEach((v: any) => {
-            const pName = v.product?.name;
-            if (pName && v.name) {
+          const varList: Record<string, unknown>[] = varData.data || varData || [];
+          varList.forEach((v) => {
+            const pName = (v.product as Record<string, unknown> | undefined)?.name;
+            if (typeof pName === 'string' && typeof v.name === 'string') {
               if (!newMap[pName]) {
                 newMap[pName] = [];
               }
@@ -351,9 +383,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   }, []);
 
   // 2. Fetch all orders
-  const loadOrders = async (isBackground = false) => {
-    if (!isBackground) setLoading(true);
-    setRefreshing(true);
+  const loadOrders = useCallback(async (isBackground = false, isSilent = false) => {
+    if (!isBackground && !isSilent) setLoading(true);
     setLoadError(null);
     try {
       const token = getAccessToken();
@@ -365,6 +396,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       const params = new URLSearchParams({
         limit: '100',
         page: '1',
+        sortBy: 'createdAt',
+        sortOrder: 'ASC',
       });
 
       const res = await fetch(`${API_BASE}/kitchen-orders?${params.toString()}`, { headers });
@@ -375,59 +408,63 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       const resData = await res.json();
       const rawOrders = resData.data || resData || [];
 
-      const parsedOrders: KitchenOrderTicket[] = rawOrders.map((o: any) => ({
-        id: o.id,
-        merchantId: o.merchantId || o.merchant_id,
-        orderId: o.orderId || o.order_id || null,
-        onlineOrderId: o.onlineOrderId || o.online_order_id || null,
-        stationId: o.stationId || o.station_id || o.station?.id || null,
-        stationName: o.stationName || o.station?.name || null,
-        priority: o.priority ?? 0,
-        businessStatus: o.businessStatus || o.business_status || 'pending',
-        startedAt: o.startedAt || o.started_at || null,
-        completedAt: o.completedAt || o.completed_at || null,
-        cancelledAt: o.cancelledAt || o.cancelled_at || null,
-        cancellationReason: o.cancellationReason || o.cancellation_reason || null,
-        cancelledByUserId: o.cancelledByUserId || o.cancelled_by_user_id || null,
-        notes: o.notes || null,
-        status: o.status || 'active',
-        createdAt: o.createdAt || o.created_at || new Date().toISOString(),
-        updatedAt: o.updatedAt || o.updated_at || new Date().toISOString(),
-        items: (o.kitchenOrderItems || []).map((it: any) => ({
-          id: it.id,
-          kitchenOrderId: it.kitchenOrderId || it.kitchen_order_id || o.id,
-          orderItemId: it.orderItemId || it.order_item_id || null,
-          productId: it.productId || it.product_id || it.product?.id,
-          productName: it.product?.name || it.productName || 'Dish Item',
-          variantName: it.variant?.name || it.variantName || null,
-          quantity: it.quantity ?? 1,
-          preparedQuantity: it.preparedQuantity ?? it.prepared_quantity ?? 0,
-          preparationStatus: it.preparationStatus || it.preparation_status || 'pending',
-          notes: it.notes || null,
+      const parsedOrders: KitchenOrderTicket[] = (rawOrders as Record<string, unknown>[]).map((o) => ({
+        id: Number(o.id),
+        merchantId: Number(o.merchantId || o.merchant_id),
+        orderId: (o.orderId || o.order_id || null) as number | null,
+        onlineOrderId: (o.onlineOrderId || o.online_order_id || null) as string | null,
+        stationId: (o.stationId || o.station_id || (o.station as Record<string, unknown> | undefined)?.id || null) as number | null,
+        stationName: (o.stationName || (o.station as Record<string, unknown> | undefined)?.name || null) as string | null,
+        priority: Number(o.priority ?? 0),
+        businessStatus: (o.businessStatus || o.business_status || 'pending') as KitchenOrderBusinessStatus,
+        startedAt: (o.startedAt || o.started_at || null) as string | null,
+        completedAt: (o.completedAt || o.completed_at || null) as string | null,
+        cancelledAt: (o.cancelledAt || o.cancelled_at || null) as string | null,
+        cancellationReason: (o.cancellationReason || o.cancellation_reason || null) as KitchenCancellationReason | null,
+        cancelledByUserId: (o.cancelledByUserId || o.cancelled_by_user_id || null) as number | null,
+        notes: (o.notes || null) as string | null,
+        status: (o.status || 'active') as 'active' | 'deleted',
+        createdAt: String(o.createdAt || o.created_at || new Date().toISOString()),
+        updatedAt: String(o.updatedAt || o.updated_at || new Date().toISOString()),
+        items: ((o.kitchenOrderItems as Record<string, unknown>[]) || []).map((it) => ({
+          id: Number(it.id),
+          kitchenOrderId: Number(it.kitchenOrderId || it.kitchen_order_id || o.id),
+          orderItemId: (it.orderItemId || it.order_item_id || null) as number | null,
+          productId: Number(it.productId || it.product_id || (it.product as Record<string, unknown> | undefined)?.id),
+          productName: String((it.product as Record<string, unknown> | undefined)?.name || it.productName || 'Dish Item'),
+          variantName: ((it.variant as Record<string, unknown> | undefined)?.name || it.variantName || null) as string | null,
+          quantity: Number(it.quantity ?? 1),
+          preparedQuantity: Number(it.preparedQuantity ?? it.prepared_quantity ?? 0),
+          preparationStatus: (it.preparationStatus || it.preparation_status || 'pending') as 'pending' | 'in_progress' | 'ready' | 'cancelled',
+          course: (it.course || null) as string | null,
+          holdUntil: (it.holdUntil || it.hold_until || null) as string | null,
+          firedAt: (it.firedAt || it.fired_at || null) as string | null,
+          notes: (it.notes || null) as string | null,
         })),
       }));
 
       setOrders(parsedOrders);
-      setLastUpdated(new Date());
-    } catch (e: any) {
-      setLoadError(e.message || 'Error syncing kitchen orders');
-      showToast(e.message || 'Error syncing kitchen orders', 'warning');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Error syncing kitchen orders';
+      setLoadError(message);
+      showToast(message, 'warning');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadOrders();
-  }, []);
+    void Promise.resolve().then(() => {
+      loadOrders(false, true);
+    });
+  }, [loadOrders]);
 
   // Polling interval
   useEffect(() => {
     if (autoRefreshInterval <= 0) return;
     const timer = setInterval(() => loadOrders(true), autoRefreshInterval * 1000);
     return () => clearInterval(timer);
-  }, [autoRefreshInterval]);
+  }, [autoRefreshInterval, loadOrders]);
 
   // Station Filtered pool for KPI metrics
   const stationOrders = useMemo(() => {
@@ -465,14 +502,6 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     () => stationOrders.filter(o => o.businessStatus === 'pending' || o.businessStatus === 'started').length,
     [stationOrders]
   );
-  const pendingOrdersCount = useMemo(
-    () => stationOrders.filter(o => o.businessStatus === 'pending').length,
-    [stationOrders]
-  );
-  const inPrepCount = useMemo(
-    () => stationOrders.filter(o => o.businessStatus === 'started').length,
-    [stationOrders]
-  );
   const completedOrdersCount = useMemo(
     () => stationOrders.filter(o => o.businessStatus === 'completed').length,
     [stationOrders]
@@ -481,14 +510,6 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     () => stationOrders.filter(o => o.businessStatus === 'cancelled').length,
     [stationOrders]
   );
-  const criticalOrdersCount = useMemo(() => {
-    return stationOrders.filter(o => {
-      if (o.businessStatus !== 'pending' && o.businessStatus !== 'started') return false;
-      const refTime = o.startedAt ? new Date(o.startedAt).getTime() : new Date(o.createdAt).getTime();
-      const elapsedMinutes = (currentTime - refTime) / (1000 * 60);
-      return elapsedMinutes > 15;
-    }).length;
-  }, [stationOrders, currentTime]);
 
   // Segmented Date Range Counts (Image 2 style)
   const dateCounts = useMemo(() => {
@@ -611,15 +632,16 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
 
     // 5. Dynamic Sorting (Option 1):
-    // Tier 1: Active Orders (pending / started) -> At the top, FIFO (oldest createdAt first), priority RUSH first
-    // Tier 2: Completed Orders (completed) -> Below active orders, newest completedAt first
-    // Tier 3: Cancelled Orders (cancelled) -> At the very bottom, newest cancelledAt/createdAt first
-    const getStatusTier = (status: KitchenOrderBusinessStatus): number => {
+    // Tier 1: Active Orders (started / pending) -> Al inicio, orden de llegada (el más viejo primero)
+    // Tier 2: Completed Orders (completed / ready) -> Abajo de activas, orden de llegada (el más viejo primero)
+    // Tier 3: Cancelled Orders (cancelled) -> Al fondo de todo, orden de llegada
+    const getStatusTier = (status: KitchenOrderBusinessStatus | string): number => {
       switch (status) {
-        case 'pending':
         case 'started':
+        case 'pending':
           return 1;
         case 'completed':
+        case 'ready':
           return 2;
         case 'cancelled':
           return 3;
@@ -632,31 +654,46 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       const tierA = getStatusTier(a.businessStatus);
       const tierB = getStatusTier(b.businessStatus);
 
+      // Separación por estado principal:
+      // Tier 1: Activas (started / pending)
+      // Tier 2: Listas / Completadas (ready / completed)
+      // Tier 3: Canceladas (siempre abajo de todo)
       if (tierA !== tierB) {
         return tierA - tierB;
       }
 
-      // Tier 1: Active orders (pending / started) -> Highest priority first, then OLDEST first (FIFO)
+      // Tier 1: Activas (started / pending)
       if (tierA === 1) {
-        if (b.priority !== a.priority) {
-          return b.priority - a.priority;
+        const now = currentTime;
+        const elapsedMinsA = Math.max(0, Math.floor((now - new Date(a.createdAt).getTime()) / 60000));
+        const elapsedMinsB = Math.max(0, Math.floor((now - new Date(b.createdAt).getTime()) / 60000));
+
+        // 1. Regla de minutos máximos (SLA Shield >= 15 min):
+        // Si una orden lleva demasiado tiempo esperando (>= 15 min), NINGUNA orden nueva en prep puede pasarle por encima.
+        const isCriticalA = elapsedMinsA >= 15;
+        const isCriticalB = elapsedMinsB >= 15;
+        if (isCriticalA && !isCriticalB) return -1;
+        if (!isCriticalA && isCriticalB) return 1;
+        if (isCriticalA && isCriticalB) {
+          return elapsedMinsB - elapsedMinsA; // la más demorada primero
         }
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+
+        // 2. Prioridad operativa de cocina (para órdenes dentro del tiempo estándar < 15 min):
+        // Lo que se está cocinando activamente (in_preparation) va PRIMERO antes que órdenes retenidas (held)
+        const hasPrepA = a.items.some(it => it.preparationStatus === 'in_preparation');
+        const hasPrepB = b.items.some(it => it.preparationStatus === 'in_preparation');
+        if (hasPrepA && !hasPrepB) return -1;
+        if (!hasPrepA && hasPrepB) return 1;
       }
 
-      // Tier 2: Completed orders -> Oldest first (la más vieja arriba dentro de las completadas, justo debajo de las activas)
-      if (tierA === 2) {
-        const timeA = a.completedAt ? new Date(a.completedAt).getTime() : new Date(a.createdAt).getTime();
-        const timeB = b.completedAt ? new Date(b.completedAt).getTime() : new Date(b.createdAt).getTime();
-        return timeA - timeB;
-      }
+      // Dentro de cada categoría: orden de llegada estricto (FIFO: el más viejo primero)
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      if (timeA !== timeB) return timeA - timeB;
 
-      // Tier 3: Cancelled orders -> Oldest first al fondo
-      const timeA = a.cancelledAt ? new Date(a.cancelledAt).getTime() : new Date(a.createdAt).getTime();
-      const timeB = b.cancelledAt ? new Date(b.cancelledAt).getTime() : new Date(b.createdAt).getTime();
-      return timeA - timeB;
+      return a.id - b.id;
     });
-  }, [stationOrders, statusFilter, cancellationFilter, dateRangePreset, customStartDate, customEndDate, searchQuery]);
+  }, [stationOrders, statusFilter, cancellationFilter, dateRangePreset, customStartDate, customEndDate, searchQuery, currentTime]);
 
   // Paginated records for table view
   const paginatedOrders = useMemo(() => {
@@ -686,7 +723,22 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       if (res.ok) {
         const nowIso = new Date().toISOString();
         setOrders(prev =>
-          prev.map(o => (o.id === order.id ? { ...o, businessStatus: 'started', startedAt: nowIso } : o))
+          prev.map(o =>
+            o.id === order.id
+              ? {
+                  ...o,
+                  businessStatus: 'started',
+                  startedAt: nowIso,
+                  items: o.items.map(it => ({
+                    ...it,
+                    preparationStatus:
+                      it.preparationStatus === 'held' || it.preparationStatus === 'pending'
+                        ? 'in_preparation'
+                        : it.preparationStatus,
+                  })),
+                }
+              : o
+          )
         );
         showToast(`Order #KO-${order.id} STARTED preparation`, 'info');
       }
@@ -713,7 +765,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         const nowIso = new Date().toISOString();
         const updatedItems = (order.items || []).map(it => ({
           ...it,
-          preparationStatus: 'ready',
+          preparationStatus: 'ready' as const,
           preparedQuantity: it.quantity,
         }));
         setLastBumpedOrder({
@@ -824,8 +876,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           : (errJson?.message || 'Failed to cancel order');
         showToast(msg, 'warning');
       }
-    } catch (err: any) {
-      showToast(err?.message || 'Error cancelling order', 'warning');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error cancelling order';
+      showToast(message, 'warning');
     } finally {
       setCancelSubmitting(false);
     }
@@ -878,7 +931,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
       )}
 
-      {/* 1. Header Card Workspace (Solo para el título) */}
+      {/* 1. Header Card Workspace (Title only) */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div>
           <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
@@ -890,7 +943,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
       </div>
 
-      {/* 1.5 Real-Time Summary KPI Banner (4 Cuadrados idénticos a Kitchen Stations sin cortes de texto) */}
+      {/* 1.5 Real-Time Summary KPI Banner (4 identical cards to Kitchen Stations without text clipping) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Active Kitchen Orders */}
         <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
@@ -977,9 +1030,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
       </div>
 
-      {/* 2. Toolbar Multicriterio idéntico a Kitchen Devices */}
+      {/* 2. Multi-criteria Toolbar identical to Kitchen Devices */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4 mb-6">
-        {/* Fila 1: Búsqueda a la izquierda y View Switcher a la derecha (idéntico a Kitchen Devices) */}
+        {/* Row 1: Search on left and View Switcher on right (identical to Kitchen Devices) */}
         <div className="flex flex-row items-center justify-between gap-3 w-full">
           <div className="relative flex-1 min-w-0">
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[#5f5e5e] font-sans">
@@ -1006,7 +1059,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
           {/* View Switcher Toggle & Auto-Refresh al lado derecho */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* View Switcher Toggle (Mismo diseño y color que Kitchen Devices) */}
+            {/* View Switcher Toggle (Same design and color as Kitchen Devices) */}
             <div className="flex items-center bg-[#f2ede5] p-1 rounded border border-[#e8e2d8] shrink-0">
               <button
                 type="button"
@@ -1055,7 +1108,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           </div>
         </div>
 
-        {/* Fila 2: Date Range Tabs (Segmented Pill Buttons al medio, entre Búsqueda y Filtros) */}
+        {/* Row 2: Date Range Tabs (Segmented Pill Buttons in middle, between Search and Filters) */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
             {DATE_RANGE_TABS.map(tab => {
@@ -1094,7 +1147,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             })}
           </div>
 
-          {/* Custom Date Inputs cuando Custom Date Range está seleccionado */}
+          {/* Custom Date Inputs when Custom Date Range is selected */}
           {dateRangePreset === 'custom' && (
             <div className="flex items-center gap-2 bg-[#fef9f1] px-3 py-1.5 rounded border border-[#e8e2d8] text-xs">
               <span className="font-bold text-[#1d1c17] text-[11px] uppercase tracking-wider">Range:</span>
@@ -1139,7 +1192,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           )}
         </div>
 
-        {/* Fila 3: Filtros a la izquierda y Botones de Acción a la derecha en la MISMA línea */}
+        {/* Row 3: Filters on left and Action Buttons on right on SAME line */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Izquierda: Filtros desplegables */}
           <div className="flex flex-wrap items-center gap-3">
@@ -1182,7 +1235,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {(statusFilter === 'cancelled' || workspaceMode === 'audit') && (
               <select
                 value={cancellationFilter}
-                onChange={e => setCancellationFilter(e.target.value as any)}
+                onChange={e => setCancellationFilter(e.target.value as KitchenCancellationReason | 'ALL')}
                 className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] outline-none font-sans text-secondary cursor-pointer"
                 aria-label="Filter by cancellation reason"
               >
@@ -1196,7 +1249,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             )}
           </div>
 
-          {/* Derecha: Botones de Acción */}
+          {/* Right: Action Buttons */}
           <div className="flex flex-wrap items-center gap-3">
             {/* Create Order Button */}
             <button
@@ -1206,7 +1259,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                 setFormOrderId('');
                 setFormNotes('');
                 setFormPriority(0);
-                setFormItems([{ productName: '', variantName: '', quantity: 1, notes: '' }]);
+                setFormItems([{ productName: '', variantName: '', quantity: 1, course: 'main_course', notes: '' }]);
                 setCreateError(null);
                 setIsCreateModalOpen(true);
               }}
@@ -1566,7 +1619,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           )}
         </div>
       ) : (
-        /* VIEW MODE 2: LIVE BUMP SCREEN (Tarjetas de Tickets con diseño limpio y claro) */
+        /* VIEW MODE 2: LIVE BUMP SCREEN (Ticket Cards with clean and clear layout) */
         loading ? (
           <div className="flex flex-col items-center justify-center py-20 text-[#5f5e5e] gap-3">
             <div className="w-10 h-10 border-4 border-[#e8e2d8] border-t-[#ae001a] rounded-full animate-spin" />
@@ -1582,10 +1635,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredOrders.map(order => {
-            const isStarted = order.businessStatus === 'started';
-            const isPending = order.businessStatus === 'pending';
+            const isAllHeld = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'held');
+            const hasActivePrep = order.items.some(it => it.preparationStatus === 'in_preparation' || it.preparationStatus === 'ready');
+            const isStarted = order.businessStatus === 'started' && hasActivePrep;
             const isCompleted = order.businessStatus === 'completed';
             const isCancelled = order.businessStatus === 'cancelled';
+            const isPending = !isStarted && !isCompleted && !isCancelled;
 
             const startReference = order.startedAt
               ? new Date(order.startedAt).getTime()
@@ -1598,6 +1653,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             let timerColorClass = 'bg-stone-700 text-white';
             if (elapsedMinutes >= 15) {
               timerColorClass = 'bg-red-600 text-white animate-pulse font-black';
+            } else if (isAllHeld) {
+              timerColorClass = 'bg-amber-700 text-white font-bold';
             } else if (elapsedMinutes >= 8) {
               timerColorClass = 'bg-amber-600 text-white font-bold';
             } else if (isStarted) {
@@ -1612,6 +1669,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     ? 'border-emerald-400 ring-1 ring-emerald-200 bg-emerald-50/10'
                     : isCancelled
                     ? 'border-red-200 bg-stone-50/70 opacity-65 hover:opacity-100'
+                    : isAllHeld
+                    ? 'border-amber-300 ring-2 ring-amber-100 shadow-sm'
                     : isStarted
                     ? 'border-blue-400 ring-2 ring-blue-100 shadow-sm'
                     : 'border-[#e8e2d8]'
@@ -1624,6 +1683,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
                       : isCancelled
                       ? 'bg-red-50 border-red-200 text-red-950'
+                      : isAllHeld
+                      ? 'bg-amber-50/90 border-amber-200 text-amber-950'
                       : isStarted
                       ? 'bg-blue-50/90 border-blue-200 text-blue-950'
                       : 'bg-[#fcfbf9] border-[#e8e2d8] text-[#1d1c17]'
@@ -1635,6 +1696,11 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       {isCompleted && (
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded font-black tracking-wide">
                           READY
+                        </span>
+                      )}
+                      {isAllHeld && (
+                        <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-black tracking-wide">
+                          HELD
                         </span>
                       )}
                       {isStarted && (
@@ -1655,6 +1721,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       {order.priority > 0 && (
                         <span className="text-[10px] bg-red-100 text-red-800 border border-red-200 px-1.5 py-0.2 rounded font-black">
                           P+{order.priority}
+                        </span>
+                      )}
+                      {elapsedMinutes >= 15 && (isPending || isStarted) && (
+                        <span className="text-[10px] bg-red-600 text-white border border-red-700 px-1.5 py-0.5 rounded font-black tracking-wide flex items-center gap-0.5 shadow-xs animate-pulse">
+                          <span className="material-symbols-outlined text-[12px]">shield</span>
+                          SLA SHIELD
                         </span>
                       )}
                     </div>
@@ -1681,25 +1753,77 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   )}
 
                   {/* Dishes List */}
-                  <div className="divide-y divide-[#f0ede6] flex-1">
-                    {order.items.map(it => (
-                      <div key={it.id} className="py-2 flex items-center justify-between text-xs text-[#1d1c17]">
-                        <div>
-                          <span className="font-bold">{it.quantity}x {it.productName}</span>
-                          {it.variantName && (
-                            <span className="text-[#5f5e5e] text-[11px] ml-1">({it.variantName})</span>
-                          )}
+                  <div className="space-y-2 flex-1 py-1">
+                    {[...order.items].sort((a, b) => {
+                      const rank = (st: string) => {
+                        if (st === 'in_preparation' || st === 'pending') return 1;
+                        if (st === 'ready') return 2;
+                        if (st === 'held') return 3;
+                        return 4;
+                      };
+                      return rank(a.preparationStatus) - rank(b.preparationStatus);
+                    }).map(it => (
+                      <div
+                        key={it.id}
+                        className="p-2 rounded-lg bg-[#fcfbf9] border border-[#ebe5da] flex items-start justify-between gap-2 text-xs text-[#1d1c17] transition-colors hover:border-[#ded5c5]"
+                      >
+                        <div className="flex items-start gap-2 flex-1 min-w-0">
+                          {/* Qty pill */}
+                          <span className="w-5 h-5 rounded bg-[#eee8dc] text-[#1d1c17] font-mono font-extrabold text-[11px] flex items-center justify-center shrink-0">
+                            {it.quantity}
+                          </span>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-extrabold text-[#1d1c17] break-words leading-tight">
+                                {it.productName}
+                              </span>
+                              {it.variantName && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#ede7dc] text-[#554d42]">
+                                  {it.variantName}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Course chip */}
+                            {it.course && (
+                              <div className="mt-1 flex items-center gap-1">
+                                <span className="inline-flex items-center gap-1 text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-white text-[#5f5e5e] border border-[#e2dcce]">
+                                  <span>
+                                    {it.course === 'beverage'
+                                      ? '🍹'
+                                      : it.course === 'appetizer'
+                                      ? '🥗'
+                                      : it.course === 'dessert'
+                                      ? '🍰'
+                                      : '🍔'}
+                                  </span>
+                                  <span>{it.course.replace('_', ' ')}</span>
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Status badge */}
                         <span
-                          className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border ${
+                          className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
                             it.preparationStatus === 'ready'
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : it.preparationStatus === 'held'
+                              ? 'bg-amber-100 text-amber-900 border-amber-300'
                               : it.preparationStatus === 'in_preparation'
-                              ? 'bg-blue-100 text-blue-800 border-blue-200'
+                              ? 'bg-blue-100 text-blue-800 border-blue-300'
                               : 'bg-zinc-100 text-[#5f5e5e] border-zinc-200'
                           }`}
                         >
-                          {it.preparationStatus === 'ready' ? 'Ready' : it.preparationStatus === 'in_preparation' ? 'Prep' : 'Pending'}
+                          {it.preparationStatus === 'ready'
+                            ? 'Ready'
+                            : it.preparationStatus === 'held'
+                            ? 'Held'
+                            : it.preparationStatus === 'in_preparation'
+                            ? 'Prep'
+                            : 'Pending'}
                         </span>
                       </div>
                     ))}
@@ -1869,6 +1993,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                         className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded border ${
                           it.preparationStatus === 'ready'
                             ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                            : it.preparationStatus === 'held'
+                            ? 'bg-amber-100 text-amber-900 border-amber-300'
                             : it.preparationStatus === 'in_preparation'
                             ? 'bg-blue-100 text-blue-800 border-blue-200'
                             : 'bg-zinc-100 text-[#5f5e5e] border-zinc-200'
@@ -1957,7 +2083,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </AppModal>
       )}
 
-      {/* Drawer Lateral Deslizable a la Derecha para Crear Nueva Orden de Cocina */}
+      {/* Slide-over Right Drawer to Create New Kitchen Order */}
       {isCreateModalOpen &&
         createPortal(
           <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-end items-stretch backdrop-blur-xs font-sans">
@@ -2009,12 +2135,13 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     stationId: formStationId ? Number(formStationId) : (stations[0]?.id || null),
                     priority: Number(formPriority),
                     orderId: formOrderId ? Number(formOrderId) : null,
-                    notes: formNotes.trim() || null,
-                    businessStatus: 'pending',
+                    businessStatus: 'started',
+                    startedAt: new Date().toISOString(),
                     kitchenOrderItems: validItems.map((it) => ({
                       productName: it.productName.trim(),
                       variantName: it.variantName.trim() || null,
                       quantity: Number(it.quantity) || 1,
+                      course: it.course || 'main_course',
                       notes: it.notes.trim() || null,
                     })),
                   };
@@ -2038,8 +2165,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     const msg = Array.isArray(errJson?.message) ? errJson.message[0] : (errJson?.message || 'Failed to create order');
                     setCreateError(msg);
                   }
-                } catch (err: any) {
-                  setCreateError(err.message || 'Network error creating order');
+                } catch (err: unknown) {
+                  const message = err instanceof Error ? err.message : 'Network error creating order';
+                  setCreateError(message);
                 } finally {
                   setIsCreating(false);
                 }
@@ -2122,213 +2250,262 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       </span>
                       <button
                         type="button"
-                        onClick={() => setFormItems(prev => [...prev, { productName: '', variantName: '', quantity: 1, notes: '' }])}
+                        onClick={() => setFormItems(prev => [...prev, { productName: '', variantName: '', quantity: 1, course: 'main_course', notes: '' }])}
                         className="text-[11px] font-bold text-[#ae001a] hover:underline flex items-center gap-1 cursor-pointer"
                       >
                         <span className="material-symbols-outlined text-[14px]">add</span> Add Another Dish
                       </button>
                     </div>
 
-                    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                      {formItems.map((item, index) => (
-                        <div key={index} className="bg-[#fef9f1] p-3 rounded-lg border border-[#e8e2d8] space-y-2">
-                          <div className="flex items-start gap-2">
-                            {/* Dish Product Select */}
-                            <div className="flex-1 min-w-0">
-                              <label className="block text-[10px] font-bold text-[#5f5e5e] uppercase tracking-wider mb-1">
-                                Dish / Product
-                              </label>
-                              <select
-                                value={
-                                  item.isCustomProduct
-                                    ? '__custom__'
-                                    : catalogProducts.includes(item.productName)
-                                    ? item.productName
-                                    : item.productName === ''
-                                    ? ''
-                                    : '__custom__'
-                                }
-                                onChange={e => {
-                                  const val = e.target.value;
-                                  if (val === '__custom__') {
-                                    setFormItems(prev =>
-                                      prev.map((it, i) =>
-                                        i === index
-                                          ? {
-                                              ...it,
-                                              productName: '',
-                                              isCustomProduct: true,
-                                              variantName: '',
-                                              isCustomVariant: false,
-                                            }
-                                          : it
-                                      )
-                                    );
-                                  } else {
-                                    const available = productVariantsMap[val] || [];
-                                    setFormItems(prev =>
-                                      prev.map((it, i) => {
-                                        if (i !== index) return it;
-                                        const currentValid = available.includes(it.variantName || '');
-                                        return {
-                                          ...it,
-                                          productName: val,
-                                          isCustomProduct: false,
-                                          variantName: currentValid ? it.variantName : (available[0] || ''),
-                                          isCustomVariant: false,
-                                        };
-                                      })
-                                    );
-                                  }
-                                }}
-                                className="w-full px-2.5 py-1.5 bg-white border border-[#e8e2d8] rounded text-xs font-semibold focus:border-[#ae001a] outline-none text-[#1d1c17]"
-                              >
-                                <option value="">-- Select Dish / Product --</option>
-                                <optgroup label="Store Catalog / Menu">
-                                  {catalogProducts.map(p => (
-                                    <option key={p} value={p}>{p}</option>
-                                  ))}
-                                </optgroup>
-                                <optgroup label="Other / Personalizado">
-                                  <option value="__custom__">✍️ Custom Product Name...</option>
-                                </optgroup>
-                              </select>
+                    <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                      {formItems.map((item, index) => {
+                        const availableVariants = productVariantsMap[item.productName] || [];
 
-                              {(item.isCustomProduct || (!catalogProducts.includes(item.productName) && item.productName !== '')) && (
-                                <input
-                                  type="text"
-                                  placeholder="Write custom product name..."
-                                  value={item.productName}
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setFormItems(prev => prev.map((it, i) => i === index ? { ...it, productName: val } : it));
-                                  }}
-                                  className="mt-1.5 w-full px-2.5 py-1 bg-white border border-[#ae001a] rounded text-xs outline-none text-[#1d1c17]"
-                                  required
-                                />
+                        return (
+                          <div
+                            key={index}
+                            className="bg-white p-3.5 rounded-xl border border-[#e5dfd5] shadow-2xs hover:border-[#ae001a]/40 transition-all space-y-2.5"
+                          >
+                            {/* Top row: Item Index & Remove button */}
+                            <div className="flex items-center justify-between border-b border-[#f0ece3] pb-1.5">
+                              <div className="flex items-center gap-2">
+                                <span className="w-5 h-5 rounded-full bg-[#1d1c17] text-white font-mono font-black text-[10px] flex items-center justify-center">
+                                  {index + 1}
+                                </span>
+                                <span className="text-[11px] font-bold text-[#1d1c17] tracking-wider">
+                                  {item.productName ? item.productName : `Dish #${index + 1}`}
+                                </span>
+                              </div>
+
+                              {formItems.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setFormItems(prev => prev.filter((_, i) => i !== index))}
+                                  className="text-zinc-400 hover:text-red-600 p-0.5 rounded transition-colors cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                                  title="Remove dish"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">delete</span>
+                                  <span>Remove</span>
+                                </button>
                               )}
                             </div>
 
-                            {/* Variant / Options Select - Strict to Selected Product */}
-                            <div className="w-40">
-                              <label className="block text-[10px] font-bold text-[#5f5e5e] uppercase tracking-wider mb-1">
-                                Variant / Option
-                              </label>
-                              {(() => {
-                                const availableVariants = productVariantsMap[item.productName] || [];
-                                return (
-                                  <>
-                                    <select
-                                      disabled={!item.productName && !item.isCustomProduct}
-                                      value={
-                                        item.isCustomVariant
-                                          ? '__custom__'
-                                          : availableVariants.includes(item.variantName || '')
-                                          ? (item.variantName || '')
-                                          : item.variantName === ''
-                                          ? ''
-                                          : '__custom__'
-                                      }
-                                      onChange={e => {
-                                        const val = e.target.value;
-                                        if (val === '__custom__') {
-                                          setFormItems(prev =>
-                                            prev.map((it, i) =>
-                                              i === index ? { ...it, isCustomVariant: true } : it
-                                            )
-                                          );
-                                        } else {
-                                          setFormItems(prev =>
-                                            prev.map((it, i) =>
-                                              i === index
-                                                ? {
-                                                    ...it,
-                                                    variantName: val === 'Estándar' ? '' : val,
-                                                    isCustomVariant: false,
-                                                  }
-                                                : it
-                                            )
-                                          );
-                                        }
-                                      }}
-                                      className={`w-full px-2.5 py-1.5 bg-white border border-[#e8e2d8] rounded text-xs font-semibold focus:border-[#ae001a] outline-none text-[#1d1c17] ${
-                                        !item.productName && !item.isCustomProduct
-                                          ? 'opacity-60 cursor-not-allowed bg-zinc-50'
-                                          : 'cursor-pointer'
-                                      }`}
-                                    >
-                                      {!item.productName && !item.isCustomProduct ? (
-                                        <option value="">-- Select dish first --</option>
-                                      ) : (
-                                        <option value="">Estándar (Sin variante)</option>
-                                      )}
-                                      {availableVariants.length > 0 && (
-                                        <optgroup label={`${item.productName} Variants`}>
-                                          {availableVariants.map(v => (
-                                            <option key={v} value={v}>{v}</option>
-                                          ))}
-                                        </optgroup>
-                                      )}
-                                      <optgroup label="Other / Personalizado">
-                                        <option value="__custom__">✍️ Custom Variant...</option>
-                                      </optgroup>
-                                    </select>
+                            {/* Inputs Grid */}
+                            <div className="grid grid-cols-12 gap-2">
+                              {/* Product / Dish Select */}
+                              <div className="col-span-12 sm:col-span-5">
+                                <label className="block text-[10px] font-bold text-[#6f6e6e] uppercase tracking-wider mb-1">
+                                  Dish / Product <span className="text-[#ae001a]">*</span>
+                                </label>
+                                <select
+                                  value={
+                                    item.isCustomProduct
+                                      ? '__custom__'
+                                      : catalogProducts.includes(item.productName)
+                                      ? item.productName
+                                      : item.productName === ''
+                                      ? ''
+                                      : '__custom__'
+                                  }
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    if (val === '__custom__') {
+                                      setFormItems(prev =>
+                                        prev.map((it, i) =>
+                                          i === index
+                                            ? {
+                                                ...it,
+                                                productName: '',
+                                                isCustomProduct: true,
+                                                variantName: '',
+                                                isCustomVariant: false,
+                                              }
+                                            : it
+                                        )
+                                      );
+                                    } else {
+                                      const available = productVariantsMap[val] || [];
+                                      const suggested = suggestCourseForProduct(val);
+                                      setFormItems(prev =>
+                                        prev.map((it, i) => {
+                                          if (i !== index) return it;
+                                          const currentValid = available.includes(it.variantName || '');
+                                          return {
+                                            ...it,
+                                            productName: val,
+                                            isCustomProduct: false,
+                                            course: suggested,
+                                            variantName: currentValid ? it.variantName : (available[0] || ''),
+                                            isCustomVariant: false,
+                                          };
+                                        })
+                                      );
+                                    }
+                                  }}
+                                  className="w-full px-2.5 py-1.5 bg-[#faf9f6] border border-[#d8d2c7] rounded-lg text-xs font-semibold focus:border-[#ae001a] focus:bg-white outline-none text-[#1d1c17] transition-all"
+                                >
+                                  <option value="">-- Select Dish / Product --</option>
+                                  <optgroup label="Store Catalog / Menu">
+                                    {catalogProducts.map(p => (
+                                      <option key={p} value={p}>{p}</option>
+                                    ))}
+                                  </optgroup>
+                                  <optgroup label="Other / Custom">
+                                    <option value="__custom__">✍️ Custom Product Name...</option>
+                                  </optgroup>
+                                </select>
 
-                                    {(item.isCustomVariant ||
-                                      (item.variantName &&
-                                        !availableVariants.includes(item.variantName) &&
-                                        item.variantName !== '')) && (
-                                      <input
-                                        type="text"
-                                        placeholder="Write custom variant..."
-                                        value={item.variantName}
-                                        onChange={e => {
-                                          const val = e.target.value;
-                                          setFormItems(prev =>
-                                            prev.map((it, i) =>
-                                              i === index ? { ...it, variantName: val } : it
-                                            )
-                                          );
-                                        }}
-                                        className="mt-1.5 w-full px-2.5 py-1 bg-white border border-[#ae001a] rounded text-xs outline-none text-[#1d1c17]"
-                                      />
-                                    )}
-                                  </>
-                                );
-                              })()}
+                                {(item.isCustomProduct || (!catalogProducts.includes(item.productName) && item.productName !== '')) && (
+                                  <input
+                                    type="text"
+                                    placeholder="Write custom product name..."
+                                    value={item.productName}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setFormItems(prev => prev.map((it, i) => i === index ? { ...it, productName: val } : it));
+                                    }}
+                                    className="mt-1.5 w-full px-2.5 py-1 bg-white border border-[#ae001a] rounded-md text-xs outline-none text-[#1d1c17]"
+                                    required
+                                  />
+                                )}
+                              </div>
+
+                              {/* Variant Select */}
+                              <div className="col-span-12 sm:col-span-3">
+                                <label className="block text-[10px] font-bold text-[#6f6e6e] uppercase tracking-wider mb-1">
+                                  Variant
+                                </label>
+                                <select
+                                  disabled={!item.productName && !item.isCustomProduct}
+                                  value={
+                                    item.isCustomVariant
+                                      ? '__custom__'
+                                      : availableVariants.includes(item.variantName || '')
+                                      ? (item.variantName || '')
+                                      : item.variantName === ''
+                                      ? ''
+                                      : '__custom__'
+                                  }
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    if (val === '__custom__') {
+                                      setFormItems(prev =>
+                                        prev.map((it, i) =>
+                                          i === index ? { ...it, isCustomVariant: true } : it
+                                        )
+                                      );
+                                    } else {
+                                      setFormItems(prev =>
+                                        prev.map((it, i) =>
+                                          i === index
+                                            ? {
+                                                ...it,
+                                                variantName: val === 'Standard' ? '' : val,
+                                                isCustomVariant: false,
+                                              }
+                                            : it
+                                        )
+                                      );
+                                    }
+                                  }}
+                                  className={`w-full px-2.5 py-1.5 bg-[#faf9f6] border border-[#d8d2c7] rounded-lg text-xs font-semibold focus:border-[#ae001a] focus:bg-white outline-none text-[#1d1c17] transition-all ${
+                                    !item.productName && !item.isCustomProduct
+                                      ? 'opacity-60 cursor-not-allowed bg-zinc-50'
+                                      : 'cursor-pointer'
+                                  }`}
+                                >
+                                  {!item.productName && !item.isCustomProduct ? (
+                                    <option value="">-- Select dish first --</option>
+                                  ) : (
+                                    <option value="">Standard (No variant)</option>
+                                  )}
+                                  {availableVariants.length > 0 && (
+                                    <optgroup label={`${item.productName} Variants`}>
+                                      {availableVariants.map(v => (
+                                        <option key={v} value={v}>{v}</option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                  <optgroup label="Other / Custom">
+                                    <option value="__custom__">✍️ Custom Variant...</option>
+                                  </optgroup>
+                                </select>
+
+                                {(item.isCustomVariant ||
+                                  (item.variantName &&
+                                    !availableVariants.includes(item.variantName) &&
+                                    item.variantName !== '')) && (
+                                  <input
+                                    type="text"
+                                    placeholder="Write custom variant..."
+                                    value={item.variantName}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      setFormItems(prev =>
+                                        prev.map((it, i) =>
+                                          i === index ? { ...it, variantName: val } : it
+                                        )
+                                      );
+                                    }}
+                                    className="mt-1.5 w-full px-2.5 py-1 bg-white border border-[#ae001a] rounded-md text-xs outline-none text-[#1d1c17]"
+                                  />
+                                )}
+                              </div>
+
+                              {/* Course Select */}
+                              <div className="col-span-8 sm:col-span-3">
+                                <label className="block text-[10px] font-bold text-[#6f6e6e] uppercase tracking-wider mb-1">
+                                  Course
+                                </label>
+                                <select
+                                  value={item.course || 'main_course'}
+                                  onChange={e => {
+                                    const val = e.target.value as 'beverage' | 'appetizer' | 'main_course' | 'dessert';
+                                    setFormItems(prev => prev.map((it, i) => i === index ? { ...it, course: val } : it));
+                                  }}
+                                  className="w-full px-2 py-1.5 bg-[#faf9f6] border border-[#d8d2c7] rounded-lg text-xs font-semibold outline-none text-[#1d1c17] focus:border-[#ae001a] focus:bg-white cursor-pointer transition-all"
+                                >
+                                  <option value="beverage">🍹 Beverage</option>
+                                  <option value="appetizer">🥗 Appetizer</option>
+                                  <option value="main_course">🍔 Main Course</option>
+                                  <option value="dessert">🍰 Dessert</option>
+                                </select>
+                              </div>
+
+                              {/* Qty Input */}
+                              <div className="col-span-4 sm:col-span-1">
+                                <label className="block text-[10px] font-bold text-[#6f6e6e] uppercase tracking-wider mb-1 text-center">
+                                  Qty
+                                </label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={item.quantity}
+                                  onChange={e => {
+                                    const val = Number(e.target.value) || 1;
+                                    setFormItems(prev => prev.map((it, i) => i === index ? { ...it, quantity: val } : it));
+                                  }}
+                                  className="w-full px-1 py-1.5 bg-[#faf9f6] border border-[#d8d2c7] rounded-lg text-xs text-center font-black outline-none text-[#1d1c17] focus:border-[#ae001a] focus:bg-white transition-all"
+                                />
+                              </div>
                             </div>
 
-                            {/* Quantity */}
-                            <div className="w-16">
-                              <label className="block text-[10px] font-bold text-[#5f5e5e] uppercase tracking-wider mb-1">
-                                Qty
-                              </label>
+                            {/* Item Preparation Notes */}
+                            <div className="pt-1">
                               <input
-                                type="number"
-                                min={1}
-                                value={item.quantity}
+                                type="text"
+                                placeholder="Special prep notes (e.g., extra spicy, no ice, medium rare)..."
+                                value={item.notes || ''}
                                 onChange={e => {
-                                  const val = Number(e.target.value) || 1;
-                                  setFormItems(prev => prev.map((it, i) => i === index ? { ...it, quantity: val } : it));
+                                  const val = e.target.value;
+                                  setFormItems(prev => prev.map((it, i) => i === index ? { ...it, notes: val } : it));
                                 }}
-                                className="w-full px-2 py-1.5 bg-white border border-[#e8e2d8] rounded text-xs text-center font-bold outline-none text-[#1d1c17] focus:border-[#ae001a]"
+                                className="w-full px-2.5 py-1 bg-[#faf9f6] border border-[#e5dfd5] rounded-md text-[11px] text-[#1d1c17] placeholder-[#a09c94] focus:border-[#ae001a] focus:bg-white outline-none transition-all"
                               />
                             </div>
-
-                            {/* Delete Button */}
-                            {formItems.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => setFormItems(prev => prev.filter((_, i) => i !== index))}
-                                className="mt-5 text-red-600 hover:text-red-800 p-1 cursor-pointer"
-                                title="Remove item"
-                              >
-                                <span className="material-symbols-outlined text-base">close</span>
-                              </button>
-                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -2384,6 +2561,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             label: 'KITCHEN ORDERS',
             icon: 'receipt_long',
             active: true,
+            onClick: () => onNavigate?.('kitchen-orders'),
           },
           {
             id: 'kitchen-order-items',

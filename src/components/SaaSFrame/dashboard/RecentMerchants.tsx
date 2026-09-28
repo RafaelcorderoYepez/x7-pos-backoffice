@@ -15,23 +15,46 @@ export const RecentMerchants: React.FC<RecentMerchantsProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchRecentMerchants = async () => {
+  const [prevTrigger, setPrevTrigger] = useState(refreshTrigger);
+  const [retryCount, setRetryCount] = useState(0);
+
+  if (refreshTrigger !== prevTrigger) {
+    setPrevTrigger(refreshTrigger);
     setLoading(true);
     setError(null);
-    try {
-      const data = await saasService.getRecentMerchants();
-      setMerchants(data);
-    } catch (err) {
-      setError('Error al cargar comercios');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+  }
+
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    setRetryCount(c => c + 1);
   };
 
   useEffect(() => {
-    fetchRecentMerchants();
-  }, [refreshTrigger]);
+    let ignore = false;
+    saasService.getRecentMerchants()
+      .then(data => {
+        if (!ignore) {
+          setMerchants(data);
+          setError(null);
+        }
+      })
+      .catch(err => {
+        if (!ignore) {
+          setError('Error loading merchants');
+          console.error(err);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [refreshTrigger, retryCount]);
 
   const renderBadge = (type: RecentMerchant['type']) => {
     switch (type) {
@@ -105,10 +128,10 @@ export const RecentMerchants: React.FC<RecentMerchantsProps> = ({
           <span className="material-symbols-outlined text-red-500 text-3xl">error</span>
           <p className="text-body-sm text-red-600 font-bold">{error}</p>
           <button
-            onClick={fetchRecentMerchants}
+            onClick={handleRetry}
             className="px-3 py-1.5 bg-[#d51f2c] text-white font-bold text-[10px] uppercase hover:opacity-90 transition-all"
           >
-            Reintentar
+            Retry
           </button>
         </div>
       </div>

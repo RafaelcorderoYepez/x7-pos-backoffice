@@ -108,7 +108,9 @@ export const UserManagementView: React.FC = () => {
   };
 
   useEffect(() => {
-    void loadUsers();
+    void Promise.resolve().then(() => {
+      void loadUsers();
+    });
   }, []);
 
   useEffect(() => {

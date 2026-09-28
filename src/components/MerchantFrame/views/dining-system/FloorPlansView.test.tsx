@@ -10,7 +10,7 @@ vi.mock('../../../../lib/auth-storage', () => ({
 }));
 
 // El editor monta un lienzo con drag & drop y su propio ciclo de fetch: lo sustituimos
-// para que estos tests midan SOLO la grid de planos.
+// so these tests measure ONLY the floor plans grid.
 vi.mock('./FloorPlanEditor', () => ({
   FloorPlanEditor: ({ plan, onClose }: { plan: { name: string }; onClose: () => void }) => (
     <div data-testid="floor-plan-editor-stub">
@@ -22,7 +22,7 @@ vi.mock('./FloorPlanEditor', () => ({
   ),
 }));
 
-// El backend persiste el status como varchar: 'inactive' se normaliza a 'draft' en la UI.
+// Backend persists status as varchar: 'inactive' normalizes to 'draft' in UI.
 type RawFloorPlan = {
   id: number;
   name: string;
@@ -43,7 +43,7 @@ const ZONES: FloorZone[] = [
   { id: 10, name: 'Window Row', color: 'Blue', status: 'active', floorPlan: { id: 1 } },
   { id: 11, name: 'Bar Side', color: 'Green', status: 'active', floorPlan: { id: 1 } },
   { id: 12, name: 'Sun Deck', color: 'Amber', status: 'active', floorPlan: { id: 2 } },
-  // Soft-deleted: no debe entrar en el contador del plano 1.
+  // Soft-deleted: must not be included in plan 1 count.
   { id: 13, name: 'Retired Zone', color: null, status: 'deleted', floorPlan: { id: 1 } },
 ];
 
@@ -63,7 +63,7 @@ const TABLES: DiningTable[] = [
     floorPlan: { id: 1 },
     floorZone: { id: 10, name: 'Window Row' },
   },
-  // Soft-deleted en el plano 2: no cuenta, así el plano 2 sigue siendo borrable.
+  // Soft-deleted in floor plan 2: does not count, so plan 2 remains deletable.
   {
     id: 101,
     merchant_id: 1,
@@ -114,7 +114,7 @@ function defaultFetch(plans: RawFloorPlan[] = PLANS) {
   });
 }
 
-/** Igual que el anterior, pero interceptando una mutación concreta. */
+/** Same as previous, but intercepting a specific mutation. */
 function mutatingFetch(
   match: (url: string, opts?: RequestInit) => boolean,
   response: () => Promise<Response>,
@@ -165,7 +165,7 @@ describe('FloorPlansView', () => {
         expect.arrayContaining([
           expect.stringContaining('/floor-plan?limit=100'),
           expect.stringContaining('/floor-zone?limit=100'),
-          // El backend capa `limit` a 100 en tables: pedir más devuelve 400.
+          // Backend caps `limit` at 100 in tables: requesting more returns 400.
           expect.stringContaining('/tables?limit=100'),
         ]),
       );
@@ -180,20 +180,20 @@ describe('FloorPlansView', () => {
       expect(mainRow.getByText('#1')).toBeInTheDocument();
       expect(mainRow.getByText('Main Dining Room')).toBeInTheDocument();
       expect(mainRow.getByText('8 m × 6 m')).toBeInTheDocument();
-      // La zona con status 'deleted' queda fuera del contador.
+      // Zone with status 'deleted' is excluded from count.
       expect(mainRow.getByText('2 Zones')).toBeInTheDocument();
       expect(mainRow.getByText('1 Table')).toBeInTheDocument();
 
       const terraceRow = within(screen.getByTestId('floor-plan-row-2'));
       expect(terraceRow.getByText('12 m × 9 m')).toBeInTheDocument();
       expect(terraceRow.getByText('1 Zone')).toBeInTheDocument();
-      // La única mesa del plano 2 está soft-deleted.
+      // Only table in floor plan 2 is soft-deleted.
       expect(terraceRow.getByText('0 Tables')).toBeInTheDocument();
 
       // Los badges: 'inactive' del backend se muestra como Draft.
       expect(mainRow.getByText('Active')).toBeInTheDocument();
       expect(terraceRow.getByText('Draft')).toBeInTheDocument();
-      // El contador vive en la barra negra, fuera del <table>.
+      // Count metric resides in the dark bar, outside the <table>.
       expect(screen.getByText('2 floor plans')).toBeInTheDocument();
     });
 
@@ -262,7 +262,7 @@ describe('FloorPlansView', () => {
       await user.type(screen.getByLabelText('Search floor plans'), 'zzz-nope');
 
       expect(screen.getByText('No floor plans match your active filters')).toBeInTheDocument();
-      // El botón de la grid, no el de la barra de filtros.
+      // Grid button, not filter bar button.
       await user.click(within(screen.getByRole('table')).getByRole('button', { name: 'Clear filters' }));
 
       expect(screen.getByText('Main Dining Room')).toBeInTheDocument();
@@ -316,8 +316,8 @@ describe('FloorPlansView', () => {
       vi.stubGlobal('fetch', fetchMock);
       render(<FloorPlansView merchantId={7} />);
 
-      // Las fixtures pertenecen a otro comercio, así que con merchantId=7 la grid queda vacía
-      // por el aislamiento multi-tenant: esperamos al toolbar, no a una fila.
+      // Fixtures belong to another merchant, so with merchantId=7 grid is empty
+      // due to multi-tenant isolation: wait for toolbar, not a table row.
       const createBtn = await screen.findByRole('button', { name: 'Create Floor Plan' });
       await user.click(createBtn);
 
@@ -447,7 +447,7 @@ describe('FloorPlansView', () => {
           expect.stringContaining('/floor-plan/2'),
           expect.objectContaining({
             method: 'PATCH',
-            // `merchant` se omite a propósito: Object.assign corrompería la relación.
+            // `merchant` omitted on purpose: Object.assign would corrupt relationship.
             body: JSON.stringify({
               name: 'Terrace Deck II',
               width: 1200,
@@ -479,9 +479,9 @@ describe('FloorPlansView', () => {
       );
     });
 
-    // /api/tables cuelga de la feature TABLES y /api/floor-plan de FLOOR_PLANS: una
-    // suscripción puede conceder una y no la otra. Con el censo caído, "0 mesas" es una
-    // suposición, no un hecho, y el backend no cascadea: el guard debe fallar en cerrado.
+    // /api/tables belongs to TABLES feature and /api/floor-plan to FLOOR_PLANS: a
+    // subscription may grant one and not other. With fallen census, "0 tables" is
+    // assumption, not fact, and backend does not cascade: guard must fail closed.
     it('fails the guard closed when the table census could not be loaded', async () => {
       const user = userEvent.setup();
       const fetchMock = vi.fn((url: string | URL | Request) => {
@@ -494,7 +494,7 @@ describe('FloorPlansView', () => {
       vi.stubGlobal('fetch', fetchMock);
       render(<FloorPlansView />);
 
-      // El plano 2 no tiene mesas vivas ni siquiera con el censo completo: aun así se bloquea.
+      // Floor plan 2 has no active tables even with full census: still blocks.
       await screen.findByText('Terrace Deck');
       expect(await screen.findByTestId('floor-plans-counts-stale')).toBeInTheDocument();
 
@@ -508,7 +508,7 @@ describe('FloorPlansView', () => {
         expect.objectContaining({ method: 'DELETE' }),
       );
 
-      // El mismo censo caído bloquea archivar desde el formulario de edición.
+      // Fallen census also blocks archiving from edit form.
       const dialog = await openEditDrawer(user, 'Terrace Deck');
       await user.selectOptions(within(dialog).getByLabelText(/status/i), 'archived');
       expect(within(dialog).getByRole('button', { name: 'Save Floor Plan' })).toBeDisabled();
@@ -582,7 +582,7 @@ describe('FloorPlansView', () => {
       render(<FloorPlansView />);
 
       await screen.findByText('Main Dining Room');
-      // Acotado al landmark: la cabecera de la grid repite el mismo texto.
+      // Scoped to landmark: grid header repeats the same label.
       const hub = within(
         screen.getByRole('navigation', { name: /dining system workspace shortcuts/i }),
       );

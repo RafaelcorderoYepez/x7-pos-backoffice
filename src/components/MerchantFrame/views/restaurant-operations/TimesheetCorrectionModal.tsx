@@ -34,16 +34,20 @@ export const TimesheetCorrectionModal: React.FC<TimesheetCorrectionModalProps> =
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   useEffect(() => {
-    setMounted(true);
+    void Promise.resolve().then(() => {
+      setMounted(true);
+    });
   }, []);
 
   useEffect(() => {
     if (record) {
-      setClockIn(record.actualPunches?.clockIn || '');
-      setClockOut(record.actualPunches?.clockOut || '');
-      setUnpaidBreakMinutes(record.unpaidBreakMinutes || 0);
-      setReason('');
-      setErrorMessage(null);
+      void Promise.resolve().then(() => {
+        setClockIn(record.actualPunches?.clockIn || '');
+        setClockOut(record.actualPunches?.clockOut || '');
+        setUnpaidBreakMinutes(record.unpaidBreakMinutes || 0);
+        setReason('');
+        setErrorMessage(null);
+      });
     }
   }, [record]);
 
@@ -79,7 +83,7 @@ export const TimesheetCorrectionModal: React.FC<TimesheetCorrectionModalProps> =
       status: statusEval.status,
       varianceLabel: statusEval.varianceLabel,
     };
-  }, [clockIn, clockOut, unpaidBreakMinutes, record?.scheduledWindow]);
+  }, [clockIn, clockOut, unpaidBreakMinutes, record]);
 
   if (!isOpen || !record || !mounted) return null;
 

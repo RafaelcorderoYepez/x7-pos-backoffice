@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../StockQuickLinks';
 import { EmergencySupportModal } from '../../../../modals/QuickActionModals';
-import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../../shared/tableOptionsHelpers';
 
 interface StockItem {
   id: number;
@@ -54,7 +55,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
 
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState<boolean>(false);
 
-  // Campos del Formulario de Ubicación (Sprint 24 Story 6)
+  // Location Form Fields (Sprint 24 Story 6)
   const [formName, setFormName] = useState<string>('');
   const [formCode, setFormCode] = useState<string>('');
   const [formAddress, setFormAddress] = useState<string>('');
@@ -64,7 +65,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
   // Avisos y Bloqueos de Seguridad
   const [deactivationError, setDeactivationError] = useState<string | null>(null);
 
-  // Estados para modal de confirmación de activación/desactivación
+  // State for activation/deactivation confirmation modal
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
   const [confirmTargetLocation, setConfirmTargetLocation] = useState<Location | null>(null);
   const [isToggling, setIsToggling] = useState<boolean>(false);
@@ -83,8 +84,8 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     }
   }, []);
 
-  // Carga de datos de la API (Sincronización silenciosa en segundo plano)
-  const fetchLocations = async (silent = false) => {
+  // API data loading (Silent background sync)
+  const fetchLocations = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     setError(null);
     try {
@@ -109,12 +110,12 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar ubicaciones de inventario');
+        throw new Error('Error loading inventory locations');
       }
 
       const json = await res.json();
@@ -123,26 +124,28 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
         dataList = dataList.map((l, idx) => (idx === 0 ? { ...l, isMainStorage: true } : l));
       }
       setLocations(dataList);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       if (!silent) setError('Failed to load inventory locations. Please check if the backend is running.');
     } finally {
       if (!silent) setIsLoading(false);
     }
-  };
+  }, [API_BASE]);
 
   useEffect(() => {
-    fetchLocations();
-  }, []);
+    void Promise.resolve().then(() => {
+      fetchLocations();
+    });
+  }, [fetchLocations]);
 
-  // Manejar cambio en toggle isMainStorage: Siempre debe existir al menos un almacén principal
+  // Handle isMainStorage toggle: must always have at least one main storage location
   const handleToggleMainStorage = (checked: boolean) => {
     if (!checked) {
       const otherMain = locations.find(
         (l) => l.isMainStorage && String(l.id) !== String(selectedLocation?.id)
       );
       if (!otherMain) {
-        // No hay otro almacén principal, obligar mantener true
+        // No other main storage location exists, force maintain true
         setFormIsMainStorage(true);
         return;
       }
@@ -150,7 +153,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     setFormIsMainStorage(checked);
   };
 
-  // Abrir Form Drawer para Creación
+  // Open Form Drawer for Creation
   const handleOpenAddDrawer = () => {
     setFormDrawerMode('add');
     setSelectedLocation(null);
@@ -163,7 +166,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     setIsFormDrawerOpen(true);
   };
 
-  // Abrir Form Drawer para Edición
+  // Open Form Drawer for Editing
   const handleOpenEditDrawer = (e: React.MouseEvent, loc: Location) => {
     e.stopPropagation(); // Evitar Detail Drawer
     setFormDrawerMode('edit');
@@ -186,16 +189,16 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     setIsDetailDrawerOpen(true);
   };
 
-  // Verificar si la ubicación posee saldos de stock activos (> 0)
+  // Check if location possesses active stock balances (> 0)
   const locationHasActiveStock = (loc: Location): boolean => {
     if (!loc.items || loc.items.length === 0) return false;
     return loc.items.some((item) => (item.currentQty ?? item.quantity ?? 0) > 0);
   };
 
-  // Abrir Modal de Confirmación
+  // Open Confirmation Modal
   const handleOpenConfirmToggle = (e: React.MouseEvent, loc: Location) => {
     e.stopPropagation();
-    // Guardia de desactivación contra stock mayor a cero (Acceptance Criteria 2)
+    // Deactivation guard against stock greater than zero (Acceptance Criteria 2)
     if (loc.isActive && locationHasActiveStock(loc)) {
       alert(
         'Cannot deactivate location with active stock balances. Please transfer or adjust remaining inventory to zero first.'
@@ -207,7 +210,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     setIsConfirmModalOpen(true);
   };
 
-  // Activar/Desactivar ubicación mediante el Modal con Guardia de Seguridad
+  // Toggle location active/inactive via Modal with Safety Guard
   const executeToggleActive = async () => {
     if (!confirmTargetLocation) return;
     setIsToggling(true);
@@ -244,7 +247,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error al cambiar el estado de la ubicación');
+        throw new Error(errorJson.message || 'Error updating location status');
       }
 
       setLocations((prevLocations) =>
@@ -254,15 +257,16 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
       );
       setIsConfirmModalOpen(false);
       setConfirmTargetLocation(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setToggleError(err.message || 'Error al cambiar el estado de la ubicación');
+      const msg = err instanceof Error ? err.message : 'Error updating location status';
+      setToggleError(msg);
     } finally {
       setIsToggling(false);
     }
   };
 
-  // Enviar Mutación (Crear / Editar) con Single Main Storage Rule y Deactivation Guard
+  // Submit Mutation (Create / Edit) with Single Main Storage Rule and Deactivation Guard
   const handleSubmitLocation = async (e: React.FormEvent) => {
     e.preventDefault();
     setDeactivationError(null);
@@ -272,7 +276,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
       return;
     }
 
-    // Guardia de desactivación contra stock mayor a cero (Acceptance Criteria 2)
+    // Deactivation guard against stock greater than zero (Acceptance Criteria 2)
     if (selectedLocation && selectedLocation.isActive && !formIsActive) {
       if (locationHasActiveStock(selectedLocation)) {
         const lockMsg =
@@ -289,10 +293,9 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       };
 
-      const merchantId = sessionStorage.getItem('x7:branch-context') || '1';
       let res;
 
-      // Si formIsMainStorage es true, desmarcar cualquier otra ubicación principal para este merchant (Rule 2)
+      // If formIsMainStorage is true, uncheck any other main storage for this merchant (Rule 2)
       if (formIsMainStorage) {
         setLocations((prev) =>
           prev.map((l) =>
@@ -333,17 +336,18 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
 
       if (res && !res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Error al guardar la ubicación');
+        throw new Error(errorData.message || 'Error saving location');
       }
       setIsFormDrawerOpen(false);
       fetchLocations(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setDeactivationError(err.message || 'Error al guardar la ubicación');
+      const msg = err instanceof Error ? err.message : 'Error saving location';
+      setDeactivationError(msg);
     }
   };
 
-  // Filtrado reactivo en caliente por nombre, código o dirección
+  // Reactive hot filtering by name, code, or address
   const filteredLocations = locations.filter((loc) => {
     const locName = loc.name || '';
     const locCode = loc.code || '';
@@ -382,9 +386,9 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* 2. Toolbar Multicriterio (Búsqueda + Filtro + Add Location) */}
+      {/* 2. Multi-criteria Toolbar (Search + Filter + Add Location) */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda al 100% de ancho */}
+        {/* Row 1: Full-width search */}
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary font-sans">
             search
@@ -414,7 +418,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Botón Añadir Ubicación (Story 6 Criterio 1) */}
+            {/* Add Location Button (Story 6 Criterion 1) */}
             <button
               type="button"
               onClick={handleOpenAddDrawer}
@@ -428,7 +432,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* 3. Grid / Tabla de Ubicaciones */}
+      {/* 3. Locations Grid / Table */}
       {(() => {
         const activeColSpan =
           (visibleColumns.name ? 1 : 0) +
@@ -644,7 +648,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={(e) => handleToggleLocationActive(e, loc)}
+                                    onClick={(e) => handleOpenConfirmToggle(e, loc)}
                                     className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors duration-200 cursor-pointer"
                                     title={loc.isActive !== false ? 'Deactivate Location' : 'Activate Location'}
                                   >
@@ -699,7 +703,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
         onClose={() => setIsSupportOpen(false)}
       />
 
-      {/* Portal: Form Drawer (Creación y Edición de Ubicaciones - Story 6 Criterio 1) */}
+      {/* Portal: Form Drawer (Location Creation and Editing - Story 6 Criterion 1) */}
       {isFormDrawerOpen && createPortal(
         <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-4 md:pb-12 backdrop-blur-sm font-sans">
           <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md overflow-hidden animate-fade-in max-h-[90vh] flex flex-col">
@@ -717,7 +721,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
             </div>
             <form onSubmit={handleSubmitLocation} className="flex-1 flex flex-col min-h-0">
               <div className="p-6 space-y-4 overflow-y-auto flex-1 text-left">
-                {/* Alerta de bloqueo por desinstalación con stock activo */}
+                {/* Block alert for deactivation with active stock */}
                 {deactivationError && (
                   <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg text-xs font-bold flex items-center gap-2 animate-shake">
                     <span className="material-symbols-outlined text-sm block">lock</span>
@@ -791,7 +795,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
                   </label>
                 </div>
 
-                {/* Configuración de Estado con Guardia de Desactivación */}
+                {/* Status Configuration with Deactivation Guard */}
                 <div className="flex flex-col gap-1.5 pt-2">
                   <label className="text-[11px] font-bold text-[#5f5e5e] uppercase mb-1">
                     Status Configuration
@@ -843,7 +847,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
       )}
 
 
-      {/* Portal: Detail Drawer (Inspección de datos) */}
+      {/* Portal: Detail Drawer (Data inspection) */}
       {isDetailDrawerOpen && selectedLocation && createPortal(
         <div className="fixed inset-0 z-[1000] flex justify-end font-sans">
           {/* Backdrop */}
@@ -927,7 +931,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
       )}
 
 
-    {/* Modal de Confirmación de Activación / Desactivación */}
+    {/* Activation / Deactivation Confirmation Modal */}
       {isConfirmModalOpen && confirmTargetLocation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white border border-[#e8e2d8] rounded-xl max-w-sm w-full p-6 shadow-2xl animate-scale-up text-left">

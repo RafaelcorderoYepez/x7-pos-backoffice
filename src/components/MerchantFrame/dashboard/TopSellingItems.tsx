@@ -11,23 +11,46 @@ export const TopSellingItems: React.FC<TopSellingItemsProps> = ({ refreshTrigger
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchTopItems = async () => {
+  const [prevTrigger, setPrevTrigger] = useState(refreshTrigger);
+  const [manualTrigger, setManualTrigger] = useState(0);
+
+  if (refreshTrigger !== prevTrigger) {
+    setPrevTrigger(refreshTrigger);
     setLoading(true);
     setError(null);
-    try {
-      const data = await restaurantService.getTopSellingItems();
-      setItems(data);
-    } catch (err) {
-      setError('Error al obtener productos');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+  }
+
+  const handleReload = () => {
+    setLoading(true);
+    setError(null);
+    setManualTrigger(c => c + 1);
   };
 
   useEffect(() => {
-    fetchTopItems();
-  }, [refreshTrigger]);
+    let ignore = false;
+    restaurantService.getTopSellingItems()
+      .then(data => {
+        if (!ignore) {
+          setItems(data);
+          setError(null);
+        }
+      })
+      .catch(err => {
+        if (!ignore) {
+          setError('Error fetching products');
+          console.error(err);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [refreshTrigger, manualTrigger]);
 
   if (loading) {
     return (
@@ -63,10 +86,10 @@ export const TopSellingItems: React.FC<TopSellingItemsProps> = ({ refreshTrigger
           <span className="material-symbols-outlined text-red-500 text-3xl">error</span>
           <p className="text-body-sm text-red-600 font-bold">{error}</p>
           <button
-            onClick={fetchTopItems}
+            onClick={handleReload}
             className="px-3 py-1.5 bg-[#d51f2c] text-white font-bold text-[10px] uppercase hover:opacity-90 transition-all animate-bounce"
           >
-            Reintentar
+            Retry
           </button>
         </div>
       </div>
@@ -78,7 +101,7 @@ export const TopSellingItems: React.FC<TopSellingItemsProps> = ({ refreshTrigger
       <div className="p-4 bg-[#222222] flex justify-between items-center">
         <span className="font-label-caps text-label-caps text-white">TOP SELLING ITEMS</span>
         <button
-          onClick={fetchTopItems}
+          onClick={handleReload}
           className="text-white/70 hover:text-white transition-colors"
           title="Refrescar productos"
         >

@@ -31,8 +31,6 @@ export const TipPoolFormDrawer: React.FC<TipPoolFormDrawerProps> = ({
   companyId = 'cmp-01',
   merchantId = 'mch-01',
 }) => {
-  if (!isOpen) return null;
-
   const isEditMode = pool !== null;
   const isSettled = pool?.status === 'SETTLED';
 
@@ -50,20 +48,18 @@ export const TipPoolFormDrawer: React.FC<TipPoolFormDrawerProps> = ({
 
   // Active Work Shifts Options State
   const [activeShifts, setActiveShifts] = useState<ActiveShiftOption[]>([]);
-  const [loadingShifts, setLoadingShifts] = useState<boolean>(false);
+  const [loadingShifts, setLoadingShifts] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLoadingShifts(true);
-    fetchActiveShifts()
-      .then((shifts) => setActiveShifts(shifts))
-      .catch(() => setActiveShifts([]))
-      .finally(() => setLoadingShifts(false));
-  }, []);
+  // Adjust state during render when pool or isOpen changes
+  const [prevPool, setPrevPool] = useState(pool);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
 
-  useEffect(() => {
+  if (pool !== prevPool || isOpen !== prevIsOpen) {
+    setPrevPool(pool);
+    setPrevIsOpen(isOpen);
     if (pool) {
       setName(pool.name);
       setShiftId(String(pool.shift_id));
@@ -81,7 +77,25 @@ export const TipPoolFormDrawer: React.FC<TipPoolFormDrawerProps> = ({
     }
     setErrorMessage(null);
     setSuccessMessage(null);
-  }, [pool, isOpen]);
+  }
+
+  useEffect(() => {
+    let ignore = false;
+    fetchActiveShifts()
+      .then((shifts) => {
+        if (!ignore) setActiveShifts(shifts);
+      })
+      .catch(() => {
+        if (!ignore) setActiveShifts([]);
+      })
+      .finally(() => {
+        if (!ignore) setLoadingShifts(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -149,8 +163,8 @@ export const TipPoolFormDrawer: React.FC<TipPoolFormDrawerProps> = ({
           onClose();
         }, 700);
       }
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to submit tip pool form drawer.');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to submit tip pool form drawer.');
     } finally {
       setSubmitting(false);
     }
@@ -173,12 +187,14 @@ export const TipPoolFormDrawer: React.FC<TipPoolFormDrawerProps> = ({
           : `Tip pool #${pool.id} restored to ACTIVE status.`
       );
       if (onSaved) onSaved(updated);
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to update record status.');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to update record status.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return createPortal(
     <div className="font-sans">

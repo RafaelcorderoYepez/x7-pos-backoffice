@@ -11,23 +11,46 @@ export const PlatformHealth: React.FC<PlatformHealthProps> = ({ refreshTrigger }
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchHealthStatus = async () => {
+  const [prevTrigger, setPrevTrigger] = useState(refreshTrigger);
+  const [retryCount, setRetryCount] = useState(0);
+
+  if (refreshTrigger !== prevTrigger) {
+    setPrevTrigger(refreshTrigger);
     setLoading(true);
     setError(null);
-    try {
-      const data = await saasService.getHealthStatus();
-      setHealth(data);
-    } catch (err) {
-      setError('Error al obtener estado');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
+  }
+
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    setRetryCount(c => c + 1);
   };
 
   useEffect(() => {
-    fetchHealthStatus();
-  }, [refreshTrigger]);
+    let ignore = false;
+    saasService.getHealthStatus()
+      .then(data => {
+        if (!ignore) {
+          setHealth(data);
+          setError(null);
+        }
+      })
+      .catch(err => {
+        if (!ignore) {
+          setError('Error fetching status');
+          console.error(err);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [refreshTrigger, retryCount]);
 
   const getStatusDetails = (status: ServiceHealth['status']) => {
     switch (status) {
@@ -83,12 +106,12 @@ export const PlatformHealth: React.FC<PlatformHealthProps> = ({ refreshTrigger }
           </div>
         </div>
         <div className="flex flex-col items-center justify-center py-4 gap-2">
-          <p className="text-body-sm text-red-600 font-medium">No se pudo contactar al servicio de monitoreo.</p>
+          <p className="text-body-sm text-red-600 font-medium">Could not reach monitoring service.</p>
           <button
-            onClick={fetchHealthStatus}
+            onClick={handleRetry}
             className="text-[10px] font-bold text-[#d51f2c] uppercase hover:underline flex items-center gap-1"
           >
-            <span className="material-symbols-outlined text-xs">refresh</span> Reintentar
+            <span className="material-symbols-outlined text-xs">refresh</span> Retry
           </button>
         </div>
       </div>

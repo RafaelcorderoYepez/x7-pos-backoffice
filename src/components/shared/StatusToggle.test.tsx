@@ -2,7 +2,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { StatusToggleButton, ConfirmStatusToggleDialog, normalizeStatus } from './StatusToggle';
+import { StatusToggleButton, ConfirmStatusToggleDialog } from './StatusToggle';
+import { normalizeStatus } from './statusToggleHelpers';
 
 afterEach(() => {
   cleanup();

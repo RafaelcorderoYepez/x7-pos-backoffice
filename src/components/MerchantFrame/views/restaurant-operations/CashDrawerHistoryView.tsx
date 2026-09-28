@@ -11,14 +11,14 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 // ─── Pure Helpers (exported for unit tests) ────────────────────────────────
 
-export function formatHistoryCurrency(n: number): string {
+function formatHistoryCurrency(n: number): string {
   return `$${Number(n).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 }
 
-export function formatHistoryDateTime(value: string | Date): string {
+function formatHistoryDateTime(value: string | Date): string {
   const d = new Date(value as string);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleString('en-US', {
@@ -30,23 +30,23 @@ export function formatHistoryDateTime(value: string | Date): string {
   });
 }
 
-export function formatHistoryDate(value: string): string {
+function formatHistoryDate(value: string): string {
   const d = new Date(value);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function computeNetVariance(opening: number, closing: number): number {
+function computeNetVariance(opening: number, closing: number): number {
   return closing - opening;
 }
 
-export function getVarianceColorClass(variance: number): string {
+function getVarianceColorClass(variance: number): string {
   if (variance > 0) return 'text-green-600 font-black tabular-nums';
   if (variance < 0) return 'text-amber-600 font-black tabular-nums';
   return 'text-[#5f5e5e] font-black tabular-nums';
 }
 
-export function normalizeHistoryRecord(raw: CashDrawerHistory): CashDrawerHistory {
+function normalizeHistoryRecord(raw: CashDrawerHistory): CashDrawerHistory {
   return {
     ...raw,
     openingBalance: Number(raw.openingBalance),
@@ -55,7 +55,7 @@ export function normalizeHistoryRecord(raw: CashDrawerHistory): CashDrawerHistor
 }
 
 /** Returns { from, to } ISO date strings defaulting to the last 30 calendar days. */
-export function getDefaultDateRange(): { from: string; to: string } {
+function getDefaultDateRange(): { from: string; to: string } {
   const to = new Date();
   const from = new Date();
   from.setDate(from.getDate() - 30);
@@ -575,7 +575,9 @@ export const CashDrawerHistoryView: React.FC<CashDrawerHistoryViewProps> = ({ on
   }, [selectedDrawerId, statusFilter]);
 
   useEffect(() => {
-    fetchRecords();
+    void Promise.resolve().then(() => {
+      fetchRecords();
+    });
   }, [fetchRecords]);
 
   // ── Client-side filtering: search + date range ────────────────────────

@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, getStoredUser } from '../../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../StockQuickLinks';
 import { EmergencySupportModal } from '../../../../modals/QuickActionModals';
-import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../../shared/tableOptionsHelpers';
 
 interface Product {
   id: number;
@@ -59,10 +60,10 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Modo de vista: Por Ubicación (By Location) o Por Insumo (By Material)
+  // View mode: By Location or By Material
   const [viewMode, setViewMode] = useState<'by-location' | 'by-material'>('by-location');
 
-  // Ajuste de stock manual
+  // Manual stock adjustment
   const [isAdjustOpen, setIsAdjustOpen] = useState<boolean>(false);
   const [selectedItemForAdjust, setSelectedItemForAdjust] = useState<StockItem | null>(null);
   const [adjustValue, setAdjustValue] = useState<number>(0);
@@ -71,10 +72,10 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   const [isSubmittingAdjust, setIsSubmittingAdjust] = useState<boolean>(false);
   const [adjustError, setAdjustError] = useState<string | null>(null);
 
-  // Historial de movimientos de stock (Drawer)
+  // Stock movements history (Drawer)
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [selectedItemForHistory, setSelectedItemForHistory] = useState<StockItem | null>(null);
-  const [historyMovements, setHistoryMovements] = useState<any[]>([]);
+  const [historyMovements, setHistoryMovements] = useState<Record<string, unknown>[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
@@ -123,14 +124,16 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   const topRef = useRef<HTMLDivElement | null>(null);
   const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-  useEffect(() => {
-    if (topRef.current) {
-      topRef.current.scrollIntoView({ behavior: 'instant' });
-    }
-    fetchInitialData();
-  }, []);
+  const checkObjectActive = (obj: unknown): boolean => {
+    if (!obj || typeof obj !== 'object') return true;
+    const o = obj as Record<string, unknown>;
+    if (o.isActive === false || o.is_active === false || o.isActive === 0 || o.is_active === 0) return false;
+    if (o.isActive === 'false' || o.is_active === 'false') return false;
+    if (typeof o.status === 'string' && ['inactive', 'disabled', 'deactivated', 'archived', 'deleted'].includes(o.status.toLowerCase())) return false;
+    return true;
+  };
 
-  const fetchInitialData = async () => {
+  const fetchInitialData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -140,17 +143,9 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       };
 
-      const checkObjectActive = (obj: any): boolean => {
-        if (!obj) return true;
-        if (obj.isActive === false || obj.is_active === false || obj.isActive === 0 || obj.is_active === 0) return false;
-        if (obj.isActive === 'false' || obj.is_active === 'false') return false;
-        if (typeof obj.status === 'string' && ['inactive', 'disabled', 'deactivated', 'archived', 'deleted'].includes(obj.status.toLowerCase())) return false;
-        return true;
-      };
-
       // 1. Cargar lista maestra de ubicaciones para verificar estado activo real por ID
-      const locationsMap = new Map<string, any>();
-      const locationsNameMap = new Map<string, any>();
+      const locationsMap = new Map<string, Record<string, unknown>>();
+      const locationsNameMap = new Map<string, Record<string, unknown>>();
       try {
         let locationsRes = await fetch(`${API_BASE}/v1/inventory/locations`, { headers });
         if (!locationsRes.ok || locationsRes.status === 404 || locationsRes.status === 400) {
@@ -159,14 +154,14 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         }
         if (locationsRes.ok) {
           const lJson = await locationsRes.json();
-          const rawLocations = Array.isArray(lJson)
+          const rawLocations: Record<string, unknown>[] = Array.isArray(lJson)
             ? lJson
             : (Array.isArray(lJson.data) ? lJson.data : (Array.isArray(lJson.items) ? lJson.items : []));
-          rawLocations.forEach((l: any) => {
+          rawLocations.forEach((l) => {
             if (l.id) locationsMap.set(String(l.id), l);
-            if (l.name) locationsNameMap.set(l.name.trim().toLowerCase(), l);
+            if (typeof l.name === 'string') locationsNameMap.set(l.name.trim().toLowerCase(), l);
           });
-          const activeLocations = rawLocations.filter((l: any) => checkObjectActive(l));
+          const activeLocations = (rawLocations as unknown as Location[]).filter((l) => checkObjectActive(l));
           setLocations(activeLocations);
         }
       } catch (lErr) {
@@ -174,8 +169,8 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       }
 
       // 2. Cargar lista maestra de materias primas para verificar estado activo actualizado
-      const suppliesMap = new Map<string, any>();
-      const suppliesNameMap = new Map<string, any>();
+      const suppliesMap = new Map<string, Record<string, unknown>>();
+      const suppliesNameMap = new Map<string, Record<string, unknown>>();
       try {
         let suppliesRes = await fetch(`${API_BASE}/v1/inventory/raw-materials?limit=200&status=all`, { headers });
         if (!suppliesRes.ok || suppliesRes.status === 404) {
@@ -186,23 +181,23 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         }
         if (suppliesRes.ok) {
           const sJson = await suppliesRes.json();
-          const rawSupplies = Array.isArray(sJson)
+          const rawSupplies: Record<string, unknown>[] = Array.isArray(sJson)
             ? sJson
             : (Array.isArray(sJson.items)
               ? sJson.items
               : (Array.isArray(sJson.data)
                 ? sJson.data
                 : (Array.isArray(sJson.data?.items) ? sJson.data.items : [])));
-          rawSupplies.forEach((s: any) => {
+          rawSupplies.forEach((s) => {
             if (s.id) suppliesMap.set(String(s.id), s);
-            if (s.name) suppliesNameMap.set(s.name.trim().toLowerCase(), s);
+            if (typeof s.name === 'string') suppliesNameMap.set(s.name.trim().toLowerCase(), s);
           });
         }
       } catch (sErr) {
         console.warn('Could not fetch supplies list for status map:', sErr);
       }
 
-      // Cargar ítems de stock
+      // Load stock items
       let itemsRes = await fetch(`${API_BASE}/v1/raw-material-stock/items?limit=100`, { headers });
       if (!itemsRes.ok || itemsRes.status === 404) {
         const fallbackItems = await fetch(`${API_BASE}/items?limit=100`, { headers });
@@ -212,24 +207,24 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       if (itemsRes.ok) {
         const json = await itemsRes.json();
         const data = json.data || json.items || json || [];
-        const rawItems = Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : (Array.isArray(data.items) ? data.items : []));
-        const mappedItems = rawItems.map((i: any) => {
-          const supplyObj = i.supply || i.rawMaterial || i.raw_material || i.ingredient || null;
+        const rawItems: Record<string, unknown>[] = Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : (Array.isArray(data.items) ? data.items : []));
+        const mappedItems: StockItem[] = rawItems.map((i) => {
+          const supplyObj = (i.supply || i.rawMaterial || i.raw_material || i.ingredient || null) as Record<string, unknown> | null;
           const supplyId = supplyObj?.id || i.supplyId || i.supply_id || i.rawMaterialId || i.raw_material_id;
-          const supplyName = supplyObj?.name || i.name || i.product?.name;
+          const supplyName = supplyObj?.name || i.name || (i.product as Record<string, unknown> | undefined)?.name;
           const masterSupply = (supplyId ? suppliesMap.get(String(supplyId)) : null) || (supplyName ? suppliesNameMap.get(String(supplyName).trim().toLowerCase()) : null);
-          const finalSupply = masterSupply || supplyObj;
+          const finalSupply = (masterSupply || supplyObj) as Supply | null;
 
           const isMasterSupplyActive = checkObjectActive(masterSupply);
           const isEmbeddedSupplyActive = checkObjectActive(supplyObj);
           
           const supplyIsActive = isMasterSupplyActive && isEmbeddedSupplyActive;
 
-          const locObj = i.location;
+          const locObj = i.location as Record<string, unknown> | null | undefined;
           const locId = locObj?.id || i.locationId || i.location_id;
           const locName = locObj?.name || i.locationName || i.location_name;
           const masterLoc = (locId ? locationsMap.get(String(locId)) : null) || (locName ? locationsNameMap.get(String(locName).trim().toLowerCase()) : null);
-          const finalLoc = masterLoc || locObj;
+          const finalLoc = (masterLoc || locObj) as Location | null;
 
           const isMasterLocActive = checkObjectActive(masterLoc);
           const isEmbeddedLocActive = checkObjectActive(locObj);
@@ -240,29 +235,38 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
           const itemIsActive = selfIsActive && supplyIsActive && locationIsActive;
 
           return {
-            ...i,
+            ...(i as unknown as StockItem),
             isActive: itemIsActive,
             currentQty: Number(i.currentQty ?? i.current_qty ?? i.quantity ?? 0),
             allocatedQty: Number(i.allocatedQty ?? i.allocated_qty ?? 0),
-            minimumQty: i.minimumQty ?? i.minimum_qty ?? null,
+            minimumQty: (i.minimumQty ?? i.minimum_qty ?? null) as number | null,
             supply: finalSupply,
             location: finalLoc,
-            product: i.product || (finalSupply ? { id: finalSupply.id, name: finalSupply.name, sku: finalSupply.code || finalSupply.sku } : null)
+            product: (i.product as Product | null) || (finalSupply ? { id: finalSupply.id, name: finalSupply.name, sku: finalSupply.code || finalSupply.sku || '' } : null)
           };
         });
         setStockItems(mappedItems);
       } else {
         throw new Error('Failed to fetch stock items from server.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setError('Failed to load stock control panel data. Please check your backend connection.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [API_BASE]);
 
-  // Abrir Modal de Ajuste de Stock
+  useEffect(() => {
+    if (topRef.current) {
+      topRef.current.scrollIntoView({ behavior: 'instant' });
+    }
+    void Promise.resolve().then(() => {
+      fetchInitialData();
+    });
+  }, [fetchInitialData]);
+
+  // Open Stock Adjustment Modal
   const handleOpenAdjust = (item: StockItem) => {
     if (!isAdministrator) return;
     setSelectedItemForAdjust(item);
@@ -293,7 +297,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         reason: adjustReason
       };
 
-      console.log('[AdjustStock] Enviando ajuste:', {
+      console.log('[AdjustStock] Sending adjustment:', {
         stockItemId: selectedItemForAdjust.id,
         product: selectedItemForAdjust.product?.name,
         location: selectedItemForAdjust.location?.name,
@@ -327,18 +331,19 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       const resBody = await res.json();
       const updatedItem = resBody.data || resBody;
 
-      // Sincronizar el grid en segundo plano inmediatamente sin recargar
+      // Sync grid silently in background without full reload
       setStockItems(prev => prev.map(item => item.id === updatedItem.id ? { ...item, currentQty: updatedItem.currentQty } : item));
       setIsAdjustOpen(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setAdjustError(err.message || 'Error processing stock adjustment.');
+      const message = err instanceof Error ? err.message : 'Error processing stock adjustment.';
+      setAdjustError(message);
     } finally {
       setIsSubmittingAdjust(false);
     }
   };
 
-  // Navegar a la bitácora de movimientos filtrada por itemId (Deep-Linking)
+  // Navigate to movement log filtered by itemId (Deep-Linking)
   const handleViewActivityLogs = async (item: StockItem) => {
     window.history.pushState({}, '', `/inventory/movements?itemId=${item.id}`);
     if (onNavigate) {
@@ -359,22 +364,23 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
         const res = await fetch(`${API_BASE}/movements?itemId=${item.id}&limit=100`, { headers });
         if (!res.ok) {
-          throw new Error('Error al cargar la bitácora de movimientos');
+          throw new Error('Error loading movement log');
         }
 
         const json = await res.json();
         const data = json.data || json || [];
         setHistoryMovements(Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : []));
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(err);
-        setHistoryError(err.message || 'Failed to fetch movements history.');
+        const message = err instanceof Error ? err.message : 'Failed to fetch movements history.';
+        setHistoryError(message);
       } finally {
         setIsLoadingHistory(false);
       }
     }
   };
 
-  // Filtrado reactivo multicriterio en el frontend
+  // Multi-criteria reactive frontend filtering
 
   const filteredItems = stockItems.filter(item => {
     const locName = item.location?.name || '';
@@ -382,34 +388,35 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
     const rawMaterialName = item.supply?.name || item.product?.name || '';
     const itemSku = item.supply?.code || item.supply?.sku || item.product?.sku || '';
 
-    // Búsqueda alfanumérica por nombre de ubicación, código de ubicación o nombre de materia prima
+    // Alphanumeric search by location name, location code, or raw material name
     const matchesSearch =
       locName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       locCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
       rawMaterialName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       itemSku.toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Filtro por Ubicación de Almacén Específica
+    // Specific Warehouse Location Filter
     const matchesLocation =
       locationFilter === 'All' ||
       (item.location && String(item.location.id) === locationFilter);
 
-    // Filtro estricto: Mostrar únicamente elementos activos. Si está inactivo o la ubicación está desactivada, se elimina de la vista.
-    const supplyIsActive = item.supply
-      ? ((item.supply as any).isActive !== false && (item.supply as any).is_active !== false && (item.supply as any).status !== 'inactive' && (item.supply as any).status !== 'deleted')
-      : true;
-    const locationIsActive = item.location
-      ? ((item.location as any).isActive !== false && (item.location as any).is_active !== false && (item.location as any).status !== 'inactive' && (item.location as any).status !== 'deleted')
-      : true;
-    const itemIsActive = item.isActive !== false && (item as any).is_active !== false && supplyIsActive && locationIsActive;
+    // Strict filter: Display only active elements. If inactive or location is deactivated, exclude from view.
+    const supplyIsActive = checkObjectActive(item.supply);
+    const locationIsActive = checkObjectActive(item.location);
+    const itemIsActive = checkObjectActive(item) && supplyIsActive && locationIsActive;
 
     if (!itemIsActive) {
       return false;
     }
 
+    // Strict filter: Display only raw material supplies in this workspace
+    if (!item.supply && !(item as unknown as { supplyId?: number }).supplyId && !(item as unknown as { supply_id?: number }).supply_id) {
+      return false;
+    }
 
 
-    // Filtro Rápido de Alerta de Stock Bajo (currentStock <= minStockThreshold)
+
+    // Quick Low Stock Alert Filter (currentStock <= minStockThreshold)
     const minThreshold = Number(item.minimumQty ?? item.supply?.min_stock_threshold ?? 0);
     const isLowStock = minThreshold > 0 ? item.currentQty < minThreshold : false;
     const matchesOutOfStock = !outOfStockOnly || isLowStock;
@@ -418,26 +425,27 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   });
 
 
-  // Agrupar por Ubicación (By Location) o por Materia Prima (By Material)
+  // Group by Location or by Raw Material
   // Helper para determinar de forma exhaustiva el costo unitario (WACC/CPP, cost_per_unit, unit_cost)
-  const getItemUnitCost = (item: any): number => {
-    if (!item) return 0;
+  const getItemUnitCost = (item: unknown): number => {
+    if (!item || typeof item !== 'object') return 0;
+    const it = item as Record<string, unknown>;
     const directCost =
-      item.weightedAverageUnitCost ??
-      item.weighted_average_unit_cost ??
-      item.unitCost ??
-      item.unit_cost ??
-      item.averageCost ??
-      item.average_cost ??
-      item.costPerUnit ??
-      item.cost_per_unit;
+      it.weightedAverageUnitCost ??
+      it.weighted_average_unit_cost ??
+      it.unitCost ??
+      it.unit_cost ??
+      it.averageCost ??
+      it.average_cost ??
+      it.costPerUnit ??
+      it.cost_per_unit;
 
     if (directCost != null && !isNaN(Number(directCost)) && Number(directCost) > 0) {
       return Number(directCost);
     }
 
-    const s = item.supply || item.rawMaterial || item.raw_material || item.product;
-    if (s) {
+    const s = (it.supply || it.rawMaterial || it.raw_material || it.product) as Record<string, unknown> | null | undefined;
+    if (s && typeof s === 'object') {
       const sCost =
         s.average_cost ??
         s.averageCost ??
@@ -483,24 +491,19 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
     const avgCost = getItemUnitCost(item);
     const valuation = currentStock * avgCost;
 
-
-    let key = '';
-    let title = '';
-    let code: string | null | undefined = null;
-    let isMainStorage = false;
-
-    if (viewMode === 'by-location') {
-      key = `loc-${item.location?.id ?? 'unassigned'}`;
-      title = item.location?.name || 'Unassigned Location Hub';
-      code = item.location?.code || null;
-      isMainStorage = !!item.location?.isMainStorage;
-    } else {
-      key = item.supply
-        ? `supply-${item.supply.id}`
-        : `product-${item.product?.id ?? 'unknown'}-${item.variant?.id ?? 'no-variant'}`;
-      title = item.supply?.name || item.product?.name || 'Unknown Item';
-      code = item.supply?.code || item.supply?.sku || item.product?.sku || null;
-    }
+    const isByLoc = viewMode === 'by-location';
+    const key = isByLoc
+      ? `loc-${item.location?.id ?? 'unassigned'}`
+      : (item.supply
+          ? `supply-${item.supply.id}`
+          : `product-${item.product?.id ?? 'unknown'}-${item.variant?.id ?? 'no-variant'}`);
+    const title = isByLoc
+      ? (item.location?.name || 'Unassigned Location Hub')
+      : (item.supply?.name || item.product?.name || 'Unknown Item');
+    const code = isByLoc
+      ? (item.location?.code || null)
+      : (item.supply?.code || item.supply?.sku || item.product?.sku || null);
+    const isMainStorage = isByLoc ? !!item.location?.isMainStorage : false;
 
     if (!groupMap.has(key)) {
       const group: GroupedStockItem = {
@@ -605,9 +608,9 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         </div>
       </div>
 
-      {/* 2. Toolbar Multicriterio (Búsqueda + Filtros) */}
+      {/* 2. Multi-criteria Toolbar (Search + Filters) */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda a la izquierda y View Switcher a la derecha en la MISMA línea horizontal */}
+        {/* Row 1: Search on left and View Switcher on right on SAME horizontal line */}
         <div className="flex flex-row items-center justify-between gap-3 w-full">
           <div className="relative flex-1 min-w-0">
             <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary font-sans">
@@ -625,7 +628,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
             />
           </div>
 
-          {/* Toggle de Modo de Vista: By Location vs By Material (Estilo idéntico a Devices) */}
+          {/* View Mode Toggle: By Location vs By Material */}
           <div className="flex items-center bg-[#f2ede5] p-1 rounded border border-[#e8e2d8] shrink-0">
             <button
               type="button"
@@ -663,7 +666,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Selector de Ubicación Específica */}
+            {/* Specific Location Selector */}
             <select
               value={locationFilter}
               onChange={(e) => {
@@ -680,7 +683,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
               ))}
             </select>
 
-            {/* Toggle Rápido: Low Stock Only */}
+            {/* Quick Toggle: Low Stock Only */}
             <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-1.5 bg-[#fef9f1] border border-[#e8e2d8] rounded">
               <input
                 type="checkbox"
@@ -699,7 +702,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Botón Acción Registrar Movimiento */}
+            {/* Action Button: Register Movement */}
             {onNavigate && (
               <button
                 type="button"
@@ -850,7 +853,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                         }`}
                         onClick={() => toggleGroup(group.key)}
                       >
-                        {/* Columna 1: Nombre de Ubicación / Insumo */}
+                        {/* Column 1: Location Name / Supply */}
                         {visibleColumns.entity && (
                           <td className={`${densityPadding}`}>
                             <div className="flex items-center gap-3">
@@ -894,7 +897,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                           </td>
                         )}
 
-                        {/* Columna 2: Recuento o Insumo */}
+                        {/* Column 2: Count or Supply */}
                         {visibleColumns.itemsCount && (
                           <td className={`${densityPadding} font-semibold text-secondary`}>
                             {viewMode === 'by-location' ? (
@@ -1141,7 +1144,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
 
 
-      {/* Renderizado del Portal del Drawer de Historial de Movimientos */}
+      {/* Movement History Drawer Portal Render */}
       {isHistoryOpen && selectedItemForHistory && createPortal(
         <div className="fixed inset-0 z-[9999] overflow-hidden flex justify-end font-sans">
           {/* Backdrop */}
@@ -1172,7 +1175,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
             {/* Cuerpo del Drawer */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Contexto del Ítem */}
+              {/* Item Context */}
               <div className="bg-zinc-50 p-4 border border-zinc-200 rounded-lg flex gap-4 items-center">
                 <div className="w-10 h-10 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-[#ae001a]">
                   <span className="material-symbols-outlined text-xl block">inventory</span>
@@ -1304,7 +1307,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
             {/* Formulario */}
             <form onSubmit={handleSubmitAdjust} className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Contexto del Ítem */}
+              {/* Item Context */}
               <div className="bg-zinc-50 p-4 border border-zinc-200 rounded-lg flex gap-4 items-center">
                 <div className="w-10 h-10 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center text-[#ae001a]">
                   <span className="material-symbols-outlined text-xl block">box</span>
@@ -1325,13 +1328,13 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                 </div>
               </div>
 
-              {/* Ajuste de Cantidad */}
+              {/* Quantity Adjustment */}
               <div className="space-y-5">
                 <label className="block text-label-caps font-bold text-zinc-400 uppercase tracking-widest text-[9px]">
                   Adjustment Setup
                 </label>
 
-                {/* Tipo de Ajuste */}
+                {/* Adjustment Type */}
                 <div className="space-y-2">
                   <span className="block text-body-xs font-bold text-zinc-700 font-sans">Adjustment Type</span>
                   <div className="grid grid-cols-2 gap-2 bg-zinc-100 p-1 rounded-lg">
@@ -1390,7 +1393,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                   </div>
                 </div>
 
-                {/* Motivo del Ajuste */}
+                {/* Adjustment Reason */}
                 <div className="space-y-1.5">
                   <span className="block text-body-xs font-bold text-zinc-700 font-sans">Reason for Adjustment</span>
                   <textarea

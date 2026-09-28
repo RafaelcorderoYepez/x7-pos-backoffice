@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession, getStoredUser } from '../../../../../lib/auth-storage';
-import { QuickLaunchPanel } from '../../../shared/QuickLaunchPanel';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
-import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 
 interface Category {
   id: number;
@@ -89,15 +89,8 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
   const currentUser = getStoredUser();
   const isInventorySpecialist = ['merchant_admin', 'admin', 'super_admin', 'SaaS Owner', 'Inventory Specialist'].includes(currentUser?.role || '');
 
-  useEffect(() => {
-    if (topRef.current) {
-      topRef.current.scrollIntoView({ behavior: 'instant' });
-    }
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    setIsLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
     setError(null);
     try {
       const token = getAccessToken();
@@ -109,18 +102,28 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
       const res = await fetch(`${API_BASE}/v1/raw-material-categories?status=all`, { headers });
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
       if (!res.ok) {
-        throw new Error('Error al cargar categorías del servidor');
+        throw new Error('Error loading categories from server');
       }
 
       const json = await res.json();
       const rawData = json.data || json.items || json || [];
       
-      const mapped: Category[] = rawData.map((c: any) => ({
+      const mapped: Category[] = rawData.map((c: {
+        id: number;
+        name: string;
+        description?: string | null;
+        isActive?: boolean;
+        is_active?: boolean;
+        created_at?: string;
+        createdAt?: string;
+        updated_at?: string;
+        updatedAt?: string;
+      }) => ({
         id: c.id,
         name: c.name,
         description: c.description,
@@ -130,13 +133,22 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
       }));
 
       setCategories(mapped);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching categories:', err);
-      setError('No se pudieron cargar las categorías. Por favor, revisa la conexión con el servidor.');
+      setError('Could not load categories. Please check connection with server.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [API_BASE]);
+
+  useEffect(() => {
+    if (topRef.current) {
+      topRef.current.scrollIntoView({ behavior: 'instant' });
+    }
+    void Promise.resolve().then(() => {
+      fetchData(true);
+    });
+  }, [fetchData]);
 
   const handleOpenAdd = () => {
     if (!isInventorySpecialist) return;
@@ -169,7 +181,7 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
     };
 
     const isEdit = drawerMode === 'edit' && selectedCategory;
-    const bodyData: any = {
+    const bodyData: { name: string; description?: string; is_active: boolean } = {
       name: formName,
       description: formDescription || undefined,
       is_active: formIsActive,
@@ -196,12 +208,13 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error al guardar la categoría en el servidor');
+        throw new Error(errorJson.message || 'Error saving category to server');
       }
 
       await fetchData();
-    } catch (err: any) {
-      alert(err.message || 'No se pudo completar la operación');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Could not complete the operation';
+      alert(msg);
     } finally {
       setIsLoading(false);
     }
@@ -237,13 +250,14 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error al actualizar el estatus de la categoría. Es posible que esté asignada a materias primas activas.');
+        throw new Error(errorJson.message || 'Error updating category status. It might be assigned to active raw materials.');
       }
 
       setIsToggleModalOpen(false);
       await fetchData();
-    } catch (err: any) {
-      setToggleError(err.message || 'Error al cambiar estatus');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error updating status';
+      setToggleError(msg);
     } finally {
       setIsToggling(false);
     }
@@ -284,7 +298,7 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
         </p>
       </div>
 
-      {/* Panel de búsqueda y acciones */}
+      {/* Search panel and actions */}
       <div className="bg-white border border-[#e8e2d8] rounded p-6 shadow-sm space-y-4">
         {/* Fila 1: Buscador a ancho completo */}
         <div className="relative w-full">

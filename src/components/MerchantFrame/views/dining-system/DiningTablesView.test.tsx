@@ -9,7 +9,7 @@ vi.mock('../../../../lib/auth-storage', () => ({
   clearAuthSession: vi.fn(),
 }));
 
-// El editor real monta un lienzo a pantalla completa; aquí sólo interesa que la vista sepa
+// Real editor mounts full-screen canvas; here view only needs to know
 // abrirlo.
 vi.mock('./FloorPlanEditor', () => ({
   FloorPlanEditor: ({ plan, onClose }: { plan: { name: string }; onClose: () => void }) => (
@@ -138,7 +138,7 @@ function defaultFetch({ tables = TABLES, assignments = [], delta = [] }: FetchOv
 
 const fetchMock = () => globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
 
-/** Llamadas que salieron con un método concreto hacia una ruta. */
+/** Calls sent with specific method to a route. */
 function callsTo(method: string, fragment: string) {
   return fetchMock()
     .mock.calls.filter(
@@ -171,7 +171,7 @@ describe('DiningTablesView', () => {
   });
 
   describe('parrilla', () => {
-    it('muestra el estado vacío literal de la historia', async () => {
+    it('displays literal empty state from story', async () => {
       vi.stubGlobal('fetch', defaultFetch({ tables: [] }));
       render(<DiningTablesView merchantId={3} />);
 
@@ -181,7 +181,7 @@ describe('DiningTablesView', () => {
       );
     });
 
-    it('pinta capacidad, zona con swatch y plano de cada mesa', async () => {
+    it('renders capacity, zone swatch and floor plan for each table', async () => {
       await renderView();
       const grid = within(screen.getByRole('table'));
 
@@ -193,26 +193,26 @@ describe('DiningTablesView', () => {
       expect(grid.getAllByRole('button', { name: /main floor plan/i }).length).toBeGreaterThan(0);
     });
 
-    it('resume la colocación espacial como pos, forma y giro', async () => {
+    it('summarizes spatial placement as pos, shape and rotation', async () => {
       await renderView();
       expect(screen.getByTestId('table-spatial-1')).toHaveTextContent(
         'Pos: [100, 150] | Circle | 90°',
       );
     });
 
-    it('marca la mesa hija con el badge de unión a su madre', async () => {
+    it('marks child table with parent link badge', async () => {
       await renderView();
       expect(screen.getByTestId('table-joined-badge-2')).toHaveTextContent('Joined to T-01');
     });
 
-    it('marca la mesa madre con cuántas mesas cuelgan de ella', async () => {
+    it('marks parent table with count of child tables', async () => {
       await renderView();
       expect(screen.getByTestId('table-children-badge-1')).toHaveTextContent('1 table joined');
     });
 
-    it('aplica el código de color operativo a cada estado', async () => {
+    it('applies operational color code to each state', async () => {
       await renderView();
-      // Coral la ocupada, azul la de limpieza, verde la disponible.
+      // Coral for occupied, blue for cleaning, green for available.
       expect(screen.getByTestId('table-status-1').className).toContain('#c2352a');
       expect(screen.getByTestId('table-status-4').className).toContain('blue');
       expect(screen.getByTestId('table-status-3').className).toContain('green');
@@ -221,7 +221,7 @@ describe('DiningTablesView', () => {
   });
 
   describe('filtros', () => {
-    it('el selector de zona cae en cascada del plano elegido', async () => {
+    it('zone dropdown cascades from chosen floor plan', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -234,13 +234,13 @@ describe('DiningTablesView', () => {
       expect(within(zoneFilter).queryByRole('option', { name: 'Terrace' })).not.toBeInTheDocument();
     });
 
-    it('ofrece el estado de limpieza en el filtro', async () => {
+    it('offers cleaning status in filter dropdown', async () => {
       await renderView();
       const statusFilter = screen.getByLabelText('Filter by status');
       expect(within(statusFilter).getByRole('option', { name: 'Cleaning' })).toBeInTheDocument();
     });
 
-    it('busca por número, zona o nota de ubicación', async () => {
+    it('searches by number, zone or location note', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -251,7 +251,7 @@ describe('DiningTablesView', () => {
   });
 
   describe('guarda de servicio vivo', () => {
-    it('bloquea borrar una mesa ocupada y explica por qué', async () => {
+    it('blocks deleting occupied table and explains why', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -264,7 +264,7 @@ describe('DiningTablesView', () => {
       expect(callsTo('DELETE', '/tables/1')).toHaveLength(0);
     });
 
-    it('bloquea borrar una mesa libre que todavía tiene camarero asignado', async () => {
+    it('blocks deleting free table that still has assigned waiter', async () => {
       const user = userEvent.setup();
       await renderView({
         assignments: [{ id: 50, shiftId: 1, tableId: 3, collaboratorId: 5, releasedAt: null, status: 'active' }],
@@ -277,7 +277,7 @@ describe('DiningTablesView', () => {
       );
     });
 
-    it('deja borrar una mesa libre y sin cobertura', async () => {
+    it('allows deleting an available table without coverage', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -287,7 +287,7 @@ describe('DiningTablesView', () => {
       await waitFor(() => expect(callsTo('DELETE', '/tables/3')).toHaveLength(1));
     });
 
-    it('impide mudar de plano una mesa en servicio', async () => {
+    it('prevents changing floor plan of a table in active service', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -303,7 +303,7 @@ describe('DiningTablesView', () => {
   });
 
   describe('formulario', () => {
-    it('rechaza una posición fuera de los límites del plano', async () => {
+    it('rejects position outside floor plan bounds', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -334,7 +334,7 @@ describe('DiningTablesView', () => {
       );
     });
 
-    it('avisa del número duplicado con el texto de la historia', async () => {
+    it('warns about duplicate number with story copy', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -349,7 +349,7 @@ describe('DiningTablesView', () => {
       );
     });
 
-    it('excluye del selector de madre a la propia mesa y a su descendencia', async () => {
+    it('excludes self and descendants from parent table selector', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -362,7 +362,7 @@ describe('DiningTablesView', () => {
       expect(within(parent).getByRole('option', { name: /T-03/ })).toBeInTheDocument();
     });
 
-    it('guarda coordenadas, giro y unión al enviar', async () => {
+    it('saves coordinates, rotation and link on submit', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -383,8 +383,8 @@ describe('DiningTablesView', () => {
     });
   });
 
-  describe('unión de mesas', () => {
-    it('une las mesas elegidas y les hereda el estado de la madre ocupada', async () => {
+  describe('table joining', () => {
+    it('joins selected tables and inherits occupied status from parent', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -403,7 +403,7 @@ describe('DiningTablesView', () => {
       });
     });
 
-    it('desune una mesa hija dejando su vínculo en null', async () => {
+    it('unlinks child table setting its link to null', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -431,7 +431,7 @@ describe('DiningTablesView', () => {
   });
 
   describe('transferencia', () => {
-    it('sólo ofrece transferir desde una mesa ocupada', async () => {
+    it('only offers transfer from an occupied table', async () => {
       await renderView();
       expect(
         screen.getByRole('button', { name: 'Transfer guests from table T-01' }),
@@ -441,14 +441,14 @@ describe('DiningTablesView', () => {
       ).not.toBeInTheDocument();
     });
 
-    it('lista como destino sólo mesas disponibles y envía la transferencia', async () => {
+    it('lists only available tables as destination and submits transfer', async () => {
       const user = userEvent.setup();
       await renderView();
 
       await user.click(screen.getByRole('button', { name: 'Transfer guests from table T-01' }));
       const dialog = await screen.findByRole('dialog', { name: /transfer table t-01/i });
       const target = within(dialog).getByLabelText(/target table/i);
-      // Ni la ocupada T-02 ni la de limpieza T-04 pueden recibir comensales.
+      // Neither occupied T-02 nor cleaning T-04 can receive diners.
       expect(within(target).queryByRole('option', { name: /T-02/ })).not.toBeInTheDocument();
       expect(within(target).queryByRole('option', { name: /T-04/ })).not.toBeInTheDocument();
 
@@ -462,7 +462,7 @@ describe('DiningTablesView', () => {
       });
     });
 
-    it('explica el bloqueo cuando ninguna mesa puede recibir', async () => {
+    it('explains lock when no tables can receive transfer', async () => {
       const user = userEvent.setup();
       await renderView({
         tables: TABLES.map((t) => (t.id === 3 ? { ...t, status: 'reserved' } : t)),
@@ -477,7 +477,7 @@ describe('DiningTablesView', () => {
   });
 
   describe('tiempo real', () => {
-    it('repinta el estado de una mesa al recibir el evento del gateway', async () => {
+    it('repaints table status upon receiving gateway event', async () => {
       await renderView();
       expect(screen.getByTestId('table-status-3')).toHaveTextContent('Available');
 
@@ -508,7 +508,7 @@ describe('DiningTablesView', () => {
       );
     });
 
-    it('reconcilia con el delta al recuperar la conexión', async () => {
+    it('reconciles with delta when recovering connection', async () => {
       await renderView({
         delta: [{ ...TABLES[2], status: 'reserved' }],
       });
@@ -553,7 +553,7 @@ describe('DiningTablesView', () => {
       );
     });
 
-    it('muestra el estado del canal en la cabecera', async () => {
+    it('displays channel status in header', async () => {
       await renderView();
       expect(screen.getByTestId('dining-realtime-status')).toHaveTextContent('Live');
     });

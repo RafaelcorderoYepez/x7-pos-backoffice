@@ -21,11 +21,13 @@ export const SaaSFrame: React.FC = () => {
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [searchText, setSearchText] = useState<string>('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
-  const [isSearching, setIsSearching] = useState<boolean>(false);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
   const [apiFailedToggle, setApiFailedToggle] = useState<boolean>(getSimulateApiFailure());
 
-  // Añadir clases para anular estilos limitantes de la plantilla original de Vite
+  // Derived indicator: user has typed but debounce period (300ms) has not settled yet
+  const isSearching = Boolean(searchText && searchText !== debouncedSearchQuery);
+
+  // Add classes to override limiting styles from original Vite template
   useEffect(() => {
     const rootEl = document.getElementById('root');
     const bodyEl = document.body;
@@ -37,26 +39,10 @@ export const SaaSFrame: React.FC = () => {
     };
   }, []);
 
-  // Debounce de 300ms para la búsqueda global (AC 1.3)
-  useEffect(() => {
-    if (searchText) {
-      setIsSearching(true);
-    }
-    const handler = setTimeout(() => {
-      setDebouncedSearchQuery(searchText);
-      setIsSearching(false);
-    }, 3000); // 300ms según el criterio, pero hagamos exactamente 300ms. 3000 fue typo de mi mente. Usemos 300ms.
-
-    return () => {
-      clearTimeout(handler);
-    };
-  }, [searchText]);
-
-  // Handler de debounce real de 300ms
+  // 300ms debounce for global search (AC 1.3)
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearchQuery(searchText);
-      setIsSearching(false);
     }, 300);
 
     return () => {
@@ -68,7 +54,7 @@ export const SaaSFrame: React.FC = () => {
     const newState = !apiFailedToggle;
     setSimulateApiFailure(newState);
     setApiFailedToggle(newState);
-    setRefreshTrigger((prev) => prev + 1); // Forzar actualización de componentes
+    setRefreshTrigger((prev) => prev + 1); // Force component update
   };
 
   const handleRefresh = () => {
@@ -80,7 +66,7 @@ export const SaaSFrame: React.FC = () => {
     setActiveTab(view);
   };
 
-  // Renderizar vistas según la pestaña activa (AC 1.1 y 4.3)
+  // Render views according to active tab (AC 1.1 and 4.3)
   const renderContent = () => {
     if (activeTab === 'subscription') {
       return <SubscriptionPlansView onNavigate={handleNavigateView} />;
@@ -175,15 +161,15 @@ export const SaaSFrame: React.FC = () => {
             {activeTab === 'reports' && 'System Reports'}
           </h2>
           <p className="text-body-md text-[#666666] mt-2 max-w-md text-center">
-            Esta sección virtual simula la ruta SPA para{' '}
-            <strong className="text-[#d51f2c]">/{activeTab}</strong>. Toda la navegación se
-            realiza reactivamente sin recargas de página físicas.
+            This virtual section simulates the SPA route for{' '}
+            <strong className="text-[#d51f2c]">/{activeTab}</strong>. All navigation occurs
+            reactively without physical page reloads.
           </p>
           <button
             onClick={() => setActiveTab('dashboard')}
             className="mt-6 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#d51f2c] transition-all"
           >
-            Volver al Dashboard
+            Back to Dashboard
           </button>
         </div>
       );
@@ -268,7 +254,7 @@ export const SaaSFrame: React.FC = () => {
               apiFailedToggle ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'
             }`}
           >
-            {apiFailedToggle ? 'Simular API Online' : 'Simular Error de API'}
+            {apiFailedToggle ? 'Simulate Online API' : 'Simulate API Failure'}
           </button>
         </div>
 
@@ -322,7 +308,7 @@ export const SaaSFrame: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 ml-4">
-          {/* Indicador de búsqueda reactiva en vivo */}
+          {/* Live reactive search indicator */}
           {debouncedSearchQuery && (
             <div className="bg-[#222222] text-white px-2 py-1 text-[10px] font-bold uppercase flex items-center gap-1.5 rounded animate-fade-in shadow-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-ping"></span>
@@ -333,7 +319,7 @@ export const SaaSFrame: React.FC = () => {
           <button
             onClick={handleRefresh}
             className="p-2 text-[#222222] hover:bg-[#e8e2d8] transition-colors relative"
-            title="Refrescar Datos"
+            title="Refresh Data"
           >
             <span className="material-symbols-outlined">refresh</span>
           </button>
@@ -349,7 +335,7 @@ export const SaaSFrame: React.FC = () => {
               <p className="text-body-sm font-bold text-[#222222] leading-none">SaaS Admin</p>
               <p className="text-[11px] text-secondary">Enterprise Controller</p>
             </div>
-            {/* Foto de perfil del admin dinámica en lugar del placeholder de googleusercontent */}
+            {/* Dynamic admin profile picture instead of googleusercontent placeholder */}
             <div className="w-10 h-10 rounded-full border-2 border-white overflow-hidden bg-zinc-200 shadow-sm">
               <img
                 alt="User Profile"
@@ -440,7 +426,7 @@ export const SaaSFrame: React.FC = () => {
                               ? `Applications bundled into the "${selectedPlan?.name}" subscription tier.`
                               : activeTab === 'subscription-plan-features'
                                 ? `Feature entitlements and quantitative limits bundled into the "${selectedPlan?.name}" subscription tier.`
-                                : `Visualización interactiva y gestión para /${activeTab}.`}
+                                : `Interactive visualization and management for /${activeTab}.`}
               </p>
             </div>
             {activeTab === 'dashboard' && (
@@ -463,7 +449,7 @@ export const SaaSFrame: React.FC = () => {
             )}
           </div>
 
-          {/* Renderizado dinámico de vistas SPA (AC 1.1) */}
+          {/* Dynamic SPA view rendering (AC 1.1) */}
           {renderContent()}
         </div>
       </main>
@@ -473,7 +459,7 @@ export const SaaSFrame: React.FC = () => {
         <button
           onClick={handleRefresh}
           className="fixed bottom-8 right-8 w-14 h-14 bg-[#222222] text-white rounded-full flex items-center justify-center shadow-xl hover:bg-[#d51f2c] transition-all transform hover:scale-110 active:scale-95 z-50 animate-bounce"
-          title="Refrescar Métricas"
+          title="Refresh Metrics"
         >
           <span className="material-symbols-outlined text-3xl">insights</span>
         </button>

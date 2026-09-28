@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LedgerAccountTree, buildTree, getDescendantIds } from './LedgerAccountTree';
+import { LedgerAccountTree } from './LedgerAccountTree';
+import { buildTree, getDescendantIds } from './ledgerAccountTreeHelpers';
 import type { LedgerAccount } from '../../../../types/accounting';
 
 afterEach(() => {

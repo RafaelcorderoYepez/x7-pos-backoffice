@@ -32,9 +32,9 @@ export const AppModal: React.FC<AppModalProps> = ({
   children,
   closeOnBackdrop = false,
 }) => {
-  // Id propio por instancia: con dos modales apilados (un formulario y su confirmación
-  // encima) un id fijo se duplicaba en el DOM y aria-labelledby resolvía al título del
-  // primero, así que el segundo diálogo se anunciaba con el nombre del que tapa.
+  // Unique id per instance: with two stacked modals (a form and its confirmation
+  // on top) a fixed id was duplicated in the DOM and aria-labelledby resolved to the title of
+  // the first, so the second dialog was announced with the name of the one it covers.
   const generatedTitleId = useId();
   const resolvedTitleId = titleId ?? generatedTitleId;
 

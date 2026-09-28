@@ -13,22 +13,38 @@ export const KitchenPerformanceCard: React.FC<KitchenPerformanceCardProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPerformance = async () => {
+  const [prevTrigger, setPrevTrigger] = useState(refreshTrigger);
+
+  if (refreshTrigger !== prevTrigger) {
+    setPrevTrigger(refreshTrigger);
     setLoading(true);
     setError(null);
-    try {
-      const data = await restaurantService.getKitchenPerformance();
-      setPerformance(data);
-    } catch (err) {
-      setError('Error');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }
 
   useEffect(() => {
-    fetchPerformance();
+    let ignore = false;
+    restaurantService.getKitchenPerformance()
+      .then(data => {
+        if (!ignore) {
+          setPerformance(data);
+          setError(null);
+        }
+      })
+      .catch(err => {
+        if (!ignore) {
+          setError('Error');
+          console.error(err);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [refreshTrigger]);
 
   if (loading) {
@@ -48,7 +64,7 @@ export const KitchenPerformanceCard: React.FC<KitchenPerformanceCardProps> = ({
           <p className="font-label-caps text-label-caps text-red-500 font-bold uppercase">KITCHEN PERFORMANCE</p>
           <span className="material-symbols-outlined text-red-500">speed</span>
         </div>
-        <p className="text-[11px] text-red-600 font-medium">Error al cargar rendimiento</p>
+        <p className="text-[11px] text-red-600 font-medium">Error loading performance</p>
       </div>
     );
   }

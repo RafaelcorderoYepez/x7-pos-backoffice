@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
-import { QuickLaunchPanel } from '../../../shared/QuickLaunchPanel';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
-import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 
 interface Product {
   id: number;
@@ -46,18 +46,18 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Estados del Modal
+  // Modal States
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [modalMode, setModalMode] = useState<'add' | 'edit'>('add');
   const [editingModifierId, setEditingModifierId] = useState<number | null>(null);
 
-  // Campos del Formulario del Modal
+  // Modal Form Fields
   const [formName, setFormName] = useState<string>('');
   const [formPriceDelta, setFormPriceDelta] = useState<string>('');
   const [formProduct, setFormProduct] = useState<string>('NULL');
   const [formIsActive, setFormIsActive] = useState<boolean>(true);
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
-  // Estados para modal de confirmación de activación/desactivación
+  // State for activation/deactivation confirmation modal
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState<boolean>(false);
   const [confirmTargetModifier, setConfirmTargetModifier] = useState<Modifier | null>(null);
   const [isToggling, setIsToggling] = useState<boolean>(false);
@@ -74,7 +74,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
 
   const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-  const fetchAllData = async () => {
+  const fetchAllData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -93,12 +93,12 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
 
       if (modifiersRes.status === 401 || productsRes.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
       if (!modifiersRes.ok || !productsRes.ok) {
-        throw new Error('Error al cargar datos del servidor');
+        throw new Error('Error loading data from server');
       }
 
       const modifiersJson = await modifiersRes.json();
@@ -111,8 +111,8 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         ? productsJson
         : (productsJson.data || productsJson.items || []);
 
-      // Mapear modificadores
-      const mappedModifiers = modifiersData.map((m: any) => ({
+      // Map modifiers
+      const mappedModifiers = modifiersData.map((m: { id: number; name: string; priceDelta: number | string; isActive?: boolean; product?: { id: number; name: string } | null }) => ({
         id: m.id,
         name: m.name,
         priceDelta: m.priceDelta,
@@ -121,24 +121,26 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
       }));
 
       // Mapear productos
-      const mappedProducts = productsData.map((p: any) => ({
+      const mappedProducts = productsData.map((p: { id: number; name: string }) => ({
         id: p.id,
         name: p.name
       }));
 
       setModifiers(mappedModifiers);
       setProducts(mappedProducts);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching modifiers data:', err);
       setError('Failed to load modifiers. Please check if the backend is running.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [API_BASE]);
 
   useEffect(() => {
-    fetchAllData();
-  }, []);
+    void Promise.resolve().then(() => {
+      fetchAllData();
+    });
+  }, [fetchAllData]);
 
   const handleExportCSV = () => {
     if (filteredModifiers.length === 0) return;
@@ -212,7 +214,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
     setIsModalOpen(true);
   };
 
-  // Activar/Desactivar modificador rápidamente
+  // Toggle modifier active/inactive quickly
   const handleToggleActive = (m: Modifier) => {
     setConfirmTargetModifier(m);
     setToggleError(null);
@@ -238,7 +240,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
 
       if (!res.ok) {
         const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error al cambiar el estado del modificador');
+        throw new Error(errorJson.message || 'Error updating modifier status');
       }
 
       setModifiers((prevModifiers) =>
@@ -248,9 +250,10 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
       );
       setIsConfirmModalOpen(false);
       setConfirmTargetModifier(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setToggleError(err.message || 'Error al cambiar el estado del modificador');
+      const msg = err instanceof Error ? err.message : 'Error updating modifier status';
+      setToggleError(msg);
     } finally {
       setIsToggling(false);
     }
@@ -265,7 +268,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
 
     const deltaNum = parseFloat(formPriceDelta);
     if (isNaN(deltaNum) || deltaNum < 0) {
-      alert('El precio delta debe ser un número no negativo.');
+      alert('Delta price must be a non-negative number.');
       return;
     }
 
@@ -278,7 +281,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const bodyData: any = {
+      const bodyData: { name: string; priceDelta: number; isActive: boolean; productId?: number } = {
         name: formName,
         priceDelta: deltaNum,
         isActive: formIsActive
@@ -293,7 +296,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         });
         if (!res.ok) {
           const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error al crear el modificador');
+          throw new Error(errorJson.message || 'Error creating modifier');
         }
       } else if (modalMode === 'edit' && editingModifierId) {
         const res = await fetch(`${API_BASE}/modifiers/${editingModifierId}`, {
@@ -303,19 +306,20 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         });
         if (!res.ok) {
           const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error al actualizar el modificador');
+          throw new Error(errorJson.message || 'Error updating modifier');
         }
       }
 
       setIsModalOpen(false);
       fetchAllData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      alert(err.message || 'Error al guardar el modificador');
+      const msg = err instanceof Error ? err.message : 'Error saving modifier';
+      alert(msg);
     }
   };
 
-  // Cálculo de columnas visibles para colSpan
+  // Calculate visible columns for colSpan
   const visibleColumnsCount = Object.values(visibleColumns).filter(Boolean).length;
   const densityPadding = getDensityPadding(rowDensity);
 
@@ -323,7 +327,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans">
       <div ref={topRef} />
 
-      {/* Título de Sección */}
+      {/* Section Title */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm">
         <div className="flex items-center gap-3">
           <span className="material-symbols-outlined text-[#ae001a] text-2xl">
@@ -340,9 +344,9 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Barra de Búsqueda y Filtros */}
+      {/* Search Bar and Filters */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda al 100% de ancho */}
+        {/* Row 1: Full-width search */}
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary font-sans">
             search
@@ -407,7 +411,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Tabla del Directorio de Modificadores */}
+      {/* Modifiers Directory Table */}
       <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm">
         {/* Header Oscuro #222222 */}
         <div className="p-4 bg-[#222222] flex justify-between items-center relative">
@@ -570,14 +574,14 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
                             <button
                               onClick={() => handleOpenEditModal(modifier)}
                               className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                              title="Editar modificador"
+                              title="Edit modifier"
                             >
                               <span className="material-symbols-outlined text-[20px]">edit</span>
                             </button>
                             <button
                               onClick={() => void handleToggleActive(modifier)}
                               className="p-1 text-[#5f5e5e] hover:text-[#ae001a] transition-colors cursor-pointer"
-                              title={modifier.isActive ? "Desactivar modificador" : "Activar modificador"}
+                              title={modifier.isActive ? "Deactivate modifier" : "Activate modifier"}
                             >
                               <span className="material-symbols-outlined text-[20px]">
                                 {modifier.isActive ? 'block' : 'check_circle_outline'}
@@ -608,7 +612,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         />
       </div>
 
-      {/* Modal Interactivo de Add / Edit Modifier */}
+      {/* Interactive Add / Edit Modifier Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-4 md:pb-12 backdrop-blur-sm">
           <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md overflow-hidden animate-fade-in text-left max-h-[90vh] flex flex-col">
@@ -701,7 +705,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
         onClose={() => setIsSupportOpen(false)}
       />
 
-      {/* Modal de confirmación de activación/desactivación */}
+      {/* Activation/deactivation confirmation modal */}
       {isConfirmModalOpen && confirmTargetModifier && (
         <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
           {/* Backdrop */}
@@ -710,7 +714,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
             onClick={() => setIsConfirmModalOpen(false)}
           />
 
-          {/* Caja del Modal */}
+          {/* Modal Box */}
           <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-zinc-200 animate-scale-in">
             <div className="flex items-start gap-4">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${

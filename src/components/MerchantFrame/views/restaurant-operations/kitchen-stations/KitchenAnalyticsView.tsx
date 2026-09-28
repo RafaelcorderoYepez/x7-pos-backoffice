@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 import { NavHubBar } from '../../../../shared/NavHubBar';
@@ -8,8 +8,8 @@ import {
   NoColumnsEmptyState,
   TableEmptyState,
   TablePaginationFooter,
-  getDensityPadding,
 } from '../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -156,7 +156,9 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch {}
+      } catch (e) {
+        console.warn('Failed parsing station SLA targets:', e);
+      }
     }
     return DEFAULT_STATION_SLA;
   });
@@ -211,7 +213,7 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
         const json = await res.json();
         const list = json.data || json || [];
         setStations(
-          list.map((st: any) => ({
+          list.map((st: { id: number; name: string; code?: string; stationType?: string; station_type?: string }) => ({
             id: st.id,
             name: st.name,
             code: st.code,
@@ -256,16 +258,9 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
     }
   };
 
-  // Helper: Format seconds to readable mm:ss
-  const formatSeconds = (sec: number): string => {
-    if (!sec || isNaN(sec)) return '0m 00s';
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${m}m ${s < 10 ? '0' : ''}${s}s`;
-  };
 
   // 3. Fetch Executive Analytics & Matrix Data from Backend
-  const fetchAnalytics = async (silent: boolean = false) => {
+  const fetchAnalytics = useCallback(async (silent: boolean = false) => {
     if (!silent) setLoading(true);
     setRefreshing(true);
     try {
@@ -275,18 +270,13 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
-      const params = new URLSearchParams({
-        targetSlaMinutes: targetSlaMinutes.toString(),
-      });
-
+      const params = new URLSearchParams();
+      if (selectedPreset !== 'all' && startDate && endDate) {
+        params.append('startDate', startDate);
+        params.append('endDate', endDate);
+      }
       if (selectedStationId !== 'ALL') {
         params.append('stationId', selectedStationId.toString());
-      }
-      if (startDate) {
-        params.append('startDate', new Date(startDate).toISOString());
-      }
-      if (endDate) {
-        params.append('endDate', new Date(endDate).toISOString());
       }
 
       // Call primary executive analytics endpoint
@@ -404,17 +394,19 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
           return;
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('Backend analytics endpoint error, applying local dataset fallback', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [selectedPreset, startDate, endDate, selectedStationId, stations]);
 
   useEffect(() => {
-    fetchAnalytics();
-  }, [selectedPreset, startDate, endDate, selectedStationId, targetSlaMinutes]);
+    void Promise.resolve().then(() => {
+      fetchAnalytics(true);
+    });
+  }, [fetchAnalytics]);
 
   // Station Efficiency comparison list with Live SLA Threshold Reactivity (Historia X7P-4206)
   const efficiencyList = useMemo(() => {

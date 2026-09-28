@@ -1,7 +1,8 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CashTransactionsView, formatDateTime, formatTypeLabel, formatLoyaltySource, getTodayDateString } from './CashTransactionsView';
+import { CashTransactionsView } from './CashTransactionsView';
+import { formatDateTime, formatTypeLabel, formatLoyaltySource, getTodayDateString } from './cashTransactionsHelpers';
 import type { CashTransaction } from '../../../../types/cash-transaction';
 
 vi.mock('../../../../lib/auth-storage', () => ({
@@ -77,7 +78,7 @@ describe('CashTransactionsView — data fetch', () => {
         }),
       );
     });
-    const calledUrl = (fetch as any).mock.calls[0][0] as string;
+    const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
     expect(calledUrl).toContain('page=1');
     expect(calledUrl).toContain('merchantId=1');
   });
@@ -344,7 +345,7 @@ describe('CashTransactionsView — type, status, shift, date, and drawer filters
     await user.selectOptions(screen.getByRole('combobox', { name: /filter by transaction type/i }), 'REFUND');
 
     await waitFor(() => {
-      const calledUrl = (fetch as any).mock.calls[0][0] as string;
+      const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
       expect(calledUrl).toContain('type=REFUND');
       expect(calledUrl).toContain('page=1');
     });
@@ -360,7 +361,7 @@ describe('CashTransactionsView — type, status, shift, date, and drawer filters
     await user.selectOptions(screen.getByRole('combobox', { name: /filter by transaction status/i }), 'AUDITED');
 
     await waitFor(() => {
-      const calledUrl = (fetch as any).mock.calls[0][0] as string;
+      const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
       expect(calledUrl).toContain('status=AUDITED');
     });
   });
@@ -404,7 +405,7 @@ describe('CashTransactionsView — pagination', () => {
     await user.click(screen.getByRole('button', { name: /next page/i }));
 
     await screen.findByText('#TXN-11');
-    const calledUrl = (fetch as any).mock.calls[0][0] as string;
+    const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
     expect(calledUrl).toContain('page=2');
     expect(screen.getByRole('button', { name: /next page/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /previous page/i })).toBeEnabled();
@@ -431,7 +432,7 @@ describe('CashTransactionsView — pagination', () => {
     await user.click(screen.getByRole('button', { name: /previous page/i }));
 
     await screen.findByText('#TXN-1');
-    const calledUrl = (fetch as any).mock.calls[0][0] as string;
+    const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
     expect(calledUrl).toContain('page=1');
   });
 });

@@ -1,7 +1,8 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { JournalEntryLinesView, flattenJournalEntryLines, isLeafAccount } from './JournalEntryLinesView';
+import { JournalEntryLinesView } from './JournalEntryLinesView';
+import { flattenJournalEntryLines, isLeafAccount } from './journalEntryLinesHelpers';
 import type { JournalEntry, LedgerAccount } from '../../../../types/accounting';
 
 vi.mock('../../../../lib/auth-storage', () => ({

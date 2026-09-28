@@ -66,7 +66,9 @@ export const CompanyProfileView: React.FC = () => {
   };
 
   useEffect(() => {
-    void loadProfile();
+    void Promise.resolve().then(() => {
+      void loadProfile();
+    });
   }, []);
 
   useEffect(() => {

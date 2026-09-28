@@ -56,44 +56,58 @@ export const TipAllocationsView: React.FC<TipAllocationsViewProps> = ({
   const [selectedAllocationForDrawer, setSelectedAllocationForDrawer] =
     useState<TipAllocation | null>(null);
 
-  const loadAllocationsData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Executes query targeting primary composite index @Index(['tip_id', 'collaborator_id', 'shift_id'])
-      // and secondary composite index @Index(['role', 'record_status', 'created_at'])
-      const data = await fetchTipAllocations({
-        tip_id: selectedTipId || undefined,
-        collaborator_id: selectedCollaboratorId || undefined,
-        shift_id: selectedShiftId || undefined,
-        role: selectedRole,
-        record_status: selectedRecordStatus,
-        search: searchQuery,
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-      });
+  const [refreshKey, setRefreshKey] = useState(0);
 
-      setAllocations(data);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to hydrate tip allocations directory.');
-    } finally {
-      setLoading(false);
-    }
+  const loadAllocationsData = () => {
+    setRefreshKey((k) => k + 1);
   };
 
   useEffect(() => {
-    loadAllocationsData();
+    let isCancelled = false;
+    void Promise.resolve().then(async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Executes query targeting primary composite index @Index(['tip_id', 'collaborator_id', 'shift_id'])
+        // and secondary composite index @Index(['role', 'record_status', 'created_at'])
+        const data = await fetchTipAllocations({
+          tip_id: selectedTipId || undefined,
+          collaborator_id: selectedCollaboratorId || undefined,
+          shift_id: selectedShiftId || undefined,
+          role: selectedRole,
+          record_status: selectedRecordStatus,
+          search: searchQuery,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        });
+
+        if (!isCancelled) {
+          setAllocations(data);
+        }
+      } catch (err: unknown) {
+        if (!isCancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to hydrate tip allocations directory.');
+        }
+      } finally {
+        if (!isCancelled) {
+          setLoading(false);
+        }
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
   }, [
-    companyId,
-    resolvedMerchantId,
-    searchQuery,
-    selectedRole,
-    selectedRecordStatus,
     selectedTipId,
     selectedCollaboratorId,
     selectedShiftId,
+    selectedRole,
+    selectedRecordStatus,
+    searchQuery,
     dateFrom,
     dateTo,
+    refreshKey,
   ]);
 
   const metrics = useMemo(
@@ -137,9 +151,9 @@ export const TipAllocationsView: React.FC<TipAllocationsViewProps> = ({
       allocation.record_status === 'ACTIVE' ? 'DELETED' : 'ACTIVE';
     try {
       await updateTipAllocationStatus(allocation.id, { record_status: nextStatus });
-      await loadAllocationsData();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to toggle allocation active status.');
+      loadAllocationsData();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to toggle allocation active status.');
     }
   };
 

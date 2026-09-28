@@ -1,8 +1,8 @@
-// Alta y enmienda de un contrato de colaborador.
+// Creation and amendment of collaborator contract.
 //
-// El formulario pide un único importe (`wage_rate`) y el periodo que cubre: el reparto
-// entre tarifa por hora y sueldo base lo hace el backend, porque es un detalle del motor de
-// nómina y no algo que RR. HH. deba decidir campo a campo.
+// Form requests single amount (`wage_rate`) and period: breakdown
+// between hourly rate and base wage is handled by the backend payroll engine.
+// is payroll engine responsibility, not manual per-field decision.
 
 import React, { useMemo, useRef, useState } from 'react';
 import type {
@@ -112,8 +112,8 @@ export const ContractFormDrawer: React.FC<ContractFormDrawerProps> = ({
     );
   }, [collaborators, collaboratorQuery]);
 
-  // El solape se avisa antes de enviar, con el contrato concreto que estorba, en vez de
-  // dejar que el usuario descubra el 409 después de rellenar todo el formulario.
+  // Overlap warned before submission, specifying conflicting contract, instead of
+  // letting user discover 409 after filling entire form.
   const blocking = useMemo(() => {
     if (!collaboratorId) return null;
     if (!active) return null;

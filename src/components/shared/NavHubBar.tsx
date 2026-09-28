@@ -24,7 +24,6 @@ export interface NavHubBarProps {
 export const NavHubBar: React.FC<NavHubBarProps> = ({
   title,
   titleIcon,
-  subtitle,
   activeModuleId,
   items = [],
   className = '',
@@ -38,7 +37,9 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
 
   useEffect(() => {
     if (propIsSidebarCollapsed !== undefined) {
-      setCollapsed(propIsSidebarCollapsed);
+      void Promise.resolve().then(() => {
+        setCollapsed(propIsSidebarCollapsed);
+      });
       return;
     }
 
@@ -49,7 +50,9 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
       }
     };
 
-    checkSidebar();
+    void Promise.resolve().then(() => {
+      checkSidebar();
+    });
     const aside = document.querySelector('aside');
     if (!aside) return;
 
@@ -66,7 +69,7 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
       className={`fixed bottom-0 ${leftOffsetClass} right-0 z-40 bg-[#222222] border-t-2 border-[#ae001a] text-white py-2 px-4 shadow-2xl font-sans transition-all duration-300 ease-in-out ${className}`}
     >
       <div className="w-full flex items-center justify-center relative min-h-[36px]">
-        {/* Botón de Regreso a la izquierda (Solo Flecha Compacta) */}
+        {/* Back Button on the left (Compact Arrow Only) */}
         {handleBack ? (
           <button
             type="button"
@@ -90,7 +93,7 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
           </div>
         ) : null}
 
-        {/* Arreglo de Botones de Navegación PERFECTAMENTE CENTRADOS */}
+        {/* Navigation Buttons Array PERFECTLY CENTERED */}
         <div className="flex items-center justify-center gap-1.5 flex-wrap">
           {items.map((item) => {
             const isActive = item.active || (activeModuleId ? item.id === activeModuleId : false);

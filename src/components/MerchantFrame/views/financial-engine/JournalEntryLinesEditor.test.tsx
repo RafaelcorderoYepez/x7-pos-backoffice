@@ -1,14 +1,14 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
+import { JournalEntryLinesEditor } from './JournalEntryLinesEditor';
 import {
-  JournalEntryLinesEditor,
   createEmptyLine,
   computeLineTotals,
   toCreateLineDtos,
   linesAreValidAndBalanced,
   type JournalEntryLineDraft,
-} from './JournalEntryLinesEditor';
+} from './journalEntryLinesEditorHelpers';
 import type { LedgerAccount } from '../../../../types/accounting';
 
 afterEach(() => {

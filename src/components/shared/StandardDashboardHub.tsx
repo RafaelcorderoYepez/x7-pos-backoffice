@@ -29,35 +29,35 @@ export interface DashboardModuleItem {
 }
 
 export interface StandardDashboardHubProps {
-  /** Subtítulo o categoría en el encabezado (ej. "Kitchen Display System / Operational Hub") */
+  /** Subtitle or category in the header (e.g. "Kitchen Display System / Operational Hub") */
   breadcrumb?: string;
-  /** Icono Material Symbol del encabezado (ej. "space_dashboard") */
+  /** Header Material Symbol icon (e.g. "space_dashboard") */
   headerIcon?: string;
-  /** Título principal en mayúsculas (ej. "KDS Ecosystem Command Hub") */
+  /** Main title in uppercase (e.g. "KDS Ecosystem Command Hub") */
   title: string;
-  /** Descripción del hub */
+  /** Hub description */
   description: string;
-  /** Acción principal opcional a la derecha (ej. "LAUNCH LIVE KDS DISPLAY") */
+  /** Optional primary action on the right (e.g. "LAUNCH LIVE KDS DISPLAY") */
   primaryAction?: {
     label: string;
     icon?: string;
     onClick: () => void;
   };
-  /** Acción secundaria opcional a la derecha */
+  /** Optional secondary action on the right */
   secondaryAction?: {
     label: string;
     icon?: string;
     onClick: () => void;
   };
-  /** Los 4 KPI cards de la tira horizontal de estado */
+  /** The 4 KPI cards in the horizontal status strip */
   kpis: DashboardKPIItem[];
-  /** Indica si los KPIs están cargando métricas */
+  /** Indicates whether KPIs are loading metrics */
   loadingKpis?: boolean;
-  /** Lista de tarjetas de submódulos (grilla de 3 columnas) */
+  /** List of sub-module cards (3-column grid) */
   modules: DashboardModuleItem[];
-  /** Callback global de navegación al hacer clic en un submódulo */
+  /** Global navigation callback when clicking a sub-module */
   onModuleClick?: (id: string) => void;
-  /** Contenido adicional o barra de navegación inferior (ej. QuickLinks / NavHubBar) */
+  /** Additional content or bottom navigation bar (e.g. QuickLinks / NavHubBar) */
   children?: React.ReactNode;
 }
 
@@ -116,12 +116,12 @@ const BADGE_COLOR_MAP: Record<DashboardBadgeVariant, string> = {
 };
 
 /**
- * Componente Reutilizable Estándar para Dashboards y Command Hubs de x7POS.
- * Incluye:
- * 1. Tarjeta Header Corporativa con Icono, Título y Botón de Acción.
- * 2. Tira de 4 KPIs Horizontales oscuros (grid-cols-4) con bordes de color y micro-animaciones.
- * 3. Grilla de Tarjetas de Módulos (grid-cols-3) con badges, iconos y enlaces directos con flecha.
- * 4. Slot inferior para enlaces rápidos o NavHubBar.
+ * Standard Reusable Component for x7POS Dashboards and Command Hubs.
+ * Includes:
+ * 1. Corporate Header Card with Icon, Title, and Action Button.
+ * 2. 4-KPI horizontal status strip (grid-cols-4) with colored top borders and micro-animations.
+ * 3. Module Cards Grid (grid-cols-3) with badges, icons, and direct arrow links.
+ * 4. Bottom slot for quick links or NavHubBar.
  */
 export const StandardDashboardHub: React.FC<StandardDashboardHubProps> = ({
   breadcrumb,
@@ -186,7 +186,7 @@ export const StandardDashboardHub: React.FC<StandardDashboardHubProps> = ({
         </div>
       </div>
 
-      {/* 2. Hero KPI Health Strip (4 Cuadrados pequeños obligatoriamente en 1 sola línea horizontal) */}
+      {/* 2. Hero KPI Health Strip (4 small cards strictly in 1 single horizontal row) */}
       <div className="grid grid-cols-4 gap-3 w-full">
         {kpis.slice(0, 4).map((kpi, idx) => {
           const defaultVariant: DashboardKPIVariant =
@@ -234,7 +234,7 @@ export const StandardDashboardHub: React.FC<StandardDashboardHubProps> = ({
         })}
       </div>
 
-      {/* 3. Sub-Module Command Cards Grid (3 Cuadrados por línea = 2 filas de 3) */}
+      {/* 3. Sub-Module Command Cards Grid (3 cards per row = 2 rows of 3) */}
       <div className="grid grid-cols-3 gap-4 mt-2 w-full">
         {modules.map((mod) => (
           <StandardDashboardModuleCard
@@ -248,7 +248,7 @@ export const StandardDashboardHub: React.FC<StandardDashboardHubProps> = ({
         ))}
       </div>
 
-      {/* 4. Slot inferior para enlaces rápidos o NavHubBar */}
+      {/* 4. Bottom slot for quick links or NavHubBar */}
       {children && <div className="mt-4">{children}</div>}
     </div>
   );

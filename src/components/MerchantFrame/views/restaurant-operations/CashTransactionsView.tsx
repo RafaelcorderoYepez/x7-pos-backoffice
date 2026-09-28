@@ -9,59 +9,22 @@ import type {
   CashTransactionStatus,
 } from '../../../../types/cash-transaction';
 import { CashManagementQuickLinks } from './CashManagementQuickLinks';
-import { STATUS_BADGE_CLASSES as CASH_SHIFT_STATUS_BADGE_CLASSES } from './CashShiftsView';
+import { STATUS_BADGE_CLASSES as CASH_SHIFT_STATUS_BADGE_CLASSES } from './cashShiftsHelpers';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 const PAGE_SIZE = 10;
 
-const BALANCE_INCREASING_TYPES: CashTransactionType[] = ['SALE', 'PAY_IN', 'opening', 'sale', 'tip', 'adjustment_up'];
-const BALANCE_DECREASING_TYPES: CashTransactionType[] = ['REFUND', 'PAY_OUT', 'DRAWER_DROP', 'refund', 'withdrawal', 'adjustment_down'];
-
-export function isBalanceIncreasingType(type: CashTransactionType): boolean {
-  return BALANCE_INCREASING_TYPES.includes(type);
-}
-
-export function isBalanceDecreasingType(type: CashTransactionType): boolean {
-  return BALANCE_DECREASING_TYPES.includes(type);
-}
-
-export function formatTypeLabel(type: CashTransactionType): string {
-  return type.replace(/_/g, ' ').toUpperCase();
-}
-
-export function formatLoyaltySource(source: string): string {
-  return source.replace(/_/g, ' ');
-}
-
-export function amountColorClass(type: CashTransactionType): string {
-  if (isBalanceIncreasingType(type)) return 'text-green-600 font-bold';
-  if (isBalanceDecreasingType(type)) return 'text-[#ae001a] font-bold';
-  return 'text-[#5f5e5e]';
-}
-
-// The backend stores `amount` as a Postgres `decimal` column with no server-side
-// coercion, so it arrives over the wire as a numeric string (e.g. "125.50").
-// Normalize at the fetch boundary so every `CashTransaction` in state has a real number.
-export function normalizeTransaction(raw: CashTransaction): CashTransaction {
-  return { ...raw, amount: Number(raw.amount) };
-}
-
-export function formatCurrency(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-
-export function formatDateTime(value: string): string {
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleString();
-}
-
-export function getTodayDateString(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
+import {
+  isBalanceIncreasingType,
+  isBalanceDecreasingType,
+  formatTypeLabel,
+  formatLoyaltySource,
+  amountColorClass,
+  normalizeTransaction,
+  formatCurrency,
+  formatDateTime,
+  getTodayDateString,
+} from './cashTransactionsHelpers';
 
 const CASH_TRANSACTION_STATUS_BADGE_CLASSES: Record<CashTransactionStatus, string> = {
   ACTIVE: 'bg-green-500/10 text-green-600 border border-green-500/20',
@@ -439,7 +402,7 @@ export const CashTransactionsView: React.FC<CashTransactionsViewProps> = ({ onNa
       const res = await fetch(`${API_BASE}/cash-transactions/${txn.id}`, { headers });
       if (res.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
       if (!res.ok) throw new Error('Failed to load cash transaction detail');
@@ -467,7 +430,9 @@ export const CashTransactionsView: React.FC<CashTransactionsViewProps> = ({ onNa
   };
 
   useEffect(() => {
-    fetchCashTransactions();
+    void Promise.resolve().then(() => {
+      fetchCashTransactions();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, typeFilter, statusFilter, drawerFilter, shiftFilter, startDate, endDate]);
 

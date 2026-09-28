@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
-import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, getDensityPadding, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
+import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -75,7 +76,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filtros de búsqueda y estado
+  // Search and status filters
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
 
@@ -127,7 +128,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     navigator.clipboard.writeText(`Recipes & BOM: ${filteredRecipes.length} total, ${active} active, ${filteredRecipes.length - active} inactive.`);
   };
 
-  // Drawer / Modal Interactivo para Crear / Editar Receta
+  // Interactive Drawer / Modal to Create / Edit Recipe
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit' | 'view'>('add');
   const [selectedRecipe, setSelectedRecipe] = useState<ProductRecipe | null>(null);
@@ -143,19 +144,12 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
   const [drawerError, setDrawerError] = useState<string | null>(null);
 
 
-  useEffect(() => {
-    if (topRef.current) {
-      topRef.current.scrollIntoView({ behavior: 'instant' });
+  // 1. Load Recipes, Commercial Products, and Raw Materials from backend
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) {
+      setIsLoading(true);
+      setError(null);
     }
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-    fetchData();
-  }, []);
-
-
-  // 1. Cargar Recetas, Productos Comerciales y Materias Primas desde el backend
-  const fetchData = async () => {
-    setIsLoading(true);
-    setError(null);
     try {
       const token = getAccessToken();
       const headers: Record<string, string> = {
@@ -163,7 +157,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
-      // Cargar recetas v1
+      // Load v1 recipes
       let recipesRes = await fetch(`${API_BASE}/v1/recipes`, { headers });
       if (!recipesRes.ok) {
         recipesRes = await fetch(`${API_BASE}/v1/inventory/recipes`, { headers });
@@ -172,7 +166,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
       // Cargar productos
       const productsRes = await fetch(`${API_BASE}/products?limit=100`, { headers });
 
-      // Cargar materias primas
+      // Load raw materials
       let suppliesRes = await fetch(`${API_BASE}/v1/inventory/raw-materials?status=active&limit=200`, { headers });
       if (!suppliesRes.ok) {
         suppliesRes = await fetch(`${API_BASE}/supplies?status=active&limit=200`, { headers });
@@ -180,7 +174,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
       if (recipesRes.status === 401 || productsRes.status === 401 || suppliesRes.status === 401) {
         clearAuthSession();
-        window.location.href = '/login';
+        window.location.assign('/login');
         return;
       }
 
@@ -196,19 +190,26 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
       setSupplies(Array.isArray(suppliesList) ? suppliesList : []);
       setRecipes(Array.isArray(recipesList) ? recipesList : []);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error fetching recipes workspace data:', err);
-      setError(err.message || 'Failed to load recipes data from server.');
+      const message = err instanceof Error ? err.message : 'Failed to load recipes data from server.';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchData();
   }, []);
 
-  // Abrir Drawer para Crear Nueva Receta
+  useEffect(() => {
+    if (topRef.current) {
+      topRef.current.scrollIntoView({ behavior: 'instant' });
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    void Promise.resolve().then(() => {
+      fetchData();
+    });
+  }, [fetchData]);
+
+  // Open Drawer to Create New Recipe
   const handleOpenAdd = () => {
     setSelectedRecipe(null);
     setDrawerMode('add');
@@ -224,7 +225,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
   };
 
 
-  // Abrir Drawer para Editar Receta Existente
+  // Open Drawer to Edit Existing Recipe
   const handleOpenEdit = (rec: ProductRecipe) => {
     setSelectedRecipe(rec);
     setDrawerMode('edit');
@@ -252,19 +253,19 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     setIsDrawerOpen(true);
   };
 
-  // Agregar Línea de Ingrediente en el Formulario
+  // Add Ingredient Line in Form
   const handleAddFormLine = () => {
     setFormDuplicateWarning(null);
     setFormLines((prev) => [...prev, { raw_material_id: '', quantity: 1 }]);
   };
 
-  // Remover Línea de Ingrediente
+  // Remove Ingredient Line
   const handleRemoveFormLine = (index: number) => {
     setFormDuplicateWarning(null);
     setFormLines((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Cálculo dinámico de contribución de costo en tiempo real por línea
+  // Realtime dynamic cost contribution calculation per line
   const calculateLineCostContribution = (rawMaterialId: string, quantity: number): number => {
     if (!rawMaterialId || quantity <= 0) return 0;
     const mat = supplies.find((s) => String(s.id) === String(rawMaterialId));
@@ -274,13 +275,13 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     return quantity * (avgCost / convFactor);
   };
 
-  // Cálculo dinámico del costo teórico total de la receta
+  // Realtime dynamic theoretical cost calculation for recipe
   const totalTheoreticalCost = formLines.reduce((sum, line) => {
     return sum + calculateLineCostContribution(line.raw_material_id, line.quantity);
   }, 0);
 
-  // Cambiar Valor en Línea de Ingrediente con Guardia de Duplicados
-  const handleFormLineChange = (index: number, key: 'raw_material_id' | 'quantity', val: any) => {
+  // Change Ingredient Line Value with Duplicate Guard
+  const handleFormLineChange = (index: number, key: 'raw_material_id' | 'quantity', val: string | number) => {
     setFormDuplicateWarning(null);
     if (key === 'raw_material_id' && val) {
       const isAlreadyAdded = formLines.some(
@@ -301,7 +302,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     });
   };
 
-  // Eliminar Receta
+  // Delete Recipe
   const handleDeleteRecipe = async (recipeId: number) => {
     if (!window.confirm('Are you sure you want to delete or archive this production recipe formula?')) return;
     try {
@@ -322,24 +323,25 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
       }
 
       fetchData();
-    } catch (err: any) {
-      alert(err.message || 'Error deleting recipe.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error deleting recipe.';
+      alert(message);
       setIsLoading(false);
     }
   };
 
-  // Guardar Receta (Submit)
+  // Save Recipe (Submit)
   const handleSaveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setDrawerError(null);
 
     if (!formProductId || Number(formProductId) <= 0) {
-      setDrawerError('Debes seleccionar un Producto Final (Item del Menú) para vincular esta receta de producción.');
+      setDrawerError('You must select a Finished Product (Menu Item) to link this production recipe.');
       return;
     }
 
     if (!formName.trim()) {
-      setDrawerError('Por favor ingresa un nombre válido para la fórmula de la receta.');
+      setDrawerError('Please enter a valid name for the recipe formula.');
       return;
     }
 
@@ -356,15 +358,15 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
       });
 
     if (validLines.length === 0) {
-      setDrawerError('Por favor agrega al menos una materia prima válida con una cantidad mayor a 0.0001.');
+      setDrawerError('Please add at least one valid raw material with a quantity greater than 0.0001.');
       return;
     }
 
-    // Verificar duplicados antes de enviar
+    // Check duplicates before submission
     const selectedIds = validLines.map((l) => String(l.raw_material_id));
     const hasDuplicates = new Set(selectedIds).size !== selectedIds.length;
     if (hasDuplicates) {
-      setDrawerError('Se detectaron materias primas duplicadas en la receta. Cada ingrediente debe ser único.');
+      setDrawerError('Duplicate raw materials detected in recipe. Each ingredient must be unique.');
       return;
     }
 
@@ -377,7 +379,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
-      const payload: Record<string, any> = {
+      const payload: Record<string, unknown> = {
         productId: Number(formProductId),
         lines: validLines,
       };
@@ -411,14 +413,14 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        let errMsg = 'No se pudo guardar la receta.';
+        let errMsg = 'Could not save recipe.';
         if (Array.isArray(errJson.message)) {
           errMsg = errJson.message.join('\n');
         } else if (typeof errJson.message === 'string') {
           if (errJson.message.includes('already exists')) {
-            errMsg = 'Ya existe una receta registrada para este producto o variante.';
+            errMsg = 'A recipe already exists for this product or variant.';
           } else if (errJson.message.includes('Validation failed')) {
-            errMsg = 'Error de validación en los datos ingresados. Verifica el producto e ingredientes.';
+            errMsg = 'Validation error on entered data. Please check selected product and ingredients.';
           } else {
             errMsg = errJson.message;
           }
@@ -431,8 +433,9 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
       setIsDrawerOpen(false);
       fetchData();
-    } catch (err: any) {
-      setDrawerError(err.message || 'Error al guardar la receta.');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error saving recipe.';
+      setDrawerError(message);
     } finally {
       setIsLoading(false);
     }
@@ -441,17 +444,17 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
 
 
-  // Filtrado Dinámico Multicriterio de Recetas
+  // Multi-criteria Dynamic Recipe Filtering
   const filteredRecipes = recipes.filter((rec) => {
     const prod = rec.finishedProduct || products.find((p) => p.id === rec.finishedProductId);
     const variant = rec.finishedVariant;
 
-    // Nombre de receta o nombre de producto vinculado
+    // Recipe name or linked product name
     const recipeName = rec.name || prod?.name || `Recipe #${rec.id}`;
     const prodSku = prod?.sku || '';
     const variantName = variant?.name || '';
 
-    // Búsqueda por Ingredientes contenidos
+    // Search by contained ingredients
     const matchesIngredient = (rec.lines || []).some((l) => {
       const mat = l.rawMaterial || supplies.find((s) => s.id === l.rawMaterialId || s.id === l.supplyProductId);
       return mat?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -464,7 +467,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
       variantName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       matchesIngredient;
 
-    // Filtro por Producto Específico
+    // Filter by specific product
     const matchesProduct =
       productFilter === 'ALL' || String(rec.finishedProductId) === productFilter;
 
@@ -518,9 +521,9 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
         </div>
       )}
 
-      {/* Toolbar Panel (Estructura idéntica a Purchase Orders) */}
+      {/* Toolbar Panel (Structure identical to Purchase Orders) */}
       <div className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4">
-        {/* Fila 1: Búsqueda al 100% de ancho */}
+        {/* Row 1: Full-width search */}
         <div className="relative w-full">
           <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-secondary font-sans">
             search
@@ -552,7 +555,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
+              onChange={(e) => setStatusFilter(e.target.value as 'ALL' | 'ACTIVE' | 'INACTIVE')}
               className="px-4 py-2 bg-[#fef9f1] rounded border border-[#e8e2d8] text-body-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none min-w-[130px] font-sans text-secondary cursor-pointer"
             >
               <option value="ALL">All Status</option>
@@ -720,10 +723,13 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
                           const calculatedLinesCost = (rec.lines || []).reduce((sum, l) => {
                             const mat = l.rawMaterial || supplies.find((s) => s.id === l.rawMaterialId || s.id === l.supplyProductId);
                             const qty = Number(l.quantityPerSoldUnit || l.quantity || 0);
-                            const unitCost = Number(mat?.cost_per_unit || 0);
-                            return sum + (qty * unitCost);
+                            const unitCost = Number(mat?.average_cost ?? mat?.cost_per_unit ?? 0);
+                            const convFactor = Number(mat?.conversion_factor ?? 1) || 1;
+                            return sum + (qty * (unitCost / convFactor));
                           }, 0);
-                          const totalCost = calculatedLinesCost > 0 ? calculatedLinesCost : Number(rec.theoreticalCostCached || 0);
+                          const totalCost = Number(rec.theoreticalCostCached) > 0 
+                            ? Number(rec.theoreticalCostCached) 
+                            : calculatedLinesCost;
                           const portionCost = yieldQty > 0 ? totalCost / yieldQty : totalCost;
                           const ingredientCount = (rec.lines || []).length;
                           const recIsActive = rec.isActive !== false;
@@ -872,10 +878,10 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
 
 
-      {/* Hub Navegacional de Accesos Rápidos (Sprint 25 Story 4114) */}
+      {/* Quick Links Navigational Hub (Sprint 25 Story 4114) */}
       <StockQuickLinks current="recipes" onNavigate={onNavigate} />
 
-      {/* Drawer Interactivo para Crear / Editar Recetas */}
+      {/* Interactive Drawer to Create / Edit Recipes */}
       {isDrawerOpen &&
         createPortal(
           <div className="fixed inset-0 z-[99999] flex justify-end overflow-hidden">
@@ -935,7 +941,8 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
                             <tr>
                               <th className="p-3">Ingredient</th>
                               <th className="p-3 text-right">Required Quantity</th>
-                              <th className="p-3 text-right">Unit Cost</th>
+                              <th className="p-3 text-right">Unit Cost (Base)</th>
+                              <th className="p-3 text-right">Line Subtotal</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#e8e2d8]">
@@ -946,17 +953,24 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
                                   (s) => s.id === l.rawMaterialId || s.id === l.supplyProductId
                                 );
                               const qty = Number(l.quantityPerSoldUnit || l.quantity || 0);
-                              const cost = Number(mat?.cost_per_unit || 0);
+                              const baseCost = Number(mat?.cost_per_unit || mat?.average_cost || 0);
+                              const convFactor = Number(mat?.conversion_factor ?? 1) || 1;
+                              const lineCost = qty * (baseCost / convFactor);
+                              const pUnit = mat?.purchase_unit || mat?.unit || 'unit';
+                              const cUnit = l.unitOfMeasure || mat?.consumption_unit || mat?.unit || 'GRAM';
                               return (
                                 <tr key={i}>
                                   <td className="p-3 font-bold text-[#1d1c17]">
                                     {mat?.name || 'Unknown Supply'}
                                   </td>
                                   <td className="p-3 text-right font-mono font-bold">
-                                    {qty} {l.unitOfMeasure || mat?.unit || 'GRAM'}
+                                    {qty} {cUnit}
                                   </td>
-                                  <td className="p-3 text-right font-mono text-[#ae001a]">
-                                    ${cost.toFixed(4)}
+                                  <td className="p-3 text-right font-mono text-[#5f5e5e] text-[11px]">
+                                    ${baseCost.toFixed(4)} <span className="text-[10px]">/{pUnit}</span>
+                                  </td>
+                                  <td className="p-3 text-right font-mono font-bold text-[#ae001a]">
+                                    ${lineCost.toFixed(4)}
                                   </td>
                                 </tr>
                               );
@@ -968,18 +982,18 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
                   </div>
                 ) : (
                   <form id="recipe-form" onSubmit={handleSaveSubmit} className="flex flex-col gap-5 text-left">
-                    {/* Alerta de Error en Drawer */}
+                    {/* Drawer Error Alert */}
                     {drawerError && (
                       <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-xs rounded-lg flex items-center gap-2 font-semibold">
                         <span className="material-symbols-outlined text-red-600 text-base">error</span>
                         <div className="flex-1">
-                          <p className="font-bold text-red-900">No se pudo guardar la receta</p>
+                          <p className="font-bold text-red-900">Could not save recipe</p>
                           <p className="mt-0.5 text-[#ae001a]">{drawerError}</p>
                         </div>
                       </div>
                     )}
 
-                    {/* Alerta de Duplicados */}
+                    {/* Duplicates Alert */}
                     {formDuplicateWarning && (
                       <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-lg flex items-center gap-2 font-semibold">
                         <span className="material-symbols-outlined text-amber-600 text-base">warning</span>
@@ -1091,7 +1105,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
                       </div>
                     </div>
 
-                    {/* Panel de Resumen de Costo Teórico en Tiempo Real */}
+                    {/* Real-Time Theoretical Cost Summary Panel */}
                     <div className="bg-[#222222] text-white p-4 rounded-lg flex flex-wrap justify-between items-center gap-4">
                       <div>
                         <span className="text-[10px] text-white/50 font-bold uppercase tracking-wider block">
@@ -1111,7 +1125,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
                       </div>
                     </div>
 
-                    {/* Ingredientes / BOM Lines Matrix */}
+                    {/* Ingredients / BOM Lines Matrix */}
                     <div className="flex flex-col gap-3 pt-2">
                       <div className="flex justify-between items-center">
                         <h4 className="font-bold text-xs uppercase text-[#1d1c17]">
@@ -1158,13 +1172,20 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
                                       (other, oIdx) => oIdx !== idx && String(other.raw_material_id) === String(s.id)
                                     );
                                     const sCost = Number(s.average_cost ?? s.cost_per_unit ?? 0);
+                                    const sConv = Number(s.conversion_factor ?? 1) || 1;
+                                    const sConsCost = sCost / sConv;
+                                    const pUnit = s.purchase_unit || s.unit || 'unit';
+                                    const cUnit = s.consumption_unit || s.unit || 'unit';
+                                    const costLabel = sConv !== 1 && pUnit !== cUnit
+                                      ? `$${sCost.toFixed(4)}/${pUnit} ($${sConsCost.toFixed(4)}/${cUnit})`
+                                      : `$${sCost.toFixed(4)}/${cUnit}`;
                                     return (
                                       <option
                                         key={s.id}
                                         value={s.id}
                                         disabled={isSelectedInOtherRow}
                                       >
-                                        {s.name} ({s.code}) - Avg Cost: ${sCost.toFixed(4)} / {s.consumption_unit || s.unit} {isSelectedInOtherRow ? '(Added)' : ''}
+                                        {s.name} ({s.code}) - Cost: {costLabel} {isSelectedInOtherRow ? '(Added)' : ''}
                                       </option>
                                     );
                                   })}

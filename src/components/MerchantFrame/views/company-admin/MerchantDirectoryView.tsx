@@ -104,7 +104,9 @@ export const MerchantDirectoryView: React.FC = () => {
   };
 
   useEffect(() => {
-    void loadMerchants();
+    void Promise.resolve().then(() => {
+      void loadMerchants();
+    });
   }, []);
 
   useEffect(() => {

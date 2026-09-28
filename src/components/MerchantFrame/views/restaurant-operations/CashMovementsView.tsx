@@ -10,35 +10,31 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 // ─── Pure helpers (exported for unit tests) ────────────────────────────────
 
-export function isMovementInflow(type: CashMovementType): boolean {
+function isMovementInflow(type: CashMovementType): boolean {
   return type === 'INFLOW';
 }
 
-export function isMovementOutflow(type: CashMovementType): boolean {
-  return type === 'OUTFLOW';
-}
-
-export function formatMovementCurrency(n: number): string {
+function formatMovementCurrency(n: number): string {
   return `$${Number(n).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
 }
 
-export function formatMovementTime(value: string | Date): string {
+function formatMovementTime(value: string | Date): string {
   const d = new Date(value as string);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function formatMovementDate(value: string | Date): string {
+function formatMovementDate(value: string | Date): string {
   const d = new Date(value as string);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 /** Truncate reason text to maxLen chars with ellipsis. */
-export function truncateReason(text: string, maxLen = 40): string {
+function truncateReason(text: string, maxLen = 40): string {
   return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
 }
 
@@ -626,12 +622,12 @@ export const CashMovementsView: React.FC<CashMovementsViewProps> = ({ onNavigate
         const res = await fetch(`${API_BASE}/cash-shifts?limit=50`, { headers });
         if (res.status === 401) {
           clearAuthSession();
-          window.location.href = '/login';
+          window.location.assign('/login');
           return;
         }
         if (res.ok) {
           const json = await res.json();
-          const list: ShiftOption[] = (json.data ?? []).map((s: any) => ({
+          const list: ShiftOption[] = (json.data ?? []).map((s: ShiftOption) => ({
             id: s.id,
             status: s.status,
             openedAt: s.openedAt,
@@ -686,7 +682,9 @@ export const CashMovementsView: React.FC<CashMovementsViewProps> = ({ onNavigate
   }, [selectedShiftId]);
 
   useEffect(() => {
-    fetchMovements();
+    void Promise.resolve().then(() => {
+      fetchMovements();
+    });
   }, [fetchMovements]);
 
   // ── Client-side filtering ──────────────────────────────────────────────

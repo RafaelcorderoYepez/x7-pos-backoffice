@@ -1,8 +1,7 @@
-// Alta manual y corrección de un fichaje.
+// Manual creation and correction of time entry.
 //
-// Toda escritura por esta vía exige justificación: un fichaje corregido sin motivo es
-// exactamente lo que una auditoría de nómina no puede aceptar. Las guardas de cronología y
-// solapamiento son las mismas que aplica el backend, para que el formulario no prometa lo
+// All mutations require justification for payroll audits.
+// overlap guards match backend logic, ensuring the form does not allow invalid input.
 // que la API va a rechazar.
 
 import React, { useMemo, useState } from 'react';
@@ -33,7 +32,7 @@ interface TimeEntryFormDrawerProps {
   mode: 'create' | 'edit';
   initial?: TimeEntry;
   collaborators: Collaborator[];
-  // Todos los fichajes cargados: alimentan la guarda de solapamiento.
+  // All loaded entries: feeds overlap guard.
   entries: TimeEntry[];
   submitting: boolean;
   formError: string;
@@ -54,13 +53,11 @@ const fromLocalInput = (value: string): string =>
   value ? new Date(value).toISOString() : '';
 
 /**
- * Ahora mismo, al minuto, como valor de un <input type="datetime-local">.
+ * Current local timestamp formatted for <input type="datetime-local">.
  *
- * El alta arranca con la entrada ya puesta a propósito. Un datetime-local vacío es una
- * trampa: el calendario del navegador rellena sólo la fecha y deja la hora en `--:--`, con
- * lo que el campo PARECE relleno pero su `value` sigue vacío y el formulario no deja
- * enviar. Partiendo de un valor completo, elegir otra fecha en el calendario conserva la
- * hora y el campo nunca se queda a medias.
+ * Creation starts with clock-in prefilled: empty datetime-local leaves
+ * time as `--:--`, which appears filled while value remains empty.
+ * Pre-populating preserves time selection across date changes.
  */
 const nowLocalInput = (): string => {
   const d = new Date();
@@ -121,7 +118,7 @@ export const TimeEntryFormDrawer: React.FC<TimeEntryFormDrawerProps> = ({
     );
   }, [entries, collaboratorId, clockIn, clockOut, initial]);
 
-  // Un datetime-local a medias devuelve cadena vacía, así que este mensaje cubre tanto el
+  // Incomplete datetime-local returns empty string; covers missing and partial inputs.
   // campo en blanco como el que tiene fecha pero no hora.
   const clockInError = clockIn ? '' : 'Clock-in needs both a date and a time.';
 
@@ -129,8 +126,8 @@ export const TimeEntryFormDrawer: React.FC<TimeEntryFormDrawerProps> = ({
   const breakError =
     Number.isFinite(breakNum) && breakNum >= 0 ? '' : 'Break minutes must be zero or more.';
 
-  // Vista previa de lo que se va a pagar: el operador ve el efecto de su ajuste antes de
-  // guardarlo, que es cuando todavía puede corregirlo.
+  // Payable hours preview: operator sees effect of adjustment before
+  // saving, allowing user to correct before submitting.
   const preview = clockIn && clockOut && !chronology
     ? netHours({
         clock_in: fromLocalInput(clockIn),

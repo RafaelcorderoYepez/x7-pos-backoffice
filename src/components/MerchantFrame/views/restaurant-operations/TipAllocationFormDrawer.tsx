@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type {
   TipAllocation,
@@ -46,8 +46,6 @@ export const TipAllocationFormDrawer: React.FC<TipAllocationFormDrawerProps> = (
   defaultTipId,
   existingAllocations = [],
 }) => {
-  if (!isOpen) return null;
-
   const isEditMode = allocation !== null;
 
   // Options Data State
@@ -120,8 +118,13 @@ export const TipAllocationFormDrawer: React.FC<TipAllocationFormDrawerProps> = (
     }
   };
 
-  useEffect(() => {
-    if (!isOpen) return;
+  // Adjust state during render when props change
+  const [prevAllocation, setPrevAllocation] = useState(allocation);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+
+  if (allocation !== prevAllocation || isOpen !== prevIsOpen) {
+    setPrevAllocation(allocation);
+    setPrevIsOpen(isOpen);
     if (allocation) {
       setTipId(String(allocation.tip_id));
       setCollaboratorId(String(allocation.collaborator_id));
@@ -144,7 +147,7 @@ export const TipAllocationFormDrawer: React.FC<TipAllocationFormDrawerProps> = (
     }
     setErrorMessage(null);
     setSuccessMessage(null);
-  }, [allocation, isOpen, defaultTipId]);
+  }
 
   const filteredCollaborators = useMemo(() => {
     if (!collaboratorSearchTerm.trim()) return collaborators;
@@ -215,8 +218,8 @@ export const TipAllocationFormDrawer: React.FC<TipAllocationFormDrawerProps> = (
         isEditMode && allocation ? allocation.id : undefined,
         existingAllocations
       );
-    } catch (err: any) {
-      setErrorMessage(err?.message || `Total allocations for Tip #TIP-${cleanTipId} cannot exceed 100%.`);
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : `Total allocations for Tip #TIP-${cleanTipId} cannot exceed 100%.`);
       return;
     }
 
@@ -255,12 +258,14 @@ export const TipAllocationFormDrawer: React.FC<TipAllocationFormDrawerProps> = (
           onClose();
         }, 500);
       }
-    } catch (err: any) {
-      setErrorMessage(err?.message || 'Failed to save tip allocation.');
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to save tip allocation.');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return createPortal(
     <div
