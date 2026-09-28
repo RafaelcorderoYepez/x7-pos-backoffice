@@ -45,7 +45,7 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
 
   if (!isVisible) return null;
 
-  const handleAction = async (mode: 'seed' | 'clear' | 'simple' | 'multi' | 'multi2') => {
+  const handleAction = async (mode: 'seed' | 'clear' | 'simple' | 'multi' | 'multi2' | 'allergy') => {
     setLoading(true);
     setStatusMessage(null);
     setStatusType(null);
@@ -77,6 +77,8 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
             ? '1 Multi-Course Order Seeded!'
             : mode === 'multi2'
             ? '2 Multi-Course Orders Seeded!'
+            : mode === 'allergy'
+            ? '3 Allergy & Modifier Orders Seeded!'
             : mode === 'seed'
             ? '8 Test Orders Seeded!'
             : 'All Orders Cleared!')
@@ -148,6 +150,18 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
                 {loading ? 'refresh' : 'dinner_dining'}
               </span>
               <span>{loading ? 'Generating...' : 'Reset (1 Multi-Course)'}</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => handleAction('allergy')}
+              className="w-full py-1.5 px-2 bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold tracking-wide flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95 border border-red-400/40"
+            >
+              <span className={`material-symbols-outlined text-sm ${loading ? 'animate-spin' : ''}`}>
+                {loading ? 'refresh' : 'warning'}
+              </span>
+              <span>{loading ? 'Generating...' : 'Reset (Allergies & Modifiers)'}</span>
             </button>
 
             <button

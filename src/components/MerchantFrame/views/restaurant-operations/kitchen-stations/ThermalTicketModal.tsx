@@ -1,5 +1,6 @@
 import React from 'react';
 import type { KitchenTicket } from './KitchenMonitorView';
+import { detectAllergies } from './kdsLocalization';
 
 export interface ThermalTicketPayload {
   stationName: string;
@@ -96,49 +97,66 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
               </div>
             ) : (
               <div className="space-y-4">
-                {payload.tickets.map((t, idx) => (
-                  <div key={t.id || idx} className="border-b border-dashed border-zinc-400 pb-3">
-                    <div className="flex justify-between items-baseline font-black text-xs border-b border-zinc-300 pb-1 mb-1.5">
-                      <span>TICKET #{t.id}</span>
-                      <span className="bg-zinc-900 text-white px-1.5 py-0.2 rounded text-[10px]">
-                        TBL {t.table}
-                      </span>
-                    </div>
-                    <div className="text-[9px] text-zinc-600 mb-1 flex justify-between">
-                      <span>SRV: {t.server || 'Server 1'}</span>
-                      <span className="uppercase font-bold text-red-600">{t.priority}</span>
-                    </div>
-
-                    {/* Order items */}
-                    <div className="space-y-1 my-2">
-                      {t.items.map((item) => (
-                        <div key={item.id} className="flex items-start justify-between text-[11px]">
-                          <div className="flex-1 pr-2">
-                            <span className="font-bold text-zinc-950">{item.qty}x </span>
-                            <span className="font-semibold text-zinc-900">{item.name}</span>
-                            {item.variantName && (
-                              <div className="text-[9px] text-zinc-600 pl-3">
-                                ({item.variantName})
-                              </div>
-                            )}
-                            {item.notes && (
-                              <div className="text-[9px] font-bold text-red-800 pl-3">
-                                * {item.notes}
-                              </div>
-                            )}
-                          </div>
-                          <span className="text-[9px] text-zinc-500 uppercase">{item.course.slice(0, 4)}</span>
+                {payload.tickets.map((t, idx) => {
+                  const ticketAllergy = detectAllergies(
+                    `${t.orderNotes || ''} ${t.items.map((i) => i.notes || '').join(' ')}`
+                  );
+                  return (
+                    <div key={t.id || idx} className="border-b border-dashed border-zinc-400 pb-3">
+                      {ticketAllergy.hasAllergy && (
+                        <div className="bg-red-600 text-white font-black text-center text-[10px] py-1 px-1 rounded mb-1.5 uppercase tracking-wider">
+                          *** ALLERGY WARNING: {ticketAllergy.allergyTags.join(', ')} ***
                         </div>
-                      ))}
-                    </div>
-
-                    {t.orderNotes && (
-                      <div className="bg-amber-100 p-1.5 rounded text-[9px] font-semibold text-amber-900 mt-1.5 border border-amber-300">
-                        NOTE: {t.orderNotes}
+                      )}
+                      <div className="flex justify-between items-baseline font-black text-xs border-b border-zinc-300 pb-1 mb-1.5">
+                        <span>TICKET #{t.id}</span>
+                        <span className="bg-zinc-900 text-white px-1.5 py-0.2 rounded text-[10px]">
+                          TBL {t.table}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <div className="text-[9px] text-zinc-600 mb-1 flex justify-between">
+                        <span>SRV: {t.server || 'Server 1'}</span>
+                        <span className="uppercase font-bold text-red-600">{t.priority}</span>
+                      </div>
+
+                      {/* Order items */}
+                      <div className="space-y-1 my-2">
+                        {t.items.map((item) => {
+                          const itemAllergy = detectAllergies(item.notes);
+                          return (
+                            <div key={item.id} className="flex items-start justify-between text-[11px]">
+                              <div className="flex-1 pr-2">
+                                <span className="font-bold text-zinc-950">{item.qty}x </span>
+                                <span className="font-semibold text-zinc-900">{item.name}</span>
+                                {item.variantName && (
+                                  <div className="text-[9px] text-zinc-600 pl-3">
+                                    ({item.variantName})
+                                  </div>
+                                )}
+                                {itemAllergy.hasAllergy ? (
+                                  <div className="text-[9px] font-black text-red-700 bg-red-100 border border-red-400 rounded px-1 py-0.5 mt-0.5">
+                                    [!] {item.notes?.toUpperCase()}
+                                  </div>
+                                ) : item.notes ? (
+                                  <div className="text-[9px] font-bold text-red-800 pl-3">
+                                    * {item.notes}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <span className="text-[9px] text-zinc-500 uppercase">{item.course.slice(0, 4)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {t.orderNotes && (
+                        <div className="bg-amber-100 p-1.5 rounded text-[9px] font-semibold text-amber-900 mt-1.5 border border-amber-300">
+                          NOTE: {t.orderNotes}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

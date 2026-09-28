@@ -10,11 +10,13 @@ import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
 import { KitchenSlaConfigModal } from './KitchenSlaConfigModal';
 import { KitchenDevResetButton } from './KitchenDevResetButton';
+import { KitchenAllergyModifierPicker } from './KitchenAllergyModifierPicker';
 import {
   enqueueOfflineAction,
   flushOfflineQueue,
   getQueuedActions,
 } from '../../../../../lib/kds-offline-sync';
+import { sendStationKeepaliveHeartbeat } from '../../../../../lib/kds-keepalive';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -313,8 +315,6 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [isOffline, setIsOffline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? !navigator.onLine : false,
   );
-  const [queuedActionsCount, setQueuedActionsCount] = useState<number>(0);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Real-time clock for elapsed second counters
   const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
@@ -589,6 +589,15 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       clearInterval(pingTimer);
     };
   }, [triggerAutoSync]);
+
+  // Keepalive de estaciones: latido inmediato al abrir la vista y cada 15 segundos
+  useEffect(() => {
+    void sendStationKeepaliveHeartbeat('ALL');
+    const keepaliveTimer = setInterval(() => {
+      void sendStationKeepaliveHeartbeat('ALL');
+    }, 15000);
+    return () => clearInterval(keepaliveTimer);
+  }, []);
 
   // Station Filtered pool for KPI metrics
   const stationOrders = useMemo(() => {
@@ -1217,7 +1226,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   it.id === itemId
                     ? {
                         ...it,
-                        preparationStatus: targetStatus as any,
+                        preparationStatus: targetStatus as KitchenOrderItemLine['preparationStatus'],
                         preparedQuantity: targetQty ?? it.preparedQuantity,
                       }
                     : it
@@ -3011,6 +3020,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     })),
                   };
 
+                  // Envia latido keepalive para asegurar que la estación esté fresca y online
+                  await sendStationKeepaliveHeartbeat('ALL');
+
                   const res = await fetch(`${API_BASE}/kitchen-orders`, {
                     method: 'POST',
                     headers,
@@ -3122,7 +3134,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       </button>
                     </div>
 
-                    <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                    <div className="space-y-3 max-h-[34rem] overflow-y-auto pr-1">
                       {formItems.map((item, index) => {
                         const availableVariants = productVariantsMap[item.productName] || [];
 
@@ -3355,17 +3367,17 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               </div>
                             </div>
 
-                            {/* Item Preparation Notes */}
+                            {/* Item Preparation Notes with 1-Click Allergy & Modifier Picker */}
                             <div className="pt-1">
-                              <input
-                                type="text"
-                                placeholder="Special prep notes (e.g., extra spicy, no ice, medium rare)..."
-                                value={item.notes || ''}
-                                onChange={e => {
-                                  const val = e.target.value;
+                              <label className="block text-[10px] font-bold text-[#6f6e6e] uppercase tracking-wider mb-1">
+                                Allergies, Modifiers & Kitchen Notes
+                              </label>
+                              <KitchenAllergyModifierPicker
+                                notes={item.notes || ''}
+                                onChange={val => {
                                   setFormItems(prev => prev.map((it, i) => i === index ? { ...it, notes: val } : it));
                                 }}
-                                className="w-full px-2.5 py-1 bg-[#faf9f6] border border-[#e5dfd5] rounded-md text-[11px] text-[#1d1c17] placeholder-[#a09c94] focus:border-[#ae001a] focus:bg-white outline-none transition-all"
+                                placeholder="Additional prep notes (e.g. cut in half, extra crispy)..."
                               />
                             </div>
                           </div>

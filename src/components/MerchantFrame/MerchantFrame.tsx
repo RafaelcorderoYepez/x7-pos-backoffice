@@ -26,6 +26,7 @@ import { KitchenPerformanceCard } from './dashboard/KitchenPerformanceCard';
 import { TopSellingItems } from './dashboard/TopSellingItems';
 import { CurrentShifts } from './dashboard/CurrentShifts';
 import { KitchenMonitorView } from './views/restaurant-operations/kitchen-stations/KitchenMonitorView';
+import { sendStationKeepaliveHeartbeat } from '../../lib/kds-keepalive';
 import {
   NewReservationModal,
   VoidTransactionModal,
@@ -457,6 +458,32 @@ export const MerchantFrame: React.FC = () => {
       bodyEl?.classList.remove('restaurant-active', 'saas-active');
     };
   }, [activeTab, activeCategory, profile?.role]);
+
+  // Latido keepalive automático de estaciones de cocina en Backoffice (inmediato al abrir y cada 15s)
+  useEffect(() => {
+    const isKitchenArea =
+      activeCategory === 'kitchen' ||
+      [
+        'kds-dashboard',
+        'kitchen-kds-hub',
+        'kitchen-stations',
+        'kitchen-display-devices',
+        'kitchen-orders',
+        'kitchen-order-items',
+        'kitchen-event-log',
+        'kitchen-analytics',
+      ].includes(activeTab);
+
+    if (!isKitchenArea) return;
+
+    void sendStationKeepaliveHeartbeat('ALL');
+
+    const keepaliveTimer = setInterval(() => {
+      void sendStationKeepaliveHeartbeat('ALL');
+    }, 15000);
+
+    return () => clearInterval(keepaliveTimer);
+  }, [activeTab, activeCategory]);
 
   const handleToggleApiFailure = () => {
     const newState = !apiFailedToggle;

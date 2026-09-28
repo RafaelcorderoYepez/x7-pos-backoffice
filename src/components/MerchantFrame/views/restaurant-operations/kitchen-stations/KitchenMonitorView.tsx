@@ -19,6 +19,28 @@ import {
   ThermalTicketModal,
   type ThermalTicketPayload,
 } from './ThermalTicketModal';
+import {
+  type KDSLanguage,
+  detectAllergies,
+  parseItemModifiers,
+  getLocalizedDishName,
+  getLocalizedCourse,
+  getLocalizedVariantName,
+  getDeviceLanguage,
+  setDeviceLanguage,
+  extractCleanKitchenInstruction,
+} from './kdsLocalization';
+
+const getLocalizedStationName = (name: string, lang: 'en' | 'es'): string => {
+  if (lang !== 'es') return name;
+  const n = name.trim().toLowerCase();
+  if (n.includes('hot line')) return 'Línea Caliente y Parrilla';
+  if (n.includes('cold prep')) return 'Preparación Fría y Ensaladas';
+  if (n.includes('main bar')) return 'Bar Principal y Bebidas';
+  if (n.includes('desserts') || n.includes('bakery')) return 'Postres y Panadería';
+  if (n.includes('expo')) return 'Expo y Control de Calidad';
+  return name;
+};
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -179,6 +201,36 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const [thermalTicketPayload, setThermalTicketPayload] = useState<ThermalTicketPayload | null>(null);
   const [isThermalTicketModalOpen, setIsThermalTicketModalOpen] = useState<boolean>(false);
   const [offlineSeconds, setOfflineSeconds] = useState<number>(0);
+
+  // Staff Multi-Language Display Toggle & Allergy Alerts (Historia X7P-4212)
+  const [deviceLanguageStation, setDeviceLanguageStation] = useState<string>(selectedStationFilter);
+  const [deviceLanguage, setDeviceLanguageState] = useState<KDSLanguage>(() => {
+    return getDeviceLanguage(selectedStationFilter);
+  });
+
+  if (deviceLanguageStation !== selectedStationFilter) {
+    setDeviceLanguageStation(selectedStationFilter);
+    setDeviceLanguageState(getDeviceLanguage(selectedStationFilter));
+  }
+
+  const toggleDeviceLanguage = useCallback(() => {
+    setDeviceLanguageState((prev) => {
+      const next: KDSLanguage = prev === 'en' ? 'es' : 'en';
+      setDeviceLanguage(next, selectedStationFilter);
+      return next;
+    });
+  }, [selectedStationFilter]);
+
+  // Floating Allergy Protocol Detail Modal (Historia X7P-4212)
+  const [selectedAllergyDetail, setSelectedAllergyDetail] = useState<{
+    ticketId: string;
+    table: string;
+    itemName: string;
+    alertBannerText: string;
+    allergyTags: string[];
+    rawNotes?: string;
+    severity: 'critical' | 'warning';
+  } | null>(null);
 
   // Cronómetro de duración desconectado (Offline Duration Tracker):
   // Al llegar a >= 60 segundos sin red o heartbeat, la terminal KDS reconoce de forma autónoma
@@ -1456,6 +1508,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   };
 
   const getPriorityBadge = (priority: KitchenTicket['priority']) => {
+    const isEs = deviceLanguage === 'es';
     switch (priority) {
       case 'vip':
         return {
@@ -1467,13 +1520,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         return {
           border: 'border-red-500',
           badge: 'bg-red-500/20 text-red-400 border border-red-500/40 font-black',
-          label: 'URGENT (+2)',
+          label: isEs ? 'URGENTE (+2)' : 'URGENT (+2)',
         };
       case 'high':
         return {
           border: 'border-amber-500',
           badge: 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold',
-          label: 'HIGH (+1)',
+          label: isEs ? 'ALTA (+1)' : 'HIGH (+1)',
         };
       case 'normal':
       default:
@@ -2079,17 +2132,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     const coursesPresent: CourseType[] = ['BEVERAGE', 'APPETIZER', 'MAIN_COURSE', 'DESSERT'];
     const isCompact = cardDensity === 'compact';
     const isSpacious = cardDensity === 'spacious';
-    const cleanOrderNotes = (() => {
-      if (!ticket.orderNotes) return null;
-      let trimmed = ticket.orderNotes.trim();
-      trimmed = trimmed
-        .replace(/\|\s*\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
-        .replace(/\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
-        .replace(/^Table\s+\d+\s*•\s*Station\s*#[^|]*/i, '')
-        .trim();
-      if (!trimmed || trimmed.toLowerCase() === ticket.table.toLowerCase()) return null;
-      return trimmed;
-    })();
+    const cleanOrderNotes = extractCleanKitchenInstruction(ticket.orderNotes, ticket.table);
+
+    const ticketAllergy = detectAllergies(
+      `${ticket.orderNotes || ''} ${ticket.items.map((i) => i.notes || '').join(' ')}`,
+      deviceLanguage
+    );
 
     const cardWidthClass = isFullWidth
       ? 'w-full h-full'
@@ -2112,12 +2160,34 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         <div className={`${isCompact ? 'p-2' : 'p-2.5'} border-b border-zinc-800 bg-[#212228] rounded-t-lg flex justify-between items-start shrink-0`}>
           <div className="min-w-0 flex-1 pr-2">
             <h2 className={`font-black ${isCompact ? 'text-xs' : 'text-sm'} text-white tracking-tight truncate whitespace-nowrap`} style={{ color: '#ffffff' }}>
-              {ticket.table}
+              {deviceLanguage === 'es' ? ticket.table.replace(/^Table\s+/i, 'Mesa ') : ticket.table}
             </h2>
             <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
               <span className={`text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider ${pColors.badge}`}>
                 {pColors.label}
               </span>
+              {ticketAllergy.hasAllergy && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedAllergyDetail({
+                      ticketId: ticket.id,
+                      table: ticket.table,
+                      itemName: `${ticket.items.length} ${deviceLanguage === 'es' ? 'platos en la orden' : 'items in order'}`,
+                      alertBannerText: ticketAllergy.alertBannerText,
+                      allergyTags: ticketAllergy.allergyTags,
+                      rawNotes: cleanOrderNotes || undefined,
+                      severity: ticketAllergy.highestSeverity === 'critical' ? 'critical' : 'warning',
+                    });
+                  }}
+                  className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-red-600 hover:bg-red-500 text-white border border-red-400 flex items-center gap-0.5 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.7)] cursor-pointer active:scale-95 transition-all"
+                  title={deviceLanguage === 'es' ? 'Clic para ver detalles de alergia' : 'Click to view allergy details'}
+                >
+                  <span className="material-symbols-outlined text-[10px]">emergency</span>
+                  {deviceLanguage === 'es' ? 'ALERTA DE ALERGIA' : 'ALLERGY ALERT'}
+                </button>
+              )}
               {activeDisplayMode === 'AUTO' && (
                 <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-emerald-600/30 text-emerald-300 border border-emerald-500/50 flex items-center gap-0.5">
                   <span className="material-symbols-outlined text-[9px]">bolt</span>
@@ -2135,7 +2205,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   cleanOrderNotes.includes('[Rerouted')) && (
                   <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-purple-600/30 text-purple-300 border border-purple-500/50 flex items-center gap-0.5">
                     <span className="material-symbols-outlined text-[9px]">alt_route</span>
-                    REROUTED
+                    {deviceLanguage === 'es' ? 'RE-ENRUTADO' : 'REROUTED'}
                   </span>
                 )}
               {effectiveStationRerouteStatuses.find(
@@ -2145,17 +2215,25 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               )?.isCapacityOverflow && (
                 <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-amber-600/30 text-amber-300 border border-amber-500/50 flex items-center gap-0.5 animate-pulse">
                   <span className="material-symbols-outlined text-[9px]">warning</span>
-                  OVERFLOW
+                  {deviceLanguage === 'es' ? 'SOBRECUPO' : 'OVERFLOW'}
                 </span>
               )}
             </div>
             <p className={`${isCompact ? 'text-[9px]' : 'text-[10px]'} font-semibold mt-0.5 text-zinc-400 truncate`}>
-              #{ticket.id} • {ticket.stationName || 'Line'}{ticket.server && ticket.server !== 'Kitchen Staff' ? ` • ${ticket.server}` : ''}
+              #{ticket.id} • {getLocalizedStationName(ticket.stationName || 'Line', deviceLanguage)}{ticket.server && ticket.server !== 'Kitchen Staff' ? ` • ${ticket.server}` : ''}
             </p>
             {cleanOrderNotes && (
-              <p className={`${isCompact ? 'text-[9px]' : 'text-[10px]'} text-amber-300 font-medium truncate mt-0.5 flex items-center gap-1`}>
-                <span className="material-symbols-outlined text-[12px] text-amber-400 shrink-0">edit_note</span>
-                <span className="truncate">{cleanOrderNotes}</span>
+              <p
+                className={`${isCompact ? 'text-[9px]' : 'text-[10px]'} text-amber-300 font-medium truncate mt-0.5 flex items-center gap-1`}
+              >
+                <span className="material-symbols-outlined text-[12px] shrink-0 text-amber-400">
+                  edit_note
+                </span>
+                <span className="truncate">
+                  {deviceLanguage === 'es'
+                    ? cleanOrderNotes.replace(/\bTable\s+(\d+)/gi, 'Mesa $1')
+                    : cleanOrderNotes}
+                </span>
               </p>
             )}
           </div>
@@ -2172,7 +2250,9 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             >
               {ticket.timeElapsed}m
             </p>
-            <p className="text-[8px] uppercase font-black tracking-wider text-zinc-500">ELAPSED</p>
+            <p className="text-[8px] uppercase font-black tracking-wider text-zinc-500">
+              {deviceLanguage === 'es' ? 'TRANSCURRIDO' : 'ELAPSED'}
+            </p>
           </div>
         </div>
 
@@ -2223,7 +2303,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                     <div className="flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-xs text-zinc-400">{theme.icon}</span>
                       <span className={`${isCompact ? 'text-[8px]' : 'text-[9px]'} font-black uppercase tracking-wider px-1.5 py-0.2 rounded border ${theme.badge}`}>
-                        {theme.title}
+                        {getLocalizedCourse(courseType, deviceLanguage)}
                       </span>
                     </div>
 
@@ -2233,7 +2313,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                         className={`px-1.5 py-0.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-black ${isCompact ? 'text-[8px]' : 'text-[9px]'} uppercase tracking-wider rounded transition-all flex items-center gap-0.5 cursor-pointer shadow-xs active:scale-95`}
                       >
                         <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
-                        <span>{theme.fireLabel}</span>
+                        <span>{deviceLanguage === 'es' ? 'A FUEGO' : theme.fireLabel}</span>
                       </button>
                     )}
                   </div>
@@ -2285,12 +2365,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     }`}
                                     style={{ color: isReady ? '#a7f3d0' : '#ffffff' }}
                                   >
-                                    {item.name}
+                                    {getLocalizedDishName(item.name, deviceLanguage)}
                                   </span>
 
                                   {item.variantName && (
                                     <span className="text-[10px] font-normal text-zinc-400">
-                                      ({item.variantName})
+                                      ({getLocalizedVariantName(item.variantName, deviceLanguage)})
                                     </span>
                                   )}
 
@@ -2310,7 +2390,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                 <div className="flex items-center gap-1">
                                   <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded text-[8px] font-black uppercase tracking-wider">
                                     <span className="material-symbols-outlined text-[9px]">lock</span>
-                                    HELD
+                                    {deviceLanguage === 'es' ? 'RETENIDO' : 'HELD'}
                                   </span>
                                   <button
                                     onClick={() => handleFireSingleItem(ticket.id, item.id, item.name)}
@@ -2318,7 +2398,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="px-2 py-0.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-0.5 cursor-pointer shadow-xs active:scale-95"
                                   >
                                     <span className="material-symbols-outlined text-[9px]">local_fire_department</span>
-                                    FIRE
+                                    {deviceLanguage === 'es' ? 'A FUEGO' : 'FIRE'}
                                   </button>
                                 </div>
                               ) : isPending ? (
@@ -2329,7 +2409,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50"
                                   >
                                     <span className="material-symbols-outlined text-[10px]">{theme.prepIcon}</span>
-                                    <span>{theme.prepVerb}</span>
+                                    <span>{deviceLanguage === 'es' ? 'INICIAR' : theme.prepVerb}</span>
                                   </button>
                                 </div>
                               ) : isInPrep ? (
@@ -2340,7 +2420,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
                                   >
                                     <span className="material-symbols-outlined text-[10px]">check_circle</span>
-                                    <span>READY</span>
+                                    <span>{deviceLanguage === 'es' ? 'LISTO' : 'READY'}</span>
                                   </button>
                                   <button
                                     onClick={() => handleRevertItemToPending(ticket.id, item.id, item.name, item.course)}
@@ -2358,29 +2438,106 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="h-6 px-2 rounded text-[8.5px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-700/50 hover:bg-emerald-600 text-emerald-200 border border-emerald-500/40"
                                   >
                                     <span className="material-symbols-outlined text-[10px]">check_circle</span>
-                                    <span>DONE</span>
+                                    <span>{deviceLanguage === 'es' ? 'LISTO' : 'DONE'}</span>
                                   </button>
                                 </div>
                               )}
                             </div>
                           </div>
 
-                          {/* Full-width Special Kitchen Note Callout */}
-                          {item.notes && (
-                            <div className="mt-1 flex items-start gap-1 text-[10px] text-amber-300 font-medium leading-tight pl-1.5 border-l-2 border-amber-500/60">
-                              <span className="italic break-words">{item.notes}</span>
-                            </div>
-                          )}
+                          {/* Item Allergy & Modifier Highlights (Historia X7P-4212) */}
+                          {(() => {
+                            const itemAllergy = detectAllergies(item.notes, deviceLanguage);
+                            const itemModifiers = parseItemModifiers(item.notes, deviceLanguage);
+
+                            return (
+                              <>
+                                {/* Critical Allergy Flashing High-Contrast Banner (Tap/Click to view full protocol) */}
+                                {itemAllergy.hasAllergy && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedAllergyDetail({
+                                        ticketId: ticket.id,
+                                        table: ticket.table,
+                                        itemName: getLocalizedDishName(item.name, deviceLanguage),
+                                        alertBannerText: itemAllergy.alertBannerText,
+                                        allergyTags: itemAllergy.allergyTags,
+                                        rawNotes: extractCleanKitchenInstruction(item.notes, ticket.table) || cleanOrderNotes || undefined,
+                                        severity: itemAllergy.highestSeverity === 'critical' ? 'critical' : 'warning',
+                                      });
+                                    }}
+                                    className="w-full text-left mt-1 px-2 py-1 bg-red-950/90 hover:bg-red-900/90 border-2 border-red-500 rounded text-red-100 text-[9px] font-black flex items-center justify-between gap-1 shadow-[0_0_10px_rgba(239,68,68,0.5)] animate-pulse transition-all cursor-pointer active:scale-95 group/allergy"
+                                    title={deviceLanguage === 'es' ? 'Clic para ver protocolo completo de alergia' : 'Click to view full allergy protocol'}
+                                  >
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <span className="material-symbols-outlined text-[13px] text-red-400 shrink-0">warning</span>
+                                      <span className="tracking-wide uppercase whitespace-normal break-words leading-tight">
+                                        {itemAllergy.alertBannerText}
+                                      </span>
+                                    </div>
+                                    <span className="material-symbols-outlined text-[11px] text-red-300 opacity-60 group-hover/allergy:opacity-100 shrink-0">
+                                      open_in_new
+                                    </span>
+                                  </button>
+                                )}
+
+                                {/* Color-coded Prep Modifiers: Sorted by Removals (-) then Additions (+) */}
+                                {(() => {
+                                  // Si ya existe el banner rojo superior de alergias, no duplicar las alergias como badges inferiores
+                                  const prepModifiers = itemAllergy.hasAllergy
+                                    ? itemModifiers.filter((m) => m.category !== 'allergy')
+                                    : itemModifiers;
+
+                                  // Orden prioritario de cocina: 1. Remociones (-), 2. Adiciones (+), 3. Instrucciones
+                                  const sortedPrepModifiers = [...prepModifiers].sort((a, b) => {
+                                    const priority: Record<string, number> = {
+                                      removal: 1,
+                                      addition: 2,
+                                      instruction: 3,
+                                      preference: 4,
+                                      allergy: 5,
+                                    };
+                                    return (priority[a.category] || 99) - (priority[b.category] || 99);
+                                  });
+
+                                  if (sortedPrepModifiers.length === 0) return null;
+
+                                  return (
+                                    <div className="mt-1 flex flex-wrap gap-1 items-center">
+                                      {sortedPrepModifiers.map((mod) => (
+                                        <span
+                                          key={mod.id}
+                                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8.5px] leading-tight ${mod.badgeClasses}`}
+                                        >
+                                          <span className="material-symbols-outlined text-[10px]">{mod.iconName}</span>
+                                          <span>{mod.text}</span>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Fallback Special Kitchen Note Callout */}
+                                {item.notes && itemModifiers.length === 0 && !itemAllergy.hasAllergy && (
+                                  <div className="mt-1 flex items-start gap-1 text-[10px] text-amber-300 font-medium leading-tight pl-1.5 border-l-2 border-amber-500/60">
+                                    <span className="italic break-words">{item.notes}</span>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
 
                           {isHeld && (
                             <div className={`${isCompact ? 'mt-1 pt-1 text-[9px]' : 'mt-1.5 pt-1 text-[9.5px]'} border-t border-amber-500/20 flex items-center justify-between`}>
                               <span className="text-zinc-400 font-medium flex items-center gap-1">
                                 <span className="material-symbols-outlined text-[11px] text-amber-400">schedule</span>
-                                Pacing Window:
+                                {deviceLanguage === 'es' ? 'Ritmo de Cocina:' : 'Pacing Window:'}
                               </span>
                               <span className="font-mono font-bold text-amber-300 text-[9px] flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-                                Auto-Fire: {formatCountdown(item.holdRemainingSeconds)}
+                                {deviceLanguage === 'es' ? 'Disparo:' : 'Auto-Fire:'} {formatCountdown(item.holdRemainingSeconds)}
                               </span>
                             </div>
                           )}
@@ -2401,7 +2558,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             className={`w-full ${isCompact ? 'py-1 text-[10px]' : 'py-1.5 text-[11px]'} bg-zinc-800 hover:bg-emerald-600 text-white font-black uppercase tracking-wider rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-inner`}
           >
             <span className="material-symbols-outlined text-xs">done_all</span>
-            <span>BUMP &amp; SERVE TICKET</span>
+            <span>{deviceLanguage === 'es' ? 'DESPACHAR TICKET' : 'BUMP & SERVE TICKET'}</span>
           </button>
         </div>
       </div>
@@ -2425,18 +2582,18 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             <h1 className="font-sans text-xs sm:text-sm lg:text-base font-black tracking-wider flex items-center gap-2 text-white truncate" style={{ color: '#ffffff' }}>
               <span className="text-white font-black text-xs sm:text-sm lg:text-base truncate" style={{ color: '#ffffff' }}>
                 {activeKdsView === 'EXPO'
-                  ? 'EXPEDITER KDS DISPLAY'
+                  ? (deviceLanguage === 'es' ? 'MONITOR KDS EXPEDITER' : 'EXPEDITER KDS DISPLAY')
                   : activeDisplayMode === 'SUMMARY'
-                  ? 'KDS PRODUCTION SUMMARY'
+                  ? (deviceLanguage === 'es' ? 'RESUMEN DE PRODUCCIÓN KDS' : 'KDS PRODUCTION SUMMARY')
                   : activeDisplayMode === 'MANUAL'
-                  ? 'KDS MANUAL QUEUE'
+                  ? (deviceLanguage === 'es' ? 'COLA MANUAL KDS' : 'KDS MANUAL QUEUE')
                   : activeDisplayMode === 'AUTO'
-                  ? 'KDS AUTO-DISPATCH LINE'
-                  : 'KDS GRID MATRIX'}
+                  ? (deviceLanguage === 'es' ? 'LÍNEA AUTO-DESPACHO KDS' : 'KDS AUTO-DISPATCH LINE')
+                  : (deviceLanguage === 'es' ? 'MATRIZ CUADRÍCULA KDS' : 'KDS GRID MATRIX')}
               </span>
             </h1>
             <p className="text-[10px] text-zinc-300 font-bold hidden 2xl:block truncate max-w-[220px]" style={{ color: '#d4d4d8' }}>
-              View: <strong className="text-amber-400">{activeKdsView}</strong> • Mode: <strong className="text-emerald-400">{activeDisplayMode}</strong> • Hold/Fire Engine
+              {deviceLanguage === 'es' ? 'Vista:' : 'View:'} <strong className="text-amber-400">{activeKdsView}</strong> • {deviceLanguage === 'es' ? 'Modo:' : 'Mode:'} <strong className="text-emerald-400">{activeDisplayMode}</strong> • {deviceLanguage === 'es' ? 'Ritmo/Disparo' : 'Hold/Fire Engine'}
             </p>
           </div>
         </div>
@@ -2498,14 +2655,16 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               aria-label="Filter by kitchen station"
               className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs max-w-[85px] sm:max-w-[110px] md:max-w-[130px] lg:max-w-[150px] truncate"
             >
-              <option value="ALL" className="bg-zinc-900 text-white">All Stations (Expo)</option>
+              <option value="ALL" className="bg-zinc-900 text-white">
+                {deviceLanguage === 'es' ? 'Todas las Estaciones (Expo)' : 'All Stations (Expo)'}
+              </option>
               {visibleStations.map((st) => {
                 const matched = kitchenStations.find((s) => s.name.trim().toLowerCase() === st.trim().toLowerCase());
                 const targetMode = matched?.display_mode || matched?.displayMode;
                 const modeLabel = targetMode ? ` • ${targetMode}` : '';
                 return (
                   <option key={st} value={st} className="bg-zinc-900 text-white">
-                    {st}{modeLabel}
+                    {getLocalizedStationName(st, deviceLanguage)}{modeLabel}
                   </option>
                 );
               })}
@@ -2710,6 +2869,19 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             )}
           </button>
 
+          {/* Per-Device Language Display Toggle (Historia X7P-4212) */}
+          <button
+            type="button"
+            onClick={toggleDeviceLanguage}
+            className="h-8 px-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 border cursor-pointer shadow-xs bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700 shrink-0 font-bold text-xs"
+            title={deviceLanguage === 'en' ? 'Device Language: English (Click for Spanish)' : 'Idioma del Dispositivo: Español (Clic para Inglés)'}
+          >
+            <span className="material-symbols-outlined text-sm text-cyan-400">translate</span>
+            <span className="font-mono text-[11px] font-black uppercase tracking-wider">
+              {deviceLanguage === 'en' ? '🇺🇸 EN' : '🇪🇸 ES'}
+            </span>
+          </button>
+
           {/* Back to Dashboard */}
           <button
             type="button"
@@ -2726,7 +2898,9 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       {/* 2. Course Sequence Quick Filter Bar */}
       <div className="bg-[#18191e] border-b border-zinc-800 px-6 py-2 flex items-center justify-between gap-4 shrink-0 overflow-x-auto">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mr-1">COURSE STAGE:</span>
+          <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mr-1">
+            {deviceLanguage === 'es' ? 'ETAPA DE CURSO:' : 'COURSE STAGE:'}
+          </span>
           {(['ALL', 'APPETIZER', 'MAIN_COURSE', 'DESSERT', 'BEVERAGE'] as const).map((course) => {
             const isActive = activeCourseFilter === course;
             return (
@@ -2739,7 +2913,9 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                     : 'bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700'
                 }`}
               >
-                {course === 'ALL' ? 'ALL COURSES' : course.replace('_', ' ')}
+                {course === 'ALL'
+                  ? (deviceLanguage === 'es' ? 'TODOS' : 'ALL COURSES')
+                  : getLocalizedCourse(course, deviceLanguage)}
               </button>
             );
           })}
@@ -2749,17 +2925,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         <div className="flex items-center gap-4 text-xs font-bold text-zinc-400 shrink-0">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>ACTIVE: <strong className="text-white">{tickets.length}</strong></span>
+            <span>{deviceLanguage === 'es' ? 'ACTIVAS:' : 'ACTIVE:'} <strong className="text-white">{tickets.length}</strong></span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-            <span>HELD ITEMS: <strong className="text-amber-400">
+            <span>{deviceLanguage === 'es' ? 'RETENIDOS:' : 'HELD ITEMS:'} <strong className="text-amber-400">
               {tickets.reduce((sum, t) => sum + t.items.filter((i) => i.preparationStatus === 'HELD').length, 0)}
             </strong></span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-blue-400"></span>
-            <span>AUTO-FIRE PACING: <strong className="text-blue-300">{autoFireEnabled ? 'ON' : 'OFF'}</strong></span>
+            <span>{deviceLanguage === 'es' ? 'AUTO-DISPARO:' : 'AUTO-FIRE PACING:'} <strong className="text-blue-300">{autoFireEnabled ? 'ON' : 'OFF'}</strong></span>
           </div>
         </div>
       </div>
@@ -2788,24 +2964,25 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
-                <span className="shrink-0">🚨 HARDWARE FAILURE:</span>
+                <span className="shrink-0">{deviceLanguage === 'es' ? '🚨 FALLA DE HARDWARE:' : '🚨 HARDWARE FAILURE:'}</span>
                 <span className="text-red-400 underline decoration-red-500 truncate max-w-[180px] sm:max-w-[280px]">
                   {isMultipleFailuresInAll
-                    ? `${failingStations.length} STATIONS OFFLINE`
+                    ? (deviceLanguage === 'es' ? `${failingStations.length} ESTACIONES SIN CONEXIÓN` : `${failingStations.length} STATIONS OFFLINE`)
                     : activeStationStatus?.stationName}
                 </span>
                 <span className="text-[10px] px-2 py-0.2 rounded-full bg-red-500/30 text-red-200 border border-red-500/50 font-bold shrink-0">
-                  ALL TERMINALS OFFLINE &gt;60s
+                  {deviceLanguage === 'es' ? 'TERMINALES SIN CONEXIÓN >60s' : 'ALL TERMINALS OFFLINE >60s'}
                 </span>
               </div>
               <p className="text-[11px] text-zinc-300 mt-0.5 truncate">
                 {isMultipleFailuresInAll ? (
                   <span>
-                    Affected stations: <strong className="text-amber-300">{failingStations.map((s) => s.stationName).join(', ')}</strong>. Orders route to backup stations or thermal printers.
+                    {deviceLanguage === 'es' ? 'Estaciones afectadas: ' : 'Affected stations: '}
+                    <strong className="text-amber-300">{failingStations.map((s) => s.stationName).join(', ')}</strong>. {deviceLanguage === 'es' ? 'Los pedidos se derivan a estaciones de respaldo o impresoras térmicas.' : 'Orders route to backup stations or thermal printers.'}
                   </span>
                 ) : (
                   <span>
-                    Orders route to secondary station{' '}
+                    {deviceLanguage === 'es' ? 'Los pedidos se derivan a la estación secundaria ' : 'Orders route to secondary station '}
                     <strong className="text-amber-300">
                       {activeStationStatus?.backupStationName ||
                         (activeStationStatus?.backupStationId
@@ -2813,7 +2990,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                           : 'Expo & Final Quality Check')}
                     </strong>
                     {activeStationStatus?.printerName ? (
-                      <span> or print on <strong className="text-amber-300">{activeStationStatus.printerName}</strong></span>
+                      <span> {deviceLanguage === 'es' ? 'o se imprimen en ' : 'or print on '}<strong className="text-amber-300">{activeStationStatus.printerName}</strong></span>
                     ) : ''}.
                   </span>
                 )}
@@ -2834,7 +3011,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               className="h-8 px-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm">forward_to_inbox</span>
-              <span>{isMultipleFailuresInAll ? 'Reroute All' : 'Reroute Orders'}</span>
+              <span>{deviceLanguage === 'es' ? (isMultipleFailuresInAll ? 'Re-enrutar Todas' : 'Re-enrutar Pedidos') : (isMultipleFailuresInAll ? 'Reroute All' : 'Reroute Orders')}</span>
             </button>
             <button
               type="button"
@@ -2842,14 +3019,14 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               className="h-8 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm text-amber-400">print</span>
-              <span>Thermal Ticket</span>
+              <span>{deviceLanguage === 'es' ? 'Ticket Térmico' : 'Thermal Ticket'}</span>
             </button>
             <button
               type="button"
               onClick={() => setIsRerouteModalOpen(true)}
               className="h-8 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center active:scale-95 shrink-0"
             >
-              <span>Configure</span>
+              <span>{deviceLanguage === 'es' ? 'Configurar' : 'Configure'}</span>
             </button>
           </div>
         </div>
@@ -2864,14 +3041,18 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
-                <span className="shrink-0">⚠️ CAPACITY OVERFLOW:</span>
-                <span className="text-amber-400 underline decoration-amber-500 truncate max-w-[180px] sm:max-w-[280px]">{activeStationStatus.stationName}</span>
+                <span className="shrink-0">{deviceLanguage === 'es' ? '⚠️ SOBRECUPO DE CAPACIDAD:' : '⚠️ CAPACITY OVERFLOW:'}</span>
+                <span className="text-amber-400 underline decoration-amber-500 truncate max-w-[180px] sm:max-w-[280px]">
+                  {getLocalizedStationName(activeStationStatus.stationName, deviceLanguage)}
+                </span>
                 <span className="text-[10px] px-2 py-0.2 rounded-full bg-amber-500/30 text-amber-200 border border-amber-500/50 font-bold shrink-0">
-                  {activeStationStatus.activeTicketsCount} / {activeStationStatus.maxActiveTicketsCapacity} ACTIVE
+                  {activeStationStatus.activeTicketsCount} / {activeStationStatus.maxActiveTicketsCapacity} {deviceLanguage === 'es' ? 'ACTIVAS' : 'ACTIVE'}
                 </span>
               </div>
               <p className="text-[11px] text-zinc-300 mt-0.5 truncate">
-                Active queue limit breached (&gt;{activeStationStatus.maxActiveTicketsCapacity} tickets). Dynamic load balancing routes incoming orders to secondary prep station.
+                {deviceLanguage === 'es'
+                  ? `Límite de comandas activas superado (>${activeStationStatus.maxActiveTicketsCapacity} comandas). El balanceo dinámico de carga deriva pedidos nuevos a estaciones secundarias.`
+                  : `Active queue limit breached (>${activeStationStatus.maxActiveTicketsCapacity} tickets). Dynamic load balancing routes incoming orders to secondary prep station.`}
               </p>
             </div>
           </div>
@@ -2883,14 +3064,14 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               className="h-8 px-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm">balance</span>
-              <span>Balance Load</span>
+              <span>{deviceLanguage === 'es' ? 'Balancear Carga' : 'Balance Load'}</span>
             </button>
             <button
               type="button"
               onClick={() => setIsRerouteModalOpen(true)}
               className="h-8 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center active:scale-95 shrink-0"
             >
-              <span>Configure</span>
+              <span>{deviceLanguage === 'es' ? 'Configurar' : 'Configure'}</span>
             </button>
           </div>
         </div>
@@ -2903,23 +3084,34 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-amber-400 text-base">skillet</span>
               <span className="text-[11px] font-black tracking-wider text-white uppercase flex items-center gap-1.5">
-                ALL-DAY PREP CONSOLIDATOR
+                {deviceLanguage === 'es' ? 'CONSOLIDADOR DEL TURNO' : 'ALL-DAY PREP CONSOLIDATOR'}
                 <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  {allDaySummary.totalNeededCount} {allDaySummary.totalNeededCount === 1 ? 'unit required' : 'units required'}
+                  {allDaySummary.totalNeededCount}{' '}
+                  {deviceLanguage === 'es'
+                    ? allDaySummary.totalNeededCount === 1
+                      ? 'unidad requerida'
+                      : 'unidades requeridas'
+                    : allDaySummary.totalNeededCount === 1
+                    ? 'unit required'
+                    : 'units required'}
                 </span>
               </span>
             </div>
 
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-zinc-400 font-medium hidden md:inline">
-                Tap <strong className="text-amber-300">+1 / +2 / +4 / ALL</strong> to bump FIFO
+                {deviceLanguage === 'es' ? (
+                  <>Pulsa <strong className="text-amber-300">+1 / +2 / +4 / TODOS</strong> para despachar FIFO</>
+                ) : (
+                  <>Tap <strong className="text-amber-300">+1 / +2 / +4 / ALL</strong> to bump FIFO</>
+                )}
               </span>
               <button
                 onClick={() => setIsAllDayBarExpanded(!isAllDayBarExpanded)}
                 className="text-zinc-400 hover:text-white flex items-center gap-0.5 text-[10px] font-bold cursor-pointer transition-colors"
-                title={isAllDayBarExpanded ? 'Collapse All-Day Bar' : 'Expand All-Day Bar'}
+                title={isAllDayBarExpanded ? (deviceLanguage === 'es' ? 'Colapsar barra' : 'Collapse All-Day Bar') : (deviceLanguage === 'es' ? 'Expandir barra' : 'Expand All-Day Bar')}
               >
-                <span>{isAllDayBarExpanded ? 'Hide' : 'Show'}</span>
+                <span>{isAllDayBarExpanded ? (deviceLanguage === 'es' ? 'Ocultar' : 'Hide') : (deviceLanguage === 'es' ? 'Mostrar' : 'Show')}</span>
                 <span className="material-symbols-outlined text-xs">
                   {isAllDayBarExpanded ? 'expand_less' : 'expand_more'}
                 </span>
@@ -2932,7 +3124,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               {allDaySummary.items.length === 0 ? (
                 <div className="py-1.5 px-3 rounded-md bg-zinc-900/60 border border-dashed border-zinc-800 text-center text-[11px] text-zinc-400 font-medium flex items-center justify-center gap-1.5">
                   <span className="material-symbols-outlined text-emerald-400 text-sm">check_circle</span>
-                  <span>No pending items for this course on this station.</span>
+                  <span>
+                    {deviceLanguage === 'es'
+                      ? 'No hay platos pendientes para esta etapa en esta estación.'
+                      : 'No pending items for this course on this station.'}
+                  </span>
                 </div>
               ) : (
                 <div className="flex items-stretch gap-2.5 overflow-x-auto pb-1 custom-scrollbar">
@@ -2945,11 +3141,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                         <div className="flex items-start justify-between gap-1.5">
                           <div className="flex-1 min-w-0">
                             <h4 className="text-xs font-black text-white leading-tight truncate" title={item.productName}>
-                              {item.productName}
+                              {getLocalizedDishName(item.productName, deviceLanguage)}
                             </h4>
                             {item.variantName && (
                               <span className="inline-block mt-0.5 text-[9px] font-bold px-1 py-0.2 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 truncate max-w-full">
-                                {item.variantName}
+                                {getLocalizedVariantName(item.variantName, deviceLanguage)}
                               </span>
                             )}
                           </div>
@@ -2958,16 +3154,16 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                               {item.totalNeeded}x
                             </span>
                             <span className="text-[8px] uppercase tracking-wider font-bold text-zinc-400">
-                              PENDING
+                              {deviceLanguage === 'es' ? 'PENDIENTE' : 'PENDING'}
                             </span>
                           </div>
                         </div>
 
                         {/* Prep Progress Bar */}
                         <div className="mt-1 text-[9px] font-bold text-zinc-400 flex items-center justify-between">
-                          <span>Progress:</span>
+                          <span>{deviceLanguage === 'es' ? 'Progreso:' : 'Progress:'}</span>
                           <span>
-                            <strong className="text-emerald-400">{item.totalPrepared}</strong>/{item.totalOrdered} done
+                            <strong className="text-emerald-400">{item.totalPrepared}</strong>/{item.totalOrdered} {deviceLanguage === 'es' ? 'listo' : 'done'}
                           </span>
                         </div>
                         <div className="w-full bg-zinc-800 h-1 rounded-full overflow-hidden mt-0.5">
@@ -2982,14 +3178,28 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                         {/* Modifiers / Special Notes Breakdown */}
                         {item.modifiers.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
-                            {item.modifiers.map((mod, idx) => (
-                              <span
-                                key={idx}
-                                className="text-[8px] font-bold px-1 py-0.2 rounded bg-amber-950/60 text-amber-200 border border-amber-500/30"
-                              >
-                                {mod.count}x {mod.note}
-                              </span>
-                            ))}
+                            {item.modifiers.map((mod, idx) => {
+                              const isAllergy = detectAllergies(mod.note, deviceLanguage).hasAllergy;
+                              const isAdd = mod.note.startsWith('+') || mod.note.toLowerCase().includes('extra') || mod.note.toLowerCase().startsWith('add');
+                              const isRem = mod.note.startsWith('-') || mod.note.toLowerCase().startsWith('no') || mod.note.toLowerCase().startsWith('sin');
+                              return (
+                                <span
+                                  key={idx}
+                                  className={`text-[8px] font-black px-1.5 py-0.2 rounded flex items-center gap-0.5 ${
+                                    isAllergy
+                                      ? 'bg-red-950 text-red-100 border border-red-500 animate-pulse shadow-xs'
+                                      : isAdd
+                                      ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50'
+                                      : isRem
+                                      ? 'bg-rose-950/80 text-rose-300 border border-rose-500/50'
+                                      : 'bg-amber-950/60 text-amber-200 border border-amber-500/30'
+                                  }`}
+                                >
+                                  {isAllergy && <span className="material-symbols-outlined text-[9px] text-red-400">warning</span>}
+                                  {mod.count}x {mod.note}
+                                </span>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -3030,7 +3240,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                             className="px-1.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[9px] uppercase rounded border border-emerald-400 transition-all cursor-pointer active:scale-95"
                             title={`Bump entire batch (${item.totalNeeded}x) to oldest tickets`}
                           >
-                            ALL
+                            {deviceLanguage === 'es' ? 'TODOS' : 'ALL'}
                           </button>
                         )}
                       </div>
@@ -3154,16 +3364,16 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                       <div className="flex items-start justify-between gap-2 mb-3">
                         <div className="min-w-0 flex-1">
                           <h3 className="font-black text-lg text-white leading-tight break-words" style={{ color: '#ffffff' }}>
-                            {batch.name}
+                            {getLocalizedDishName(batch.name, deviceLanguage)}
                           </h3>
                           {batch.variantName && (
                             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-200 border border-zinc-700 inline-block mt-1">
-                              {batch.variantName}
+                              {getLocalizedVariantName(batch.variantName, deviceLanguage)}
                             </span>
                           )}
                         </div>
                         <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border shrink-0 ${courseTheme.badge}`}>
-                          {batch.course.replace('_', ' ')}
+                          {getLocalizedCourse(batch.course, deviceLanguage)}
                         </span>
                       </div>
 
@@ -3171,23 +3381,33 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                       <div className="my-3 p-2.5 bg-zinc-900/90 rounded-xl border border-zinc-800 grid grid-cols-5 gap-0.5 text-center">
                         <div className="p-1">
                           <p className="text-xl font-black font-mono text-zinc-300">{batch.pendingQty}</p>
-                          <p className="text-[7.5px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">QUEUE</p>
+                          <p className="text-[7.5px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">
+                            {deviceLanguage === 'es' ? 'COLA' : 'QUEUE'}
+                          </p>
                         </div>
                         <div className="p-1 border-l border-zinc-800">
                           <p className="text-xl font-black font-mono text-blue-400">{batch.inPrepQty}</p>
-                          <p className="text-[7.5px] font-bold text-blue-300 uppercase tracking-wider mt-0.5">{courseTheme.prepVerb}</p>
+                          <p className="text-[7.5px] font-bold text-blue-300 uppercase tracking-wider mt-0.5">
+                            {deviceLanguage === 'es' ? 'EN COCCIÓN' : courseTheme.prepVerb}
+                          </p>
                         </div>
                         <div className="p-1 border-l border-zinc-800">
                           <p className="text-xl font-black font-mono text-amber-400">{batch.heldQty}</p>
-                          <p className="text-[7.5px] font-bold text-amber-300 uppercase tracking-wider mt-0.5">HELD</p>
+                          <p className="text-[7.5px] font-bold text-amber-300 uppercase tracking-wider mt-0.5">
+                            {deviceLanguage === 'es' ? 'RETENIDO' : 'HELD'}
+                          </p>
                         </div>
                         <div className="p-1 border-l border-zinc-800">
                           <p className="text-xl font-black font-mono text-emerald-400">{batch.readyQty}</p>
-                          <p className="text-[7.5px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">READY</p>
+                          <p className="text-[7.5px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">
+                            {deviceLanguage === 'es' ? 'LISTO' : 'READY'}
+                          </p>
                         </div>
                         <div className="p-1 border-l border-zinc-800">
                           <p className="text-xl font-black font-mono text-zinc-300">{batch.totalQty}</p>
-                          <p className="text-[7.5px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">TOTAL</p>
+                          <p className="text-[7.5px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">
+                            {deviceLanguage === 'es' ? 'TOTAL' : 'TOTAL'}
+                          </p>
                         </div>
                       </div>
 
@@ -3196,10 +3416,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1">
                             <span className="material-symbols-outlined text-xs text-zinc-400">touch_app</span>
-                            TABLES (TAP TO ADVANCE):
+                            {deviceLanguage === 'es' ? 'MESAS (TOCA PARA AVANZAR):' : 'TABLES (TAP TO ADVANCE):'}
                           </p>
                           <span className="text-[10px] text-zinc-500 font-bold">
-                            {batch.tables.length} table{batch.tables.length === 1 ? '' : 's'}
+                            {batch.tables.length} {deviceLanguage === 'es' ? (batch.tables.length === 1 ? 'mesa' : 'mesas') : (batch.tables.length === 1 ? 'table' : 'tables')}
                           </span>
                         </div>
                         <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto custom-scrollbar p-1.5 bg-zinc-950/40 rounded-lg border border-zinc-800/80">
@@ -3295,7 +3515,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                           className="w-full py-2 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98"
                         >
                           <span className="material-symbols-outlined text-sm">local_fire_department</span>
-                          <span>FIRE ALL HELD ({batch.heldQty})</span>
+                          <span>{deviceLanguage === 'es' ? `A FUEGO TODOS LOS RETENIDOS (${batch.heldQty})` : `FIRE ALL HELD (${batch.heldQty})`}</span>
                         </button>
                       )}
 
@@ -3305,7 +3525,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                           className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98 border border-blue-400/50"
                         >
                           <span className="material-symbols-outlined text-sm">{courseTheme.prepIcon}</span>
-                          <span>START ALL QUEUE ({batch.pendingQty})</span>
+                          <span>{deviceLanguage === 'es' ? `INICIAR TODA LA COLA (${batch.pendingQty})` : `START ALL QUEUE (${batch.pendingQty})`}</span>
                         </button>
                       )}
 
@@ -3315,13 +3535,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                           className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98"
                         >
                           <span className="material-symbols-outlined text-sm">check_circle</span>
-                          <span>MARK ALL READY ({totalUnready})</span>
+                          <span>{deviceLanguage === 'es' ? `MARCAR TODOS LISTOS (${totalUnready})` : `MARK ALL READY (${totalUnready})`}</span>
                         </button>
                       ) : (
                         <div className="flex items-center gap-2">
                           <div className="flex-1 py-2.5 bg-emerald-950/40 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-inner">
                             <span className="material-symbols-outlined text-sm">task_alt</span>
-                            <span>ALL {batch.totalQty} READY</span>
+                            <span>{deviceLanguage === 'es' ? `LOS ${batch.totalQty} ESTÁN LISTOS` : `ALL ${batch.totalQty} READY`}</span>
                           </div>
                           <button
                             onClick={() => handleRevertBatch(batch.name, batch.variantName)}
@@ -3329,7 +3549,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                             className="px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
                           >
                             <span className="material-symbols-outlined text-sm">undo</span>
-                            <span className="hidden sm:inline">UNDO</span>
+                            <span className="hidden sm:inline">{deviceLanguage === 'es' ? 'DESHACER' : 'UNDO'}</span>
                           </button>
                         </div>
                       )}
@@ -3350,7 +3570,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 <div className="flex items-center gap-2.5">
                   <span className="w-3 h-3 rounded-full bg-amber-400 animate-pulse"></span>
                   <span className="text-xs font-black text-amber-400 uppercase tracking-wider">
-                    CURRENT IN-PROGRESS TICKET (HEAD OF LINE)
+                    {deviceLanguage === 'es' ? 'COMANDA EN PROGRESO (CABECERA DE COLA)' : 'CURRENT IN-PROGRESS TICKET (HEAD OF LINE)'}
                   </span>
                 </div>
 
@@ -3364,7 +3584,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                     className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 rounded text-xs font-bold text-zinc-300 flex items-center gap-1 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-sm">navigate_before</span>
-                    PREV
+                    {deviceLanguage === 'es' ? 'ANT' : 'PREV'}
                   </button>
                   <button
                     onClick={() => {
@@ -3376,7 +3596,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                     disabled={filteredTickets.findIndex((t) => t.id === activeManualTicket?.id) >= filteredTickets.length - 1}
                     className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 rounded text-xs font-bold text-zinc-300 flex items-center gap-1 cursor-pointer"
                   >
-                    NEXT
+                    {deviceLanguage === 'es' ? 'SIG' : 'NEXT'}
                     <span className="material-symbols-outlined text-sm">navigate_next</span>
                   </button>
                 </div>
@@ -3388,7 +3608,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-zinc-500">
                     <span className="material-symbols-outlined text-5xl mb-2">inbox</span>
-                    <p className="text-sm font-bold">No active tickets waiting in queue</p>
+                    <p className="text-sm font-bold">{deviceLanguage === 'es' ? 'No hay comandas activas en la cola' : 'No active tickets waiting in queue'}</p>
                   </div>
                 )}
               </div>
@@ -3400,10 +3620,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-zinc-400 text-lg">queue</span>
                   <h3 className="text-xs font-black text-white uppercase tracking-wider">
-                    WAITING QUEUE ({filteredTickets.length})
+                    {deviceLanguage === 'es' ? 'COLA DE ESPERA' : 'WAITING QUEUE'} ({filteredTickets.length})
                   </h3>
                 </div>
-                <span className="text-[10px] font-bold text-zinc-400 uppercase">FIFO PIPELINE</span>
+                <span className="text-[10px] font-bold text-zinc-400 uppercase">
+                  {deviceLanguage === 'es' ? 'LÍNEA FIFO' : 'FIFO PIPELINE'}
+                </span>
               </div>
 
               <div className="flex-1 overflow-y-auto space-y-2.5 mt-3 custom-scrollbar">
@@ -3426,13 +3648,15 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                         </span>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-black text-white truncate">{t.table}</span>
+                            <span className="text-sm font-black text-white truncate">
+                              {deviceLanguage === 'es' ? t.table.replace(/^Table\s+/i, 'Mesa ') : t.table}
+                            </span>
                             <span className={`text-[9px] px-1.5 py-0.2 rounded font-black uppercase ${pColors.badge}`}>
                               {pColors.label}
                             </span>
                           </div>
                           <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                            Ticket #{t.id} • {t.items.length} items • {t.server}
+                            Ticket #{t.id} • {t.items.length} {deviceLanguage === 'es' ? 'ítems' : 'items'}{t.server && t.server !== 'Kitchen Staff' ? ` • ${t.server}` : ''}
                           </p>
                         </div>
                       </div>
@@ -3445,7 +3669,9 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                         >
                           {t.timeElapsed}m
                         </span>
-                        <p className="text-[9px] font-bold text-zinc-500 uppercase">WAIT</p>
+                        <p className="text-[9px] font-bold text-zinc-500 uppercase">
+                          {deviceLanguage === 'es' ? 'ESPERA' : 'WAIT'}
+                        </p>
                       </div>
                     </div>
                   );
@@ -3464,14 +3690,16 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-sm text-emerald-400">bolt</span>
                   <span className="text-[10px] font-black text-emerald-300 uppercase">
-                    1-TOUCH AUTO-DISPATCH LINE:
+                    {deviceLanguage === 'es' ? 'LÍNEA AUTO-DESPACHO 1-TOQUE:' : '1-TOUCH AUTO-DISPATCH LINE:'}
                   </span>
                   <span className="text-[10px] text-zinc-300 hidden md:inline">
-                    When the final dish is marked READY, the ticket will automatically bump and archive.
+                    {deviceLanguage === 'es'
+                      ? 'Cuando el último plato se marca como LISTO, la comanda se despacha y archiva automáticamente.'
+                      : 'When the final dish is marked READY, the ticket will automatically bump and archive.'}
                   </span>
                 </div>
                 <span className="text-[8px] font-mono font-black px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
-                  AUTO-BUMP
+                  {deviceLanguage === 'es' ? 'AUTO-DESPACHO' : 'AUTO-BUMP'}
                 </span>
               </div>
             )}
@@ -3887,6 +4115,129 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           }}
           activeTickets={tickets}
         />
+      )}
+
+      {/* Floating Allergy Protocol & Safety Detail Modal (Historia X7P-4212) */}
+      {selectedAllergyDetail && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
+          onClick={() => setSelectedAllergyDetail(null)}
+        >
+          <div
+            className="relative w-full max-w-md bg-[#18191e] border-2 border-red-500/80 rounded-2xl shadow-[0_0_30px_rgba(239,68,68,0.4)] overflow-hidden flex flex-col my-auto max-h-[90vh] animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-red-950 via-red-900 to-zinc-900 border-b border-red-500/40">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-red-400 text-2xl animate-bounce">
+                  emergency
+                </span>
+                <div>
+                  <div className="text-sm font-black uppercase tracking-wider text-red-100 flex items-center gap-1.5">
+                    {deviceLanguage === 'es' ? 'PROTOCOLO DE ALERGIA CRÍTICA' : 'CRITICAL ALLERGY PROTOCOL'}
+                  </div>
+                  <p className="text-[10px] text-red-300/80 font-medium">
+                    {deviceLanguage === 'es' ? selectedAllergyDetail.table.replace(/^Table\s+/i, 'Mesa ') : selectedAllergyDetail.table} • #{selectedAllergyDetail.ticketId}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedAllergyDetail(null)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">close</span>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {/* Target Item Name */}
+              <div className="bg-zinc-900/90 border border-zinc-800 p-3 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400" style={{ color: '#a1a1aa' }}>
+                    {deviceLanguage === 'es' ? 'PLATO / ÍTEM AFECTADO:' : 'TARGET DISH / ITEM:'}
+                  </span>
+                  <div
+                    className="text-base sm:text-lg font-black text-white !text-white mt-0.5 tracking-tight"
+                    style={{ color: '#ffffff' }}
+                  >
+                    {selectedAllergyDetail.itemName}
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-black uppercase bg-red-600/30 text-red-300 border border-red-500/50">
+                  {deviceLanguage === 'es' ? selectedAllergyDetail.table.replace(/^Table\s+/i, 'Mesa ') : selectedAllergyDetail.table}
+                </span>
+              </div>
+
+              {/* Detected Allergens list */}
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-red-400 flex items-center gap-1 mb-1.5">
+                  <span className="material-symbols-outlined text-xs">warning</span>
+                  {deviceLanguage === 'es' ? 'ALÉRGENOS DETECTADOS:' : 'DETECTED ALLERGENS:'}
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedAllergyDetail.allergyTags.map((tag, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2.5 py-1 rounded-lg text-xs font-black uppercase bg-red-950 text-red-200 border-2 border-red-500 shadow-sm flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-xs text-red-400">report_problem</span>
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Full Notes & Special Instructions (descartando si solo coincide con la referencia de ticket o mesa) */}
+              {Boolean(
+                selectedAllergyDetail.rawNotes &&
+                selectedAllergyDetail.rawNotes.trim().toLowerCase() !== selectedAllergyDetail.table.trim().toLowerCase() &&
+                selectedAllergyDetail.rawNotes.trim().toLowerCase().replace(/^(?:table|mesa)\s+/i, '') !== selectedAllergyDetail.table.trim().toLowerCase().replace(/^(?:table|mesa)\s+/i, '')
+              ) && (
+                <div className="bg-zinc-900/80 border border-amber-500/30 p-3 rounded-xl">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1 mb-1">
+                    <span className="material-symbols-outlined text-xs">edit_note</span>
+                    {deviceLanguage === 'es' ? 'INSTRUCCIÓN COMPLETA DE COCINA:' : 'FULL KITCHEN INSTRUCTION:'}
+                  </span>
+                  <p className="text-xs text-zinc-200 font-medium whitespace-pre-wrap break-words leading-relaxed pl-2 border-l-2 border-amber-500/70">
+                    {deviceLanguage === 'es'
+                      ? selectedAllergyDetail.rawNotes!.replace(/\bTable\s+(\d+)/gi, 'Mesa $1')
+                      : selectedAllergyDetail.rawNotes}
+                  </p>
+                </div>
+              )}
+
+              {/* Kitchen Safety Cross-Contamination Notice */}
+              <div className="bg-red-950/40 border border-red-500/30 p-3 rounded-xl flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-base text-red-400 shrink-0 mt-0.5">
+                  sanitizer
+                </span>
+                <div className="text-[10.5px] text-red-200/90 leading-snug">
+                  <strong className="block text-red-300 font-bold mb-0.5">
+                    {deviceLanguage === 'es' ? 'Medidas de Seguridad de Cocina:' : 'Kitchen Safety Notice:'}
+                  </strong>
+                  {deviceLanguage === 'es'
+                    ? 'Lavar y desinfectar superficies y utensilios. Cambiar guantes antes de manipular este pedido. Utilizar aceite y recipientes separados para evitar contacto cruzado.'
+                    : 'Wash and sanitize hands, surfaces, and cookware. Change gloves before prepping this order. Use separate oil and utensils to prevent cross-contact.'}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Action */}
+            <div className="p-3.5 bg-zinc-900 border-t border-zinc-800 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedAllergyDetail(null)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer active:scale-95 shadow-lg flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-sm">check</span>
+                <span>{deviceLanguage === 'es' ? 'Cerrar' : 'Close'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Emergency Thermal Printer Paper Fallback Simulation Modal (Historia X7P-4211) */}
