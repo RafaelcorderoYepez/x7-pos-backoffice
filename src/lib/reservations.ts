@@ -255,84 +255,10 @@ export const toggleInList = <T,>(list: T[], value: T): T[] =>
   list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 
 // ================= Aforo =================
-
-export interface CapacityCheck {
-  /** Plazas totales del salón (suma de la capacidad de las mesas operativas). */
-  floorCapacity: number;
-  /** Plazas ya comprometidas por reservas que solapan la franja. */
-  bookedSeats: number;
-  /** Plazas libres en la franja, nunca negativas. */
-  availableSeats: number;
-  /** El grupo no cabe: hay que avisar antes de guardar. */
-  oversold: boolean;
-  overflowSeats: number;
-}
-
-// Mesas que de verdad ponen plazas sobre el salón. Una mesa borrada o fuera de servicio no
-// suma aforo aunque siga en el inventario.
-const SEATABLE_TABLE_STATUSES = new Set(['available', 'occupied', 'reserved', 'cleaning']);
-
-export const floorCapacity = (
-  tables: Array<{ capacity?: number; status?: string }>,
-): number =>
-  tables
-    .filter((t) => SEATABLE_TABLE_STATUSES.has((t.status ?? 'available').toLowerCase()))
-    .reduce((sum, t) => sum + (Number(t.capacity) || 0), 0);
-
-// Plazas comprometidas en la franja. Anuladas y ausencias no ocupan sitio; una reserva que se
-// está editando se excluye para que no compita consigo misma.
-export const bookedSeatsInWindow = (
-  reservations: Reservation[],
-  startIso: string,
-  durationMinutes: number,
-  excludeReservationId?: number,
-): number => {
-  const start = new Date(startIso).getTime();
-  if (Number.isNaN(start)) return 0;
-  const end = start + (durationMinutes || 0) * 60_000;
-
-  return reservations
-    .filter((r) => r.id !== excludeReservationId)
-    .filter((r) => r.status !== 'cancelled' && r.status !== 'no_show')
-    .filter((r) => windowsOverlap(start, end, reservationStart(r), reservationEnd(r)))
-    .reduce((sum, r) => sum + (Number(r.party_size) || 0), 0);
-};
-
-// Comprobación de aforo TOTAL del salón para la franja pedida. Es la que alimenta el aviso de
-// sobreventa del drawer: el backend sólo valida el solape de MESAS concretas (y sólo cuando la
-// reserva viene con table_ids), así que sin esto una anfitriona puede aceptar por teléfono más
-// gente de la que cabe en el local.
-export const checkFloorCapacity = (
-  tables: Array<{ capacity?: number; status?: string }>,
-  reservations: Reservation[],
-  startIso: string,
-  durationMinutes: number,
-  partySize: number,
-  excludeReservationId?: number,
-): CapacityCheck => {
-  const capacity = floorCapacity(tables);
-  const booked = bookedSeatsInWindow(
-    reservations,
-    startIso,
-    durationMinutes,
-    excludeReservationId,
-  );
-  const available = Math.max(0, capacity - booked);
-  const overflow = Math.max(0, partySize - available);
-
-  return {
-    floorCapacity: capacity,
-    bookedSeats: booked,
-    availableSeats: available,
-    // Sin inventario de mesas cargado (capacity 0) no se puede afirmar que haya sobreventa:
-    // avisar entonces sería un falso positivo en todas las reservas.
-    oversold: capacity > 0 && overflow > 0,
-    overflowSeats: overflow,
-  };
-};
-
-export const capacityWarningMessage = (check: CapacityCheck, partySize: number): string =>
-  `Party of ${partySize} exceeds the floor capacity left for this slot — ${check.availableSeats} of ${check.floorCapacity} seats free (${check.bookedSeats} already booked). Save anyway only if you can add covers.`;
+//
+// El aforo NO se calcula aquí: lo decide el servidor (`/api/reservation-capacity`, pico de
+// comensales CONFIRMED/SEATED simultáneos + límite de llegadas por franja) dentro de la
+// transacción del alta. Ver src/lib/reservation-capacity.ts.
 
 // ================= Validación del alta =================
 

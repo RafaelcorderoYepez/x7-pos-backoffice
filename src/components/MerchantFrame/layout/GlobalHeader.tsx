@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { UserProfile, SystemNotification } from '../../../services/restaurantService';
+import { navHubById } from '../../../lib/module-nav-hubs';
 import type { NavCategory } from '../../../services/navigationService';
 import logoX7 from '../../../assets/logo-x7.png';
 
@@ -134,6 +135,14 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
       }
       if (parentAppName) break;
     }
+  }
+
+  // Command Hubs de módulo (`<appId>-hub`): no están en el catálogo de features, se resuelven
+  // desde module-nav-hubs.ts para que la cabecera no caiga en "SYSTEM / RESERVATIONS HUB".
+  const commandHub = navHubById(activeTab);
+  if (commandHub) {
+    parentAppName = commandHub.category;
+    activeFeatureName = commandHub.title;
   }
 
   // Lista de pestañas por dominio para mapear el Breadcrumb de forma 100% precisa e inmune a clics de acordeón

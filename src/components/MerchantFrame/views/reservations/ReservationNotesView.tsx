@@ -36,7 +36,6 @@ import {
 } from '../../../../api/reservations';
 import { ApiError } from '../../../../lib/api-error';
 import { Toast, type ToastState } from '../../shared/Toast';
-import { ReservationsQuickLinks } from './ReservationsQuickLinks';
 import { NoteFormDrawer } from './NoteFormDrawer';
 
 interface ReservationNotesViewProps {
@@ -44,10 +43,9 @@ interface ReservationNotesViewProps {
   merchantId?: number;
 }
 
-export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({
-  onNavigate,
-  merchantId,
-}) => {
+// `onNavigate` sigue en las props (MerchantFrame lo pasa a todas las vistas), pero la
+// navegación entre sub-módulos la hace ya la NavHubBar del módulo, montada por MerchantFrame.
+export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({ merchantId }) => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<CustomerRef[]>([]);
   const [staffById, setStaffById] = useState<Map<number, { name?: string; role?: string }>>(
@@ -571,10 +569,6 @@ export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({
       ) : null}
 
       <Toast toast={toast} onClose={() => setToast(null)} />
-      {/* Panel de accesos rápidos estándar (QuickLaunchPanel), como el resto de módulos. */}
-      <div>
-        <ReservationsQuickLinks current="reservation-notes" onNavigate={onNavigate} />
-      </div>
 
     </div>
   );

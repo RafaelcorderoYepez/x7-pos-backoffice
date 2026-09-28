@@ -172,6 +172,26 @@ export interface ReservationStatusHistoryEntry {
   is_active: boolean;
 }
 
+// Contexto de la reserva madre que `/api/reservation-status-history` embebe en cada entrada.
+export interface StatusHistoryReservationSummary {
+  id: number;
+  reservation_date: string;
+  duration_minutes: number;
+  seated_at: string | null;
+  party_size: number;
+  status: ReservationStatus;
+  guest_name: string | null;
+}
+
+// Forma del feed `/api/reservation-status-history` (NO la embebida en la reserva): cada
+// entrada trae la anterior de su reserva, resuelta por el servidor contra el ciclo de vida
+// completo, así que el Δt es exacto aunque el filtro de día deje fuera el alta.
+export interface StatusHistoryFeedEntry extends ReservationStatusHistoryEntry {
+  previous_status: ReservationStatus | null;
+  previous_changed_at: string | null;
+  reservation?: StatusHistoryReservationSummary;
+}
+
 // Tal cual lo devuelve ReservationResponseDto. `guests`/`tables`/`notes`/`status_history` sólo
 // vienen hidratados cuando el servicio los ha unido (findAll y findOne los traen; el POST
 // devuelve findOne, así que también).
@@ -187,6 +207,9 @@ export interface Reservation {
   source: string | null;
   special_requests: string | null;
   created_by: number | null;
+  /** Encargado que autorizó reservar por encima del aforo o del ritmo de llegadas. */
+  capacity_override_by?: number | null;
+  capacity_override_at?: string | null;
   created_at?: string;
   guests?: ReservationGuest[];
   tables?: ReservationTableLink[];
@@ -205,6 +228,12 @@ export interface ReservationDraft {
   source?: string;
   special_requests?: string;
   table_ids?: number[];
+  /**
+   * Credenciales del encargado para forzar una franja llena (sólo tras un 409
+   * CAPACITY_OVERRIDE_REQUIRED). El servidor las verifica y NO las guarda: guarda quién
+   * autorizó en `capacity_override_by`.
+   */
+  manager_override?: { email: string; password: string };
 }
 
 // El CRM sólo tiene `name` (un único campo), no first_name/last_name como dice la historia.
