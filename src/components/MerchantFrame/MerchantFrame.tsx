@@ -389,7 +389,7 @@ export const MerchantFrame: React.FC = () => {
     };
   }, [refreshTrigger]);
 
-  // Cargar notificaciones (AC 5.1)
+  // Load notifications (AC 5.1)
   useEffect(() => {
     let ignore = false;
 
@@ -1326,7 +1326,7 @@ export const MerchantFrame: React.FC = () => {
                     <span className="font-sans text-[13px] tracking-tight">{cat.name}</span>
                   </div>
 
-                  {/* L2: Aplicaciones */}
+                  {/* L2: Applications */}
                   {isCatExpanded && (
                     <div className="mt-1 flex flex-col space-y-1">
                       {cat.applications.map((app) => {
@@ -1363,7 +1363,7 @@ export const MerchantFrame: React.FC = () => {
                               <span>{app.name}</span>
                             </div>
 
-                            {/* L3: Features (Omitido para Kitchen Display System) */}
+                            {/* L3: Features (Omitted for Kitchen Display System) */}
                             {isAppExpanded && !isKDSApp && (
                               <div className="ml-14 mt-1 border-l border-white/10 space-y-1">
                                 {app.features.map((feat) => {
@@ -1443,7 +1443,7 @@ export const MerchantFrame: React.FC = () => {
                     <span className="font-sans text-[13px] tracking-tight">{cat.name}</span>
                   </div>
 
-                  {/* Nivel 2: Aplicaciones */}
+                  {/* Level 2: Applications */}
                   {isCatExpanded && (
                     <div className="mt-1 flex flex-col space-y-1">
                       {cat.applications.map((app) => {
