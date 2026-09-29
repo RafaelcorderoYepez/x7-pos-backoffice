@@ -24,13 +24,15 @@ export const TipDetailDrawer: React.FC<TipDetailDrawerProps> = ({
 }) => {
   // Form State
   const [amount, setAmount] = useState<string>(tip ? String(tip.amount) : '0');
-  const [method, setMethod] = useState<TipMethod>(tip ? tip.method : 'CREDIT_CARD');
+  const [method, setMethod] = useState<TipMethod>(tip ? tip.method : 'CARD');
   const [paymentId, setPaymentId] = useState<string>(
     tip?.payment_id !== null && tip?.payment_id !== undefined ? String(tip.payment_id) : ''
   );
   const [status, setStatus] = useState<TipStatus>(tip ? tip.status : 'PENDING');
   const [recordStatus, setRecordStatus] = useState<TipRecordStatus>(tip ? tip.record_status : 'ACTIVE');
   const [notes, setNotes] = useState<string>(tip?.notes || '');
+
+  const isSettled = tip?.status === 'SETTLED' || status === 'SETTLED';
 
   // Payment Options & Status State
   const [paymentOptions, setPaymentOptions] = useState<PaymentOption[]>([]);
@@ -79,6 +81,7 @@ export const TipDetailDrawer: React.FC<TipDetailDrawerProps> = ({
 
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!tip) return;
     setErrorMessage(null);
     setSuccessMessage(null);
 
