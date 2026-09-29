@@ -12,7 +12,7 @@ import {
   rejectShiftSwapRequest,
   createShiftSwapRequest,
   fetchShiftAssignments,
-  INITIAL_COLLABORATORS,
+  fetchCollaborators,
   calculateProjectedWeeklyHours,
 } from '../../../../api/shifts';
 
@@ -82,7 +82,11 @@ export const ShiftSwapManagementView: React.FC<ShiftSwapManagementViewProps> = (
   };
   const [swaps, setSwaps] = useState<ShiftSwapRequest[]>([]);
   const [shifts, setShifts] = useState<ShiftAssignment[]>([]);
-  const [collaborators] = useState<Collaborator[]>(INITIAL_COLLABORATORS);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+
+  useEffect(() => {
+    fetchCollaborators().then(setCollaborators).catch(() => setCollaborators([]));
+  }, []);
   const [loading, setLoading] = useState<boolean>(true);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 

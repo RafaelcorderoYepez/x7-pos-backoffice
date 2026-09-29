@@ -79,6 +79,7 @@ shifts|Shifts Scheduler|shifts|2|0
 tip-movements|Tip movements history|tips|2|0
 tip-pool-members|Tip pool members layout|tips|2|0
 tip-settlements|Tip settlements engine|tips|2|0
+tips-cash-movements|Cash Tip Movements directory|tips|2|0
 tips|Tips Ledger Core|tips|2|0
 tips-allocations|Tips Allocations formulas|tips|2|0
 tips-pools|Tips pools rules|tips|2|0

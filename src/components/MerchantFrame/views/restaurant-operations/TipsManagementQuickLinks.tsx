@@ -73,11 +73,12 @@ export const TipsManagementQuickLinks: React.FC<TipsManagementQuickLinksProps> =
   return (
     <nav
       aria-label="Tips management navigation hub bar"
+      data-testid="tips-navigation-hub"
       className="sticky bottom-0 z-40 w-full bg-white/95 backdrop-blur-md border-t border-[#e8e2d8] shadow-lg py-3 px-6 font-poppins transition-all"
     >
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs font-bold text-[#8a7a68] uppercase tracking-wider font-poppins">
-          <span className="material-symbols-outlined text-base text-[#ae001a]">payments</span>
+          <span className="material-symbols-outlined text-base text-[#ae001a]">space_dashboard</span>
           <span>Tips Navigation Hub</span>
         </div>
         
@@ -93,6 +94,7 @@ export const TipsManagementQuickLinks: React.FC<TipsManagementQuickLinksProps> =
               <button
                 key={anchor.key}
                 type="button"
+                data-testid={`nav-link-${anchor.key}`}
                 onClick={() => onNavigate?.(anchor.route)}
                 className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold font-poppins transition-colors duration-200 ${
                   isActive

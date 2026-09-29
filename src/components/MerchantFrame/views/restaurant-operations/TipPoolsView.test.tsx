@@ -82,6 +82,20 @@ const TEST_TIP_POOLS: TipPool[] = [
   },
 ];
 
+function filterTestTipPools(params: any = {}): TipPool[] {
+  let filtered = [...TEST_TIP_POOLS];
+  if (params.search) {
+    const s = params.search.toLowerCase();
+    filtered = filtered.filter(
+      (p) =>
+        p.name.toLowerCase().includes(s) ||
+        `#pol-${p.id}`.toLowerCase().includes(s) ||
+        `#sft-${p.shift_id}`.toLowerCase().includes(s)
+    );
+  }
+  return filtered;
+}
+
 describe('Tip Pools Directory Management Workspace', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -128,7 +142,7 @@ describe('Tip Pools Directory Management Workspace', () => {
   describe('2. Search & Filter Matrix Precision', () => {
     it('filters data grid in real time by Pool Name, Pool ID (#POL-301), or Shift ID (#SFT-801)', async () => {
       const fetchSpy = vi.spyOn(tipPoolsApi, 'fetchTipPools').mockImplementation(async (params) => {
-        return tipPoolsApi.filterMockTipPools({ ...params });
+        return filterTestTipPools({ ...params });
       });
 
       render(<TipPoolsView companyId="cmp-01" merchantId="mch-01" />);

@@ -87,7 +87,7 @@ export const TimesheetCorrectionModal: React.FC<TimesheetCorrectionModalProps> =
 
   if (!isOpen || !record || !mounted) return null;
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -98,7 +98,7 @@ export const TimesheetCorrectionModal: React.FC<TimesheetCorrectionModalProps> =
 
     setIsSubmitting(true);
 
-    const result = updateAttendanceLedgerRecord({
+    const result = await updateAttendanceLedgerRecord({
       recordId: record.id,
       clockIn: clockIn.trim() || null,
       clockOut: clockOut.trim() || null,

@@ -74,6 +74,9 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     { id: 'cash-shifts', name: 'Cash Shifts', categoryId: 'restaurant-operations', categoryName: 'Restaurant Operations' },
     { id: 'cash-movements', name: 'Cash Movements', categoryId: 'restaurant-operations', categoryName: 'Restaurant Operations' },
     { id: 'cash-transactions', name: 'Cash Transactions Log', categoryId: 'restaurant-operations', categoryName: 'Restaurant Operations' },
+    { id: 'tips-cash-movements', name: 'Cash Tip Movements Directory', categoryId: 'restaurant-operations', categoryName: 'Restaurant Operations' },
+    { id: 'tips-settlements', name: 'Tip Settlements Engine', categoryId: 'restaurant-operations', categoryName: 'Restaurant Operations' },
+    { id: 'tips-ledger', name: 'Tips Ledger Core', categoryId: 'restaurant-operations', categoryName: 'Restaurant Operations' },
     { id: 'ledger-accounts', name: 'Chart of Accounts (Ledger)', categoryId: 'financial-engine', categoryName: 'Financial Engine' },
     { id: 'journal-entries', name: 'General Journal Entries', categoryId: 'financial-engine', categoryName: 'Financial Engine' },
     { id: 'journal-entries-lines', name: 'Posting Journal Lines', categoryId: 'financial-engine', categoryName: 'Financial Engine' },
@@ -166,6 +169,14 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     'cash-shifts',
     'cash-movements',
     'cash-transactions',
+    'tips',
+    'tips-ledger',
+    'tips-pools',
+    'tips-pool-members',
+    'tips-allocations',
+    'tips-settlements',
+    'tips-cash-movements',
+    'cash-tip-movements',
   ];
 
   const productsInventoryTabs = [

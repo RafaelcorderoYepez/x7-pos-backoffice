@@ -13,7 +13,7 @@ import {
   rejectOpenShiftPickup,
   cancelOpenShift,
   fetchShiftAssignments,
-  INITIAL_COLLABORATORS,
+  fetchCollaborators,
   findOverlappingShift,
 } from '../../../../api/shifts';
 import { StaffManagementQuickLinks } from './StaffManagementQuickLinks';
@@ -28,12 +28,25 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
 }) => {
   const [openShifts, setOpenShifts] = useState<OpenShift[]>([]);
   const [assignedShifts, setAssignedShifts] = useState<ShiftAssignment[]>([]);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Active persona for live testing & interaction (Supervisor vs Collaborator)
-  const [activeCollaborator, setActiveCollaborator] = useState<Collaborator>(
-    INITIAL_COLLABORATORS[0] // Default Carlos Mendoza (Supervisor)
-  );
+  const [activeCollaboratorState, setActiveCollaborator] = useState<Collaborator | null>(null);
+
+  useEffect(() => {
+    fetchCollaborators().then((cols) => {
+      setCollaborators(cols);
+      if (cols.length > 0) setActiveCollaborator(cols[0]);
+    }).catch(() => setCollaborators([]));
+  }, []);
+
+  const activeCollaborator: Collaborator = activeCollaboratorState ?? collaborators[0] ?? {
+    id: 'emp-101',
+    name: 'Carlos Mendoza',
+    role: 'Supervisor',
+    department: 'Floor Management',
+  };
 
   // Filters
   const [selectedRole, setSelectedRole] = useState<CollaboratorRole | 'ALL'>('ALL');
@@ -354,12 +367,12 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
           <select
             value={activeCollaborator.id}
             onChange={(e) => {
-              const found = INITIAL_COLLABORATORS.find((c) => c.id === e.target.value);
+              const found = collaborators.find((c) => c.id === e.target.value);
               if (found) setActiveCollaborator(found);
             }}
             className="bg-[#fef9f1] text-[#1d1c17] border border-[#e8e2d8] rounded px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-[#ae001a]"
           >
-            {INITIAL_COLLABORATORS.map((collab) => (
+            {collaborators.map((collab) => (
               <option key={collab.id} value={collab.id}>
                 {collab.name} ({collab.role} - {collab.department})
               </option>

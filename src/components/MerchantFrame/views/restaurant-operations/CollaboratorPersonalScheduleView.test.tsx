@@ -93,6 +93,11 @@ const MOCK_SWAPS: ShiftSwapRequest[] = [
 describe('CollaboratorPersonalScheduleView Component', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(shiftsApi, 'fetchCollaborators').mockResolvedValue([
+      { id: 'emp-101', name: 'Carlos Mendoza', role: 'Supervisor', department: 'Floor Management' },
+      { id: 'emp-102', name: 'Sofia Rodriguez', role: 'Waitstaff', department: 'Dining Room' },
+      { id: 'emp-103', name: 'Mateo Hernandez', role: 'Waitstaff', department: 'Dining Room' },
+    ]);
     vi.spyOn(shiftsApi, 'fetchMyShiftAssignments').mockResolvedValue(MOCK_MY_SHIFTS);
     vi.spyOn(shiftsApi, 'fetchShiftSwapRequests').mockResolvedValue(MOCK_SWAPS);
   });

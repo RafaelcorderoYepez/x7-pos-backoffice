@@ -64,6 +64,8 @@ import { TipsLedgerView } from './views/restaurant-operations/TipsLedgerView';
 import { TipPoolsView } from './views/restaurant-operations/TipPoolsView';
 import { TipPoolMembersView } from './views/restaurant-operations/TipPoolMembersView';
 import { TipAllocationsView } from './views/restaurant-operations/TipAllocationsView';
+import { TipSettlementsView } from './views/restaurant-operations/TipSettlementsView';
+import { CashTipMovementsView } from './views/restaurant-operations/CashTipMovementsView';
 import { OpenShiftsMarketplaceView } from './views/restaurant-operations/OpenShiftsMarketplaceView';
 import { LaborCostForecastingView } from './views/restaurant-operations/LaborCostForecastingView';
 import { LedgerAccountsView } from './views/financial-engine/LedgerAccountsView';
@@ -290,7 +292,103 @@ export const MerchantFrame: React.FC = () => {
 
   // Handle external side effects (sessionStorage) on route change
   useEffect(() => {
-    if (location.pathname === '/dashboard') {
+    const path = location.pathname;
+    if (path === '/legal/privacy-policy') {
+      setActiveCategory('legal');
+      setActiveTab('privacy-policy');
+    } else if (path === '/legal/terms-of-service') {
+      setActiveCategory('legal');
+      setActiveTab('terms-of-service');
+    } else if (path === '/support/help-center') {
+      setActiveCategory('support');
+      setActiveTab('help-center');
+    } else if (path === '/dashboard/products') {
+      setActiveCategory('inventory');
+      setActiveTab('products');
+    } else if (path === '/dashboard/categories') {
+      setActiveCategory('inventory');
+      setActiveTab('categories');
+    } else if (path === '/dashboard/merchants') {
+      setActiveCategory('platformsaas');
+      setActiveTab('merchant-directory');
+    } else if (path === '/dashboard/users') {
+      setActiveCategory('platformsaas');
+      setActiveTab('user-management');
+    } else if (path === '/dashboard/company-profile') {
+      setActiveCategory('platformsaas');
+      setActiveTab('company-profile');
+    } else if (path === '/dashboard/company-configurations') {
+      setActiveCategory('platformsaas');
+      setActiveTab('company-configurations');
+    } else if (path === '/staff-management/schedule/roster') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('staff-roster');
+    } else if (path === '/staff-management/schedule/assignments') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('shift-assignment');
+    } else if (path === '/staff-management/schedule/daily' || path === '/staff-management/schedule/timeline') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('daily-timeline');
+    } else if (path === '/staff-management/schedule/shifts' || path === '/staff-management/schedule/scheduler') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('shifts');
+    } else if (path === '/staff-management/schedule/swaps') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('staff-swaps');
+    } else if (path === '/staff-management/schedule/marketplace' || path === '/staff-management/schedule/open-shifts') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('open-shifts');
+    } else if (path === '/staff-management/schedule/labor-forecasting' || path === '/staff-management/schedule/forecasting') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('labor-forecasting');
+    } else if (path === '/staff-management/attendance/ledger') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('collaborators-time-entries');
+    } else if (path === '/staff-management/schedule/me') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('my-schedule');
+    } else if (path === '/staff-management/attendance/kiosk') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('time-clock-kiosk');
+    } else if (path === '/store-operations/tips-ledger' || path === '/tips/ledger') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-ledger');
+    } else if (path === '/store-operations/tips-allocations' || path === '/tips/allocations') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-allocations');
+    } else if (path === '/store-operations/tips-pools' || path === '/store-operations/tip-pools' || path === '/tips/pools') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-pools');
+    } else if (path === '/store-operations/tips-pool-members' || path === '/store-operations/tip-pool-members' || path === '/tips/pool-members') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-pool-members');
+    } else if (path === '/store-operations/tips-settlements' || path === '/store-operations/tip-settlements' || path === '/tips/settlements') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-settlements');
+    } else if (path === '/tips/cash-movements' || path === '/store-operations/tips-cash-movements' || path === '/store-operations/cash-tip-movements') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('tips-cash-movements');
+    } else if (path === '/store-operations/cash-movements') {
+      setActiveCategory('restaurant-operations');
+      setActiveTab('cash-movements');
+    } else if (path === '/dashboard/raw-materials' || path === '/inventory/raw-materials') {
+      setActiveCategory('inventory');
+      setActiveTab('raw-materials');
+    } else if (path === '/dashboard/raw-material-categories') {
+      setActiveCategory('inventory');
+      setActiveTab('raw-material-categories');
+    } else if (path === '/dashboard/recipes' || path === '/inventory/recipes') {
+      setActiveCategory('inventory');
+      setActiveTab('recipes');
+    } else if (path === '/inventory/stocks') {
+      setActiveCategory('inventory');
+      setActiveTab('stock-movements');
+    } else if (path === '/inventory/movements') {
+      setActiveCategory('inventory');
+      setActiveTab('movements');
+    } else if (path === '/dashboard') {
+      const stateTab = location.state?.activeTab;
+      const stateCategory = location.state?.activeCategory;
       const stateMerchantId = location.state?.merchantId;
       if (stateMerchantId != null) {
         sessionStorage.setItem('x7:branch-context', String(stateMerchantId));
@@ -727,11 +825,21 @@ export const MerchantFrame: React.FC = () => {
       ) {
         setActiveCategory('restaurant-operations');
         setActiveTab('tips-pool-members');
-        safeNavigate('/tips/pool-members');
-      } else if (target === '/tips/cash-movements' || target === 'tips-cash-movements' || target === 'cash-movements') {
+        try { navigate('/tips/pool-members'); } catch (e) {}
+      } else if (
+        target === '/store-operations/tips-settlements' ||
+        target === '/store-operations/tip-settlements' ||
+        target === '/tips/settlements' ||
+        target === 'tips-settlements' ||
+        target === 'tip-settlements'
+      ) {
         setActiveCategory('restaurant-operations');
-        setActiveTab('cash-movements');
-        safeNavigate('/tips/cash-movements');
+        setActiveTab('tips-settlements');
+        try { navigate('/tips/settlements'); } catch (e) {}
+      } else if (target === '/tips/cash-movements' || target === 'tips-cash-movements' || target === 'cash-tip-movements') {
+        setActiveCategory('restaurant-operations');
+        setActiveTab('tips-cash-movements');
+        try { navigate('/tips/cash-movements'); } catch (e) {}
       } else {
         setActiveTab(target);
       }
@@ -787,6 +895,14 @@ export const MerchantFrame: React.FC = () => {
 
     if (activeTab === 'tips-allocations' || activeTab === 'tip-allocations' || activeTab === '/tips/allocations' || activeTab === '/store-operations/tips-allocations') {
       return <TipAllocationsView onNavigate={handleStaffNavigate} />;
+    }
+
+    if (activeTab === 'tips-settlements' || activeTab === 'tip-settlements' || activeTab === '/tips/settlements' || activeTab === '/store-operations/tips-settlements') {
+      return <TipSettlementsView onNavigate={handleStaffNavigate} />;
+    }
+
+    if (activeTab === 'tips-cash-movements' || activeTab === 'cash-tip-movements' || activeTab === '/tips/cash-movements') {
+      return <CashTipMovementsView onNavigate={handleStaffNavigate} />;
     }
 
     if (activeTab === 'time-clock' || activeTab === 'time-clock-kiosk' || activeTab === 'kiosk') {

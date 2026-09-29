@@ -32,12 +32,16 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({ onNavigate }) 
   const [filterPunchType, setFilterPunchType] = useState<string>('ALL');
   const [filterOverrideOnly, setFilterOverrideOnly] = useState<boolean>(false);
 
-  const loadData = () => {
-    const rawPunches = fetchTimeEntries();
-    setEntries(rawPunches);
+  const loadData = async () => {
+    try {
+      const rawPunches = await fetchTimeEntries();
+      setEntries(rawPunches);
 
-    const ledger = fetchAttendanceLedgerRecords();
-    setLedgerRecords(ledger);
+      const ledger = await fetchAttendanceLedgerRecords();
+      setLedgerRecords(ledger);
+    } catch (err) {
+      console.error('Failed to load attendance entries:', err);
+    }
   };
 
   useEffect(() => {

@@ -9,7 +9,7 @@ import {
   createTipPoolMember,
   updateTipPoolMember,
   fetchTipPoolMembers,
-  MOCK_COLLABORATOR_OPTIONS,
+  fetchCollaboratorOptions,
 } from '../../../../api/tip-pool-members';
 import { fetchTipPools } from '../../../../api/tip-pools';
 import type { TipPool } from '../../../../types/tip-pools';
@@ -63,7 +63,7 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
 
   // Data Select Options
   const [pools, setPools] = useState<TipPool[]>([]);
-  const [collaborators] = useState<CollaboratorOption[]>(MOCK_COLLABORATOR_OPTIONS);
+  const [collaborators, setCollaborators] = useState<CollaboratorOption[]>([]);
   const [allActiveMembers, setAllActiveMembers] = useState<TipPoolMember[]>(existingMembers);
   const [loadingPools, setLoadingPools] = useState<boolean>(true);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -74,9 +74,17 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
   const [prevMember, setPrevMember] = useState(member);
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
 
-  if (member !== prevMember || isOpen !== prevIsOpen) {
-    setPrevMember(member);
-    setPrevIsOpen(isOpen);
+    fetchTipPoolMembers({ record_status: 'ACTIVE' })
+      .then((membersList) => setAllActiveMembers(membersList))
+      .catch(() => setAllActiveMembers(existingMembers));
+
+    fetchCollaboratorOptions()
+      .then((opts) => setCollaborators(opts))
+      .catch(() => setCollaborators([]));
+  }, [companyId, merchantId, existingMembers]);
+
+  useEffect(() => {
+    if (!isOpen) return;
     if (member) {
       setTipPoolId(String(member.tip_pool_id));
       setCollaboratorId(String(member.collaborator_id));

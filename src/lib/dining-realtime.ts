@@ -1,6 +1,5 @@
 // Canal de tiempo real del dining system: el vocabulario de eventos que comparten el POS,
 // el backoffice y el gateway del backend, y el transporte que los trae.
-//
 // El backend expone un único namespace socket.io (/realtime) y mete a cada socket en la sala
 // de su comercio al autenticar, así que aquí no hay que suscribirse a nada: basta conectar
 // con el token y escuchar. Si el gateway está apagado (WS_ENABLED=false) o la red se cae,

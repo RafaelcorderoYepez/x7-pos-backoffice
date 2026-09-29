@@ -114,6 +114,11 @@ const MOCK_SHIFTS: ShiftAssignment[] = [
 describe('OpenShiftsMarketplaceView Component', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(shiftsApi, 'fetchCollaborators').mockResolvedValue([
+      { id: 'emp-101', name: 'Carlos Mendoza', role: 'Supervisor', department: 'Floor Management' },
+      { id: 'emp-102', name: 'Sofia Rodriguez', role: 'Waitstaff', department: 'Dining Room' },
+      { id: 'emp-104', name: 'Valeria Gomez', role: 'Bartender', department: 'Bar & Lounge' },
+    ]);
     vi.spyOn(shiftsApi, 'fetchOpenShifts').mockResolvedValue([...MOCK_OPEN_SHIFTS]);
     vi.spyOn(shiftsApi, 'fetchShiftAssignments').mockResolvedValue([...MOCK_SHIFTS]);
   });

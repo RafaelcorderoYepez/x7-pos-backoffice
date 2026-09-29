@@ -681,7 +681,9 @@ describe('FloorPlanEditor', () => {
       renderEditor();
 
       await screen.findByTestId('floor-table-101');
-      fireEvent.keyDown(screen.getByTestId('floor-table-101'), { key: 'ArrowRight' });
+      const tableEl = screen.getByTestId('floor-table-101');
+      fireEvent.click(tableEl);
+      fireEvent.keyDown(tableEl, { key: 'ArrowRight' });
 
       expect(screen.getByLabelText('X (m)')).toHaveValue(0.3);
       expect(saveButton()).toBeEnabled();

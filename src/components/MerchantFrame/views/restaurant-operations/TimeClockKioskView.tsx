@@ -43,6 +43,11 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
   const [authenticatedAccount, setAuthenticatedAccount] = useState<CollaboratorPinAccount | null>(null);
   const [punchState, setPunchState] = useState<CollaboratorPunchState>('OFF_DUTY');
   const [shiftEval, setShiftEval] = useState<ShiftEvaluationResult | null>(null);
+  const [supervisorsList, setSupervisorsList] = useState<CollaboratorPinAccount[]>([]);
+
+  useEffect(() => {
+    getSupervisors().then(setSupervisorsList).catch(() => setSupervisorsList([]));
+  }, []);
 
   // Badge scan simulation state
   const [isBadgeMode, setIsBadgeMode] = useState<boolean>(false);
@@ -175,7 +180,7 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
   };
 
   const attemptPinAuth = async (pinToTest: string) => {
-    const res = validatePin(pinToTest, DEFAULT_CONFIG);
+    const res = await validatePin(pinToTest, DEFAULT_CONFIG);
     if (!res.success) {
       if (res.isLockedOut) {
         setLockoutSeconds(res.lockoutSecondsRemaining || 30);
@@ -187,7 +192,7 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
 
     if (res.account) {
       setAuthenticatedAccount(res.account);
-      const state = getCollaboratorPunchState(res.account.collaboratorId);
+      const state = await getCollaboratorPunchState(res.account.collaboratorId);
       setPunchState(state);
       const evalRes = await evaluateScheduledShift(res.account.collaboratorId);
       setShiftEval(evalRes);
@@ -212,7 +217,8 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
         setPendingPunchType(type);
         setShiftEval(evalRes);
         // Preselect first supervisor
-        const supervisors = getSupervisors();
+        const supervisors = await getSupervisors();
+        setSupervisorsList(supervisors);
         if (supervisors.length > 0) {
           setSelectedSupervisorId(supervisors[0].collaboratorId);
         }
@@ -272,7 +278,7 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
       return;
     }
 
-    const authSup = validateSupervisorPin(selectedSupervisorId, supervisorPin);
+    const authSup = await validateSupervisorPin(selectedSupervisorId, supervisorPin);
     if (!authSup.success) {
       setOverrideError(authSup.error || 'Invalid supervisor authorization.');
       return;
@@ -786,7 +792,7 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
                   onChange={(e) => setSelectedSupervisorId(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-900 border border-gray-700 text-white font-bold rounded-xl focus:border-amber-500 focus:outline-none"
                 >
-                  {getSupervisors().map((sup) => (
+                  {supervisorsList.map((sup) => (
                     <option key={sup.collaboratorId} value={sup.collaboratorId}>
                       {sup.name} ({sup.role})
                     </option>

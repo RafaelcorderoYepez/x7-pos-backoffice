@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { TipAllocationsView } from './TipAllocationsView';
 import * as tipAllocationsApi from '../../../../api/tip-allocations';
+import * as tipPoolMembersApi from '../../../../api/tip-pool-members';
 import type { TipAllocation } from '../../../../types/tip-allocations';
 
 const TEST_TIP_ALLOCATIONS: TipAllocation[] = [
@@ -106,6 +107,22 @@ const TEST_TIP_ALLOCATIONS: TipAllocation[] = [
 describe('Tip Allocations Directory Workspace & Form Drawer', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(tipAllocationsApi, 'fetchTipAllocations').mockResolvedValue(
+      TEST_TIP_ALLOCATIONS.filter((a) => a.record_status === 'ACTIVE')
+    );
+    vi.spyOn(tipAllocationsApi, 'fetchTipOptions').mockResolvedValue([
+      { id: 201, label: '#TIP-201 - $25.00 (CARD)', amount: 25.0, status: 'ALLOCATED' },
+      { id: 202, label: '#TIP-202 - $18.75 (CASH)', amount: 18.75, status: 'ALLOCATED' },
+    ]);
+    vi.spyOn(tipAllocationsApi, 'fetchShiftOptions').mockResolvedValue([
+      { id: 801, label: '#SFT-801 (2026-08-25)' },
+      { id: 802, label: '#SFT-802 (2026-08-25)' },
+    ]);
+    vi.spyOn(tipPoolMembersApi, 'fetchCollaboratorOptions').mockResolvedValue([
+      { id: 101, name: 'Mateo Silva (WAITER)' },
+      { id: 102, name: 'Sofia Rodríguez (BARTENDER)' },
+      { id: 103, name: 'Carlos Mendoza (RUNNER)' },
+    ]);
   });
 
   afterEach(() => {
@@ -318,6 +335,12 @@ describe('Tip Allocations Directory Workspace & Form Drawer', () => {
       // Select Tip #TIP-201 which already has 50% + 25% = 75% allocated
       const tipSelect = screen.getByTestId('drawer-tip-id-select');
       fireEvent.change(tipSelect, { target: { value: '201' } });
+
+      const collabSelect = screen.getByTestId('drawer-collaborator-id-select');
+      fireEvent.change(collabSelect, { target: { value: '101' } });
+
+      const shiftSelect = screen.getByTestId('drawer-shift-id-select');
+      fireEvent.change(shiftSelect, { target: { value: '801' } });
 
       // Enter 40% which makes total 75% + 40% = 115% (> 100%)
       const pctInput = screen.getByTestId('drawer-percentage-input');

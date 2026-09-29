@@ -11,11 +11,10 @@ import {
   createTipAllocation,
   updateTipAllocation,
   checkAllocationCeilingGuard,
-  MOCK_TIP_OPTIONS,
-  MOCK_SHIFT_OPTIONS,
-  MOCK_TIP_ALLOCATIONS,
+  fetchTipOptions,
+  fetchShiftOptions,
 } from '../../../../api/tip-allocations';
-import { MOCK_COLLABORATOR_OPTIONS } from '../../../../api/tip-pool-members';
+import { fetchCollaboratorOptions } from '../../../../api/tip-pool-members';
 import type { CollaboratorOption } from '../../../../types/tip-pool-members';
 
 export interface TipAllocationFormDrawerProps {
@@ -45,14 +44,20 @@ export const TipAllocationFormDrawer: React.FC<TipAllocationFormDrawerProps> = (
   onClose,
   onSaved,
   defaultTipId,
-  existingAllocations = MOCK_TIP_ALLOCATIONS,
+  existingAllocations = [],
 }) => {
   const isEditMode = allocation !== null;
 
-  // Options Data
-  const tips: TipOption[] = MOCK_TIP_OPTIONS;
-  const shifts: ShiftOption[] = MOCK_SHIFT_OPTIONS;
-  const collaborators: CollaboratorOption[] = MOCK_COLLABORATOR_OPTIONS;
+  // Options Data State
+  const [tips, setTips] = useState<TipOption[]>([]);
+  const [shifts, setShifts] = useState<ShiftOption[]>([]);
+  const [collaborators, setCollaborators] = useState<CollaboratorOption[]>([]);
+
+  useEffect(() => {
+    fetchTipOptions().then(setTips).catch(() => setTips([]));
+    fetchShiftOptions().then(setShifts).catch(() => setShifts([]));
+    fetchCollaboratorOptions().then(setCollaborators).catch(() => setCollaborators([]));
+  }, []);
 
   // Form Field State
   const [tipId, setTipId] = useState<string>(
