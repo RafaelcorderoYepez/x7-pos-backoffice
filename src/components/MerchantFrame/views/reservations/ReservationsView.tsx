@@ -48,12 +48,17 @@ import {
   createReservationGuest,
   listCustomers,
   listReservations,
-  listTablesForCapacity,
   updateReservation,
 } from '../../../../api/reservations';
 import { ApiError } from '../../../../lib/api-error';
 import { Toast, type ToastState } from '../../shared/Toast';
-import { ReservationsQuickLinks } from './ReservationsQuickLinks';
+import { ManagerOverrideDialog } from './ManagerOverrideDialog';
+import { CapacitySettingsDrawer } from './CapacitySettingsDrawer';
+import {
+  isCapacityOverrideError,
+  type ManagerOverride,
+} from '../../../../lib/reservation-capacity';
+import { getStoredUser } from '../../../../lib/auth-storage';
 import {
   ReservationFormDrawer,
   type ReservationSubmitPayload,
@@ -69,14 +74,12 @@ interface ReservationsViewProps {
 const SERVICE_START_HOUR = 11;
 const SERVICE_END_HOUR = 23;
 
-export const ReservationsView: React.FC<ReservationsViewProps> = ({
-  onNavigate,
-  merchantId,
-}) => {
+// `onNavigate` sigue en las props (MerchantFrame lo pasa a todas las vistas), pero la
+// navegación entre sub-módulos la hace ya la NavHubBar del módulo, montada por MerchantFrame.
+export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }) => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<CustomerRef[]>([]);
   const [customersError, setCustomersError] = useState('');
-  const [tables, setTables] = useState<Array<{ capacity?: number; status?: string }>>([]);
 
   const [day, setDay] = useState<string>(todayIsoDate());
   const [filters, setFilters] = useState<ReservationFilters>(EMPTY_FILTERS);
@@ -88,6 +91,22 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [transitioningId, setTransitioningId] = useState<number | null>(null);
+  // Último 409 de aforo del alta, atado a la franja que lo provocó (fecha|grupo|duración): si
+  // la anfitriona elige otra franja, el aviso deja de aplicar solo.
+  const [capacityConflict, setCapacityConflict] = useState<{ key: string; message: string } | null>(
+    null,
+  );
+  // Transición (confirmar) rechazada por aforo, a la espera del override del encargado.
+  const [overridePrompt, setOverridePrompt] = useState<{
+    reservation: Reservation;
+    next: ReservationStatus;
+    message: string;
+  } | null>(null);
+  const [overrideSubmitting, setOverrideSubmitting] = useState(false);
+  const [overrideError, setOverrideError] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Sólo el encargado edita aforo y turnos (el backend lo exige igualmente con un 403).
+  const canManageCapacity = getStoredUser()?.role === 'merchant_admin';
   const [toast, setToast] = useState<ToastState | null>(null);
 
   useEffect(() => {
@@ -140,16 +159,6 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({
             'The customer directory is unavailable — you can still book the table as a guest.',
           );
         }
-      }
-    })();
-
-    void (async () => {
-      try {
-        const rows = await listTablesForCapacity();
-        if (!cancelled) setTables(rows);
-      } catch (err) {
-        console.error('Error fetching tables for capacity check:', err);
-        if (!cancelled) setTables([]);
       }
     })();
 
@@ -251,6 +260,12 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({
         type: 'success',
       });
     } catch (err) {
+      // Confirmar en una franja llena: no es un fallo, es el momento del override.
+      if (isCapacityOverrideError(err)) {
+        setOverrideError('');
+        setOverridePrompt({ reservation, next, message: err.message });
+        return;
+      }
       console.error('Error transitioning reservation:', err);
       setToast({
         message:
@@ -259,6 +274,33 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({
       });
     } finally {
       setTransitioningId(null);
+    }
+  };
+
+  const retryTransitionWithOverride = async (override: ManagerOverride) => {
+    if (!overridePrompt) return;
+    const { reservation, next } = overridePrompt;
+    setOverrideSubmitting(true);
+    setOverrideError('');
+    try {
+      const updated = await updateReservation(reservation.id, {
+        status: next,
+        manager_override: override,
+      });
+      setReservations((prev) =>
+        prev.map((r) => (r.id === reservation.id ? { ...r, ...updated } : r)),
+      );
+      setOverridePrompt(null);
+      setToast({
+        message: `${reservationCode(reservation.id)} → ${RESERVATION_STATUS_LABELS[next]} (manager override)`,
+        type: 'success',
+      });
+    } catch (err) {
+      setOverrideError(
+        err instanceof ApiError ? err.message : 'The manager override could not be applied.',
+      );
+    } finally {
+      setOverrideSubmitting(false);
     }
   };
 
@@ -302,11 +344,25 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({
 
       await fetchReservations();
       setFormOpen(false);
+      setCapacityConflict(null);
       setToast({
-        message: `${reservationCode(reservation.id)} booked for ${clockTime(reservation.reservation_date)}`,
+        message: `${reservationCode(reservation.id)} booked for ${clockTime(reservation.reservation_date)}${
+          reservation.capacity_override_by != null ? ' (manager override)' : ''
+        }`,
         type: 'success',
       });
     } catch (err) {
+      // Franja llena al guardar: el drawer pasa a pedir el override del encargado para ESA
+      // franja, en vez de mostrar un error sin salida.
+      if (isCapacityOverrideError(err)) {
+        const { draft } = payload;
+        setCapacityConflict({
+          key: `${draft.reservation_date}|${draft.party_size}|${draft.duration_minutes}`,
+          message: err.message,
+        });
+        setFormError('');
+        return;
+      }
       console.error('Error creating the reservation:', err);
       setFormError(
         err instanceof ApiError ? err.message : 'Failed to create the reservation.',
@@ -511,10 +567,23 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({
           >
             Today
           </button>
+          {canManageCapacity ? (
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="px-4 py-2 border border-[#e8e2d8] text-[#5f5e5e] text-[11px] font-bold uppercase tracking-widest rounded hover:text-primary hover:border-[#ae001a] transition-colors duration-200 flex items-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-base" aria-hidden="true">
+                schedule
+              </span>
+              Capacity &amp; Shifts
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => {
               setFormError('');
+              setCapacityConflict(null);
               setFormOpen(true);
             }}
             className="px-5 py-2.5 bg-[#ae001a] hover:bg-[#930015] text-white text-[11px] font-bold uppercase tracking-widest rounded transition-colors duration-200 flex items-center gap-2"
@@ -783,21 +852,41 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({
         <ReservationFormDrawer
           customers={customers}
           customersError={customersError}
-          tables={tables}
-          reservations={reservations}
+          capacityConflict={capacityConflict}
           defaultDate={day}
           submitting={formSubmitting}
           formError={formError}
-          onCancel={() => setFormOpen(false)}
+          onCancel={() => {
+            setFormOpen(false);
+            setCapacityConflict(null);
+          }}
           onSubmit={(payload) => void handleCreate(payload)}
         />
       ) : null}
 
+      {overridePrompt ? (
+        <ManagerOverrideDialog
+          title={`Confirm ${reservationCode(overridePrompt.reservation.id)} over capacity`}
+          reason={overridePrompt.message}
+          submitLabel={`Authorize & ${RESERVATION_STATUS_LABELS[overridePrompt.next].toLowerCase()}`}
+          submitting={overrideSubmitting}
+          error={overrideError}
+          onCancel={() => setOverridePrompt(null)}
+          onSubmit={(override) => void retryTransitionWithOverride(override)}
+        />
+      ) : null}
+
+      {settingsOpen ? (
+        <CapacitySettingsDrawer
+          onCancel={() => setSettingsOpen(false)}
+          onSaved={() => {
+            setSettingsOpen(false);
+            setToast({ message: 'Capacity & shift settings saved', type: 'success' });
+          }}
+        />
+      ) : null}
+
       <Toast toast={toast} onClose={() => setToast(null)} />
-      {/* Panel de accesos rápidos estándar (QuickLaunchPanel), como el resto de módulos. */}
-      <div>
-        <ReservationsQuickLinks current="reservations" onNavigate={onNavigate} />
-      </div>
 
     </div>
   );

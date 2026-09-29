@@ -11,7 +11,7 @@
 //    terraza o juntar dos de cuatro; convertirlo en un error impediría reservas legítimas.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { CustomerRef, Reservation, ReservationDraft } from '../../../../types/reservation';
+import type { CustomerRef, ReservationDraft } from '../../../../types/reservation';
 import {
   DEFAULT_DURATION_MINUTES,
   RESERVATION_SOURCES,
@@ -19,8 +19,6 @@ import {
   RESERVATION_SOURCE_LABELS,
 } from '../../../../types/reservation';
 import {
-  capacityWarningMessage,
-  checkFloorCapacity,
   composeReservationDate,
   durationError,
   partySizeError,
@@ -34,6 +32,17 @@ import {
   guestPhoneError,
 } from '../../../../lib/reservation-guests';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
+import {
+  findSlot,
+  hasOverrideErrors,
+  slotSummary,
+  type DayAvailability,
+  type ManagerOverride,
+} from '../../../../lib/reservation-capacity';
+import { getAvailability } from '../../../../api/reservations';
+import { ApiError } from '../../../../lib/api-error';
+import { SlotAvailabilityMatrix } from './SlotAvailabilityMatrix';
+import { ManagerOverrideFields } from './ManagerOverrideFields';
 import { AppModal, ModalFormError, ModalFormFooter } from '../../shared/AppModal';
 
 // Contacto ligero que se adjunta a la reserva cuando no hay ficha de CRM detrás.
@@ -67,9 +76,12 @@ interface ReservationFormDrawerProps {
   customers: CustomerRef[];
   /** Motivo por el que el directorio de clientes está vacío, si la carga falló. */
   customersError?: string;
-  tables: Array<{ capacity?: number; status?: string }>;
-  /** Reservas ya en el libro: alimentan el cálculo de plazas comprometidas en la franja. */
-  reservations: Reservation[];
+  /**
+   * Mensaje del último 409 CAPACITY_OVERRIDE_REQUIRED del servidor, si el guardado chocó con
+   * el aforo (p. ej. otra anfitriona ocupó la franja entre que se pintó la matriz y se pulsó
+   * guardar). Mientras exista, el drawer pide el override del encargado.
+   */
+  capacityConflict?: { key: string; message: string } | null;
   /** Día que el workspace tiene abierto: el drawer arranca ahí, no en "hoy". */
   defaultDate: string;
   submitting: boolean;
@@ -99,8 +111,7 @@ const labelClass = 'text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wide
 export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
   customers,
   customersError = '',
-  tables,
-  reservations,
+  capacityConflict = null,
   defaultDate,
   submitting,
   formError,
@@ -108,7 +119,9 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
   onSubmit,
 }) => {
   const [date, setDate] = useState(defaultDate || todayIsoDate());
-  const [time, setTime] = useState('19:00');
+  // La hora sale de la matriz de franjas de los turnos, no de un campo libre: arranca vacía
+  // hasta que la anfitriona pulsa una franja.
+  const [time, setTime] = useState('');
   const [partySize, setPartySize] = useState('2');
   const [duration, setDuration] = useState(String(DEFAULT_DURATION_MINUTES));
   const [source, setSource] = useState<string>('phone');
@@ -120,10 +133,15 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [guest, setGuest] = useState<GuestContactDraft>({ name: '', email: '', phone: '' });
   const [newCustomer, setNewCustomer] = useState<NewCustomerDraft>(EMPTY_CUSTOMER);
-  // Firma de la franja para la que se reconoció el aviso de sobreventa, no un booleano: si la
-  // anfitriona cambia la hora o el tamaño del grupo, el aviso que aceptó ya no es el que tiene
-  // delante y el reconocimiento caduca solo, sin un efecto que lo rearme.
-  const [acknowledgedSlot, setAcknowledgedSlot] = useState<string | null>(null);
+  const [override, setOverride] = useState<ManagerOverride>({ email: '', password: '' });
+  // Último resultado de disponibilidad, etiquetado con la consulta que lo produjo: si la
+  // anfitriona cambia día, grupo o duración, el resultado viejo deja de valer solo (sin un
+  // efecto que lo borre) y la matriz se muestra cargando hasta que llega el nuevo.
+  const [availabilityResult, setAvailabilityResult] = useState<{
+    key: string;
+    data: DayAvailability | null;
+    error: string;
+  } | null>(null);
   const [touched, setTouched] = useState(false);
 
   const searchBoxRef = useRef<HTMLDivElement | null>(null);
@@ -139,7 +157,8 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
-  const dateError = reservationDateError(date, time);
+  // Sin hora todavía sólo se valida el día; la falta de franja la explica `timeError`.
+  const dateError = time ? reservationDateError(date, time) : date ? '' : 'Reservation date is required';
   const partyError = partySizeError(partySize);
   const durError = durationError(duration);
 
@@ -151,26 +170,80 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
   // Búsqueda sin resultados con algo escrito: es el momento de ofrecer crear la ficha.
   const noMatches = customerQuery.trim().length >= 2 && suggestions.length === 0;
 
-  const startIso = useMemo(
-    () => (dateError ? '' : composeReservationDate(date, time)),
-    [date, time, dateError],
-  );
+  // Disponibilidad en vivo: el servidor evalúa cada franja del día para ESTE grupo y esta
+  // duración, así el semáforo aparece ANTES de pulsar guardar y no como un error posterior.
+  // Espera un instante a que se deje de teclear el tamaño del grupo.
+  const availabilityKey =
+    /^\d{4}-\d{2}-\d{2}$/.test(date) && !partyError && !durError
+      ? `${date}|${partySize}|${duration}`
+      : '';
+  useEffect(() => {
+    if (!availabilityKey) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const data = await getAvailability({
+            date,
+            partySize: Number(partySize),
+            durationMinutes: Number(duration),
+          });
+          if (!cancelled) setAvailabilityResult({ key: availabilityKey, data, error: '' });
+        } catch (err) {
+          if (cancelled) return;
+          setAvailabilityResult({
+            key: availabilityKey,
+            data: null,
+            error:
+              err instanceof ApiError
+                ? err.message
+                : 'Slot availability could not be loaded; capacity is still checked on save.',
+          });
+        }
+      })();
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [availabilityKey, date, partySize, duration]);
 
-  // Comprobación de aforo en vivo: se recalcula con cada tecla del tamaño del grupo o de la
-  // franja, para que el aviso aparezca ANTES de pulsar guardar y no como un error posterior.
-  const capacity = useMemo(() => {
-    if (!startIso || partyError || durError) return null;
-    return checkFloorCapacity(
-      tables,
-      reservations,
-      startIso,
-      Number(duration),
-      Number(partySize),
-    );
-  }, [tables, reservations, startIso, duration, partySize, partyError, durError]);
+  const currentResult =
+    availabilityResult && availabilityResult.key === availabilityKey ? availabilityResult : null;
+  const availability = currentResult?.data ?? null;
+  const selectedSlot = findSlot(availability, time);
+  // Si la disponibilidad no carga, la matriz no puede pintarse y la reserva quedaría
+  // imposible: sólo entonces se ofrece un campo de hora de respaldo (el servidor sigue
+  // comprobando el aforo al guardar).
+  const availabilityFailed = Boolean(currentResult?.error);
+  // Una franja elegida deja de valer si el nuevo día, grupo o duración ya no la incluye.
+  const slotPicked = availabilityFailed ? Boolean(time) : Boolean(selectedSlot);
+  const timeError = slotPicked
+    ? ''
+    : availabilityFailed
+      ? 'Reservation time is required'
+      : 'Pick a time slot from the service shifts';
 
-  const slotSignature = `${startIso}|${partySize}|${duration}`;
-  const oversellAcknowledged = acknowledgedSlot === slotSignature;
+  // Franja llena para este grupo (o el servidor acaba de rechazar el guardado por aforo):
+  // sin las credenciales del encargado no se puede reservar.
+  const slotNeedsOverride = Boolean(selectedSlot && !selectedSlot.bookable);
+  // El 409 del servidor sólo aplica a la franja que lo provocó (misma clave que construye el
+  // padre con el borrador enviado).
+  const slotKey = dateError || !time
+    ? ''
+    : `${composeReservationDate(date, time)}|${Number(partySize)}|${Number(duration)}`;
+  const serverConflict = capacityConflict && capacityConflict.key === slotKey ? capacityConflict.message : '';
+  const needsOverride = slotNeedsOverride || Boolean(serverConflict);
+  const overrideReason = serverConflict
+    ? serverConflict
+    : selectedSlot && availability
+      ? slotSummary(
+          selectedSlot,
+          availability.seat_capacity,
+          availability.party_size,
+          availability.max_covers_per_slot,
+        )
+      : '';
 
   // El contacto del invitado se valida con las MISMAS reglas que el DTO del backend
   // (@IsPhoneNumber sin región, @IsEmail, varchar(100)/varchar(20)). Se comprueba antes de
@@ -199,24 +272,19 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
 
   const blocked =
     Boolean(dateError) ||
+    Boolean(timeError) ||
     Boolean(partyError) ||
     Boolean(durError) ||
     guestHasError ||
     Boolean(linkError) ||
     newCustomerMissing ||
+    (needsOverride && hasOverrideErrors(override)) ||
     submitting;
-
-  const needsAcknowledge = Boolean(capacity?.oversold) && !oversellAcknowledged;
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     setTouched(true);
     if (blocked) return;
-    // Primer envío con sobreventa: sólo se marca el aviso como visto. El segundo guarda.
-    if (needsAcknowledge) {
-      setAcknowledgedSlot(slotSignature);
-      return;
-    }
 
     const draft: ReservationDraft = {
       reservation_date: composeReservationDate(date, time),
@@ -226,6 +294,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
       special_requests: specialRequests,
     };
     if (linkMode === 'existing' && selectedCustomer) draft.customer_id = selectedCustomer.id;
+    if (needsOverride) draft.manager_override = { ...override };
 
     onSubmit({
       draft,
@@ -273,20 +342,6 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className={fieldClass}
-              required
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="res-time" className={labelClass}>
-              Time
-            </label>
-            <input
-              id="res-time"
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
               className={fieldClass}
               required
             />
@@ -344,25 +399,50 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
         ) : null}
 
         {/* ---------- Aforo de la franja ---------- */}
-        {capacity && capacity.floorCapacity > 0 ? (
-          <div
-            data-testid="capacity-check"
-            className={`p-3 rounded border text-body-sm flex items-start gap-2 ${
-              capacity.oversold
-                ? 'border-[#f59e0b]/50 bg-[#f59e0b]/10 text-[#92400e]'
-                : 'border-[#10b981]/40 bg-[#10b981]/10 text-[#047857]'
-            }`}
-            role={capacity.oversold ? 'alert' : 'status'}
-          >
-            <span className="material-symbols-outlined text-base" aria-hidden="true">
-              {capacity.oversold ? 'warning' : 'event_available'}
-            </span>
-            <span>
-              {capacity.oversold
-                ? capacityWarningMessage(capacity, Number(partySize))
-                : `Slot fits: ${capacity.availableSeats} of ${capacity.floorCapacity} seats still free (${capacity.bookedSeats} booked).`}
-            </span>
+        <SlotAvailabilityMatrix
+          availability={availability}
+          loading={Boolean(availabilityKey) && !currentResult}
+          error={currentResult?.error ?? ''}
+          selectedTime={time}
+          onSelect={setTime}
+        />
+        {availabilityFailed ? (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="res-time" className={labelClass}>
+              Time
+            </label>
+            <input
+              id="res-time"
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              className={fieldClass}
+              required
+            />
           </div>
+        ) : null}
+        {availability && availability.shifts.length === 0 ? (
+          <p className="text-body-sm text-[#5f5e5e]" role="status">
+            No service shifts are configured for this day.
+          </p>
+        ) : null}
+        {/* El botón de guardar queda desactivado sin franja: este aviso explica por qué. */}
+        {timeError && (availability || availabilityFailed) ? (
+          <p className="text-body-sm text-[#5f5e5e] flex items-center gap-1" role="status">
+            <span className="material-symbols-outlined text-base" aria-hidden="true">
+              schedule
+            </span>
+            {timeError}
+          </p>
+        ) : null}
+        {needsOverride ? (
+          <ManagerOverrideFields
+            value={override}
+            onChange={setOverride}
+            reason={overrideReason}
+            showErrors={touched}
+            idPrefix="res"
+          />
         ) : null}
 
         {/* ---------- Vínculo con el cliente ---------- */}
@@ -653,7 +733,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
         <ModalFormFooter
           onCancel={onCancel}
           submitLabel={
-            needsAcknowledge ? 'Confirm over capacity' : submitting ? 'Saving…' : 'Book table'
+            submitting ? 'Saving…' : needsOverride ? 'Authorize & book' : 'Book table'
           }
           isSubmitting={submitting}
           submitDisabled={blocked}

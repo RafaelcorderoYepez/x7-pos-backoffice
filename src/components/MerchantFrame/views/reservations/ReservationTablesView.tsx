@@ -40,7 +40,6 @@ import {
 } from '../../../../api/reservations';
 import { ApiError } from '../../../../lib/api-error';
 import { Toast, type ToastState } from '../../shared/Toast';
-import { ReservationsQuickLinks } from './ReservationsQuickLinks';
 import { TablePickerDrawer } from './TablePickerDrawer';
 
 interface ReservationTablesViewProps {
@@ -51,10 +50,9 @@ interface ReservationTablesViewProps {
 // `/api/tables` devuelve el inventario completo; el tablero necesita número, aforo y zona.
 type FloorTable = DiningTable;
 
-export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({
-  onNavigate,
-  merchantId,
-}) => {
+// `onNavigate` sigue en las props (MerchantFrame lo pasa a todas las vistas), pero la
+// navegación entre sub-módulos la hace ya la NavHubBar del módulo, montada por MerchantFrame.
+export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ merchantId }) => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [tables, setTables] = useState<FloorTable[]>([]);
   const [customers, setCustomers] = useState<CustomerRef[]>([]);
@@ -646,10 +644,6 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({
       ) : null}
 
       <Toast toast={toast} onClose={() => setToast(null)} />
-      {/* Panel de accesos rápidos estándar (QuickLaunchPanel), como el resto de módulos. */}
-      <div>
-        <ReservationsQuickLinks current="reservation-tables" onNavigate={onNavigate} />
-      </div>
 
     </div>
   );

@@ -97,7 +97,11 @@ import { ReservationsView } from './views/reservations/ReservationsView';
 import { ReservationTablesView } from './views/reservations/ReservationTablesView';
 import { ReservationNotesView } from './views/reservations/ReservationNotesView';
 import { ReservationGuestsView } from './views/reservations/ReservationGuestsView';
+import { ReservationStatusHistoryView } from './views/reservations/ReservationStatusHistoryView';
 import { featureIdForReservationPath } from '../../lib/reservation-navigation';
+import { navHubById, navHubForFeature } from '../../lib/module-nav-hubs';
+import { ModuleNavHubBar } from './layout/ModuleNavHubBar';
+import { ModuleCommandHubView } from './views/ModuleCommandHubView';
 import { RawMaterialsView } from './views/products-inventory/raw-materials/RawMaterialsView';
 import { RawMaterialCategoriesView } from './views/products-inventory/category/RawMaterialCategoriesView';
 import { RecipesView } from './views/products-inventory/recipes/RecipesView';
@@ -254,6 +258,16 @@ export const MerchantFrame: React.FC = () => {
     'subscription-features': 'features-control',
     'subscription-plan-applications': 'plan-apps-rules',
     'subscription-plan-features': 'plan-features-mapping',
+  };
+
+  // Navegación desde la NavHubBar de un módulo o su Command Hub. Suelta el contexto de las
+  // vistas de detalle (asiento, voucher, nota de crédito) igual que hacen sus propios
+  // onNavigate: si no, volver a ellas por la barra las abriría filtradas por el origen viejo.
+  const navigateToFeature = (featureId: string) => {
+    setLinesEntryFilter(null);
+    setItemsPaymentFilter(null);
+    setAllocationsContext(null);
+    setActiveTab(featureId);
   };
 
   const handleNavigateView = (view: string, plan?: SubscriptionPlan) => {
@@ -496,6 +510,9 @@ export const MerchantFrame: React.FC = () => {
   }
 
   // Dynamic SPA view rendering (AC 4.2)
+  // Active featureId's module, if it has a persistent NavHubBar (module-nav-hubs.ts).
+  const moduleNavHub = navHubForFeature(activeTab);
+
   const renderSPAView = () => {
     // Check if this tab is a coming soon stub
     const stub = COMING_SOON_STUBS[activeTab];
@@ -970,9 +987,7 @@ export const MerchantFrame: React.FC = () => {
       );
     }
 
-    // Reservations book. Among the 5 sub-modules in the epic, only state history
-    // remains without a dedicated view: the bottom navigation bar routes to its featureId
-    // and MerchantFrame handles it via the generic stub until implemented.
+    // Reservations book and its 4 sub-modules (tables, notes, guests, status history).
     if (activeTab === 'reservations') {
       return (
         <ReservationsView
@@ -1003,6 +1018,15 @@ export const MerchantFrame: React.FC = () => {
     if (activeTab === 'reservation-guests') {
       return (
         <ReservationGuestsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'reservation-status-history') {
+      return (
+        <ReservationStatusHistoryView
           onNavigate={(view) => setActiveTab(view)}
           merchantId={getCurrentMerchantId() ?? undefined}
         />
@@ -1080,6 +1104,12 @@ export const MerchantFrame: React.FC = () => {
       return <KitchenAnalyticsView onNavigate={(view) => setActiveTab(view)} />;
     }
 
+
+    // Command Hub de un módulo: destino del botón de regreso de su NavHubBar.
+    const commandHub = navHubById(activeTab);
+    if (commandHub) {
+      return <ModuleCommandHubView hub={commandHub} onNavigate={navigateToFeature} />;
+    }
 
     if (activeTab !== 'dashboard') {
       // Dynamically resolve name and icon from navCategories
@@ -1561,6 +1591,17 @@ export const MerchantFrame: React.FC = () => {
             {renderSPAView()}
           </div>
           <GlobalFooter />
+          {moduleNavHub ? (
+            <>
+              {/* La barra es `fixed`: este hueco deja el pie siempre por encima de ella. */}
+              <div aria-hidden="true" className="h-16 shrink-0" />
+              <ModuleNavHubBar
+                hub={moduleNavHub}
+                currentFeatureId={activeTab}
+                onNavigate={navigateToFeature}
+              />
+            </>
+          ) : null}
         </div>
       </main>
 
