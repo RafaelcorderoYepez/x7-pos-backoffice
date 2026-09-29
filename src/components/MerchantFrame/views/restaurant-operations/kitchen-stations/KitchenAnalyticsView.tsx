@@ -47,6 +47,9 @@ export interface StationEfficiencyItem {
   stationId: number;
   stationName: string;
   stationType: string;
+  stationNumber?: number;
+  station_number?: number;
+  display_order?: number;
   totalItemsPrepared: number;
   avgPrepTimeSeconds: number;
   avgPrepTimeFormatted: string;
@@ -94,6 +97,9 @@ interface StationOption {
   id: number;
   name: string;
   code?: string;
+  stationNumber?: number;
+  station_number?: number;
+  display_order?: number;
   stationType?: string;
 }
 
@@ -213,12 +219,35 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
         const json = await res.json();
         const list = json.data || json || [];
         setStations(
-          list.map((st: { id: number; name: string; code?: string; stationType?: string; station_type?: string }) => ({
-            id: st.id,
-            name: st.name,
-            code: st.code,
-            stationType: st.stationType || st.station_type || 'PREP',
-          }))
+          list.map(
+            (st: {
+              id: number;
+              name: string;
+              code?: string;
+              stationType?: string;
+              station_type?: string;
+              stationNumber?: number;
+              station_number?: number;
+              display_order?: number;
+              displayOrder?: number;
+            }) => {
+              const sNum =
+                st.stationNumber ??
+                st.station_number ??
+                st.displayOrder ??
+                st.display_order ??
+                st.id;
+              return {
+                id: st.id,
+                name: st.name,
+                code: st.code || `#KST-${sNum}`,
+                stationNumber: sNum,
+                station_number: sNum,
+                display_order: st.display_order ?? st.displayOrder,
+                stationType: st.stationType || st.station_type || 'PREP',
+              };
+            }
+          )
         );
       } catch (e) {
         console.error('Failed to load stations', e);
@@ -477,7 +506,7 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
       type: 'station',
       id: st.stationId,
       title: st.stationName,
-      subtitle: `Station Identifier: #KST-${st.stationId}`,
+      subtitle: `Station Identifier: #KST-${st.stationNumber ?? st.station_number ?? st.display_order ?? st.stationId}`,
       roleTag: st.stationType,
       rating: st.efficiencyRating,
       metrics: [
@@ -710,7 +739,7 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
               const badgeClass = st.efficiencyRating === 'optimal' ? 'badge-opt' : st.efficiencyRating === 'warning' ? 'badge-warn' : 'badge-crit';
               return `
                 <tr>
-                  <td>#KST-${st.stationId}</td>
+                  <td>#KST-${st.stationNumber ?? st.station_number ?? st.display_order ?? st.stationId}</td>
                   <td><strong>${st.stationName}</strong></td>
                   <td>${st.stationType}</td>
                   <td>${target} mins</td>
@@ -1264,7 +1293,7 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
                                       {station.stationName}
                                     </span>
                                     <span className="text-[10px] font-mono text-[#5f5e5e]">
-                                      #KST-{station.stationId}
+                                      #KST-{station.stationNumber ?? station.station_number ?? station.display_order ?? station.stationId}
                                     </span>
                                   </div>
                                 </div>

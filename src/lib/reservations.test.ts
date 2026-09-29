@@ -3,16 +3,12 @@ import type { Reservation, ReservationStatus } from '../types/reservation';
 import {
   EMPTY_FILTERS,
   allowedTransitions,
-  bookedSeatsInWindow,
   buildDayRange,
   canTransition,
-  capacityWarningMessage,
-  checkFloorCapacity,
   clockTime,
   composeReservationDate,
   computeDailyMetrics,
   durationError,
-  floorCapacity,
   formatBookingWindow,
   formatPercent,
   hasActiveFilters,
@@ -257,62 +253,8 @@ describe('filtros', () => {
   });
 });
 
-describe('aforo del salón', () => {
-  const tables = [
-    { capacity: 4, status: 'available' },
-    { capacity: 2, status: 'occupied' },
-    { capacity: 6, status: 'reserved' },
-    { capacity: 8, status: 'out_of_service' },
-    { capacity: 4, status: 'deleted' },
-  ];
-
-  it('sólo suman las mesas operativas', () => {
-    // 4 + 2 + 6; la de fuera de servicio y la borrada no ponen plazas.
-    expect(floorCapacity(tables)).toBe(12);
-  });
-
-  it('cuenta las plazas comprometidas que solapan la franja', () => {
-    const book = [
-      booking({ id: 1, reservation_date: at(19), duration_minutes: 90, party_size: 4 }),
-      // Empieza justo cuando la primera acaba: no compite.
-      booking({ id: 2, reservation_date: at(20, 30), duration_minutes: 90, party_size: 6 }),
-      // Anulada: no ocupa sitio.
-      booking({ id: 3, reservation_date: at(19), party_size: 8, status: 'cancelled' }),
-    ];
-    expect(bookedSeatsInWindow(book, at(19), 90)).toBe(4);
-  });
-
-  it('excluye la propia reserva al reeditarla', () => {
-    const book = [booking({ id: 1, party_size: 4 })];
-    expect(bookedSeatsInWindow(book, at(19), 90, 1)).toBe(0);
-  });
-
-  it('avisa cuando el grupo no cabe en la franja', () => {
-    const book = [booking({ id: 1, party_size: 10 })];
-    const check = checkFloorCapacity(tables, book, at(19), 90, 4);
-    expect(check.floorCapacity).toBe(12);
-    expect(check.bookedSeats).toBe(10);
-    expect(check.availableSeats).toBe(2);
-    expect(check.oversold).toBe(true);
-    expect(check.overflowSeats).toBe(2);
-  });
-
-  it('no avisa cuando el grupo cabe', () => {
-    const check = checkFloorCapacity(tables, [booking({ id: 1, party_size: 4 })], at(19), 90, 4);
-    expect(check.oversold).toBe(false);
-  });
-
-  it('sin inventario de mesas no inventa una sobreventa', () => {
-    const check = checkFloorCapacity([], [booking({ id: 1, party_size: 4 })], at(19), 90, 99);
-    expect(check.oversold).toBe(false);
-  });
-
-  it('el aviso dice cuántas plazas quedan', () => {
-    const check = checkFloorCapacity(tables, [booking({ id: 1, party_size: 10 })], at(19), 90, 4);
-    expect(capacityWarningMessage(check, 4)).toContain('2 of 12 seats free');
-  });
-
-  it('dos ventanas que se tocan en el borde no solapan', () => {
+describe('ventanas semiabiertas', () => {
+  it('dos reservas seguidas no se solapan', () => {
     expect(windowsOverlap(0, 100, 100, 200)).toBe(false);
     expect(windowsOverlap(0, 101, 100, 200)).toBe(true);
   });

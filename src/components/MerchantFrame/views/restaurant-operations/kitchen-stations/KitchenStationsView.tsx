@@ -19,6 +19,8 @@ export interface KitchenStation {
   station_type: KitchenStationType;
   display_mode: KitchenDisplayMode;
   display_order: number;
+  station_number?: number;
+  stationNumber?: number;
   printer_name: string | null;
   is_active: boolean;
   isActive?: boolean;
@@ -26,6 +28,20 @@ export interface KitchenStation {
   created_at: string;
   updated_at: string;
 }
+
+const getStationCode = (station: {
+  id: number;
+  station_number?: number;
+  stationNumber?: number;
+  display_order?: number;
+}): string => {
+  const num =
+    station.stationNumber ??
+    station.station_number ??
+    station.display_order ??
+    station.id;
+  return `#KST-${num}`;
+};
 
 interface KitchenStationsViewProps {
   onNavigate?: (view: string) => void;
@@ -196,6 +212,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     const matchesSearch =
       searchQuery.trim() === '' ||
       station.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      getStationCode(station).toLowerCase().includes(searchQuery.toLowerCase()) ||
       `#kst-${station.id}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (station.printer_name && station.printer_name.toLowerCase().includes(searchQuery.toLowerCase()));
 
@@ -704,7 +721,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
                   <div className="flex items-start justify-between gap-2 border-b border-[#e8e2d8] pb-2.5">
                     <div>
                       <div className="text-[10px] font-bold text-[#5f5e5e] uppercase tracking-wider font-sans">
-                        #KST-{station.id}
+                        {getStationCode(station)}
                       </div>
                       <h3
                         className={`text-sm font-bold text-[#1d1c17] font-sans ${
@@ -908,7 +925,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
                           {/* Reference ID & Date */}
                           {visibleColumns.refDate && (
                             <td className={`${densityPadding} whitespace-nowrap`}>
-                              <div className="font-bold text-[#1d1c17]">#KST-{station.id}</div>
+                              <div className="font-bold text-[#1d1c17]">{getStationCode(station)}</div>
                               <div className="text-[10px] text-[#5f5e5e]">
                                 {new Date(station.created_at).toLocaleDateString('en-US', {
                                   year: 'numeric',
@@ -1109,7 +1126,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
                   <span className="material-symbols-outlined text-[#ae001a] text-xl">
                     soup_kitchen
                   </span>
-                  <h3 className="font-bold text-sm tracking-wider uppercase">
+                  <h3 className="font-bold text-sm tracking-wider uppercase !text-white text-white">
                     {drawerMode === 'add' ? 'Configure New Kitchen Station' : 'Edit Kitchen Station'}
                   </h3>
                 </div>

@@ -9,7 +9,7 @@
 // esparcir el estado del formulario.
 
 import { getAccessToken, clearAuthSession } from '../lib/auth-storage';
-import { ApiError, getApiErrorMessage } from '../lib/api-error';
+import { ApiError, getApiErrorDetails } from '../lib/api-error';
 import type {
   CustomerRef,
   Reservation,
@@ -18,8 +18,14 @@ import type {
   ReservationNote,
   ReservationStatus,
   ReservationTableLink,
+  StatusHistoryFeedEntry,
 } from '../types/reservation';
 import { normalizeReservation } from '../lib/reservations';
+import type {
+  CapacitySettings,
+  DayAvailability,
+  ManagerOverride,
+} from '../lib/reservation-capacity';
 import { normalizeGuestPhone } from '../lib/reservation-guests';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
@@ -63,10 +69,8 @@ async function request<T>(
   }
 
   if (!response.ok) {
-    throw new ApiError(
-      await getApiErrorMessage(response, fallbackMessage),
-      response.status,
-    );
+    const { message, code } = await getApiErrorDetails(response, fallbackMessage);
+    throw new ApiError(message, response.status, code);
   }
 
   const text = await response.text();
@@ -126,6 +130,12 @@ export async function createReservation(draft: ReservationDraft): Promise<Reserv
   if (draft.source) body.source = draft.source;
   if (draft.special_requests?.trim()) body.special_requests = draft.special_requests.trim();
   if (draft.table_ids?.length) body.table_ids = draft.table_ids;
+  if (draft.manager_override) {
+    body.manager_override = {
+      email: draft.manager_override.email.trim(),
+      password: draft.manager_override.password,
+    };
+  }
 
   const json = await request<Envelope<Reservation>>(
     '/reservation',
@@ -138,7 +148,7 @@ export async function createReservation(draft: ReservationDraft): Promise<Reserv
 // PATCH, no PUT: el controlador de reservas es el único del backoffice que actualiza así.
 export async function updateReservation(
   id: number,
-  patch: Partial<ReservationDraft> & { seated_at?: string },
+  patch: Partial<ReservationDraft> & { seated_at?: string; manager_override?: ManagerOverride },
 ): Promise<Reservation> {
   const json = await request<Envelope<Reservation>>(
     `/reservation/${id}`,
@@ -418,4 +428,107 @@ export async function searchGuests(term: string): Promise<ReservationGuest[]> {
     'Failed to search the guest roster.',
   );
   return json?.data ?? [];
+}
+
+// ================= Histórico de estados =================
+
+// Techo de páginas por consulta: un día de mucho servicio son unos cientos de transiciones;
+// si alguna vez hay más, se corta aquí en vez de encadenar peticiones sin fin.
+const MAX_HISTORY_PAGES = 20;
+
+async function fetchAllHistoryPages(
+  path: string,
+  params: URLSearchParams,
+  fallbackMessage: string,
+): Promise<StatusHistoryFeedEntry[]> {
+  const rows: StatusHistoryFeedEntry[] = [];
+  params.set('limit', String(MAX_PAGE_LIMIT));
+  for (let page = 1; page <= MAX_HISTORY_PAGES; page += 1) {
+    params.set('page', String(page));
+    const json = await request<Envelope<StatusHistoryFeedEntry[]>>(
+      `${path}?${params.toString()}`,
+      { method: 'GET' },
+      fallbackMessage,
+    );
+    rows.push(...(json?.data ?? []));
+    if (!json?.hasNext) break;
+  }
+  return rows;
+}
+
+/**
+ * Todas las transiciones REGISTRADAS en un día local (`changed_at`), en changed_at DESC.
+ * Se trae el día entero y se filtra en cliente: los KPI del turno tienen que sumar el día
+ * completo aunque la lista esté filtrada por estado o por empleado.
+ */
+export async function listStatusHistoryForDay(day: string): Promise<StatusHistoryFeedEntry[]> {
+  return fetchAllHistoryPages(
+    '/reservation-status-history',
+    new URLSearchParams({ date: day }),
+    'Failed to load the status history.',
+  );
+}
+
+/** Ciclo de vida completo de una reserva, sea del día que sea. 404 si no existe. */
+export async function listReservationLifecycle(
+  reservationId: number,
+): Promise<StatusHistoryFeedEntry[]> {
+  return fetchAllHistoryPages(
+    `/reservation-status-history/by-reservation/${reservationId}`,
+    new URLSearchParams(),
+    'Failed to load the reservation history.',
+  );
+}
+
+// ================= Aforo y ritmo =================
+
+/**
+ * Matriz de franjas de un día para un grupo concreto. La calcula el servidor (pico de
+ * comensales CONFIRMED/SEATED simultáneos y límite de llegadas por franja); el drawer sólo
+ * la pinta.
+ */
+export async function getAvailability(query: {
+  date: string;
+  partySize: number;
+  durationMinutes: number;
+  excludeReservationId?: number;
+}): Promise<DayAvailability> {
+  const params = new URLSearchParams({
+    date: query.date,
+    party_size: String(query.partySize),
+    duration_minutes: String(query.durationMinutes),
+  });
+  if (query.excludeReservationId) {
+    params.set('exclude_reservation_id', String(query.excludeReservationId));
+  }
+  const json = await request<Envelope<DayAvailability>>(
+    `/reservation-capacity/availability?${params.toString()}`,
+    { method: 'GET' },
+    'Failed to load slot availability.',
+  );
+  return json.data;
+}
+
+export async function getCapacitySettings(): Promise<CapacitySettings> {
+  const json = await request<Envelope<CapacitySettings>>(
+    '/reservation-capacity/settings',
+    { method: 'GET' },
+    'Failed to load the capacity settings.',
+  );
+  return json.data;
+}
+
+// PUT (no PATCH): es un documento de ajustes único por comercio. null = valor por defecto.
+export async function updateCapacitySettings(payload: {
+  seat_capacity: number | null;
+  slot_interval_minutes: number;
+  max_covers_per_slot: number | null;
+  shifts: Array<{ name: string; start: string; end: string }>;
+}): Promise<CapacitySettings> {
+  const json = await request<Envelope<CapacitySettings>>(
+    '/reservation-capacity/settings',
+    { method: 'PUT', body: JSON.stringify(payload) },
+    'Failed to save the capacity settings.',
+  );
+  return json.data;
 }

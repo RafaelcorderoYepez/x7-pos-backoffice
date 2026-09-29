@@ -7,6 +7,16 @@ import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmpt
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { AppModal } from '../../../shared/AppModal';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
+import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
+import { KitchenSlaConfigModal } from './KitchenSlaConfigModal';
+import { KitchenDevResetButton } from './KitchenDevResetButton';
+import { KitchenAllergyModifierPicker } from './KitchenAllergyModifierPicker';
+import {
+  enqueueOfflineAction,
+  flushOfflineQueue,
+  getQueuedActions,
+} from '../../../../../lib/kds-offline-sync';
+import { sendStationKeepaliveHeartbeat } from '../../../../../lib/kds-keepalive';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -60,6 +70,9 @@ interface KitchenStationOption {
   id: number;
   name: string;
   stationType?: string;
+  stationNumber?: number;
+  station_number?: number;
+  display_order?: number;
 }
 
 interface KitchenOrdersViewProps {
@@ -190,6 +203,25 @@ const suggestCourseForProduct = (productName: string): 'beverage' | 'appetizer' 
   return 'main_course';
 };
 
+const getItemPrepAction = (course?: string, productName?: string) => {
+  const effectiveCourse = course || (productName ? suggestCourseForProduct(productName) : 'main_course');
+  const isBeverage = effectiveCourse === 'beverage' || (productName && suggestCourseForProduct(productName) === 'beverage');
+
+  if (isBeverage) {
+    return {
+      verb: 'POUR',
+      icon: 'local_bar',
+      title: 'Start pouring (Move to IN PREP)',
+    };
+  }
+
+  return {
+    verb: 'PREP',
+    icon: 'restaurant',
+    title: 'Start preparing (Move to IN PREP)',
+  };
+};
+
 export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate }) => {
   const [orders, setOrders] = useState<KitchenOrderTicket[]>([]);
   const [stations, setStations] = useState<KitchenStationOption[]>([]);
@@ -251,6 +283,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [inspectingTicket, setInspectingTicket] = useState<KitchenOrderTicket | null>(null);
 
   // Create Order Modal State
+  const [criticalSlaMinutes] = useKdsCriticalSla();
+  const [isSlaModalOpen, setIsSlaModalOpen] = useState<boolean>(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [formStationId, setFormStationId] = useState<string>('');
   const [formPriority, setFormPriority] = useState<number>(0);
@@ -276,6 +310,11 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [lastBumpedOrder, setLastBumpedOrder] = useState<KitchenOrderTicket | null>(null);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'info' | 'warning' } | null>(null);
   const topRef = useRef<HTMLDivElement>(null);
+
+  // Offline Resilience
+  const [isOffline, setIsOffline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? !navigator.onLine : false,
+  );
 
   // Real-time clock for elapsed second counters
   const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
@@ -313,6 +352,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             id: Number(s.id),
             name: String(s.name || ''),
             stationType: (s.stationType || s.station_type) as KitchenStationType | undefined,
+            stationNumber: Number(s.stationNumber ?? s.station_number ?? s.displayOrder ?? s.display_order ?? s.id),
+            station_number: Number(s.station_number ?? s.stationNumber ?? s.display_order ?? s.displayOrder ?? s.id),
           }))
         );
       } catch {
@@ -435,7 +476,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           variantName: ((it.variant as Record<string, unknown> | undefined)?.name || it.variantName || null) as string | null,
           quantity: Number(it.quantity ?? 1),
           preparedQuantity: Number(it.preparedQuantity ?? it.prepared_quantity ?? 0),
-          preparationStatus: (it.preparationStatus || it.preparation_status || 'pending') as 'pending' | 'in_progress' | 'ready' | 'cancelled',
+          preparationStatus: (it.preparationStatus || it.preparation_status || 'pending') as 'held' | 'pending' | 'in_preparation' | 'ready' | 'cancelled',
           course: (it.course || null) as string | null,
           holdUntil: (it.holdUntil || it.hold_until || null) as string | null,
           firedAt: (it.firedAt || it.fired_at || null) as string | null,
@@ -465,6 +506,98 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     const timer = setInterval(() => loadOrders(true), autoRefreshInterval * 1000);
     return () => clearInterval(timer);
   }, [autoRefreshInterval, loadOrders]);
+
+  // Escuchar evento global de reinicio KDS
+  useEffect(() => {
+    const handleReset = () => {
+      loadOrders(true);
+    };
+    window.addEventListener('x7_kds_data_reset', handleReset);
+    return () => window.removeEventListener('x7_kds_data_reset', handleReset);
+  }, [loadOrders]);
+
+  // Flush de cola offline al reconectar
+  const triggerAutoSync = useCallback(async () => {
+    try {
+      const queued = await getQueuedActions();
+      if (queued.length === 0) {
+        setQueuedActionsCount(0);
+        return;
+      }
+      setIsSyncing(true);
+      const token = getAccessToken();
+      const res = await flushOfflineQueue(API_BASE, token);
+      setIsSyncing(false);
+      if (res.success && res.syncedCount > 0) {
+        showToast(`Synchronized ${res.syncedCount} offline actions with server`, 'success');
+        loadOrders(true);
+      }
+      const remaining = await getQueuedActions();
+      setQueuedActionsCount(remaining.length);
+    } catch (err) {
+      console.warn('Auto re-sync error in KitchenOrdersView:', err);
+      setIsSyncing(false);
+    }
+  }, [loadOrders]);
+
+  // Control de red Online/Offline y heartbeat ping
+  useEffect(() => {
+    getQueuedActions()
+      .then((q) => setQueuedActionsCount(q.length))
+      .catch(() => {});
+
+    const handleOnline = () => {
+      setIsOffline(false);
+      void triggerAutoSync();
+    };
+
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    const pingTimer = setInterval(async () => {
+      if (!navigator.onLine) {
+        setIsOffline(true);
+        return;
+      }
+      try {
+        const token = getAccessToken();
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(`${API_BASE}/kitchen-event-logs/ping`, {
+          signal: controller.signal,
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        clearTimeout(timeout);
+        if (res.ok) {
+          setIsOffline((wasOffline) => {
+            if (wasOffline) void triggerAutoSync();
+            return false;
+          });
+        }
+      } catch {
+        setIsOffline(true);
+      }
+    }, 3000);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(pingTimer);
+    };
+  }, [triggerAutoSync]);
+
+  // Keepalive de estaciones: latido inmediato al abrir la vista y cada 15 segundos
+  useEffect(() => {
+    void sendStationKeepaliveHeartbeat('ALL');
+    const keepaliveTimer = setInterval(() => {
+      void sendStationKeepaliveHeartbeat('ALL');
+    }, 15000);
+    return () => clearInterval(keepaliveTimer);
+  }, []);
 
   // Station Filtered pool for KPI metrics
   const stationOrders = useMemo(() => {
@@ -650,50 +783,79 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       }
     };
 
-    return [...result].sort((a, b) => {
-      const tierA = getStatusTier(a.businessStatus);
-      const tierB = getStatusTier(b.businessStatus);
+    const activeOrders: KitchenOrderTicket[] = [];
+    const completedOrders: KitchenOrderTicket[] = [];
+    const cancelledOrders: KitchenOrderTicket[] = [];
 
-      // Separación por estado principal:
-      // Tier 1: Activas (started / pending)
-      // Tier 2: Listas / Completadas (ready / completed)
-      // Tier 3: Canceladas (siempre abajo de todo)
-      if (tierA !== tierB) {
-        return tierA - tierB;
-      }
+    result.forEach((o) => {
+      const tier = getStatusTier(o.businessStatus);
+      if (tier === 1) activeOrders.push(o);
+      else if (tier === 2) completedOrders.push(o);
+      else cancelledOrders.push(o);
+    });
 
-      // Tier 1: Activas (started / pending)
-      if (tierA === 1) {
-        const now = currentTime;
-        const elapsedMinsA = Math.max(0, Math.floor((now - new Date(a.createdAt).getTime()) / 60000));
-        const elapsedMinsB = Math.max(0, Math.floor((now - new Date(b.createdAt).getTime()) / 60000));
-
-        // 1. Regla de minutos máximos (SLA Shield >= 15 min):
-        // Si una orden lleva demasiado tiempo esperando (>= 15 min), NINGUNA orden nueva en prep puede pasarle por encima.
-        const isCriticalA = elapsedMinsA >= 15;
-        const isCriticalB = elapsedMinsB >= 15;
-        if (isCriticalA && !isCriticalB) return -1;
-        if (!isCriticalA && isCriticalB) return 1;
-        if (isCriticalA && isCriticalB) {
-          return elapsedMinsB - elapsedMinsA; // la más demorada primero
-        }
-
-        // 2. Prioridad operativa de cocina (para órdenes dentro del tiempo estándar < 15 min):
-        // Lo que se está cocinando activamente (in_preparation) va PRIMERO antes que órdenes retenidas (held)
-        const hasPrepA = a.items.some(it => it.preparationStatus === 'in_preparation');
-        const hasPrepB = b.items.some(it => it.preparationStatus === 'in_preparation');
-        if (hasPrepA && !hasPrepB) return -1;
-        if (!hasPrepA && hasPrepB) return 1;
-      }
-
-      // Dentro de cada categoría: orden de llegada estricto (FIFO: el más viejo primero)
+    // 1. Ordenar activas cronológicamente (orden de llegada al sistema)
+    activeOrders.sort((a, b) => {
       const timeA = new Date(a.createdAt).getTime();
       const timeB = new Date(b.createdAt).getTime();
       if (timeA !== timeB) return timeA - timeB;
-
       return a.id - b.id;
     });
-  }, [stationOrders, statusFilter, cancellationFilter, dateRangePreset, customStartDate, customEndDate, searchQuery, currentTime]);
+
+    // 2. Simulación de cola en tiempo real con Escudo SLA:
+    // - Las órdenes existentes NO saltan hacia adelante al cumplir 15 min; se quedan exactamente donde están.
+    // - Pero una vez que una orden tiene el escudo SLA (espera >= 15 min), NINGUNA orden creada con posterioridad
+    //   puede colocarse por delante de ella (el escudo SLA protege su posición contra nuevas órdenes entrantes).
+    const activeQueue: KitchenOrderTicket[] = [];
+
+    for (const item of activeOrders) {
+      const itemTime = new Date(item.createdAt).getTime();
+      const isPreparingItem = item.items.some((it) => it.preparationStatus === 'in_preparation');
+      const itemScore = (item.priority ?? 0) * 10 + (isPreparingItem ? 1 : 0);
+
+      // Determinar la barrera mínima permitida: debe ser posterior a cualquier orden que YA tenía SLA
+      // (espera >= criticalSlaMinutes) al momento en que esta nueva orden fue creada.
+      let minInsertIndex = 0;
+      for (let i = 0; i < activeQueue.length; i++) {
+        const qTime = new Date(activeQueue[i].createdAt).getTime();
+        const waitingAtArrival = itemTime - qTime;
+        if (waitingAtArrival >= criticalSlaMinutes * 60 * 1000) {
+          minInsertIndex = i + 1;
+        }
+      }
+
+      // Dentro del rango permitido (>= minInsertIndex), si la orden entrante tiene MAYOR prioridad
+      // que la orden en esa posición, se adelanta a ella. Si tiene igual o menor prioridad, se ubica detrás (FIFO).
+      let insertIndex = activeQueue.length;
+      for (let i = minInsertIndex; i < activeQueue.length; i++) {
+        const q = activeQueue[i];
+        const isPreparingQ = q.items.some((it) => it.preparationStatus === 'in_preparation');
+        const qScore = (q.priority ?? 0) * 10 + (isPreparingQ ? 1 : 0);
+        if (itemScore > qScore) {
+          insertIndex = i;
+          break;
+        }
+      }
+
+      activeQueue.splice(insertIndex, 0, item);
+    }
+
+    // Tier 2 y Tier 3: Completadas y canceladas en orden cronológico correlativo (FIFO)
+    completedOrders.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id - b.id;
+    });
+    cancelledOrders.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id - b.id;
+    });
+
+    return [...activeQueue, ...completedOrders, ...cancelledOrders];
+  }, [stationOrders, statusFilter, cancellationFilter, dateRangePreset, customStartDate, customEndDate, searchQuery, criticalSlaMinutes]);
 
   // Paginated records for table view
   const paginatedOrders = useMemo(() => {
@@ -705,8 +867,49 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const activeColSpan = Object.values(visibleColumns).filter(Boolean).length;
   const densityPadding = getDensityPadding(rowDensity);
 
-  // Actions
+  // Actions with full Offline Queue support
   const handleStartPrep = async (order: KitchenOrderTicket) => {
+    const nowIso = new Date().toISOString();
+    const applyOptimisticStart = () => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === order.id
+            ? {
+                ...o,
+                businessStatus: 'started',
+                startedAt: nowIso,
+                items: o.items.map(it => ({
+                  ...it,
+                  preparationStatus:
+                    it.preparationStatus === 'held' || it.preparationStatus === 'pending'
+                      ? 'in_preparation'
+                      : it.preparationStatus,
+                })),
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticStart();
+      for (const it of order.items) {
+        if (it.preparationStatus === 'held' || it.preparationStatus === 'pending') {
+          await enqueueOfflineAction({
+            actionType: 'UPDATE_ITEM_STATUS',
+            kitchenOrderId: order.id,
+            kitchenOrderItemId: it.id,
+            status: 'in_preparation',
+            clientTimestamp: nowIso,
+          });
+        }
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} started`, 'info');
+      return;
+    }
+
     try {
       const token = getAccessToken();
       const headers = {
@@ -721,33 +924,434 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
 
       if (res.ok) {
-        const nowIso = new Date().toISOString();
-        setOrders(prev =>
-          prev.map(o =>
-            o.id === order.id
-              ? {
-                  ...o,
-                  businessStatus: 'started',
-                  startedAt: nowIso,
-                  items: o.items.map(it => ({
-                    ...it,
-                    preparationStatus:
-                      it.preparationStatus === 'held' || it.preparationStatus === 'pending'
-                        ? 'in_preparation'
-                        : it.preparationStatus,
-                  })),
-                }
-              : o
-          )
-        );
-        showToast(`Order #KO-${order.id} STARTED preparation`, 'info');
+        applyOptimisticStart();
+        showToast(`Order #KO-${order.id} started`, 'info');
+      } else {
+        throw new Error('Server returned error');
       }
-    } catch {
-      showToast('Error starting order preparation', 'warning');
+    } catch (err) {
+      console.warn('Network start failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticStart();
+      for (const it of order.items) {
+        if (it.preparationStatus === 'held' || it.preparationStatus === 'pending') {
+          await enqueueOfflineAction({
+            actionType: 'UPDATE_ITEM_STATUS',
+            kitchenOrderId: order.id,
+            kitchenOrderItemId: it.id,
+            status: 'in_preparation',
+            clientTimestamp: nowIso,
+          });
+        }
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} started`, 'info');
+    }
+  };
+
+  // Handle Undo on the overall order (revert to PENDING after START)
+  const handleUndoOrder = async (order: KitchenOrderTicket) => {
+    const applyOptimisticUndo = () => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === order.id
+            ? {
+                ...o,
+                businessStatus: 'pending',
+                startedAt: null,
+                items: o.items.map(it => {
+                  const isStagedCourse = it.course === 'dessert' || it.course === 'main_course';
+                  return {
+                    ...it,
+                    preparationStatus: isStagedCourse ? 'held' : 'pending',
+                    preparedQuantity: 0,
+                  };
+                }),
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticUndo();
+      for (const it of order.items) {
+        const isStagedCourse = it.course === 'dessert' || it.course === 'main_course';
+        await enqueueOfflineAction({
+          actionType: 'UPDATE_ITEM_STATUS',
+          kitchenOrderId: order.id,
+          kitchenOrderItemId: it.id,
+          status: isStagedCourse ? 'held' : 'pending',
+          preparedQuantity: 0,
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} reverted to pending`, 'info');
+      return;
+    }
+
+    try {
+      const token = getAccessToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch(`${API_BASE}/kitchen-orders/${order.id}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ businessStatus: 'pending' }),
+      });
+
+      if (res.ok) {
+        showToast(`Order #KO-${order.id} reverted to pending`, 'info');
+        loadOrders(true);
+      } else {
+        throw new Error('Server returned error');
+      }
+    } catch (err) {
+      console.warn('Network undo failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticUndo();
+      for (const it of order.items) {
+        const isStagedCourse = it.course === 'dessert' || it.course === 'main_course';
+        await enqueueOfflineAction({
+          actionType: 'UPDATE_ITEM_STATUS',
+          kitchenOrderId: order.id,
+          kitchenOrderItemId: it.id,
+          status: isStagedCourse ? 'held' : 'pending',
+          preparedQuantity: 0,
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} reverted to pending`, 'info');
+    }
+  };
+
+  // Handle START on an individual item (when order has > 1 items)
+  const handleStartItem = async (orderId: number, itemId: number, currentPrepStatus: string) => {
+    const applyOptimisticStartItem = () => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === orderId
+            ? {
+                ...o,
+                businessStatus: o.businessStatus === 'pending' ? 'started' : o.businessStatus,
+                items: o.items.map(it =>
+                  it.id === itemId
+                    ? { ...it, preparationStatus: 'in_preparation' }
+                    : it
+                ),
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticStartItem();
+      await enqueueOfflineAction({
+        actionType: currentPrepStatus === 'held' ? 'FIRE_ITEM' : 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: 'in_preparation',
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish started`, 'info');
+      return;
+    }
+
+    try {
+      const token = getAccessToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      if (currentPrepStatus === 'held') {
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/fire`, {
+          method: 'POST',
+          headers,
+        });
+        if (!res.ok) throw new Error('Failed to fire item');
+      } else {
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
+        });
+        if (!res.ok) throw new Error('Failed to start item');
+      }
+
+      showToast(`Dish started`, 'info');
+      loadOrders(true);
+    } catch (err) {
+      console.warn('Network item start failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticStartItem();
+      await enqueueOfflineAction({
+        actionType: currentPrepStatus === 'held' ? 'FIRE_ITEM' : 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: 'in_preparation',
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish started`, 'info');
+    }
+  };
+
+  // Handle READY on an individual item
+  const handleReadyItem = async (orderId: number, itemId: number, quantity: number) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    const willAllBeReady = targetOrder
+      ? targetOrder.items.length > 0 && targetOrder.items.every(it => it.id === itemId || it.preparationStatus === 'ready')
+      : false;
+
+    const applyOptimisticReadyItem = () => {
+      setOrders(prev =>
+        prev.map(o => {
+          if (o.id !== orderId) return o;
+          const updatedItems = o.items.map(it =>
+            it.id === itemId
+              ? { ...it, preparationStatus: 'ready' as const, preparedQuantity: quantity }
+              : it
+          );
+          const allItemsReady = updatedItems.length > 0 && updatedItems.every(it => it.preparationStatus === 'ready');
+          return {
+            ...o,
+            businessStatus: allItemsReady ? ('completed' as const) : o.businessStatus,
+            completedAt: allItemsReady ? new Date().toISOString() : o.completedAt,
+            items: updatedItems,
+          };
+        })
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticReadyItem();
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: 'ready',
+        preparedQuantity: quantity,
+        clientTimestamp: new Date().toISOString(),
+      });
+      if (willAllBeReady) {
+        await enqueueOfflineAction({
+          actionType: 'BUMP_ORDER',
+          kitchenOrderId: orderId,
+          stationId: targetOrder?.stationId ?? undefined,
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(willAllBeReady ? `Order #KO-${orderId} bumped` : `Dish ready`, 'success');
+      return;
+    }
+
+    try {
+      const token = getAccessToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          preparationStatus: 'ready',
+          preparedQuantity: quantity,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to mark item ready');
+      showToast(willAllBeReady ? `Order #KO-${orderId} bumped` : `Dish ready`, 'success');
+      loadOrders(true);
+    } catch (err) {
+      console.warn('Network ready item failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticReadyItem();
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: 'ready',
+        preparedQuantity: quantity,
+        clientTimestamp: new Date().toISOString(),
+      });
+      if (willAllBeReady) {
+        await enqueueOfflineAction({
+          actionType: 'BUMP_ORDER',
+          kitchenOrderId: orderId,
+          stationId: targetOrder?.stationId ?? undefined,
+          clientTimestamp: new Date().toISOString(),
+        });
+      }
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(willAllBeReady ? `Order #KO-${orderId} bumped` : `Dish ready`, 'success');
+    }
+  };
+
+  // Handle UNDO on an individual item (after start)
+  const handleUndoItem = async (
+    orderId: number,
+    itemId: number,
+    currentPrepStatus: string,
+    course?: string
+  ) => {
+    const isStagedCourse = course === 'dessert' || course === 'main_course';
+    const targetStatus = currentPrepStatus === 'ready' ? 'in_preparation' : isStagedCourse ? 'held' : 'pending';
+    const targetQty = currentPrepStatus === 'ready' ? undefined : 0;
+
+    const applyOptimisticUndoItem = () => {
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === orderId
+            ? {
+                ...o,
+                items: o.items.map(it =>
+                  it.id === itemId
+                    ? {
+                        ...it,
+                        preparationStatus: targetStatus as KitchenOrderItemLine['preparationStatus'],
+                        preparedQuantity: targetQty ?? it.preparedQuantity,
+                      }
+                    : it
+                ),
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticUndoItem();
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: targetStatus,
+        preparedQuantity: targetQty,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish reverted`, 'info');
+      return;
+    }
+
+    try {
+      const token = getAccessToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      if (currentPrepStatus === 'ready') {
+        // Ready -> in_preparation
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
+        });
+        if (!res.ok) throw new Error('Failed to undo ready');
+      } else {
+        // in_preparation -> held or pending
+        if (isStagedCourse) {
+          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/hold?holdMinutes=10`, {
+            method: 'POST',
+            headers,
+          });
+          if (!res.ok) throw new Error('Failed to hold item');
+        } else {
+          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({
+              preparationStatus: 'pending',
+              preparedQuantity: 0,
+            }),
+          });
+          if (!res.ok) throw new Error('Failed to revert item');
+        }
+      }
+
+      showToast(`Dish reverted`, 'info');
+      loadOrders(true);
+    } catch (err) {
+      console.warn('Network item undo failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticUndoItem();
+      await enqueueOfflineAction({
+        actionType: 'UPDATE_ITEM_STATUS',
+        kitchenOrderId: orderId,
+        kitchenOrderItemId: itemId,
+        status: targetStatus,
+        preparedQuantity: targetQty,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Dish reverted`, 'info');
     }
   };
 
   const handleBumpOrder = async (order: KitchenOrderTicket) => {
+    const nowIso = new Date().toISOString();
+    const updatedItems = (order.items || []).map(it => ({
+      ...it,
+      preparationStatus: 'ready' as const,
+      preparedQuantity: it.quantity,
+    }));
+
+    const applyOptimisticBump = () => {
+      setLastBumpedOrder({
+        ...order,
+        businessStatus: 'completed',
+        completedAt: nowIso,
+        items: updatedItems,
+      });
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === order.id
+            ? {
+                ...o,
+                businessStatus: 'completed',
+                completedAt: nowIso,
+                items: updatedItems,
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticBump();
+      await enqueueOfflineAction({
+        actionType: 'BUMP_ORDER',
+        kitchenOrderId: order.id,
+        stationId: order.stationId ?? undefined,
+        clientTimestamp: nowIso,
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} bumped`, 'success');
+      return;
+    }
+
     try {
       const token = getAccessToken();
       const headers = {
@@ -762,39 +1366,61 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
 
       if (res.ok) {
-        const nowIso = new Date().toISOString();
-        const updatedItems = (order.items || []).map(it => ({
-          ...it,
-          preparationStatus: 'ready' as const,
-          preparedQuantity: it.quantity,
-        }));
-        setLastBumpedOrder({
-          ...order,
-          businessStatus: 'completed',
-          completedAt: nowIso,
-          items: updatedItems,
-        });
-        setOrders(prev =>
-          prev.map(o =>
-            o.id === order.id
-              ? {
-                  ...o,
-                  businessStatus: 'completed',
-                  completedAt: nowIso,
-                  items: updatedItems,
-                }
-              : o
-          )
-        );
-        showToast(`Order #KO-${order.id} BUMPED (Completed)`, 'success');
+        applyOptimisticBump();
+        showToast(`Order #KO-${order.id} bumped`, 'success');
+      } else {
+        throw new Error('Failed to bump order');
       }
-    } catch {
-      showToast('Error bumping order', 'warning');
+    } catch (err) {
+      console.warn('Network bump failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticBump();
+      await enqueueOfflineAction({
+        actionType: 'BUMP_ORDER',
+        kitchenOrderId: order.id,
+        stationId: order.stationId ?? undefined,
+        clientTimestamp: nowIso,
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${order.id} bumped`, 'success');
     }
   };
 
-  const handleRecallOrder = async () => {
-    if (!lastBumpedOrder) return;
+  const handleRecallOrder = async (targetOrderId?: number) => {
+    const idToRecall = targetOrderId ?? lastBumpedOrder?.id;
+    if (!idToRecall) return;
+
+    const applyOptimisticRecall = () => {
+      if (lastBumpedOrder?.id === idToRecall) {
+        setLastBumpedOrder(null);
+      }
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === idToRecall
+            ? {
+                ...o,
+                businessStatus: 'started',
+                completedAt: null,
+              }
+            : o
+        )
+      );
+    };
+
+    if (isOffline || !navigator.onLine) {
+      applyOptimisticRecall();
+      await enqueueOfflineAction({
+        actionType: 'RECALL_ORDER',
+        kitchenOrderId: idToRecall,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${idToRecall} recalled`, 'info');
+      return;
+    }
+
     try {
       const token = getAccessToken();
       const headers = {
@@ -802,35 +1428,30 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
-      const res = await fetch(`${API_BASE}/kitchen-orders/${lastBumpedOrder.id}`, {
-        method: 'PUT',
+      const res = await fetch(`${API_BASE}/kitchen-orders/${idToRecall}/recall`, {
+        method: 'POST',
         headers,
-        body: JSON.stringify({ businessStatus: 'started', completedAt: null }),
       });
 
       if (res.ok) {
-        const resetItems = (lastBumpedOrder.items || []).map(it => ({
-          ...it,
-          preparationStatus: 'in_preparation' as const,
-          preparedQuantity: 0,
-        }));
-        setOrders(prev =>
-          prev.map(o =>
-            o.id === lastBumpedOrder.id
-              ? {
-                  ...o,
-                  businessStatus: 'started',
-                  completedAt: null,
-                  items: resetItems,
-                }
-              : o
-          )
-        );
-        showToast(`RECALLED #KO-${lastBumpedOrder.id} to Active Line`, 'info');
-        setLastBumpedOrder(null);
+        applyOptimisticRecall();
+        showToast(`Order #KO-${idToRecall} recalled`, 'info');
+        loadOrders(true);
+      } else {
+        throw new Error('Failed to recall order');
       }
-    } catch {
-      showToast('Error recalling order', 'warning');
+    } catch (err) {
+      console.warn('Network recall failed, enqueuing offline:', err);
+      setIsOffline(true);
+      applyOptimisticRecall();
+      await enqueueOfflineAction({
+        actionType: 'RECALL_ORDER',
+        kitchenOrderId: idToRecall,
+        clientTimestamp: new Date().toISOString(),
+      });
+      const q = await getQueuedActions();
+      setQueuedActionsCount(q.length);
+      showToast(`Order #KO-${idToRecall} recalled`, 'info');
     }
   };
 
@@ -907,7 +1528,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
       {/* FLOATING TOAST ALERT */}
       {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 animate-bounce transition-all duration-300">
+        <div className="fixed top-20 right-6 z-50 animate-fade-in transition-all duration-300">
           <div
             className={`flex items-center gap-3 px-5 py-3 rounded-lg shadow-xl text-white text-sm font-semibold tracking-wide border ${
               toastMessage.type === 'success'
@@ -1251,6 +1872,22 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
           {/* Right: Action Buttons */}
           <div className="flex flex-wrap items-center gap-3">
+            {/* SLA Configuration Button */}
+            <button
+              type="button"
+              onClick={() => setIsSlaModalOpen(true)}
+              className="px-3.5 py-2 bg-[#fef9f1] border border-[#e8e2d8] hover:border-[#ae001a] text-[#1d1c17] rounded text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs group"
+              title="Configure Kitchen SLA Threshold"
+            >
+              <span className="material-symbols-outlined text-[16px] text-red-600 group-hover:scale-110 transition-transform">
+                shield
+              </span>
+              <span className="text-[#5f5e5e] font-medium">SLA:</span>
+              <span className="font-mono font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded text-[11px]">
+                {criticalSlaMinutes}m
+              </span>
+            </button>
+
             {/* Create Order Button */}
             <button
               type="button"
@@ -1419,6 +2056,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     const isCancelled = order.businessStatus === 'cancelled';
                     const isCompleted = order.businessStatus === 'completed';
                     const isStarted = order.businessStatus === 'started';
+                    const isTableAllHeld = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'held');
+                    const elapsedMinutes = Math.floor(Math.max(0, (currentTime - new Date(order.createdAt).getTime()) / 1000) / 60);
 
                     const prepDuration =
                       isCompleted && order.completedAt && order.createdAt
@@ -1459,6 +2098,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                 <span>#ORD-{order.orderId}</span>
                               ) : order.onlineOrderId ? (
                                 <span>#ONL-{order.onlineOrderId}</span>
+                              ) : order.notes ? (
+                                <span className="text-[#854d0e] font-semibold">{order.notes.split('•')[0].trim()}</span>
                               ) : (
                                 <span>Direct POS</span>
                               )}
@@ -1473,15 +2114,29 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               {order.stationName || 'Unassigned Station'}
                             </span>
                             <div className="flex items-center gap-1 mt-0.5">
-                              <span
-                                className={`text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border ${
-                                  order.priority > 0
-                                    ? 'bg-red-50 text-red-700 border-red-200'
-                                    : 'bg-zinc-100 text-zinc-600 border-zinc-200'
-                                }`}
-                              >
-                                Priority {order.priority > 0 ? `+${order.priority} HIGH` : 'Normal'}
-                              </span>
+                              {order.priority >= 3 ? (
+                                <span className="text-[10px] font-black uppercase px-1.5 py-0.2 rounded border bg-purple-50 text-purple-700 border-purple-200">
+                                  VIP Rush (+3)
+                                </span>
+                              ) : order.priority === 2 ? (
+                                <span className="text-[10px] font-black uppercase px-1.5 py-0.2 rounded border bg-red-50 text-red-700 border-red-200">
+                                  Urgent (+2)
+                                </span>
+                              ) : order.priority === 1 ? (
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                                  High (+1)
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-medium uppercase px-1.5 py-0.2 rounded border bg-zinc-100 text-zinc-600 border-zinc-200">
+                                  Normal (0)
+                                </span>
+                              )}
+                              {elapsedMinutes >= criticalSlaMinutes && !isCompleted && !isCancelled && (
+                                <span className="text-[10px] bg-red-600 text-white border border-red-700 px-1.5 py-0.2 rounded font-black tracking-wide flex items-center gap-0.5 shadow-xs animate-pulse">
+                                  <span className="material-symbols-outlined text-[10px]">shield</span>
+                                  SLA
+                                </span>
+                              )}
                             </div>
                           </td>
                         )}
@@ -1503,6 +2158,11 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 uppercase">
                                 <span className="material-symbols-outlined text-xs">cancel</span>
                                 Cancelled
+                              </span>
+                            ) : isTableAllHeld ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase">
+                                <span className="material-symbols-outlined text-xs">pause_circle</span>
+                                Held
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-300 uppercase">
@@ -1589,7 +2249,17 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
                         {/* Actions */}
                         {visibleColumns.actions && (
-                          <td className={`${densityPadding} text-right`}>
+                          <td className={`${densityPadding} text-right space-x-1.5`}>
+                            {order.businessStatus === 'completed' && (
+                              <button
+                                onClick={() => handleRecallOrder(order.id)}
+                                className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer shadow-2xs"
+                                title="Recall order back to active kitchen board"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">replay</span>
+                                <span>Recall</span>
+                              </button>
+                            )}
                             <button
                               onClick={() => setInspectingTicket(order)}
                               className="px-2.5 py-1 bg-[#f4efe6] hover:bg-[#ae001a] hover:text-white text-[#1d1c17] border border-[#e8e2d8] rounded text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer"
@@ -1636,22 +2306,22 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filteredOrders.map(order => {
             const isAllHeld = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'held');
-            const hasActivePrep = order.items.some(it => it.preparationStatus === 'in_preparation' || it.preparationStatus === 'ready');
-            const isStarted = order.businessStatus === 'started' && hasActivePrep;
-            const isCompleted = order.businessStatus === 'completed';
+            const isAllPending = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'pending');
+            const isAllReady = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'ready');
+            const hasActivePrep = order.items.some(it => it.preparationStatus === 'in_preparation');
+            const isCompleted = order.businessStatus === 'completed' || isAllReady;
             const isCancelled = order.businessStatus === 'cancelled';
-            const isPending = !isStarted && !isCompleted && !isCancelled;
+            const isStarted = (order.businessStatus === 'started' || hasActivePrep) && !isAllHeld && !isAllPending && !isCompleted && !isCancelled;
+            const isPending = !isAllHeld && !isStarted && !isCompleted && !isCancelled;
 
-            const startReference = order.startedAt
-              ? new Date(order.startedAt).getTime()
-              : new Date(order.createdAt).getTime();
+            const startReference = new Date(order.createdAt).getTime();
             const elapsedSeconds = Math.max(0, Math.floor((currentTime - startReference) / 1000));
             const elapsedMinutes = Math.floor(elapsedSeconds / 60);
             const remainingSec = elapsedSeconds % 60;
             const timerDisplay = `${elapsedMinutes}m ${remainingSec.toString().padStart(2, '0')}s`;
 
             let timerColorClass = 'bg-stone-700 text-white';
-            if (elapsedMinutes >= 15) {
+            if (elapsedMinutes >= criticalSlaMinutes) {
               timerColorClass = 'bg-red-600 text-white animate-pulse font-black';
             } else if (isAllHeld) {
               timerColorClass = 'bg-amber-700 text-white font-bold';
@@ -1718,12 +2388,20 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                           CANCELLED
                         </span>
                       )}
-                      {order.priority > 0 && (
-                        <span className="text-[10px] bg-red-100 text-red-800 border border-red-200 px-1.5 py-0.2 rounded font-black">
-                          P+{order.priority}
+                      {order.priority >= 3 ? (
+                        <span className="text-[10px] bg-purple-100 text-purple-800 border border-purple-300 px-1.5 py-0.2 rounded font-black">
+                          VIP (+3)
                         </span>
-                      )}
-                      {elapsedMinutes >= 15 && (isPending || isStarted) && (
+                      ) : order.priority === 2 ? (
+                        <span className="text-[10px] bg-red-100 text-red-800 border border-red-300 px-1.5 py-0.2 rounded font-black">
+                          URGENT (+2)
+                        </span>
+                      ) : order.priority === 1 ? (
+                        <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.2 rounded font-black">
+                          HIGH (+1)
+                        </span>
+                      ) : null}
+                      {elapsedMinutes >= criticalSlaMinutes && !isCompleted && !isCancelled && (
                         <span className="text-[10px] bg-red-600 text-white border border-red-700 px-1.5 py-0.5 rounded font-black tracking-wide flex items-center gap-0.5 shadow-xs animate-pulse">
                           <span className="material-symbols-outlined text-[12px]">shield</span>
                           SLA SHIELD
@@ -1746,11 +2424,20 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                 {/* Body & Items */}
                 <div className="p-4 flex-1 flex flex-col gap-3">
                   {/* Notes Callout */}
-                  {order.notes && (
-                    <div className="bg-amber-50 border-l-2 border-amber-400 px-2.5 py-1.5 rounded-r text-[11px] text-amber-900 font-medium italic">
-                      {order.notes}
-                    </div>
-                  )}
+                  {/* Notes Callout - Culinary instructions only */}
+                  {(() => {
+                    const cleanNotes = order.notes
+                      ?.replace(/\|\s*\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
+                      ?.replace(/\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
+                      ?.replace(/^Table\s+\d+\s*•\s*Station\s*#[^|]*/i, '')
+                      ?.trim();
+                    if (!cleanNotes) return null;
+                    return (
+                      <div className="bg-amber-50 border-l-2 border-amber-400 px-2.5 py-1.5 rounded-r text-[11px] text-amber-900 font-medium italic">
+                        {cleanNotes}
+                      </div>
+                    );
+                  })()}
 
                   {/* Dishes List */}
                   <div className="space-y-2 flex-1 py-1">
@@ -1762,71 +2449,141 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                         return 4;
                       };
                       return rank(a.preparationStatus) - rank(b.preparationStatus);
-                    }).map(it => (
-                      <div
-                        key={it.id}
-                        className="p-2 rounded-lg bg-[#fcfbf9] border border-[#ebe5da] flex items-start justify-between gap-2 text-xs text-[#1d1c17] transition-colors hover:border-[#ded5c5]"
-                      >
-                        <div className="flex items-start gap-2 flex-1 min-w-0">
-                          {/* Qty pill */}
-                          <span className="w-5 h-5 rounded bg-[#eee8dc] text-[#1d1c17] font-mono font-extrabold text-[11px] flex items-center justify-center shrink-0">
-                            {it.quantity}
-                          </span>
+                    }).map(it => {
+                      const itemAction = getItemPrepAction(it.course, it.productName);
 
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-extrabold text-[#1d1c17] break-words leading-tight">
-                                {it.productName}
-                              </span>
-                              {it.variantName && (
-                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#ede7dc] text-[#554d42]">
-                                  {it.variantName}
+                      return (
+                        <div
+                          key={it.id}
+                          className="p-2 rounded-lg bg-[#fcfbf9] border border-[#ebe5da] flex items-start justify-between gap-2 text-xs text-[#1d1c17] transition-colors hover:border-[#ded5c5]"
+                        >
+                          <div className="flex items-start gap-2 flex-1 min-w-0">
+                            {/* Qty pill */}
+                            <span className="w-5 h-5 rounded bg-[#eee8dc] text-[#1d1c17] font-mono font-extrabold text-[11px] flex items-center justify-center shrink-0">
+                              {it.quantity}
+                            </span>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-extrabold text-[#1d1c17] break-words leading-tight">
+                                  {it.productName}
                                 </span>
+                                {it.variantName && (
+                                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[#ede7dc] text-[#554d42]">
+                                    {it.variantName}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Course chip */}
+                              {it.course && (
+                                <div className="mt-1 flex items-center gap-1">
+                                  <span className="inline-flex items-center gap-1 text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-white text-[#5f5e5e] border border-[#e2dcce]">
+                                    <span>
+                                      {it.course === 'beverage'
+                                        ? '🍹'
+                                        : it.course === 'appetizer'
+                                        ? '🥗'
+                                        : it.course === 'dessert'
+                                        ? '🍰'
+                                        : '🍔'}
+                                    </span>
+                                    <span>{it.course.replace('_', ' ')}</span>
+                                  </span>
+                                </div>
                               )}
                             </div>
+                          </div>
 
-                            {/* Course chip */}
-                            {it.course && (
-                              <div className="mt-1 flex items-center gap-1">
-                                <span className="inline-flex items-center gap-1 text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-white text-[#5f5e5e] border border-[#e2dcce]">
-                                  <span>
-                                    {it.course === 'beverage'
-                                      ? '🍹'
-                                      : it.course === 'appetizer'
-                                      ? '🥗'
-                                      : it.course === 'dessert'
-                                      ? '🍰'
-                                      : '🍔'}
-                                  </span>
-                                  <span>{it.course.replace('_', ' ')}</span>
-                                </span>
-                              </div>
+                          {/* Status badge & Item actions */}
+                          <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+                            {/* Botón POUR / PREP (o FIRE) individual en el artículo si hay más de 1 artículo */}
+                            {order.items.length > 1 && !isCompleted && !isCancelled && (
+                              <>
+                                {it.preparationStatus === 'held' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartItem(order.id, it.id, it.preparationStatus);
+                                    }}
+                                    className="h-6 px-2 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95"
+                                    title={`Fire directly to ${itemAction.verb.toLowerCase()} (In Prep)`}
+                                  >
+                                    <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
+                                    <span>FIRE</span>
+                                  </button>
+                                )}
+
+                                {it.preparationStatus === 'pending' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartItem(order.id, it.id, it.preparationStatus);
+                                    }}
+                                    className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50"
+                                    title={itemAction.title}
+                                  >
+                                    <span className="material-symbols-outlined text-[10px]">{itemAction.icon}</span>
+                                    <span>{itemAction.verb}</span>
+                                  </button>
+                                )}
+                              </>
                             )}
+
+                            {/* Botón READY individual para marcar listo si está en preparación */}
+                            {!isCompleted && !isCancelled && it.preparationStatus === 'in_preparation' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReadyItem(order.id, it.id, it.quantity);
+                                }}
+                                className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
+                                title="Mark as READY"
+                              >
+                                <span className="material-symbols-outlined text-[10px]">check_circle</span>
+                                <span>READY</span>
+                              </button>
+                            )}
+
+                            {/* Botón UNDO en el artículo (después de haber iniciado: in_preparation o ready) */}
+                            {!isCompleted && !isCancelled && (it.preparationStatus === 'in_preparation' || it.preparationStatus === 'ready') && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUndoItem(order.id, it.id, it.preparationStatus, it.course);
+                                }}
+                                className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-stone-100 hover:bg-amber-100 text-stone-700 hover:text-amber-900 border border-stone-300 hover:border-amber-400"
+                                title={it.preparationStatus === 'ready' ? 'Undo: Return to In Preparation' : 'Undo: Return to Queue'}
+                              >
+                                <span className="material-symbols-outlined text-[10px]">undo</span>
+                                <span>UNDO</span>
+                              </button>
+                            )}
+
+                            {/* Status badge */}
+                            <span
+                              className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
+                                it.preparationStatus === 'ready'
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : it.preparationStatus === 'held'
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : it.preparationStatus === 'in_preparation'
+                                  ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                  : 'bg-zinc-100 text-[#5f5e5e] border-zinc-200'
+                              }`}
+                            >
+                              {it.preparationStatus === 'ready'
+                                ? 'Ready'
+                                : it.preparationStatus === 'held'
+                                ? 'Held'
+                                : it.preparationStatus === 'in_preparation'
+                                ? 'Prep'
+                                : 'Pending'}
+                            </span>
                           </div>
                         </div>
-
-                        {/* Status badge */}
-                        <span
-                          className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
-                            it.preparationStatus === 'ready'
-                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                              : it.preparationStatus === 'held'
-                              ? 'bg-amber-100 text-amber-900 border-amber-300'
-                              : it.preparationStatus === 'in_preparation'
-                              ? 'bg-blue-100 text-blue-800 border-blue-300'
-                              : 'bg-zinc-100 text-[#5f5e5e] border-zinc-200'
-                          }`}
-                        >
-                          {it.preparationStatus === 'ready'
-                            ? 'Ready'
-                            : it.preparationStatus === 'held'
-                            ? 'Held'
-                            : it.preparationStatus === 'in_preparation'
-                            ? 'Prep'
-                            : 'Pending'}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1841,12 +2598,108 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   </button>
 
                   <div className="flex items-center gap-2">
-                    {isPending && (
+                    {(isPending || isAllHeld) && (
+                      (() => {
+                        if (order.items.length === 1) {
+                          const singleItem = order.items[0];
+                          if (singleItem.preparationStatus === 'held') {
+                            return (
+                              <button
+                                onClick={() => handleStartItem(order.id, singleItem.id, singleItem.preparationStatus)}
+                                className="px-2.5 py-1 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-xs font-bold cursor-pointer transition-all shadow-xs flex items-center gap-1 active:scale-95"
+                                title="Fire directly to preparation"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">local_fire_department</span>
+                                <span>Fire</span>
+                              </button>
+                            );
+                          }
+                          const action = getItemPrepAction(singleItem.course, singleItem.productName);
+                          return (
+                            <button
+                              onClick={() => handleStartPrep(order)}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1 active:scale-95"
+                              title={action.title}
+                            >
+                              <span className="material-symbols-outlined text-[13px]">{action.icon}</span>
+                              <span>{action.verb === 'POUR' ? 'Pour' : 'Prep'}</span>
+                            </button>
+                          );
+                        }
+
+                        if (isAllHeld) {
+                          return (
+                            <button
+                              onClick={() => handleStartPrep(order)}
+                              className="px-2.5 py-1 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-xs font-bold cursor-pointer transition-all shadow-xs flex items-center gap-1 active:scale-95"
+                              title="Fire all items to preparation"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">local_fire_department</span>
+                              <span>Fire All</span>
+                            </button>
+                          );
+                        }
+
+                        const allBeverages = order.items.length > 0 && order.items.every(it => getItemPrepAction(it.course, it.productName).verb === 'POUR');
+                        if (allBeverages) {
+                          return (
+                            <button
+                              onClick={() => handleStartPrep(order)}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1 active:scale-95"
+                              title="Pour all beverages (Move to IN PREP)"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">local_bar</span>
+                              <span>Pour All</span>
+                            </button>
+                          );
+                        }
+
+                        const allFood = order.items.length > 0 && order.items.every(it => getItemPrepAction(it.course, it.productName).verb === 'PREP');
+                        if (allFood) {
+                          return (
+                            <button
+                              onClick={() => handleStartPrep(order)}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1 active:scale-95"
+                              title="Start preparing all items (Move to IN PREP)"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">restaurant</span>
+                              <span>Prep All</span>
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <button
+                            onClick={() => handleStartPrep(order)}
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                            title="Start order preparation"
+                          >
+                            Start
+                          </button>
+                        );
+                      })()
+                    )}
+
+                    {/* Botón Undo general en la comanda (después de haber dado Start) */}
+                    {(isStarted || hasActivePrep) && !isCompleted && !isCancelled && (
                       <button
-                        onClick={() => handleStartPrep(order)}
-                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
+                        onClick={() => handleUndoOrder(order)}
+                        className="px-2.5 py-1 bg-stone-100 hover:bg-amber-100 text-stone-700 hover:text-amber-900 border border-stone-300 hover:border-amber-400 rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1"
+                        title="Undo Start: Return entire order to PENDING and reset items"
                       >
-                        Start
+                        <span className="material-symbols-outlined text-[13px]">undo</span>
+                        <span>Undo</span>
+                      </button>
+                    )}
+
+                    {isCompleted && (
+                      <button
+                        onClick={() => handleRecallOrder(order.id)}
+                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold cursor-pointer transition-colors shadow-xs flex items-center gap-1"
+                        title="Recall order back to active kitchen board"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">replay</span>
+                        <span>Recall</span>
                       </button>
                     )}
 
@@ -1895,7 +2748,14 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   <span className="text-[#5f5e5e] ml-2 font-mono">#ORD-{inspectingTicket.orderId}</span>
                 )}
                 <span className="block text-[11px] text-[#5f5e5e] mt-0.5">
-                  Station: {inspectingTicket.stationName || 'Unassigned'} • Priority: P+{inspectingTicket.priority}
+                  Station: {inspectingTicket.stationName || 'Unassigned'} • Priority:{' '}
+                  {inspectingTicket.priority >= 3
+                    ? 'VIP Rush (+3)'
+                    : inspectingTicket.priority === 2
+                    ? 'Urgent (+2)'
+                    : inspectingTicket.priority === 1
+                    ? 'High (+1)'
+                    : 'Normal (0)'}
                 </span>
               </div>
 
@@ -2131,12 +2991,26 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     'Content-Type': 'application/json',
                     ...(token ? { Authorization: `Bearer ${token}` } : {}),
                   };
+                  const ticketRef = formOrderId.trim();
+                  const instructions = formNotes.trim();
+                  let combinedNotes = '';
+                  if (ticketRef && instructions) {
+                    combinedNotes = `${ticketRef} • ${instructions}`;
+                  } else if (ticketRef) {
+                    combinedNotes = ticketRef;
+                  } else if (instructions) {
+                    combinedNotes = instructions;
+                  }
+
+                  const isNumericOrderId = /^\d+$/.test(ticketRef);
+
                   const payload = {
                     stationId: formStationId ? Number(formStationId) : (stations[0]?.id || null),
                     priority: Number(formPriority),
-                    orderId: formOrderId ? Number(formOrderId) : null,
-                    businessStatus: 'started',
-                    startedAt: new Date().toISOString(),
+                    orderId: isNumericOrderId ? Number(ticketRef) : null,
+                    notes: combinedNotes || null,
+                    businessStatus: 'pending',
+                    startedAt: null,
                     kitchenOrderItems: validItems.map((it) => ({
                       productName: it.productName.trim(),
                       variantName: it.variantName.trim() || null,
@@ -2145,6 +3019,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       notes: it.notes.trim() || null,
                     })),
                   };
+
+                  // Envia latido keepalive para asegurar que la estación esté fresca y online
+                  await sendStationKeepaliveHeartbeat('ALL');
 
                   const res = await fetch(`${API_BASE}/kitchen-orders`, {
                     method: 'POST',
@@ -2191,7 +3068,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       >
                         {stations.map(s => (
                           <option key={s.id} value={String(s.id)}>
-                            {s.name} (#KST-{s.id})
+                            {s.name} (#KST-{s.stationNumber ?? s.station_number ?? s.display_order ?? s.id})
                           </option>
                         ))}
                       </select>
@@ -2217,11 +3094,11 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider mb-1">
-                        POS Ticket # Reference
+                        Table / Ticket Reference (Name or #)
                       </label>
                       <input
-                        type="number"
-                        placeholder="e.g. 101, 102"
+                        type="text"
+                        placeholder="e.g. Table 6, Bar 2, 101..."
                         value={formOrderId}
                         onChange={e => setFormOrderId(e.target.value)}
                         className="w-full px-3 py-2 bg-[#fef9f1] border border-[#e8e2d8] rounded text-xs font-semibold focus:border-[#ae001a] outline-none text-[#1d1c17]"
@@ -2257,7 +3134,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       </button>
                     </div>
 
-                    <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                    <div className="space-y-3 max-h-[34rem] overflow-y-auto pr-1">
                       {formItems.map((item, index) => {
                         const availableVariants = productVariantsMap[item.productName] || [];
 
@@ -2490,17 +3367,17 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               </div>
                             </div>
 
-                            {/* Item Preparation Notes */}
+                            {/* Item Preparation Notes with 1-Click Allergy & Modifier Picker */}
                             <div className="pt-1">
-                              <input
-                                type="text"
-                                placeholder="Special prep notes (e.g., extra spicy, no ice, medium rare)..."
-                                value={item.notes || ''}
-                                onChange={e => {
-                                  const val = e.target.value;
+                              <label className="block text-[10px] font-bold text-[#6f6e6e] uppercase tracking-wider mb-1">
+                                Allergies, Modifiers & Kitchen Notes
+                              </label>
+                              <KitchenAllergyModifierPicker
+                                notes={item.notes || ''}
+                                onChange={val => {
                                   setFormItems(prev => prev.map((it, i) => i === index ? { ...it, notes: val } : it));
                                 }}
-                                className="w-full px-2.5 py-1 bg-[#faf9f6] border border-[#e5dfd5] rounded-md text-[11px] text-[#1d1c17] placeholder-[#a09c94] focus:border-[#ae001a] focus:bg-white outline-none transition-all"
+                                placeholder="Additional prep notes (e.g. cut in half, extra crispy)..."
                               />
                             </div>
                           </div>
@@ -2583,6 +3460,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           },
         ]}
       />
+      <KitchenSlaConfigModal
+        isOpen={isSlaModalOpen}
+        onClose={() => setIsSlaModalOpen(false)}
+        onSavedToast={(msg) => showToast(msg, 'success')}
+      />
+      <KitchenDevResetButton onResetComplete={() => loadOrders(true)} />
     </div>
   );
 };

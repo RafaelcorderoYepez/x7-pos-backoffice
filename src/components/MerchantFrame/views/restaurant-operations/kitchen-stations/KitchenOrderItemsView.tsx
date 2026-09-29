@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
+import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
+import { KitchenDevResetButton } from './KitchenDevResetButton';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -52,15 +54,60 @@ interface KitchenStationOption {
   stationType?: string;
 }
 
-interface KitchenOrderItemsViewProps {
-  onNavigate?: (view: string) => void;
-}
+const getItemPrepAction = (course?: string, productName?: string) => {
+  const c = (course || '').toLowerCase();
+  const n = (productName || '').toLowerCase();
+
+  const isBeverage =
+    c === 'beverage' ||
+    c === 'drink' ||
+    c.includes('bev') ||
+    n.includes('latte') ||
+    n.includes('coffee') ||
+    n.includes('café') ||
+    n.includes('cafe') ||
+    n.includes('soda') ||
+    n.includes('juice') ||
+    n.includes('jugo') ||
+    n.includes('tea') ||
+    n.includes('té') ||
+    n.includes('cocktail') ||
+    n.includes('coctel') ||
+    n.includes('cerveza') ||
+    n.includes('beer') ||
+    n.includes('drink') ||
+    n.includes('frappe') ||
+    n.includes('smoothie') ||
+    n.includes('refresco') ||
+    n.includes('agua') ||
+    n.includes('water') ||
+    n.includes('wine') ||
+    n.includes('vino') ||
+    n.includes('licor') ||
+    n.includes('mojito') ||
+    n.includes('margarita');
+
+  if (isBeverage) {
+    return {
+      verb: 'POUR',
+      icon: 'local_bar',
+      title: 'Start pouring (Move to IN PREP)',
+    };
+  }
+
+  return {
+    verb: 'PREP',
+    icon: 'restaurant',
+    title: 'Start preparing (Move to IN PREP)',
+  };
+};
 
 export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ onNavigate }) => {
   const [items, setItems] = useState<KitchenOrderItemDetail[]>([]);
   const [stations, setStations] = useState<KitchenStationOption[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [criticalSlaMinutes] = useKdsCriticalSla();
 
   // Filters
   const [activeTab, setActiveTab] = useState<'ALL' | 'HELD' | 'PENDING' | 'IN_PREPARATION' | 'READY'>('ALL');
@@ -92,8 +139,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     id: number;
   } | null>(null);
 
-  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const toastIdRef = useRef(0);
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 4500);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
 
   // Real-time clock for elapsed second counters
   const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
@@ -103,12 +153,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   }, []);
 
   const showToast = (text: string, type: 'success' | 'info' | 'warning' | 'auto_bump' = 'success') => {
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    toastIdRef.current += 1;
-    setToastMessage({ text, type, id: toastIdRef.current });
-    toastTimeoutRef.current = setTimeout(() => {
-      setToastMessage(null);
-    }, 4500);
+    setToastMessage(prev => ({ text, type, id: (prev?.id ?? 0) + 1 }));
   };
 
   // 1. Fetch stations
@@ -188,6 +233,15 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     }, refreshInterval * 1000);
     return () => clearInterval(interval);
   }, [refreshInterval, loadItems]);
+
+  // Escuchar evento global de reinicio KDS
+  useEffect(() => {
+    const handleReset = () => {
+      loadItems(true);
+    };
+    window.addEventListener('x7_kds_data_reset', handleReset);
+    return () => window.removeEventListener('x7_kds_data_reset', handleReset);
+  }, [loadItems]);
 
   // Handle Tap-to-Increment (+1)
   const handleIncrement = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
@@ -300,9 +354,9 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     setActionInProgressId(item.id);
     try {
       const token = getAccessToken();
-      const newPrepared = item.preparedQuantity - 1;
-      const newStatus: KitchenItemPrepStatus =
-        newPrepared === 0 ? 'pending' : 'in_preparation';
+      const newPrepared = Math.max(0, item.preparedQuantity - 1);
+      // Mantener en preparación activa (in_preparation); solo vuelve a pending al presionar Undo
+      const newStatus: KitchenItemPrepStatus = 'in_preparation';
 
       const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
         method: 'PUT',
@@ -408,8 +462,8 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     }
   };
 
-  // Handle Reset to Pending (0/N)
-  const handleResetItem = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
+  // Handle Start Item (POUR / PREP / FIRE -> in_preparation)
+  const handleStartItem = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (actionInProgressId === item.id) return;
 
@@ -421,36 +475,164 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       return;
     }
 
-    const confirmReset = window.confirm(
-      `Reset "${item.product?.name || 'Dish'}" back to PENDING (0/${item.quantity})?`
-    );
-    if (!confirmReset) return;
+    setActionInProgressId(item.id);
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      if (item.preparationStatus === 'held') {
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}/fire`, {
+          method: 'POST',
+          headers,
+        });
+        if (!res.ok) throw new Error('Failed to fire item');
+        showToast(`🔥 Fired "${item.product?.name || 'Item'}" to active preparation!`, 'success');
+      } else {
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
+        });
+        if (!res.ok) throw new Error('Failed to start item preparation');
+        const action = getItemPrepAction(item.course, item.product?.name);
+        showToast(`Started ${action.verb.toLowerCase()} for "${item.product?.name || 'Dish'}"`, 'info');
+      }
+
+      setItems(prev =>
+        prev.map(it =>
+          it.id === item.id ? { ...it, preparationStatus: 'in_preparation' } : it
+        )
+      );
+      loadItems(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error starting item';
+      showToast(msg, 'warning');
+    } finally {
+      setActionInProgressId(null);
+    }
+  };
+
+  // Handle Revert/Undo on an individual item (Ready -> In Prep -> Pending/Held)
+  const handleRevertItemToPending = async (item: KitchenOrderItemDetail, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (actionInProgressId === item.id) return;
+
+    const isOrderClosed =
+      item.kitchenOrder?.businessStatus === 'completed' ||
+      item.kitchenOrder?.businessStatus === 'cancelled';
+    if (isOrderClosed) {
+      showToast('This order is already completed and cannot be modified.', 'warning');
+      return;
+    }
 
     setActionInProgressId(item.id);
 
     try {
       const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          preparedQuantity: 0,
-          preparationStatus: 'pending',
-          startedAt: null,
-          completedAt: null,
-        }),
-      });
+      const isReadyState = item.preparationStatus === 'ready';
 
-      if (!res.ok) throw new Error('Failed to reset item');
-      const data = await res.json();
-      const updatedItem = data.data || data;
-      setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem } : it)));
-      showToast(`Reset ${item.product.name} to PENDING (0/${item.quantity})`, 'info');
+      if (isReadyState) {
+        // Ready -> in_preparation
+        const targetPreparedQty = Math.max(0, item.quantity - 1);
+        const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            preparationStatus: 'in_preparation',
+            preparedQuantity: targetPreparedQty,
+            completedAt: null,
+          }),
+        });
+
+        if (!res.ok) throw new Error('Failed to undo ready status');
+        const data = await res.json();
+        const updatedItem = data.data || data;
+        setItems(prev =>
+          prev.map(it =>
+            it.id === item.id
+              ? {
+                  ...it,
+                  ...updatedItem,
+                  preparationStatus: 'in_preparation',
+                  preparedQuantity: targetPreparedQty,
+                  completedAt: null,
+                }
+              : it
+          )
+        );
+        showToast(`↩️ "${item.product.name}" returned to In Prep.`, 'info');
+      } else {
+        // in_preparation -> pending or held
+        const isStagedCourse = item.course === 'dessert' || item.course === 'main_course';
+        if (isStagedCourse) {
+          const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}/hold?holdMinutes=10`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+          });
+          if (!res.ok) throw new Error('Failed to hold item');
+          const data = await res.json();
+          const updatedItem = data.data || data;
+          setItems(prev =>
+            prev.map(it =>
+              it.id === item.id
+                ? {
+                    ...it,
+                    ...updatedItem,
+                    preparationStatus: 'held',
+                    preparedQuantity: 0,
+                    startedAt: null,
+                    completedAt: null,
+                  }
+                : it
+            )
+          );
+          showToast(`↩️ "${item.product.name}" returned to Held.`, 'info');
+        } else {
+          const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              preparedQuantity: 0,
+              preparationStatus: 'pending',
+              startedAt: null,
+              completedAt: null,
+            }),
+          });
+
+          if (!res.ok) throw new Error('Failed to revert item');
+          const data = await res.json();
+          const updatedItem = data.data || data;
+          setItems(prev =>
+            prev.map(it =>
+              it.id === item.id
+                ? {
+                    ...it,
+                    ...updatedItem,
+                    preparedQuantity: 0,
+                    preparationStatus: 'pending',
+                    startedAt: null,
+                    completedAt: null,
+                  }
+                : it
+            )
+          );
+          showToast(`↩️ REVERTED: "${item.product.name}" returned to queue.`, 'info');
+        }
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error resetting item';
+      const msg = err instanceof Error ? err.message : 'Error reverting item';
       showToast(msg, 'warning');
     } finally {
       setActionInProgressId(null);
@@ -468,13 +650,12 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
     try {
       const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-orders/${kitchenOrderId}`, {
-        method: 'PUT',
+      const res = await fetch(`${API_BASE}/kitchen-orders/${kitchenOrderId}/recall`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ businessStatus: 'started', completedAt: null }),
       });
 
       if (!res.ok) {
@@ -567,60 +748,124 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       }
     };
 
-    return [...result].sort((a, b) => {
-      const tierA = getStatusTier(a.kitchenOrder?.businessStatus);
-      const tierB = getStatusTier(b.kitchenOrder?.businessStatus);
+    // 1. Agrupar items por comanda (kitchenOrderId) para mantener todas las órdenes intactas
+    const orderGroupsMap = new Map<number, {
+      kitchenOrderId: number;
+      orderId?: number | null;
+      stationName?: string | null;
+      priority: number;
+      businessStatus: string;
+      tier: number;
+      createdAt: string;
+      items: KitchenOrderItemRecord[];
+    }>();
 
-      if (tierA !== tierB) {
-        return tierA - tierB;
-      }
-
-      // Tier 1: Active orders -> Items in preparation / pending first!
-      if (tierA === 1) {
-        // 1. PRIORIDAD OPERATIVA DE COCINA:
-        // Lo que se está cocinando / pendiente va primero que lo pausado (HELD) o ya listo
-        const getPrepRank = (status?: string): number => {
-          switch (status) {
-            case 'in_preparation':
-              return 1;
-            case 'pending':
-              return 2;
-            case 'ready':
-              return 3;
-            case 'held':
-              return 4;
-            default:
-              return 5;
-          }
+    for (const it of result) {
+      const orderId = it.kitchenOrderId;
+      let grp = orderGroupsMap.get(orderId);
+      if (!grp) {
+        const orderStatus = it.kitchenOrder?.businessStatus || 'pending';
+        const tier = getStatusTier(orderStatus);
+        grp = {
+          kitchenOrderId: orderId,
+          orderId: it.kitchenOrder?.orderId,
+          stationName: it.kitchenOrder?.stationName,
+          priority: it.kitchenOrder?.priority ?? 0,
+          businessStatus: orderStatus,
+          tier,
+          createdAt: it.createdAt,
+          items: [],
         };
+        orderGroupsMap.set(orderId, grp);
+      }
+      grp.items.push(it);
+      if (new Date(it.createdAt).getTime() < new Date(grp.createdAt).getTime()) {
+        grp.createdAt = it.createdAt;
+      }
+    }
 
-        const rankA = getPrepRank(a.preparationStatus);
-        const rankB = getPrepRank(b.preparationStatus);
-        if (rankA !== rankB) {
-          return rankA - rankB;
-        }
+    const orderGroups = Array.from(orderGroupsMap.values());
 
-        // 2. Prioridad de orden si ambos tienen el mismo estado de preparación
-        const prioA = a.kitchenOrder?.priority ?? 0;
-        const prioB = b.kitchenOrder?.priority ?? 0;
-        if (prioB !== prioA) return prioB - prioA;
+    // 2. Ordenar las comandas (Opción C):
+    // - Tier 1: Activas (pending/started) -> Prioridad VIP mayor primero, luego FIFO (más antigua primero)
+    // - Tier 2: Completadas -> más reciente primero
+    // - Tier 3: Canceladas -> más reciente primero
+    orderGroups.sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier - b.tier;
 
-        // 3. FIFO para el mismo estado de preparación: el más antiguo primero
-        const timeA = new Date(a.createdAt).getTime();
-        const timeB = new Date(b.createdAt).getTime();
-        if (timeA !== timeB) return timeA - timeB;
-
-        return a.id - b.id;
+      if (a.tier === 1) {
+        if (b.priority !== a.priority) return b.priority - a.priority;
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
       }
 
-      // Tier 2 & 3: Completed / Cancelled -> Oldest first
-      const timeA = new Date(a.createdAt).getTime();
-      const timeB = new Date(b.createdAt).getTime();
-      if (timeA !== timeB) return timeA - timeB;
-
-      return a.id - b.id;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
+
+    // 3. Ordenar los ítems DENTRO de cada comanda por su estado operativo:
+    // in_preparation > pending > ready > held
+    const rankItem = (st: string) => {
+      if (st === 'in_preparation') return 1;
+      if (st === 'pending') return 2;
+      if (st === 'ready') return 3;
+      if (st === 'held') return 4;
+      return 5;
+    };
+
+    for (const grp of orderGroups) {
+      grp.items.sort((a, b) => {
+        const rA = rankItem(a.preparationStatus);
+        const rB = rankItem(b.preparationStatus);
+        if (rA !== rB) return rA - rB;
+        return a.id - b.id;
+      });
+    }
+
+    // 4. Aplanar la lista ordenada manteniendo los platos de cada orden juntos
+    const flatItems: KitchenOrderItemRecord[] = [];
+    for (const grp of orderGroups) {
+      flatItems.push(...grp.items);
+    }
+
+    return flatItems;
   }, [stationFilteredItems, activeTab, searchQuery]);
+
+  // Grupos por comanda para renderizar separadores visuales (Opción C)
+  const groupedOrderItems = useMemo(() => {
+    const groups: Array<{
+      kitchenOrderId: number;
+      orderId?: number | null;
+      stationName?: string | null;
+      priority: number;
+      businessStatus: string;
+      createdAt: string;
+      items: KitchenOrderItemDetail[];
+    }> = [];
+
+    const map = new Map<number, typeof groups[0]>();
+
+    for (const item of filteredItems) {
+      let g = map.get(item.kitchenOrderId);
+      if (!g) {
+        g = {
+          kitchenOrderId: item.kitchenOrderId,
+          orderId: item.kitchenOrder?.orderId,
+          stationName: item.kitchenOrder?.stationName,
+          priority: item.kitchenOrder?.priority ?? 0,
+          businessStatus: item.kitchenOrder?.businessStatus || 'pending',
+          createdAt: item.createdAt,
+          items: [],
+        };
+        map.set(item.kitchenOrderId, g);
+        groups.push(g);
+      }
+      g.items.push(item);
+      if (new Date(item.createdAt).getTime() < new Date(g.createdAt).getTime()) {
+        g.createdAt = item.createdAt;
+      }
+    }
+
+    return groups;
+  }, [filteredItems]);
 
   // Paginated items for table view
   const paginatedItems = useMemo(() => {
@@ -1045,26 +1290,109 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
             description="No line items match your current station or status filter. All dishes have been prepared or no orders are currently routed."
           />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredItems.map(item => {
+          <div className="space-y-6">
+            {groupedOrderItems.map(group => {
+              const readyCount = group.items.filter(i => i.preparationStatus === 'ready').length;
+              const inPrepCount = group.items.filter(i => i.preparationStatus === 'in_preparation').length;
+              const pendingCount = group.items.filter(i => i.preparationStatus === 'pending').length;
+              const heldCount = group.items.filter(i => i.preparationStatus === 'held').length;
+
+              return (
+                <div key={group.kitchenOrderId} className="space-y-3">
+                  {/* Visual Order Separator & Header Banner (Opción C) */}
+                  <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#f6f2e9] border border-[#e2dcce] rounded-xl shadow-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-black text-xs text-[#ae001a] bg-red-100/90 border border-red-200 px-2.5 py-1 rounded-md">
+                        #KO-{group.kitchenOrderId}
+                      </span>
+                      {group.orderId && (
+                        <span className="font-mono text-[11px] font-bold text-[#5f5e5e] bg-white border border-[#e8e2d8] px-2 py-0.5 rounded-md">
+                          #ORD-{group.orderId}
+                        </span>
+                      )}
+                      {group.priority > 0 && (
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                            group.priority >= 3
+                              ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                              : group.priority === 2
+                              ? 'bg-red-100 text-[#ae001a] border border-red-300'
+                              : 'bg-amber-100 text-amber-900 border border-amber-300'
+                          }`}
+                        >
+                          {group.priority >= 3 ? 'VIP (+3)' : group.priority === 2 ? 'URGENT (+2)' : 'HIGH (+1)'}
+                        </span>
+                      )}
+                      {group.stationName && (
+                        <span className="text-[10px] font-bold text-[#5f5e5e] bg-white px-2 py-0.5 rounded-md border border-[#e8e2d8]">
+                          {group.stationName}
+                        </span>
+                      )}
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                          group.businessStatus === 'completed'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : group.businessStatus === 'cancelled'
+                            ? 'bg-zinc-200 text-zinc-700 border border-zinc-300'
+                            : group.businessStatus === 'started'
+                            ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                            : 'bg-amber-100 text-amber-900 border border-amber-300'
+                        }`}
+                      >
+                        {group.businessStatus?.toUpperCase() || 'PENDING'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="font-bold text-[11px] text-[#1d1c17] bg-white px-2.5 py-1 rounded-md border border-[#e8e2d8]">
+                        {group.items.length} {group.items.length === 1 ? 'Dish' : 'Dishes'}
+                        <span className="text-[#5f5e5e] font-normal ml-1">
+                          ({readyCount > 0 ? `${readyCount} ready` : ''}
+                          {readyCount > 0 && inPrepCount > 0 ? ', ' : ''}
+                          {inPrepCount > 0 ? `${inPrepCount} in prep` : ''}
+                          {(readyCount > 0 || inPrepCount > 0) && pendingCount > 0 ? ', ' : ''}
+                          {pendingCount > 0 ? `${pendingCount} pending` : ''}
+                          {(readyCount > 0 || inPrepCount > 0 || pendingCount > 0) && heldCount > 0 ? ', ' : ''}
+                          {heldCount > 0 ? `${heldCount} held` : ''})
+                        </span>
+                      </span>
+                      <span className="text-[11px] font-mono text-[#5f5e5e] bg-white px-2 py-1 rounded-md border border-[#e8e2d8] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs">schedule</span>
+                        {formatElapsedTime(group.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Cards Grid for this Order */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {group.items.map(item => {
             const isHeld = item.preparationStatus === 'held';
             const isReady = item.preparationStatus === 'ready';
             const isInPrep = item.preparationStatus === 'in_preparation';
+            const isPending = !isHeld && !isInPrep && !isReady;
             const isOrderClosed =
               item.kitchenOrder?.businessStatus === 'completed' ||
               item.kitchenOrder?.businessStatus === 'cancelled';
-            const canTapCard = !isOrderClosed && !isReady && !isHeld;
+            const itemAction = getItemPrepAction(item.course, item.product?.name);
 
             const progressPercent = item.quantity > 0
               ? Math.min(100, Math.round((item.preparedQuantity / item.quantity) * 100))
               : 0;
 
             const isActionLoading = actionInProgressId === item.id;
+            const itemAgeMs = Math.max(0, currentTime - new Date(item.createdAt).getTime());
+            const isSlaBreached = itemAgeMs >= criticalSlaMinutes * 60 * 1000 && !isOrderClosed && !isReady;
 
             return (
               <div
                 key={item.id}
-                onClick={canTapCard ? e => handleIncrement(item, e) : undefined}
+                onClick={
+                  isPending
+                    ? e => handleStartItem(item, e)
+                    : isInPrep
+                    ? e => handleIncrement(item, e)
+                    : undefined
+                }
                 className={`group relative rounded-xl border transition-all select-none flex flex-col justify-between overflow-hidden shadow-xs ${
                   isOrderClosed
                     ? 'bg-zinc-50/80 border-zinc-200 opacity-85 cursor-default'
@@ -1074,7 +1402,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                     ? 'bg-amber-50/40 border-dashed border-amber-400 hover:border-amber-500'
                     : isInPrep
                     ? 'bg-blue-50/40 border-blue-300 hover:border-blue-400 cursor-pointer'
-                    : 'bg-white border-[#e8e2d8] hover:border-[#ae001a]/50 hover:shadow-sm cursor-pointer'
+                    : 'bg-white border-[#e8e2d8] hover:border-blue-400 hover:shadow-sm cursor-pointer'
                 }`}
               >
                 {/* Top Ticket Info & Priority Badge */}
@@ -1103,12 +1431,26 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                     {(item.kitchenOrder?.priority ?? 0) > 0 && (
                       <span
                         className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                          (item.kitchenOrder?.priority ?? 0) >= 2
+                          (item.kitchenOrder?.priority ?? 0) >= 3
+                            ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                            : (item.kitchenOrder?.priority ?? 0) === 2
                             ? 'bg-red-100 text-[#ae001a] border border-red-300'
                             : 'bg-amber-100 text-amber-900 border border-amber-300'
                         }`}
                       >
-                        P+{(item.kitchenOrder?.priority ?? 0)}
+                        {(item.kitchenOrder?.priority ?? 0) >= 3
+                          ? 'VIP (+3)'
+                          : (item.kitchenOrder?.priority ?? 0) === 2
+                          ? 'URGENT (+2)'
+                          : 'HIGH (+1)'}
+                      </span>
+                    )}
+
+                    {/* SLA shield badge */}
+                    {isSlaBreached && (
+                      <span className="text-[10px] bg-red-600 text-white border border-red-700 px-1.5 py-0.5 rounded font-black tracking-wide flex items-center gap-0.5 shadow-xs animate-pulse">
+                        <span className="material-symbols-outlined text-[11px]">shield</span>
+                        SLA
                       </span>
                     )}
 
@@ -1268,14 +1610,39 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                       <button
                         onClick={e => handleFireItem(item, e)}
                         disabled={isActionLoading}
-                        title="Fire item immediately to line cooks"
-                        className="px-3 h-7 rounded text-xs font-black uppercase tracking-wider flex items-center gap-1 shadow-xs transition-all cursor-pointer bg-amber-600 hover:bg-amber-700 text-white"
+                        title={`Fire directly to ${itemAction.verb.toLowerCase()} (In Prep)`}
+                        className="h-7 px-3 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95"
                       >
-                        <span className="material-symbols-outlined text-xs font-black">local_fire_department</span>
-                        <span>Fire Item</span>
+                        <span className="material-symbols-outlined text-sm">local_fire_department</span>
+                        <span>FIRE</span>
+                      </button>
+                    </div>
+                  ) : isPending ? (
+                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={e => handleStartItem(item, e)}
+                        disabled={isActionLoading}
+                        title={itemAction.title}
+                        className="h-7 px-3 rounded text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50"
+                      >
+                        <span className="material-symbols-outlined text-sm">{itemAction.icon}</span>
+                        <span>{itemAction.verb}</span>
+                      </button>
+                    </div>
+                  ) : isReady ? (
+                    /* Cuando está READY, a la derecha solo va el botón Undo (el badge READY ya está a la izquierda) */
+                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={e => handleRevertItemToPending(item, e)}
+                        disabled={isActionLoading}
+                        title="Revert item to pending (Undo)"
+                        className="w-7 h-7 rounded bg-[#f0ebe1] hover:bg-amber-100 text-[#5f5e5e] hover:text-amber-800 border border-[#e8e2d8] hover:border-amber-300 flex items-center justify-center transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-xs">undo</span>
                       </button>
                     </div>
                   ) : (
+                    /* En preparación (IN PREP) */
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                       {/* Decrement (-1) */}
                       {item.preparedQuantity > 0 && (
@@ -1293,39 +1660,45 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                       <button
                         onClick={e => handleIncrement(item, e)}
                         disabled={isActionLoading}
-                        title={isReady ? "Reset prepared count back to 0" : "Tap to Increment prepared quantity (+1)"}
-                        className={`px-2.5 h-7 rounded text-xs font-bold flex items-center gap-1 shadow-xs transition-all cursor-pointer ${
-                          isReady
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                            : isInPrep
-                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                            : 'bg-[#ae001a] hover:bg-[#900015] text-white'
-                        }`}
+                        title="Tap to Increment prepared quantity (+1)"
+                        className="px-2.5 h-7 rounded text-xs font-bold flex items-center gap-1 shadow-xs transition-all cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
                       >
-                        <span className="material-symbols-outlined text-xs">
-                          {isReady ? 'restart_alt' : 'add'}
-                        </span>
-                        <span>{isReady ? 'Cycle' : '+1 Prep'}</span>
+                        <span className="material-symbols-outlined text-xs">add</span>
+                        <span>{`+1 ${itemAction.verb === 'POUR' ? 'Pour' : 'Prep'}`}</span>
                       </button>
 
-                      {/* Mark All Ready (if not ready) */}
-                      {!isReady && (
+                      {/* Mark All Ready */}
+                      <button
+                        onClick={e => handleMarkAllReady(item, e)}
+                        disabled={isActionLoading}
+                        title="Instantly mark all quantity ready"
+                        className="w-7 h-7 rounded bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 text-emerald-800 flex items-center justify-center transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-xs font-black">done_all</span>
+                      </button>
+
+                      {/* Revert to Queue (Undo) */}
+                      {(isInPrep || item.preparedQuantity > 0) && (
                         <button
-                          onClick={e => handleMarkAllReady(item, e)}
+                          onClick={e => handleRevertItemToPending(item, e)}
                           disabled={isActionLoading}
-                          title="Instantly mark all quantity ready"
-                          className="w-7 h-7 rounded bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 text-emerald-800 flex items-center justify-center transition-colors cursor-pointer"
+                          title="Revert to Queue (Undo)"
+                          className="w-7 h-7 rounded bg-[#f0ebe1] hover:bg-amber-100 text-[#5f5e5e] hover:text-amber-800 border border-[#e8e2d8] hover:border-amber-300 flex items-center justify-center transition-colors cursor-pointer"
                         >
-                          <span className="material-symbols-outlined text-xs font-black">done_all</span>
+                          <span className="material-symbols-outlined text-xs">undo</span>
                         </button>
                       )}
                     </div>
                   )}
                 </div>
               </div>
-            );
-          })}
-        </div>
+                    );
+                  })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )
       ) : (
         /* VIEW MODE 2: DETAILED TABLE VIEW (Audit & Multi-Item Density) */
@@ -1457,18 +1830,51 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                         description="No line items match your current station or status filter."
                       />
                     ) : (
-                      paginatedItems.map(item => {
-                    const isHeld = item.preparationStatus === 'held';
-                    const isReady = item.preparationStatus === 'ready';
-                    const isInPrep = item.preparationStatus === 'in_preparation';
-                    const isOrderClosed =
-                      item.kitchenOrder?.businessStatus === 'completed' ||
-                      item.kitchenOrder?.businessStatus === 'cancelled';
+                      paginatedItems.map((item, index) => {
+                        const isHeld = item.preparationStatus === 'held';
+                        const isReady = item.preparationStatus === 'ready';
+                        const isInPrep = item.preparationStatus === 'in_preparation';
+                        const isPending = !isHeld && !isInPrep && !isReady;
+                        const isOrderClosed =
+                          item.kitchenOrder?.businessStatus === 'completed' ||
+                          item.kitchenOrder?.businessStatus === 'cancelled';
+                        const itemAction = getItemPrepAction(item.course, item.product?.name);
+                        const isNewOrderGroup = index === 0 || item.kitchenOrderId !== paginatedItems[index - 1].kitchenOrderId;
 
-                    return (
-                      <tr
-                        key={item.id}
-                        className={`hover:bg-[#f8f3eb] transition-colors ${
+                        return (
+                          <React.Fragment key={item.id}>
+                            {isNewOrderGroup && (
+                              <tr key={`header-${item.kitchenOrderId}-${index}`} className="bg-[#f6f2e9] border-t-2 border-b border-[#ded5c5]">
+                                <td colSpan={activeColSpan} className="px-4 py-2 font-bold text-xs text-[#1d1c17]">
+                                  <div className="flex items-center justify-between flex-wrap gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono font-black text-[#ae001a] bg-red-100/90 border border-red-200 px-2 py-0.5 rounded text-[11px]">
+                                        #KO-{item.kitchenOrderId}
+                                      </span>
+                                      {item.kitchenOrder?.orderId && (
+                                        <span className="text-[#5f5e5e] font-mono text-[11px] bg-white px-1.5 py-0.5 rounded border border-[#e8e2d8]">
+                                          #ORD-{item.kitchenOrder.orderId}
+                                        </span>
+                                      )}
+                                      {item.kitchenOrder?.stationName && (
+                                        <span className="text-[10px] text-[#5f5e5e] bg-white px-2 py-0.5 rounded border border-[#e8e2d8]">
+                                          {item.kitchenOrder.stationName}
+                                        </span>
+                                      )}
+                                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                                        {item.kitchenOrder?.businessStatus?.toUpperCase() || 'PENDING'}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] text-[#5f5e5e] font-mono flex items-center gap-1">
+                                      <span className="material-symbols-outlined text-xs">schedule</span>
+                                      Order Elapsed: {formatElapsedTime(item.createdAt)}
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            <tr
+                              className={`hover:bg-[#f8f3eb] transition-colors ${
                           isOrderClosed
                             ? 'bg-zinc-50/60 opacity-85'
                             : isReady
@@ -1629,14 +2035,38 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                                 <button
                                   onClick={e => handleFireItem(item, e)}
                                   disabled={actionInProgressId === item.id}
-                                  className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold inline-flex items-center gap-1 shadow-xs cursor-pointer"
-                                  title="Fire item to Active Queue"
+                                  className="h-6 px-2.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 shadow-xs cursor-pointer active:scale-95"
+                                  title={`Fire directly to ${itemAction.verb.toLowerCase()} (In Prep)`}
                                 >
                                   <span className="material-symbols-outlined text-xs">local_fire_department</span>
                                   <span>Fire</span>
                                 </button>
                               </div>
+                            ) : isPending ? (
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  onClick={e => handleStartItem(item, e)}
+                                  disabled={actionInProgressId === item.id}
+                                  className="h-6 px-2.5 rounded text-[10px] font-black uppercase tracking-wider inline-flex items-center gap-1 shadow-xs cursor-pointer active:scale-95 bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50"
+                                  title={itemAction.title}
+                                >
+                                  <span className="material-symbols-outlined text-xs">{itemAction.icon}</span>
+                                  <span>{itemAction.verb}</span>
+                                </button>
+                              </div>
+                            ) : isReady ? (
+                              /* Cuando está READY, en acciones solo va el botón Undo (el badge READY ya está en la columna prepState) */
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  onClick={e => handleRevertItemToPending(item, e)}
+                                  title="Revert to Queue (Undo)"
+                                  className="p-1 text-[#5f5e5e] hover:text-amber-700 hover:bg-amber-50 rounded cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-sm">undo</span>
+                                </button>
+                              </div>
                             ) : (
+                              /* En preparación (IN PREP) */
                               <div className="inline-flex items-center gap-1.5">
                                 {item.preparedQuantity > 0 && (
                                   <button
@@ -1648,46 +2078,38 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                                   </button>
                                 )}
 
+                                {/* Primary Tap Increment (+1) */}
                                 <button
                                   onClick={e => handleIncrement(item, e)}
-                                  className={`px-3 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer ${
-                                    isReady
-                                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                      : isInPrep
-                                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                                      : 'bg-[#ae001a] hover:bg-[#900015] text-white'
-                                  }`}
+                                  className="px-3 py-1 rounded text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer bg-blue-600 hover:bg-blue-700 text-white"
                                 >
-                                  <span className="material-symbols-outlined text-xs">
-                                    {isReady ? 'restart_alt' : 'add'}
-                                  </span>
-                                  <span>{isReady ? 'Cycle' : '+1 Prep'}</span>
+                                  <span className="material-symbols-outlined text-xs">add</span>
+                                  <span>{`+1 ${itemAction.verb === 'POUR' ? 'Pour' : 'Prep'}`}</span>
                                 </button>
 
-                                {!isReady && (
-                                  <button
-                                    onClick={e => handleMarkAllReady(item, e)}
-                                    title="Mark Ready"
-                                    className="p-1 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer"
-                                  >
-                                    <span className="material-symbols-outlined text-sm">done_all</span>
-                                  </button>
-                                )}
+                                <button
+                                  onClick={e => handleMarkAllReady(item, e)}
+                                  title="Mark Ready"
+                                  className="p-1 text-emerald-700 hover:bg-emerald-50 rounded cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-sm">done_all</span>
+                                </button>
 
-                                {isReady && (
+                                {(isInPrep || item.preparedQuantity > 0) && (
                                   <button
-                                    onClick={e => handleResetItem(item, e)}
-                                    title="Reset to Pending"
-                                    className="p-1 text-[#5f5e5e] hover:text-[#1d1c17] hover:bg-[#f0ebe1] rounded cursor-pointer"
+                                    onClick={e => handleRevertItemToPending(item, e)}
+                                    title="Revert to Queue (Undo)"
+                                    className="p-1 text-[#5f5e5e] hover:text-amber-700 hover:bg-amber-50 rounded cursor-pointer"
                                   >
-                                    <span className="material-symbols-outlined text-sm">restart_alt</span>
+                                    <span className="material-symbols-outlined text-sm">undo</span>
                                   </button>
                                 )}
                               </div>
                             )}
                           </td>
                         )}
-                      </tr>
+                        </tr>
+                      </React.Fragment>
                     );
                   })
                 )}
@@ -1759,6 +2181,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
           },
         ]}
       />
+      <KitchenDevResetButton onResetComplete={() => loadItems(true)} />
     </div>
   );
 };

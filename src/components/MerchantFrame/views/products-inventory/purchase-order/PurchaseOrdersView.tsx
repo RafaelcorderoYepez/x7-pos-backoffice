@@ -627,6 +627,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
 
   // Calculate total pending items for inspector and total received cost
 
+  let totalRequestedOrderAmount = 0;
   let totalPendingItemsCount = 0;
   let totalReceivedAmount = 0;
   if (selectedOrderForInspect?.purchaseOrderItems) {
@@ -634,43 +635,53 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
       // For raw materials use quantityOrdered; fallback to quantity for compatibility
       const requested = Number(item.quantityOrdered ?? item.quantity) || 0;
       const price = Number(item.unitCost ?? item.unitPrice) || 0;
+      totalRequestedOrderAmount += requested * price;
       let received: number;
       if (inspectorStatus === 'RECEIVED' || inspectorStatus === 'COMPLETED') {
         received = requested;
       } else if (inspectorStatus === 'PARTIALLY_RECEIVED') {
         received = item.id ? (receivedQuantities[item.id] ?? 0) : 0;
-      } else if (inspectorStatus === 'DRAFT' || inspectorStatus === 'SENT' || inspectorStatus === 'PENDING' || inspectorStatus === 'CANCELLED') {
+      } else if (inspectorStatus === 'CANCELLED') {
+        received = Number(item.receivedQuantity) || 0;
+      } else if (inspectorStatus === 'DRAFT' || inspectorStatus === 'SENT' || inspectorStatus === 'PENDING') {
         received = 0;
       } else {
         received = Number(item.receivedQuantity) || 0;
       }
       const diff = requested - received;
-      if (diff > 0) {
+      if (diff > 0 && inspectorStatus !== 'CANCELLED') {
         totalPendingItemsCount += diff;
       }
       totalReceivedAmount += received * price;
     });
   }
 
-  // Filtrado de listado
-  const filteredOrders = purchaseOrders.filter(po => {
-    const supplierName = po.supplier?.name || '';
-    const formattedId = `PO-#${String(po.id).padStart(4, '0')}`;
-    const matchesSearch =
-      supplierName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      formattedId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      String(po.id).includes(searchQuery);
+  // Filtrado y ordenamiento de listado (de más nuevo a más viejo por actualización de estado/fecha)
+  const filteredOrders = purchaseOrders
+    .filter(po => {
+      const supplierName = po.supplier?.name || '';
+      const formattedId = `PO-#${String(po.id).padStart(4, '0')}`;
+      const matchesSearch =
+        supplierName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        formattedId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(po.id).includes(searchQuery);
 
-    const matchesStatus =
-      statusFilter === 'All' ||
-      po.status.toUpperCase() === statusFilter.toUpperCase();
+      const matchesStatus =
+        statusFilter === 'All' ||
+        po.status.toUpperCase() === statusFilter.toUpperCase();
 
-    const matchesSupplier =
-      supplierFilter === 'All' ||
-      (po.supplier && String(po.supplier.id) === supplierFilter);
+      const matchesSupplier =
+        supplierFilter === 'All' ||
+        (po.supplier && String(po.supplier.id) === supplierFilter);
 
-    return matchesSearch && matchesStatus && matchesSupplier;
-  });
+      return matchesSearch && matchesStatus && matchesSupplier;
+    })
+    .sort((a, b) => {
+      const timeA = a.orderDate ? new Date(a.orderDate).getTime() : 0;
+      const timeB = b.orderDate ? new Date(b.orderDate).getTime() : 0;
+      if (timeB !== timeA) return timeB - timeA;
+      return b.id - a.id;
+    });
 
   // Inspection drawer portal
   const drawerPortal = (isDetailDrawerOpen && selectedOrderForInspect)
@@ -769,13 +780,15 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                     </span>
                   </div>
                   <div className="bg-[#f5efe6] p-2.5 border border-[#e8e2d8]">
-                    <span className="block text-[8px] font-bold uppercase tracking-wider text-[#5f5e5e] mb-1">Total (Req)</span>
+                    <span className="block text-[8px] font-bold uppercase tracking-wider text-[#5f5e5e] mb-1">
+                      Total (Req)
+                    </span>
                     <span className="text-[11px] font-bold text-[#ae001a] font-mono">
-                      ${Number(selectedOrderForInspect.totalAmount).toFixed(2)}
+                      ${totalRequestedOrderAmount.toFixed(2)}
                     </span>
                   </div>
                   <div className={`p-2.5 border ${
-                    Math.abs(totalReceivedAmount - Number(selectedOrderForInspect.totalAmount)) < 0.01
+                    Math.abs(totalReceivedAmount - totalRequestedOrderAmount) < 0.01 && totalRequestedOrderAmount > 0
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
                       : totalReceivedAmount > 0
                         ? 'bg-amber-50 border-amber-200 text-amber-800'
@@ -858,9 +871,14 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                             ) : (
                               <span className="block text-[10px] text-emerald-700 font-bold mt-1 flex items-center gap-1.5">
                                 <span>Received: {(inspectorStatus === 'RECEIVED' || inspectorStatus === 'COMPLETED') ? Number(item.quantityOrdered ?? item.quantity).toFixed(2) : Number(item.receivedQuantity || 0).toFixed(2)} / {Number(item.quantityOrdered ?? item.quantity).toFixed(2)}</span>
-                                {inspectorStatus !== 'COMPLETED' && inspectorStatus !== 'RECEIVED' && Number(item.quantityOrdered ?? item.quantity) - (item.receivedQuantity || 0) > 0 && (
+                                {inspectorStatus !== 'COMPLETED' && inspectorStatus !== 'RECEIVED' && inspectorStatus !== 'CANCELLED' && Number(item.quantityOrdered ?? item.quantity) - (item.receivedQuantity || 0) > 0 && (
                                   <span className="text-[9px] px-1.5 py-0.5 bg-amber-50 border border-amber-200 text-amber-800 font-bold rounded">
                                     {(Number(item.quantityOrdered ?? item.quantity) - (item.receivedQuantity || 0)).toFixed(2)} pending
+                                  </span>
+                                )}
+                                {inspectorStatus === 'CANCELLED' && Number(item.quantityOrdered ?? item.quantity) - (item.receivedQuantity || 0) > 0 && (
+                                  <span className="text-[9px] px-1.5 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-500 font-semibold rounded">
+                                    {(Number(item.quantityOrdered ?? item.quantity) - (item.receivedQuantity || 0)).toFixed(2)} cancelled
                                   </span>
                                 )}
                               </span>
@@ -868,32 +886,35 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                           </div>
                         </div>
                         <div className="text-right flex flex-col justify-center items-end">
-                          <span className="text-xs font-bold font-mono text-[#1c1b16]">
-                            ${Number(item.totalPrice).toFixed(2)}
-                          </span>
                           {(() => {
-                            const req = Number(item.quantity) || 0;
-                            const rec = inspectorStatus === 'COMPLETED'
-                              ? req
+                            const reqQty = Number(item.quantityOrdered ?? item.quantity) || 0;
+                            const itemPrice = Number(item.unitCost ?? item.unitPrice) || 0;
+                            const lineTotalRequested = reqQty * itemPrice;
+                            const recQty = (inspectorStatus === 'RECEIVED' || inspectorStatus === 'COMPLETED')
+                              ? reqQty
                               : (inspectorStatus === 'PARTIALLY_RECEIVED'
                                   ? (item.id ? (receivedQuantities[item.id] ?? 0) : 0)
-                                  : (item.receivedQuantity || 0));
-                            const itemPrice = Number(item.unitPrice) || 0;
-                            if (rec > 0 && rec < req) {
-                              return (
-                                <span className="text-[9px] text-amber-600 font-bold font-mono mt-0.5 whitespace-nowrap">
-                                  Rec: ${(rec * itemPrice).toFixed(2)}
+                                  : (Number(item.receivedQuantity) || 0));
+                            const lineReceivedAmount = recQty * itemPrice;
+
+                            return (
+                              <>
+                                <span className="text-xs font-bold font-mono text-[#1c1b16]">
+                                  ${lineTotalRequested.toFixed(2)}
                                 </span>
-                              );
-                            }
-                            if (rec === req) {
-                              return (
-                                <span className="text-[9px] text-emerald-600 font-bold font-mono mt-0.5 whitespace-nowrap">
-                                  Rec: ${(req * itemPrice).toFixed(2)}
-                                </span>
-                              );
-                            }
-                            return null;
+                                {(recQty > 0 || inspectorStatus === 'CANCELLED' || inspectorStatus === 'PARTIALLY_RECEIVED') && (
+                                  <span className={`text-[9px] font-bold font-mono mt-0.5 whitespace-nowrap ${
+                                    recQty >= reqQty && reqQty > 0
+                                      ? 'text-emerald-600'
+                                      : recQty > 0
+                                        ? 'text-amber-600'
+                                        : 'text-neutral-400'
+                                  }`}>
+                                    Rec: ${lineReceivedAmount.toFixed(2)}
+                                  </span>
+                                )}
+                              </>
+                            );
                           })()}
                         </div>
                       </div>
@@ -1193,10 +1214,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                           const formattedDate = (dateObj && !isNaN(dateObj.getTime()))
                             ? dateObj.toISOString().split('T')[0]
                             : 'N/A';
-                          const formattedAmount = new Intl.NumberFormat('en-US', {
-                            style: 'currency',
-                            currency: 'USD'
-                          }).format(po.totalAmount);
 
                           // Map styles per specification
                           const uStatus = po.status.toUpperCase();
@@ -1215,19 +1232,30 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                             badgeStyle = 'bg-indigo-100 text-indigo-800 border border-indigo-200';
                           }
 
-                          // Calculate receiving progress
+                          // Calculate receiving progress and monetary totals
                           let fulfillmentText = '0%';
                           let totalQtyRequested = 0;
                           let totalQtyReceived = 0;
+                          let totalOrderedAmount = 0;
+                          let totalReceivedAmount = 0;
+
                           if (po.purchaseOrderItems && po.purchaseOrderItems.length > 0) {
                             po.purchaseOrderItems.forEach(item => {
-                              totalQtyRequested += Number(item.quantityOrdered ?? item.quantity) || 0;
-                              totalQtyReceived += Number(item.receivedQuantity) || 0;
+                              const requested = Number(item.quantityOrdered ?? item.quantity) || 0;
+                              const received = Number(item.receivedQuantity) || 0;
+                              const price = Number(item.unitCost ?? item.unitPrice) || 0;
+                              totalQtyRequested += requested;
+                              totalQtyReceived += received;
+                              totalOrderedAmount += requested * price;
+                              totalReceivedAmount += received * price;
                             });
+                          } else {
+                            totalOrderedAmount = Number(po.totalAmount) || 0;
                           }
 
                           if (po.status === 'RECEIVED' || po.status === 'COMPLETED') {
                             fulfillmentText = '100% (Completed)';
+                            totalReceivedAmount = totalOrderedAmount;
                           } else if (po.status === 'DRAFT') {
                             fulfillmentText = 'Draft';
                           } else if (po.status === 'SENT') {
@@ -1235,7 +1263,9 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                           } else if (po.status === 'PENDING') {
                             fulfillmentText = '0% (Awaiting)';
                           } else if (po.status === 'CANCELLED') {
-                            fulfillmentText = 'Cancelled';
+                            fulfillmentText = totalQtyReceived > 0
+                              ? `Cancelled (${totalQtyReceived.toFixed(2)} rec.)`
+                              : 'Cancelled';
                           } else if (totalQtyRequested > 0) {
                             const pct = Math.round((totalQtyReceived / totalQtyRequested) * 100);
                             const pending = (totalQtyRequested - totalQtyReceived).toFixed(2);
@@ -1271,8 +1301,23 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                                 </td>
                               )}
                               {visibleColumns.totalAmount && (
-                                <td className={`${densityPadding} text-right font-mono font-bold text-[#ae001a]`}>
-                                  {formattedAmount}
+                                <td className={`${densityPadding} text-right`}>
+                                  <div className="flex flex-col items-end">
+                                    <span className="font-mono font-bold text-xs text-[#ae001a]">
+                                      ${totalOrderedAmount.toFixed(2)}
+                                    </span>
+                                    {(totalReceivedAmount > 0 || po.status === 'CANCELLED' || po.status === 'PARTIALLY_RECEIVED') && (
+                                      <span className={`text-[10px] font-mono font-bold mt-0.5 whitespace-nowrap ${
+                                        totalReceivedAmount >= totalOrderedAmount && totalOrderedAmount > 0
+                                          ? 'text-emerald-600'
+                                          : totalReceivedAmount > 0
+                                            ? 'text-amber-600'
+                                            : 'text-secondary'
+                                      }`}>
+                                        Rec: ${totalReceivedAmount.toFixed(2)}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                               )}
                               {visibleColumns.progress && (

@@ -48,7 +48,6 @@ import {
 } from '../../../../api/reservations';
 import { ApiError } from '../../../../lib/api-error';
 import { Toast, type ToastState } from '../../shared/Toast';
-import { ReservationsQuickLinks } from './ReservationsQuickLinks';
 import { GuestFormDrawer, type GuestSubmitPayload } from './GuestFormDrawer';
 
 interface ReservationGuestsViewProps {
@@ -56,10 +55,9 @@ interface ReservationGuestsViewProps {
   merchantId?: number;
 }
 
-export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({
-  onNavigate,
-  merchantId,
-}) => {
+// `onNavigate` sigue en las props (MerchantFrame lo pasa a todas las vistas), pero la
+// navegación entre sub-módulos la hace ya la NavHubBar del módulo, montada por MerchantFrame.
+export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ merchantId }) => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<CustomerRef[]>([]);
 
@@ -724,10 +722,6 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({
       ) : null}
 
       <Toast toast={toast} onClose={() => setToast(null)} />
-      {/* Panel de accesos rápidos estándar (QuickLaunchPanel), como el resto de módulos. */}
-      <div>
-        <ReservationsQuickLinks current="reservation-guests" onNavigate={onNavigate} />
-      </div>
 
     </div>
   );

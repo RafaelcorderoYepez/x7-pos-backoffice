@@ -4,9 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ReservationsView } from './ReservationsView';
 
+let storedRole = 'merchant_admin';
 vi.mock('../../../../lib/auth-storage', () => ({
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
+  getStoredUser: vi.fn(() => ({ id: 2, role: storedRole, merchant: { id: 3 } })),
 }));
 
 // El workspace vive siempre dentro del router de la aplicación: el panel de accesos
@@ -84,6 +86,64 @@ const TABLES = [
 let reservationRows = RESERVATIONS;
 const calls: Array<{ url: string; method: string; body?: unknown }> = [];
 
+// Matriz de disponibilidad servida por el backend: 19:00 libre, 19:15 ajustada, 19:30 llena
+// para el grupo pedido, 19:45 libre.
+const slot = (time: string, level: string, bookable = true, over: Record<string, unknown> = {}) => ({
+  time,
+  start: at(19, Number(time.slice(3))),
+  booked_seats: level === 'available' ? 10 : level === 'limited' ? 45 : 58,
+  projected_seats: 0,
+  occupancy_pct: level === 'available' ? 16.7 : level === 'limited' ? 75 : 96.7,
+  level,
+  arrivals: 4,
+  fits_capacity: bookable,
+  fits_throttle: true,
+  bookable,
+  ...over,
+});
+const AVAILABILITY = {
+  date: '2026-04-16',
+  party_size: 4,
+  duration_minutes: 90,
+  seat_capacity: 60,
+  capacity_source: 'settings',
+  slot_interval_minutes: 15,
+  max_covers_per_slot: 20,
+  shifts: [
+    {
+      name: 'Dinner',
+      start: '19:00',
+      end: '20:00',
+      occupancy_pct: 96.7,
+      level: 'limited',
+      slots: [
+        slot('19:00', 'available'),
+        slot('19:15', 'limited'),
+        slot('19:30', 'sold_out', false),
+        slot('19:45', 'available'),
+      ],
+    },
+  ],
+};
+const SETTINGS = {
+  seat_capacity: 60,
+  effective_seat_capacity: 60,
+  capacity_source: 'settings',
+  slot_interval_minutes: 15,
+  max_covers_per_slot: 20,
+  shifts: [{ name: 'Dinner', start: '19:00', end: '23:00' }],
+  updated_at: null,
+};
+const CAPACITY_409 = {
+  statusCode: 409,
+  error: 'Conflict',
+  code: 'CAPACITY_OVERRIDE_REQUIRED',
+  message: 'Over capacity: 58 of 60 seats are already committed around 19:00, so a party of 4 does not fit (2 free). A manager override is required to overbook.',
+};
+// Cuándo responde el servidor con 409 de aforo si no viene override.
+let createConflict = false;
+let confirmConflict = false;
+
 const jsonResponse = (payload: unknown, status = 200) =>
   Promise.resolve({
     ok: status < 400,
@@ -95,6 +155,9 @@ const jsonResponse = (payload: unknown, status = 200) =>
 beforeEach(() => {
   reservationRows = RESERVATIONS;
   calls.length = 0;
+  storedRole = 'merchant_admin';
+  createConflict = false;
+  confirmConflict = false;
 
   vi.stubGlobal(
     'fetch',
@@ -107,6 +170,16 @@ beforeEach(() => {
         body: init?.body ? JSON.parse(String(init.body)) : undefined,
       });
 
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      if (url.includes('/reservation-capacity/availability')) {
+        return jsonResponse({ statusCode: 200, data: AVAILABILITY });
+      }
+      if (url.includes('/reservation-capacity/settings')) {
+        return jsonResponse({
+          statusCode: 200,
+          data: method === 'PUT' ? { ...SETTINGS, ...body } : SETTINGS,
+        });
+      }
       if (url.includes('/reservation?')) {
         return jsonResponse({ statusCode: 200, data: reservationRows, total: reservationRows.length });
       }
@@ -117,11 +190,21 @@ beforeEach(() => {
         return jsonResponse({ statusCode: 200, data: { ...reservationRows[0], status: 'cancelled' } });
       }
       if (/\/reservation\/\d+$/.test(url)) {
-        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        if (confirmConflict && body.status === 'confirmed' && !body.manager_override) {
+          return jsonResponse(CAPACITY_409, 409);
+        }
         return jsonResponse({ statusCode: 200, data: { ...reservationRows[0], ...body } });
       }
       if (url.endsWith('/reservation')) {
-        return jsonResponse({ statusCode: 201, data: { ...RESERVATIONS[0], id: 99 } });
+        if (createConflict && !body.manager_override) return jsonResponse(CAPACITY_409, 409);
+        return jsonResponse({
+          statusCode: 201,
+          data: {
+            ...RESERVATIONS[0],
+            id: 99,
+            capacity_override_by: body.manager_override ? 43 : null,
+          },
+        });
       }
       return jsonResponse({ statusCode: 200, data: [] });
     }),
@@ -323,6 +406,34 @@ describe('controlador del ciclo de vida', () => {
     });
   });
 
+  it('confirmar en una franja llena abre el override y reintenta con las credenciales', async () => {
+    confirmConflict = true;
+    const user = userEvent.setup();
+    await renderView();
+
+    await user.click(
+      within(screen.getByTestId('booking-card-1')).getByRole('button', { name: 'Confirmed' }),
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByTestId('manager-override')).toHaveTextContent(/58 of 60 seats/);
+    await user.type(within(dialog).getByLabelText(/manager email/i), 'boss@x.com');
+    await user.type(within(dialog).getByLabelText(/manager password/i), 'S3cret!');
+    await user.click(within(dialog).getByRole('button', { name: /authorize & confirmed/i }));
+
+    await waitFor(() => {
+      const retried = calls.filter(
+        (c) => c.method === 'PATCH' && /\/reservation\/1$/.test(c.url),
+      );
+      expect(retried).toHaveLength(2);
+      expect(retried[1].body).toEqual({
+        status: 'confirmed',
+        manager_override: { email: 'boss@x.com', password: 'S3cret!' },
+      });
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('anular usa el endpoint dedicado que deja rastro en el histórico', async () => {
     const user = userEvent.setup();
     await renderView();
@@ -345,6 +456,11 @@ describe('alta de reserva', () => {
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
   };
 
+  // La hora sólo se elige en la matriz de franjas: sin pulsar una no se puede reservar.
+  const pickSlot = async (user: ReturnType<typeof userEvent.setup>, time = '19:00') => {
+    await user.click(await within(screen.getByRole('dialog')).findByTestId(`slot-${time}`));
+  };
+
   it('crea la reserva con la franja, el grupo, la duración y el canal', async () => {
     const user = userEvent.setup();
     await renderView();
@@ -354,6 +470,7 @@ describe('alta de reserva', () => {
     await user.clear(within(dialog).getByLabelText(/party size/i));
     await user.type(within(dialog).getByLabelText(/party size/i), '3');
     await user.selectOptions(within(dialog).getByLabelText(/booking source/i), 'qr');
+    await pickSlot(user);
     await user.type(
       within(dialog).getByLabelText(/special requests/i),
       'Window seat preferred',
@@ -375,6 +492,7 @@ describe('alta de reserva', () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
+    await pickSlot(user);
 
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /book table/i }));
 
@@ -396,6 +514,7 @@ describe('alta de reserva', () => {
     await user.click(await within(dialog).findByRole('button', { name: /Ana Ruiz/ }));
 
     expect(within(dialog).getByText(/Linked to Ana Ruiz \(customer #45\)/)).toBeInTheDocument();
+    await pickSlot(user);
 
     await user.click(within(dialog).getByRole('button', { name: /book table/i }));
 
@@ -413,6 +532,7 @@ describe('alta de reserva', () => {
     const dialog = screen.getByRole('dialog');
     await user.type(within(dialog).getByLabelText(/guest name/i), 'Marta Gil');
     await user.type(within(dialog).getByLabelText(/^phone$/i), '+34 600 555 444');
+    await pickSlot(user);
     await user.click(within(dialog).getByRole('button', { name: /book table/i }));
 
     await waitFor(() => {
@@ -430,30 +550,125 @@ describe('alta de reserva', () => {
     expect(post?.body).not.toHaveProperty('customer_id');
   });
 
-  it('avisa de la sobreventa y exige confirmarla antes de guardar', async () => {
+  it('pinta la matriz de franjas con el semáforo del servidor y elige la hora al pulsar', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
 
     const dialog = screen.getByRole('dialog');
-    // El salón tiene 10 plazas (mesas de 4 y 6) y la franja del drawer está libre: un grupo
-    // de 12 no cabe de ninguna manera.
-    await user.clear(within(dialog).getByLabelText(/party size/i));
-    await user.type(within(dialog).getByLabelText(/party size/i), '12');
+    const matrix = await within(dialog).findByTestId('slot-matrix');
+    await waitFor(() => expect(within(matrix).getByTestId('slot-19:15')).toBeInTheDocument());
 
-    await waitFor(() =>
-      expect(screen.getByTestId('capacity-check')).toHaveTextContent(/exceeds the floor capacity/i),
+    expect(within(matrix).getByTestId('slot-19:00')).toHaveAttribute('data-level', 'available');
+    expect(within(matrix).getByTestId('slot-19:15')).toHaveAttribute('data-level', 'limited');
+    expect(within(matrix).getByTestId('slot-19:30')).toHaveAttribute('data-level', 'sold_out');
+    expect(within(matrix).getByTestId('slot-19:15')).toHaveAccessibleName(
+      /19:15 — Limited capacity: 45 of 60 seats committed \(75%\)/,
     );
 
-    const submit = within(dialog).getByRole('button', { name: /confirm over capacity/i });
+    // Ya no hay campo de hora libre: la franja pulsada ES la hora de la reserva.
+    expect(within(dialog).queryByLabelText(/^time$/i)).not.toBeInTheDocument();
+    await user.click(within(matrix).getByTestId('slot-19:45'));
+    expect(within(matrix).getByTestId('slot-19:45')).toHaveAttribute('aria-pressed', 'true');
+
+    const query = calls.find((c) => c.url.includes('/reservation-capacity/availability'));
+    expect(query?.url).toMatch(/party_size=2&duration_minutes=90/);
+  });
+
+  it('bloquea una franja llena hasta que el encargado autoriza con sus credenciales', async () => {
+    const user = userEvent.setup();
+    await renderView();
+    await openDrawer(user);
+
+    const dialog = screen.getByRole('dialog');
+    await user.click(await within(dialog).findByTestId('slot-19:30'));
+
+    const panel = within(dialog).getByTestId('manager-override');
+    expect(panel).toHaveTextContent(/sold out for a party of 4/i);
+    const submit = within(dialog).getByRole('button', { name: /authorize & book/i });
+    expect(submit).toBeDisabled();
+
+    await user.type(within(panel).getByLabelText(/manager email/i), 'boss@x.com');
+    expect(submit).toBeDisabled();
+    await user.type(within(panel).getByLabelText(/manager password/i), 'S3cret!');
+    expect(submit).toBeEnabled();
+
     await user.click(submit);
-    // El primer clic sólo reconoce el aviso: todavía no se ha guardado nada.
-    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/reservation'))).toBe(false);
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/reservation'));
+      expect(post?.body).toMatchObject({
+        manager_override: { email: 'boss@x.com', password: 'S3cret!' },
+      });
+    });
+    expect(await screen.findByText(/manager override/i)).toBeInTheDocument();
+  });
+
+  it('no pide override en una franja libre ni manda credenciales', async () => {
+    const user = userEvent.setup();
+    await renderView();
+    await openDrawer(user);
+
+    const dialog = screen.getByRole('dialog');
+    await user.click(await within(dialog).findByTestId('slot-19:15'));
+    expect(within(dialog).queryByTestId('manager-override')).not.toBeInTheDocument();
 
     await user.click(within(dialog).getByRole('button', { name: /book table/i }));
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/reservation'));
+      expect(post?.body).not.toHaveProperty('manager_override');
+    });
+  });
+
+  it('si el servidor rechaza por aforo al guardar, pide el override para esa franja', async () => {
+    createConflict = true;
+    const user = userEvent.setup();
+    await renderView();
+    await openDrawer(user);
+
+    const dialog = screen.getByRole('dialog');
+    await pickSlot(user, '19:00');
+    await user.click(within(dialog).getByRole('button', { name: /book table/i }));
+
+    const panel = await within(dialog).findByTestId('manager-override');
+    expect(panel).toHaveTextContent(/58 of 60 seats/);
+
+    // Otra franja: el 409 era de las 19:00, así que el aviso desaparece.
+    await user.click(within(dialog).getByTestId('slot-19:45'));
+    expect(within(dialog).queryByTestId('manager-override')).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByTestId('slot-19:00'));
+    const again = within(dialog).getByTestId('manager-override');
+    await user.type(within(again).getByLabelText(/manager email/i), 'boss@x.com');
+    await user.type(within(again).getByLabelText(/manager password/i), 'S3cret!');
+    await user.click(within(dialog).getByRole('button', { name: /authorize & book/i }));
+
     await waitFor(() =>
-      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/reservation'))).toBe(true),
+      expect(
+        calls.filter((c) => c.method === 'POST' && c.url.endsWith('/reservation')),
+      ).toHaveLength(2),
     );
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('no deja reservar hasta elegir una franja y envía la hora de la franja', async () => {
+    const user = userEvent.setup();
+    await renderView();
+    await openDrawer(user);
+
+    const dialog = screen.getByRole('dialog');
+    await within(dialog).findByTestId('slot-19:45');
+    expect(within(dialog).getByRole('button', { name: /book table/i })).toBeDisabled();
+    expect(within(dialog).getByText(/pick a time slot/i)).toBeInTheDocument();
+
+    await pickSlot(user, '19:45');
+    expect(within(dialog).queryByText(/pick a time slot/i)).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: /book table/i }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/reservation'));
+      const sent = new Date((post?.body as { reservation_date: string }).reservation_date);
+      expect([sent.getHours(), sent.getMinutes()]).toEqual([19, 45]);
+    });
   });
 
   it('rechaza un tamaño de grupo no positivo', async () => {
@@ -481,53 +696,41 @@ describe('estado vacío', () => {
   });
 });
 
-describe('panel de accesos rápidos estándar', () => {
-  it('usa el QuickLaunchPanel común con los 5 sub-módulos', async () => {
-    await renderView();
-
-    const panel = screen.getByRole('navigation', { name: /reservations workspace shortcuts/i });
-    ['RESERVATIONS', 'GUESTS', 'TABLE ASSIGNMENTS', 'RESERVATION NOTES', 'STATUS HISTORY'].forEach(
-      (label) => {
-        expect(within(panel).getByText(label, { exact: true })).toBeInTheDocument();
-      },
-    );
-  });
-
-  it('destaca el workspace actual como aria-current y no como botón', async () => {
-    await renderView();
-
-    // QuickLaunchPanel pinta el ancla activa como <span aria-current="page">, no navegable.
-    const panel = screen.getByRole('navigation', { name: /reservations workspace shortcuts/i });
-    const current = within(panel).getByText('RESERVATIONS', { exact: true });
-    expect(current.closest('[aria-current="page"]')).not.toBeNull();
-    expect(
-      within(panel).queryByRole('button', { name: new RegExp('^RESERVATIONS$', 'i') }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('navega al featureId del ancla pulsada', async () => {
+describe('aforo y turnos', () => {
+  it('el encargado edita aforo, límite de llegadas y turnos', async () => {
     const user = userEvent.setup();
-    const onNavigate = vi.fn();
-    renderIn(<ReservationsView merchantId={3} onNavigate={onNavigate} />);
-    const panel = await screen.findByRole('navigation', {
-      name: /reservations workspace shortcuts/i,
-    });
-
-    await user.click(within(panel).getByRole('button', { name: /TABLE ASSIGNMENTS/i }));
-
-    expect(onNavigate).toHaveBeenCalledWith('reservation-tables');
-  });
-
-  it('no monta una barra inferior fija: la navegación es sólo el panel', async () => {
     await renderView();
 
-    // El épico se navega con el QuickLaunchPanel estándar. La barra anclada al pie se retiró:
-    // repetía los mismos cinco accesos y tapaba el pie real de la aplicación.
-    expect(
-      screen.queryByRole('navigation', { name: /reservations sub-module navigation/i }),
-    ).not.toBeInTheDocument();
-    // La vista se monta aislada, así que cualquier `.fixed.bottom-0` aquí sería suyo — en la
-    // aplicación completa ese selector lo cumple además el <main> del shell.
-    expect(document.querySelector('.fixed.bottom-0')).toBeNull();
+    await user.click(screen.getByRole('button', { name: /capacity & shifts/i }));
+    const dialog = await screen.findByRole('dialog');
+    const seats = await within(dialog).findByLabelText(/total seat capacity/i);
+    expect(seats).toHaveValue('60');
+
+    await user.clear(seats);
+    await user.clear(within(dialog).getByLabelText(/max guests arriving per slot/i));
+    await user.selectOptions(within(dialog).getByLabelText(/slot interval/i), '30');
+    await user.click(within(dialog).getByRole('button', { name: /add shift/i }));
+    await user.type(within(dialog).getByLabelText('Shift 2 name'), 'Lunch');
+
+    await user.click(within(dialog).getByRole('button', { name: /save settings/i }));
+
+    await waitFor(() => {
+      const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/reservation-capacity/settings'));
+      expect(put?.body).toEqual({
+        seat_capacity: null,
+        slot_interval_minutes: 30,
+        max_covers_per_slot: null,
+        shifts: [
+          { name: 'Dinner', start: '19:00', end: '23:00' },
+          { name: 'Lunch', start: '12:00', end: '16:00' },
+        ],
+      });
+    });
+  });
+
+  it('no ofrece los ajustes a quien no es encargado', async () => {
+    storedRole = 'merchant_user';
+    await renderView();
+    expect(screen.queryByRole('button', { name: /capacity & shifts/i })).not.toBeInTheDocument();
   });
 });

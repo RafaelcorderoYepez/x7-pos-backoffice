@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { UserProfile, SystemNotification } from '../../../services/restaurantService';
+import { navHubById } from '../../../lib/module-nav-hubs';
 import type { NavCategory } from '../../../services/navigationService';
 import logoX7 from '../../../assets/logo-x7.png';
 
@@ -140,6 +141,14 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
       }
       if (parentAppName) break;
     }
+  }
+
+  // Module Command Hubs (`<appId>-hub`) are not in the feature catalog; resolve them
+  // from module-nav-hubs.ts so the header doesn't fall back to "SYSTEM / RESERVATIONS HUB".
+  const commandHub = navHubById(activeTab);
+  if (commandHub) {
+    parentAppName = commandHub.category;
+    activeFeatureName = commandHub.title;
   }
 
   // Domain tabs list to map Breadcrumbs accurately and immune to accordion clicks
