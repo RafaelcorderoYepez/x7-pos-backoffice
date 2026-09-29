@@ -70,19 +70,6 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Adjust state during render when props change
-  const [prevMember, setPrevMember] = useState(member);
-  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
-
-    fetchTipPoolMembers({ record_status: 'ACTIVE' })
-      .then((membersList) => setAllActiveMembers(membersList))
-      .catch(() => setAllActiveMembers(existingMembers));
-
-    fetchCollaboratorOptions()
-      .then((opts) => setCollaborators(opts))
-      .catch(() => setCollaborators([]));
-  }, [companyId, merchantId, existingMembers]);
-
   useEffect(() => {
     if (!isOpen) return;
     if (member) {
@@ -100,7 +87,7 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
     }
     setErrorMessage(null);
     setSuccessMessage(null);
-  }
+  }, [isOpen, member, defaultTipPoolId, pools, collaborators]);
 
   useEffect(() => {
     let ignore = false;
@@ -121,6 +108,14 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
       })
       .catch(() => {
         if (!ignore) setAllActiveMembers(existingMembers);
+      });
+
+    fetchCollaboratorOptions()
+      .then((opts) => {
+        if (!ignore) setCollaborators(opts);
+      })
+      .catch(() => {
+        if (!ignore) setCollaborators([]);
       });
 
     return () => {
