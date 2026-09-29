@@ -650,6 +650,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
                                   typeCode === 'TRANSFER' ? 'bg-blue-100 text-blue-800 border border-blue-300' :
                                   typeCode === 'WASTE' ? 'bg-amber-100 text-amber-800 border border-amber-300' :
                                   typeCode === 'POS_DEPLETION' ? 'bg-orange-100 text-orange-800 border border-orange-300' :
+                                  typeCode === 'PURCHASE_RECEIPT_CORRECTION' ? 'bg-rose-100 text-rose-800 border border-rose-300' :
                                   isEntry ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 
                                   'bg-red-100 text-red-800 border border-red-300'
                                 }`}>
