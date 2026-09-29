@@ -70,24 +70,31 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    if (member) {
-      setTipPoolId(String(member.tip_pool_id));
-      setCollaboratorId(String(member.collaborator_id));
-      setRole(member.role);
-      setWeight(String(member.weight));
-      setRecordStatus(member.record_status);
-    } else {
-      setTipPoolId(defaultTipPoolId ? String(defaultTipPoolId) : pools[0] ? String(pools[0].id) : '');
-      setCollaboratorId(collaborators[0] ? String(collaborators[0].id) : '');
-      setRole('WAITER');
-      setWeight('1.00');
-      setRecordStatus('ACTIVE');
+  // Adjust state during render when props change (prevents react-hooks/set-state-in-effect cascading renders)
+  const [prevMember, setPrevMember] = useState(member);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+
+  if (member !== prevMember || isOpen !== prevIsOpen) {
+    setPrevMember(member);
+    setPrevIsOpen(isOpen);
+    if (isOpen) {
+      if (member) {
+        setTipPoolId(String(member.tip_pool_id));
+        setCollaboratorId(String(member.collaborator_id));
+        setRole(member.role);
+        setWeight(String(member.weight));
+        setRecordStatus(member.record_status);
+      } else {
+        setTipPoolId(defaultTipPoolId ? String(defaultTipPoolId) : pools[0] ? String(pools[0].id) : '');
+        setCollaboratorId(collaborators[0] ? String(collaborators[0].id) : '');
+        setRole('WAITER');
+        setWeight('1.00');
+        setRecordStatus('ACTIVE');
+      }
+      setErrorMessage(null);
+      setSuccessMessage(null);
     }
-    setErrorMessage(null);
-    setSuccessMessage(null);
-  }, [isOpen, member, defaultTipPoolId, pools, collaborators]);
+  }
 
   useEffect(() => {
     let ignore = false;
