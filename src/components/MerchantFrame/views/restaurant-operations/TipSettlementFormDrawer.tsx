@@ -3,7 +3,7 @@ import type {
   SettlementMethod,
   CreateTipSettlementDto,
 } from '../../../../types/tip-settlements';
-import { SETTLEMENT_METHODS, SETTLEMENT_METHOD_LABELS } from '../../../../types/tip-settlements';
+import { SETTLEMENT_METHODS } from '../../../../types/tip-settlements';
 
 export interface TipSettlementFormDrawerProps {
   isOpen: boolean;
@@ -68,8 +68,8 @@ export const TipSettlementFormDrawer: React.FC<TipSettlementFormDrawerProps> = (
       });
 
       onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to submit tip settlement record.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to submit tip settlement record.');
     } finally {
       setSubmitting(false);
     }

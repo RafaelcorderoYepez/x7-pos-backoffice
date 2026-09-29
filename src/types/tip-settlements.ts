@@ -47,7 +47,7 @@ export interface TipSettlement {
   company_id: string;
   merchant_id: string;
   collaborator_id: number | string;
-  shift_id: number | string;
+  shift_id?: number | string;
   order_id?: number | null;
   total_amount: number;
   settlement_method: SettlementMethod;
@@ -55,7 +55,7 @@ export interface TipSettlement {
   settled_by?: number | string | null;
   settled_at?: string | null; // ISO datetime string or null if pending
   notes?: string | null;
-  created_at: string;
+  created_at?: string;
   updated_at?: string;
 
   // Relational Eager-Hydrated Fields

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import type {
   SettlementMethod,
   TipSettlementStatus,
@@ -71,20 +71,29 @@ export const TipSettlementExecutionDrawer: React.FC<TipSettlementExecutionDrawer
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (targetSettlement) {
-      setSettlementMethod(targetSettlement.settlement_method || 'CASH');
-      setOrderId(targetSettlement.order_id ? String(targetSettlement.order_id) : '');
-      // When executing a pending settlement, default status to SETTLED
-      setStatus('SETTLED');
-      setNotes(targetSettlement.notes || '');
-    } else {
-      setOrderId(initialOrderId ? String(initialOrderId) : '');
-      setSettlementMethod('CASH');
-      setStatus('SETTLED');
-      setNotes('');
+  // Adjust state during render when props change (prevents react-hooks/set-state-in-effect)
+  const [prevTargetSettlement, setPrevTargetSettlement] = useState(targetSettlement);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  const [prevInitialOrderId, setPrevInitialOrderId] = useState(initialOrderId);
+
+  if (targetSettlement !== prevTargetSettlement || isOpen !== prevIsOpen || initialOrderId !== prevInitialOrderId) {
+    setPrevTargetSettlement(targetSettlement);
+    setPrevIsOpen(isOpen);
+    setPrevInitialOrderId(initialOrderId);
+    if (isOpen) {
+      if (targetSettlement) {
+        setSettlementMethod(targetSettlement.settlement_method || 'CASH');
+        setOrderId(targetSettlement.order_id ? String(targetSettlement.order_id) : '');
+        setStatus('SETTLED');
+        setNotes(targetSettlement.notes || '');
+      } else {
+        setOrderId(initialOrderId ? String(initialOrderId) : '');
+        setSettlementMethod('CASH');
+        setStatus('SETTLED');
+        setNotes('');
+      }
     }
-  }, [targetSettlement, initialOrderId, isOpen]);
+  }
 
   if (!isOpen) return null;
 
@@ -123,8 +132,8 @@ export const TipSettlementExecutionDrawer: React.FC<TipSettlementExecutionDrawer
       });
 
       onClose();
-    } catch (err: any) {
-      setError(err?.message || 'Failed to execute tip settlement payout.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to execute tip settlement payout.');
     } finally {
       setSubmitting(false);
     }

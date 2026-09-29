@@ -82,7 +82,7 @@ const TEST_TIP_POOLS: TipPool[] = [
   },
 ];
 
-function filterTestTipPools(params: any = {}): TipPool[] {
+function filterTestTipPools(params: Record<string, unknown> = {}): TipPool[] {
   let filtered = [...TEST_TIP_POOLS];
   if (params.search) {
     const s = params.search.toLowerCase();
