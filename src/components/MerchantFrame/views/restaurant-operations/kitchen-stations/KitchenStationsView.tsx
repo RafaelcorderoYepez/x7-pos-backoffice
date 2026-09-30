@@ -162,7 +162,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

@@ -102,7 +102,7 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
       const res = await fetch(`${API_BASE}/v1/raw-material-categories?status=all`, { headers });
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

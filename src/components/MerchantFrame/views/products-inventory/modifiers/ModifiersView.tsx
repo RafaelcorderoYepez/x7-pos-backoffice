@@ -93,7 +93,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
 
       if (modifiersRes.status === 401 || productsRes.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

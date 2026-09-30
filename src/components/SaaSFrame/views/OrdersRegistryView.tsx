@@ -35,7 +35,7 @@ export const OrdersRegistryView: React.FC<OrdersRegistryViewProps> = ({ onNaviga
 
   const handleUnauthorized = useCallback(() => {
     clearSaasToken();
-    window.location.assign('/saas-admin');
+    window.location.href = '/saas-admin';
   }, []);
 
   const fetchOrders = useCallback(async () => {

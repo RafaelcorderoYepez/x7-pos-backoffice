@@ -117,7 +117,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
 
       if (productsRes.status === 401 || categoriesRes.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

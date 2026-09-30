@@ -148,7 +148,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
       const materialsRes = await fetch(`${API_BASE}/v1/inventory/raw-materials?limit=100&status=all`, { headers });
       if (materialsRes.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

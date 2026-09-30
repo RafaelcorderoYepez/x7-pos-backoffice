@@ -95,7 +95,7 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
 
       if (variantsRes.status === 401 || productsRes.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
