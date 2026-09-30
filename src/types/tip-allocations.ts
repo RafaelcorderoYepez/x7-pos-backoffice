@@ -92,6 +92,7 @@ export interface TipOption {
   amount: number;
   label: string;
   method?: string;
+  status?: string;
 }
 
 export interface ShiftOption {

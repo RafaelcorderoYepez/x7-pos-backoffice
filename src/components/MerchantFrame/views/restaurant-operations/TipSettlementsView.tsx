@@ -77,23 +77,52 @@ export const TipSettlementsView: React.FC<TipSettlementsViewProps> = ({
       });
 
       setSettlements(data);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to hydrate tip settlements workspace.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to hydrate tip settlements workspace.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadSettlementsData();
+    let ignore = false;
+    tipSettlementsApi
+      .fetchTipSettlements({
+        company_id: companyId,
+        merchant_id: resolvedMerchantId,
+        collaborator_id: selectedCollaboratorId || undefined,
+        shift_id: selectedShiftId || undefined,
+        settlement_method: selectedMethod,
+        status: selectedStatus,
+        search: searchQuery,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+      })
+      .then((data) => {
+        if (!ignore) {
+          setSettlements(data);
+          setError(null);
+          setLoading(false);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!ignore) {
+          setError(err instanceof Error ? err.message : 'Failed to hydrate tip settlements workspace.');
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [
     companyId,
     resolvedMerchantId,
-    searchQuery,
-    selectedMethod,
-    selectedStatus,
     selectedCollaboratorId,
     selectedShiftId,
+    selectedMethod,
+    selectedStatus,
+    searchQuery,
     dateFrom,
     dateTo,
   ]);
