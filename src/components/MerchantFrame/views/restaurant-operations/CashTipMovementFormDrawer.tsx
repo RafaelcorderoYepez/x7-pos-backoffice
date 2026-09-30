@@ -41,40 +41,46 @@ export const CashTipMovementFormDrawer: React.FC<CashTipMovementFormDrawerProps>
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Adjust form error state during render when isOpen changes (prevents react-hooks/set-state-in-effect)
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
     if (isOpen) {
-      const loadOptions = async () => {
-        setLoadingOptions(true);
-        try {
-          const [drawerList, tipList] = await Promise.all([
-            fetchOpenCashDrawers(),
-            fetchAvailableTips(),
-          ]);
-          setDrawers(drawerList);
-          setTips(tipList);
-
-          // Default selection to first open drawer if available
-          const firstOpen = drawerList.find(
-            (d) => d.status.toUpperCase() === 'OPEN'
-          );
-          if (firstOpen) {
-            setCashDrawerId(String(firstOpen.id));
-          } else if (drawerList.length > 0) {
-            setCashDrawerId(String(drawerList[0].id));
-          }
-
-          if (tipList.length > 0) {
-            setTipId(String(tipList[0].id));
-          }
-        } catch (_e) {
-          // Fallback
-        } finally {
-          setLoadingOptions(false);
-        }
-      };
-      loadOptions();
       setFormError(null);
     }
+  }
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let ignore = false;
+    Promise.all([fetchOpenCashDrawers(), fetchAvailableTips()])
+      .then(([drawerList, tipList]) => {
+        if (ignore) return;
+        setDrawers(drawerList);
+        setTips(tipList);
+
+        const firstOpen = drawerList.find(
+          (d) => d.status.toUpperCase() === 'OPEN'
+        );
+        if (firstOpen) {
+          setCashDrawerId(String(firstOpen.id));
+        } else if (drawerList.length > 0) {
+          setCashDrawerId(String(drawerList[0].id));
+        }
+
+        if (tipList.length > 0) {
+          setTipId(String(tipList[0].id));
+        }
+        setLoadingOptions(false);
+      })
+      .catch(() => {
+        if (!ignore) setLoadingOptions(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -136,8 +142,8 @@ export const CashTipMovementFormDrawer: React.FC<CashTipMovementFormDrawerProps>
       await createCashTipMovement(dto);
       onSuccess();
       onClose();
-    } catch (err: any) {
-      setFormError(err?.message || 'Failed to register cash tip movement.');
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Failed to register cash tip movement.');
     } finally {
       setSubmitting(false);
     }

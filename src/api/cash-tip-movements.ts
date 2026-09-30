@@ -1,5 +1,5 @@
 import { getAccessToken } from '../lib/auth-storage';
-import type {
+export type {
   CashTipMovement,
   CreateCashTipMovementDto,
   CashDrawerOption,

@@ -72,7 +72,7 @@ const TEST_TIPS: Tip[] = [
   },
 ];
 
-function filterTestTips(params: any = {}): Tip[] {
+function filterTestTips(params: { record_status?: string; method?: string; search?: string } = {}): Tip[] {
   let filtered = [...TEST_TIPS];
   if (params.record_status) {
     filtered = filtered.filter((t) => t.record_status === params.record_status);

@@ -70,15 +70,43 @@ export const CashTipMovementsView: React.FC<CashTipMovementsViewProps> = ({
       });
 
       setMovements(data);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to hydrate cash tip movements workspace.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to hydrate cash tip movements workspace.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadCashTipMovementsData();
+    let ignore = false;
+    cashTipMovementsApi
+      .fetchCashTipMovements({
+        company_id: companyId,
+        merchant_id: resolvedMerchantId,
+        cash_drawer_id: selectedCashDrawerId || undefined,
+        tip_id: selectedTipId || undefined,
+        movement_type: selectedMovementType,
+        search: searchQuery,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+      })
+      .then((data) => {
+        if (!ignore) {
+          setMovements(data);
+          setError(null);
+          setLoading(false);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!ignore) {
+          setError(err instanceof Error ? err.message : 'Failed to hydrate cash tip movements workspace.');
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [
     companyId,
     resolvedMerchantId,

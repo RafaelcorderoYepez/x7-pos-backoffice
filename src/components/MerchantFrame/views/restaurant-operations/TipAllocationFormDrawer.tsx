@@ -154,8 +154,9 @@ export const TipAllocationFormDrawer: React.FC<TipAllocationFormDrawerProps> = (
     const term = collaboratorSearchTerm.trim().toLowerCase();
     return collaborators.filter(
       (c) =>
-        `${c.first_name} ${c.last_name}`.toLowerCase().includes(term) ||
-        c.role.toLowerCase().includes(term) ||
+        `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase().includes(term) ||
+        (c.name || '').toLowerCase().includes(term) ||
+        (c.role || '').toLowerCase().includes(term) ||
         `#clb-${c.id}`.toLowerCase().includes(term) ||
         String(c.id).includes(term)
     );

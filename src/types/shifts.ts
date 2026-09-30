@@ -5,7 +5,9 @@ export type CollaboratorRole =
   | 'Line Cook'
   | 'Bartender'
   | 'Cashier'
-  | 'Supervisor';
+  | 'Supervisor'
+  | 'Kitchen'
+  | string;
 
 export interface ShiftTemplatePreset {
   id: string;

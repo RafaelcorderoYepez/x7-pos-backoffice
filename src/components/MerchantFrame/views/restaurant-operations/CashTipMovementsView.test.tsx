@@ -69,8 +69,8 @@ describe('CashTipMovementsView — Workspace Integration & Acceptance Criteria',
       }
       return Promise.resolve(filtered);
     });
-    vi.spyOn(cashTipMovementsApi, 'fetchOpenCashDrawers').mockResolvedValue(sampleDrawers as any);
-    vi.spyOn(cashTipMovementsApi, 'fetchAvailableTips').mockResolvedValue(sampleTips as any);
+    vi.spyOn(cashTipMovementsApi, 'fetchOpenCashDrawers').mockResolvedValue(sampleDrawers as unknown as cashTipMovementsApi.CashDrawerOption[]);
+    vi.spyOn(cashTipMovementsApi, 'fetchAvailableTips').mockResolvedValue(sampleTips as unknown as cashTipMovementsApi.TipOption[]);
     vi.spyOn(cashTipMovementsApi, 'createCashTipMovement').mockResolvedValue({
       id: 1003,
       company_id: 'cmp-01',
