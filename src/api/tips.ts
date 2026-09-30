@@ -87,9 +87,11 @@ export async function fetchTips(params: FetchTipsParams): Promise<Tip[]> {
 
 export interface PaymentOption {
   id: number;
-  reference: string;
-  method: string;
-  amount: number;
+  reference?: string;
+  method?: string;
+  amount?: number;
+  order_id?: number;
+  status?: string;
 }
 
 export async function fetchPaymentOptionsForOrder(orderId: number): Promise<PaymentOption[]> {

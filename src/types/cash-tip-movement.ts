@@ -51,6 +51,7 @@ export interface CashTipMovement {
   amount: number;
   notes?: string | null;
   created_at: string;
+  created_by?: number | string | null;
   updated_at?: string;
 
   /** Associated cash drawer relation */
