@@ -110,7 +110,7 @@ describe('tip-settlements API & Helpers', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => sampleSettlements,
-    } as any);
+    } as Response);
 
     const result = await fetchTipSettlements({
       company_id: 'cmp-01',
@@ -126,7 +126,7 @@ describe('tip-settlements API & Helpers', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => mockUpdated,
-    } as any);
+    } as Response);
 
     const updated = await updateTipSettlementStatus(504, 'SETTLED', 88, 'Manually settled by admin');
     expect(updated.status).toBe('SETTLED');
@@ -138,7 +138,7 @@ describe('tip-settlements API & Helpers', () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => mockCreated,
-    } as any);
+    } as Response);
 
     const created = await createTipSettlement({
       collaborator_id: 102,

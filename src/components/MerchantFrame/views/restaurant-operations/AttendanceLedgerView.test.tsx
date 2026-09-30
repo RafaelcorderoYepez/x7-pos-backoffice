@@ -97,7 +97,7 @@ describe('Attendance Ledger Workspace Directory & Calculation Engine', () => {
           },
         ],
       };
-      return { success: true, record: updated as any };
+      return { success: true, record: updated as unknown as CollaboratorTimeRecord };
     });
   });
 

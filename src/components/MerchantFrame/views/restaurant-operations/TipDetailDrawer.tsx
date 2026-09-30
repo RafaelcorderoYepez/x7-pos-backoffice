@@ -326,7 +326,7 @@ export const TipDetailDrawer: React.FC<TipDetailDrawerProps> = ({
               ) : (
                 paymentOptions.map((opt) => (
                   <option key={opt.id} value={opt.id}>
-                    {opt.reference} — {opt.method} ({formatTipCurrency(opt.amount)})
+                    {opt.reference} — {opt.method} ({formatTipCurrency(opt.amount ?? 0)})
                   </option>
                 ))
               )}
