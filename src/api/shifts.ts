@@ -160,13 +160,14 @@ export async function claimOpenShift(
   collaboratorName: string,
   userRole: string,
   userWeeklyHours = 0,
-  userShifts: ShiftAssignment[] = []
+  _userShifts: ShiftAssignment[] = []
 ): Promise<{
   openShift: OpenShift;
   shiftAssignment?: ShiftAssignment;
   overtimeTriggered: boolean;
   message: string;
 }> {
+  void _userShifts;
   const token = getAccessToken();
   const res = await fetch(`${API_BASE}/v1/open-shifts/${shiftId}/claim`, {
     method: 'POST',

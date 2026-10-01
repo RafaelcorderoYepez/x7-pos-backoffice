@@ -30,10 +30,10 @@ export async function fetchOpenCashDrawers(): Promise<CashDrawerOption[]> {
   const payload = await res.json();
   const list = Array.isArray(payload) ? payload : payload.data;
   if (Array.isArray(list)) {
-    return list.map((d: any) => ({
-      id: d.id,
-      drawer_name: d.drawer_name || `Cash Drawer #${d.id}`,
-      status: (d.status || 'OPEN').toUpperCase(),
+    return list.map((d: Record<string, unknown>) => ({
+      id: Number(d.id),
+      drawer_name: (d.drawer_name as string) || `Cash Drawer #${d.id}`,
+      status: String(d.status || 'OPEN').toUpperCase(),
       current_balance: Number(d.currentBalance ?? d.current_balance ?? 0),
     }));
   }
@@ -159,7 +159,7 @@ export function formatCashTipMovementDateTime(isoString: string): string {
       minute: '2-digit',
       hour12: true,
     });
-  } catch (_e) {
+  } catch {
     return isoString;
   }
 }

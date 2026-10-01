@@ -392,7 +392,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -433,7 +433,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -471,7 +471,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -511,7 +511,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -551,7 +551,7 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

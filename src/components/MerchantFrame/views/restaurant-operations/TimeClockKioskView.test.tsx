@@ -33,7 +33,8 @@ describe('TimeClockKioskView & Attendance Pipeline', () => {
     mockPunchState = 'OFF_DUTY';
 
     let failedAttempts = 0;
-    vi.spyOn(attendanceApi, 'validatePin').mockImplementation(async (pinOrBadge, config = attendanceApi.DEFAULT_CONFIG) => {
+    vi.spyOn(attendanceApi, 'validatePin').mockImplementation(async (pinOrBadge, _config = attendanceApi.DEFAULT_CONFIG) => {
+      void _config;
       if (failedAttempts >= 3) {
         return { success: false, isLockedOut: true, lockoutSecondsRemaining: 300, error: 'Locked out' };
       }

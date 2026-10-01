@@ -78,7 +78,8 @@ describe('CashTransactionsView — data fetch', () => {
         }),
       );
     });
-    const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string;
+    const cashTxCall = vi.mocked(fetch).mock.calls.find((c) => (c[0] as string).includes('/cash-transactions'));
+    const calledUrl = (cashTxCall ? cashTxCall[0] : vi.mocked(fetch).mock.calls[0][0]) as string;
     expect(calledUrl).toContain('page=1');
     expect(calledUrl).toContain('merchantId=1');
   });

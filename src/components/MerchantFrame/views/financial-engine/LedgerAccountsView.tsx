@@ -411,7 +411,7 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -446,7 +446,7 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -483,7 +483,7 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

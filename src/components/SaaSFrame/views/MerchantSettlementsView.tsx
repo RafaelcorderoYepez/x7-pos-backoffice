@@ -243,7 +243,7 @@ export const MerchantSettlementsView: React.FC<MerchantSettlementsViewProps> = (
 
   const handleUnauthorized = useCallback(() => {
     clearSaasToken();
-    window.location.assign('/saas-admin');
+    window.location.href = '/saas-admin';
   }, []);
 
   const fetchSettlements = useCallback(async () => {

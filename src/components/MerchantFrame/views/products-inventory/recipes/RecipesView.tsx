@@ -174,7 +174,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
       if (recipesRes.status === 401 || productsRes.status === 401 || suppliesRes.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

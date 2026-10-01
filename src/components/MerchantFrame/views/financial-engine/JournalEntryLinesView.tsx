@@ -530,7 +530,7 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -695,7 +695,7 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
 
       if (res && res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

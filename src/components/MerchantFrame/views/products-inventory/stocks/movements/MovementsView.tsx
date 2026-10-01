@@ -170,7 +170,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

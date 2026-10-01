@@ -369,7 +369,7 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -484,7 +484,7 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -535,7 +535,7 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

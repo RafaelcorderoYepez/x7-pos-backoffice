@@ -102,8 +102,31 @@ export const ReservationStatusHistoryView: React.FC<ReservationStatusHistoryView
   }, [day]);
 
   useEffect(() => {
-    void fetchDay();
-  }, [fetchDay]);
+    let ignore = false;
+    listStatusHistoryForDay(day)
+      .then((entries) => {
+        if (!ignore) {
+          setDayEntries(entries);
+          setError('');
+          setLoading(false);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!ignore) {
+          console.error('Error fetching the status history:', err);
+          setError(
+            err instanceof ApiError
+              ? err.message
+              : 'Failed to load the status history. Please check if the backend is running.',
+          );
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [day]);
 
   // Catálogo de personal: falla en silencio (403 si el plan no lo incluye) y la firma cae a
   // "Staff #id". `changed_by` es el id del USUARIO del JWT, no el de la ficha de colaborador.

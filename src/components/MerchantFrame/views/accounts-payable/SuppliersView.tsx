@@ -116,7 +116,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

@@ -622,7 +622,7 @@ export const CashMovementsView: React.FC<CashMovementsViewProps> = ({ onNavigate
         const res = await fetch(`${API_BASE}/cash-shifts?limit=50`, { headers });
         if (res.status === 401) {
           clearAuthSession();
-          window.location.assign('/login');
+          window.location.href = '/login';
           return;
         }
         if (res.ok) {

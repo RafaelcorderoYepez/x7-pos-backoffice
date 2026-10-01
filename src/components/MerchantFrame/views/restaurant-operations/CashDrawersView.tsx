@@ -345,7 +345,7 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -541,7 +541,7 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

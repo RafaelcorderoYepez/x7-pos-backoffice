@@ -577,7 +577,7 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -611,7 +611,7 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 
@@ -642,7 +642,7 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
 
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
 

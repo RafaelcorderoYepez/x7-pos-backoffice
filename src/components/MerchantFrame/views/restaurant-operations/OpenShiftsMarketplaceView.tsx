@@ -41,12 +41,14 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
     }).catch(() => setCollaborators([]));
   }, []);
 
-  const activeCollaborator: Collaborator = activeCollaboratorState ?? collaborators[0] ?? {
-    id: 'emp-101',
-    name: 'Carlos Mendoza',
-    role: 'Supervisor',
-    department: 'Floor Management',
-  };
+  const activeCollaborator: Collaborator = useMemo(() => {
+    return activeCollaboratorState ?? collaborators[0] ?? {
+      id: 'emp-101',
+      name: 'Carlos Mendoza',
+      role: 'Supervisor',
+      department: 'Floor Management',
+    };
+  }, [activeCollaboratorState, collaborators]);
 
   // Filters
   const [selectedRole, setSelectedRole] = useState<CollaboratorRole | 'ALL'>('ALL');

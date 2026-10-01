@@ -402,7 +402,7 @@ export const CashTransactionsView: React.FC<CashTransactionsViewProps> = ({ onNa
       const res = await fetch(`${API_BASE}/cash-transactions/${txn.id}`, { headers });
       if (res.status === 401) {
         clearAuthSession();
-        window.location.assign('/login');
+        window.location.href = '/login';
         return;
       }
       if (!res.ok) throw new Error('Failed to load cash transaction detail');
