@@ -1,15 +1,9 @@
-// Histórico de estados: el registro de auditoría de cada transición del ciclo de vida de las
-// reservas, con los KPI del turno, el tiempo pasado en cada estado, las tres duraciones
-// operativas y las anulaciones / no-shows de última hora.
-//
-// El feed viene de `GET /api/reservation-status-history?date=` — el día en que se REGISTRÓ el
-// cambio, no el día de la reserva: la confirmación de hoy de la cena del sábado es actividad
-// de hoy. Cada entrada trae la anterior de su reserva y un resumen de ésta, así que el Δt y
-// la espera en recepción se calculan sin más llamadas. Buscar un #RES cambia a su ciclo de
-// vida completo (`/by-reservation/:id`), sea del día que sea.
-//
-// Es de SÓLO LECTURA a propósito: el histórico lo escribe el servidor al cambiar el estado y
-// rechaza cualquier edición (405). Aquí no hay ni un botón que lo modifique.
+// Status History: The audit log of each transition in the reservation lifecycle, including shift KPIs, time spent in each status, the three operational durations, and last-minute cancellations/no-shows.
+
+// The feed comes from `GET /api/reservation-status-history?date=` — the day the change was logged, not the reservation date: today's confirmation for Saturday dinner is today's activity.
+// Each entry brings up the previous entry for its reservation and a summary, so the Δt and reception wait time are calculated without further calls. Searching for a #RES changes its entire lifecycle (`/by-reservation/:id`), regardless of the date.
+
+// It is intentionally read-only: the history is written by the server when the status changes and rejects any edits (405). There isn't a single button here to change it.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { StatusHistoryFeedEntry } from '../../../../types/reservation';
@@ -77,8 +71,8 @@ export const ReservationStatusHistoryView: React.FC<ReservationStatusHistoryView
   const [day, setDay] = useState<string>(todayIsoDate());
   const [filters, setFilters] = useState<HistoryFilters>(EMPTY_HISTORY_FILTERS);
   const [lookup, setLookup] = useState('');
-  // Último resultado de búsqueda recibido. El estado visible (idle / cargando / resultado) se
-  // DERIVA comparándolo con el id tecleado, en vez de reiniciarlo desde el efecto.
+// Last search result received. The visible state (idle / loading / result) is
+// DERIVED by comparing it with the typed id, instead of resetting it from the effect.
   const [lookupResult, setLookupResult] = useState<LifecycleState>({ kind: 'idle' });
 
   const [loading, setLoading] = useState(true);
@@ -128,8 +122,8 @@ export const ReservationStatusHistoryView: React.FC<ReservationStatusHistoryView
     };
   }, [day]);
 
-  // Catálogo de personal: falla en silencio (403 si el plan no lo incluye) y la firma cae a
-  // "Staff #id". `changed_by` es el id del USUARIO del JWT, no el de la ficha de colaborador.
+  // Staff directory: fails silently (403 if the plan doesn't include it) and the signature falls back to
+  // "Staff #id". `changed_by` is the id of the JWT user, not the employee record.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -148,8 +142,8 @@ export const ReservationStatusHistoryView: React.FC<ReservationStatusHistoryView
     };
   }, [merchantId]);
 
-  // Búsqueda por reserva: con un id válido se trae su ciclo de vida completo. Se espera un
-  // instante a que el usuario deje de teclear para no pedir #RES-1, #RES-14 y #RES-142.
+// Search by reservation: with a valid ID, its complete lifecycle is retrieved.
+// A brief wait is performed for the user to stop typing to avoid requesting #RES-1, #RES-14, and #RES-142.
   const lookupId = parseReservationLookup(lookup);
   useEffect(() => {
     if (lookupId == null) return;
@@ -192,8 +186,7 @@ export const ReservationStatusHistoryView: React.FC<ReservationStatusHistoryView
   const lifecycleMode = lifecycle.kind !== 'idle';
   const sourceEntries = lifecycle.kind === 'loaded' ? lifecycle.entries : dayEntries;
 
-  // Los KPI suman SIEMPRE el día entero: filtrar la lista por un empleado no cambia cuántas
-  // transiciones hubo en el turno.
+// KPIs ALWAYS add up the entire day: filtering the list by an employee does not change how many transitions there were in the shift.
   const metrics = useMemo(() => computeShiftMetrics(dayEntries), [dayEntries]);
   const actors = useMemo(
     () => actorOptions([...dayEntries, ...(lifecycle.kind === 'loaded' ? lifecycle.entries : [])], staffById),
@@ -286,7 +279,7 @@ export const ReservationStatusHistoryView: React.FC<ReservationStatusHistoryView
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans">
-      {/* ---------- Banner de KPIs del turno ---------- */}
+      {/* ---------- Shift KPI Banner ---------- */}
       <section
         aria-label="Daily status transition metrics"
         data-testid="history-kpis"
@@ -369,7 +362,7 @@ export const ReservationStatusHistoryView: React.FC<ReservationStatusHistoryView
         </dl>
       </section>
 
-      {/* ---------- Barra de filtros ---------- */}
+      {/* ---------- Shift Filter Bar ---------- */}
       <section
         aria-label="Status history filters"
         className="bg-white border border-[#e8e2d8] p-5 rounded shadow-sm flex flex-wrap items-end gap-4"
@@ -462,7 +455,7 @@ export const ReservationStatusHistoryView: React.FC<ReservationStatusHistoryView
         ) : null}
       </section>
 
-      {/* ---------- Ciclo de vida de una reserva ---------- */}
+      {/* ---------- Lifecycle ---------- */}
       {lifecycle.kind === 'loaded' ? (
         <LifecycleSummary entries={lifecycle.entries} onOpenReservation={openReservationBook} />
       ) : null}
@@ -522,7 +515,7 @@ export const ReservationStatusHistoryView: React.FC<ReservationStatusHistoryView
   );
 };
 
-// ================= Piezas =================
+// ================= Parts =================
 
 const EmptyPanel: React.FC<{ icon: string; testId: string; children: React.ReactNode }> = ({
   icon,
@@ -648,7 +641,7 @@ const EntryRow: React.FC<EntryRowProps> = ({ entry, staffById, onOpenReservation
   );
 };
 
-// Resumen del ciclo de vida de la reserva buscada: las tres duraciones de la historia.
+// Summary of the life cycle of the sought-after reserve: the three durations of the story.
 const LifecycleSummary: React.FC<{
   entries: StatusHistoryFeedEntry[];
   onOpenReservation: () => void;

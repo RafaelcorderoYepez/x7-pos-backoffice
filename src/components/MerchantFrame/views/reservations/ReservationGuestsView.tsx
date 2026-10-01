@@ -1,10 +1,10 @@
-// Roster de comensales del servicio: quién viene con quién, a quién se llama si se retrasan,
-// y qué reservas todavía no tienen apuntado a todo el grupo.
-//
-// Igual que los otros sub-módulos del épico, se hidrata desde `GET /api/reservation?date=`,
-// que ya embebe `guests[]` por reserva. Es la única forma que contiene también las reservas
-// con el roster VACÍO — justo las que hay que completar. Para localizar a un cliente que llama
-// sin recordar su fecha existe además la búsqueda global contra `/api/reservation-guest`.
+// Guest roster for the service: who is with whom, who to call if they are late,
+// and which reservations don't yet have the entire group listed.
+
+// Like the other sub-modules of the epic, it is fed from `GET /api/reservation?date=`,
+// which already includes `guests[]` per reservation. It is the only way that also contains reservations
+// with an EMPTY roster — precisely the ones that need to be completed. To locate a customer who calls
+// without remembering their date, there is also the global search against `/api/reservation-guest`.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CustomerRef, Reservation, ReservationGuest } from '../../../../types/reservation';
@@ -55,8 +55,8 @@ interface ReservationGuestsViewProps {
   merchantId?: number;
 }
 
-// `onNavigate` sigue en las props (MerchantFrame lo pasa a todas las vistas), pero la
-// navegación entre sub-módulos la hace ya la NavHubBar del módulo, montada por MerchantFrame.
+// `onNavigate` remains in the props (MerchantFrame passes it to all views), but the
+// navigation between sub-modules is already done by the module's NavHubBar, set up by MerchantFrame.
 export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ merchantId }) => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<CustomerRef[]>([]);
@@ -139,7 +139,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
 
   const metrics = useMemo(() => computeGuestMetrics(reservations), [reservations]);
 
-  // Reservas cuyo roster no cubre el grupo: alimentan el filtro y el aviso.
+  // Reservations whose roster doesn't cover the group: feed the filter and the alert.
   const incompleteIds = useMemo(
     () =>
       new Set(
@@ -175,7 +175,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
     [roster, filters, incompleteIds],
   );
 
-  // Agrupado por reserva: un roster se lee por mesa, no como una lista plana de personas.
+  // Grouped by reservation: a roster is read by table, not as a flat list of people.
   const groups = useMemo(() => {
     const byReservation = new Map<number, GuestWithContext[]>();
     visible.forEach((g) => {
@@ -196,7 +196,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
       );
   }, [visible, reservations, filters]);
 
-  // ================= Escritura =================
+  // ================= Writing =================
 
   const handleSubmit = async (payload: GuestSubmitPayload) => {
     setSubmitting(true);
@@ -234,8 +234,8 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
     }
   };
 
-  // Alta rápida de acompañante genérico sin cerrar el drawer: en el atril se registran tres
-  // seguidos y volver a abrir el formulario cada vez cuesta más que la propia alta.
+  // Quick add of a generic companion without closing the drawer: in the drawer three
+  // are registered consecutively and reopening the form each time costs more than the actual add.
   const handleQuickAdd = async (reservationId: number, name: string) => {
     setQuickAdding(true);
     setFormError('');
@@ -251,7 +251,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
     }
   };
 
-  // Promover: el servidor degrada al anterior en la misma transacción, así que basta un PATCH.
+ // Promote: the server demotes the previous one in the same transaction, so a PATCH is enough.
   const handlePromote = async (guest: GuestWithContext) => {
     setBusyGuestId(guest.id);
     try {
@@ -271,8 +271,8 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
 
   const handleRemove = async (guest: GuestWithContext) => {
     const reservation = reservations.find((r) => r.id === guest.reservation_id);
-    // Quitar al contacto principal no se bloquea, pero sí se avisa de quién toma el relevo:
-    // el servidor eleva al siguiente y la sala tiene que saber a quién llamará a partir de ya.
+// Removing the primary contact doesn't block the process, but it does notify the server who is taking over:
+// The server elevates the contact to the next person, and the room needs to know who to call from now on.
     if (guest.is_primary) {
       const successor = successorPrimary(reservation?.guests ?? [], guest.id);
       if (!window.confirm(primaryHandoverPrompt(guest, successor))) return;
@@ -426,7 +426,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
         ))}
       </section>
 
-      {/* ---------- Buscador y filtros ---------- */}
+      {/* ---------- Search engine and filters ---------- */}
       <section
         aria-label="Guest filters"
         className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-wrap items-center gap-3"
@@ -483,7 +483,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
         ) : null}
       </section>
 
-      {/* ---------- Roster por reserva ---------- */}
+      {/* ---------- Roster by reservation ---------- */}
       {loading ? (
         <div className="bg-white border border-[#e8e2d8] rounded shadow-sm p-6 flex flex-col gap-3">
           {[1, 2, 3].map((i) => (
@@ -536,8 +536,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#ece8e0] text-[#5f5e5e]">
                     {reservationCode(reservation.id)}
                   </span>
-                  {/* La cabecera ya lleva el código como badge: repetirlo cuando no hay
-                      nombre que mostrar ("#RES-16  #RES-16") no añade nada. */}
+                  {/* The header already contains the code as a badge: repeating it when there is no name to display ("#RES-16 #RES-16") adds nothing.. */}
                   {bookingNameOf(reservation) !== reservationCode(reservation.id) ? (
                     <span className="font-semibold text-[#1d1c17]">
                       {bookingNameOf(reservation)}
@@ -554,7 +553,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
                     {reservationStatusLabel(reservation.status)}
                   </span>
 
-                  {/* Contador de roster frente al tamaño del grupo. */}
+                  {/* Roster counter vs. group size. */}
                   <span
                     data-testid={`roster-count-${reservation.id}`}
                     className={`ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${
@@ -631,7 +630,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
                             </span>
                           ) : null}
 
-                          {/* Contacto directo: pulsar marca o abre el correo. */}
+                          {/* Direct contact: click to call or open email. */}
                           <span className="flex flex-wrap items-center gap-3 text-body-sm">
                             {tel ? (
                               <a

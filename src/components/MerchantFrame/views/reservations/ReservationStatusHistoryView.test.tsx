@@ -45,9 +45,8 @@ const row = (
   is_active: true,
   reservation,
 });
-
-// Día servido por el backend en changed_at DESC. El alta de #RES-1 (PENDING) fue la víspera,
-// así que no está en el día — pero la confirmación trae su `previous_*` igual.
+// Day served by the backend in changed_at DESC. The creation of #RES-1 (PENDING) was yesterday,
+// so it's not on the current day — but the confirmation still brings its `previous_*`.
 const DAY = [
   row(8, RES_3, 'no_show', at(21, 20), ['pending', at(10)], null),
   row(4, RES_1, 'completed', at(20, 52), ['seated', at(19, 7)], 9),
@@ -194,7 +193,7 @@ describe('ReservationStatusHistoryView', () => {
 
     await user.selectOptions(screen.getByLabelText('Filter by status'), 'cancelled');
     expect(feedIds()).toEqual(['history-entry-6']);
-    // Los KPI siguen siendo del día entero.
+    // Shift KPIs still reflect the entire day.
     expect(screen.getByTestId('kpi-transitions')).toHaveTextContent('6');
   });
 
@@ -225,7 +224,7 @@ describe('ReservationStatusHistoryView', () => {
     expect(within(summaryPanel).getByTestId('lifecycle-lead')).toHaveTextContent('20m');
     expect(within(summaryPanel).getByTestId('lifecycle-wait')).toHaveTextContent('7m wait');
     expect(within(summaryPanel).getByTestId('lifecycle-dining')).toHaveTextContent('+15m over');
-    // Incluye el alta, que no se registró en el día seleccionado.
+    // This includes the discharge, which was not recorded on the selected day..
     expect(feedIds()).toEqual([
       'history-entry-4', 'history-entry-3', 'history-entry-2', 'history-entry-1',
     ]);

@@ -1,9 +1,9 @@
-// Cuaderno de notas del servicio: feed cronológico, KPIs del turno y buscador.
-//
-// Igual que el tablero de mesas, se hidrata desde el día de reservas: `GET /api/reservation`
-// ya embebe las notas de cada reserva, así que una sola llamada da el feed completo del turno
-// Y el contexto (nombre del invitado, hora) que hace falta para buscar por comensal. Pedir
-// `/api/reservation-note` por separado daría notas sueltas sin saber de quién son.
+// Service log: chronological feed, shift KPIs, and search function.
+
+// Just like the table board, it's populated from the day of reservations: `GET /api/reservation`
+// It already embeds the notes for each reservation, so a single call provides the complete shift feed.
+// And the context (guest name, time) needed to search by guest. Requesting
+// `/api/reservation-note` separately would return individual notes without knowing who they belong to.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CustomerRef, Reservation } from '../../../../types/reservation';
@@ -43,8 +43,8 @@ interface ReservationNotesViewProps {
   merchantId?: number;
 }
 
-// `onNavigate` sigue en las props (MerchantFrame lo pasa a todas las vistas), pero la
-// navegación entre sub-módulos la hace ya la NavHubBar del módulo, montada por MerchantFrame.
+// `onNavigate` remains in the props (MerchantFrame passes it to all views), but the
+// navigation between sub-modules is already done by the module's NavHubBar, set up by MerchantFrame.
 export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({ merchantId }) => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<CustomerRef[]>([]);
@@ -95,7 +95,7 @@ export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({ merc
     });
   }, [fetchDay]);
 
-  // Catálogos de apoyo: fallan en silencio. Sin el de personal la firma cae a "Staff #id".
+  // Support catalogs: fail silently. Without the staff catalog, the signature falls back to "Staff #id".
   useEffect(() => {
     let cancelled = false;
 
@@ -112,8 +112,8 @@ export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({ merc
       try {
         const rows = await listStaff();
         if (cancelled) return;
-        // Las notas guardan el id del USUARIO autenticado, no el de la ficha de colaborador,
-        // así que el índice se construye sobre `user_id` cuando viene.
+// The notes store the ID of the authenticated USER, not the contributor's ID,
+// so the index is built on `user_id` when it comes in.
         setStaffById(
           new Map(
             rows.map((s) => [s.user_id ?? s.id, { name: s.name, role: s.role }] as const),
@@ -152,8 +152,8 @@ export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({ merc
     [reservations],
   );
 
-  // Feed del turno: todas las notas activas de las reservas del día, con su contexto resuelto
-  // y en orden cronológico inverso estricto.
+// Shift feed: all active notes from the day's reservations, with their context resolved
+// and in strict reverse chronological order.
   const feed = useMemo<NoteWithContext[]>(() => {
     const rows: NoteWithContext[] = [];
     reservations.forEach((reservation) => {
@@ -177,7 +177,7 @@ export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({ merc
     [feed, filters],
   );
 
-  // ================= Escritura =================
+  // ================= Writing =================
 
   const handleSubmit = async (reservationId: number, text: string) => {
     setSubmitting(true);
@@ -320,7 +320,7 @@ export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({ merc
         </div>
       </div>
 
-      {/* ---------- KPIs del turno ---------- */}
+      {/* ---------- Shift KPIs ---------- */}
       <section
         aria-label="Shift notes metrics"
         data-testid="notes-kpis"
@@ -353,7 +353,7 @@ export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({ merc
         ))}
       </section>
 
-      {/* ---------- Filtros ---------- */}
+      {/* ---------- Filters ---------- */}
       <section
         aria-label="Note filters"
         className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4"
@@ -511,8 +511,7 @@ export const ReservationNotesView: React.FC<ReservationNotesViewProps> = ({ merc
                   ) : null}
                 </div>
 
-                {/* Cuerpo con saltos de línea respetados: una lista de alergias escrita en
-                    varias líneas se lee como se escribió. */}
+                {/* Body with respected line breaks: a list of allergies written on several lines reads as written. */}
                 <p className="text-body-md text-[#1d1c17] whitespace-pre-wrap break-words">
                   {note.note}
                 </p>

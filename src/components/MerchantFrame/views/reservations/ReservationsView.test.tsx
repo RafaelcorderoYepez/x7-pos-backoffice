@@ -11,11 +11,10 @@ vi.mock('../../../../lib/auth-storage', () => ({
   getStoredUser: vi.fn(() => ({ id: 2, role: storedRole, merchant: { id: 3 } })),
 }));
 
-// El workspace vive siempre dentro del router de la aplicación: el panel de accesos
-// rápidos estándar usa useNavigate para caer a la URL pública cuando no hay onNavigate.
+// The workspace always lives inside the application router: the standard quick access panel uses useNavigate to drop to the public URL when there is no onNavigate.
 const renderIn = (ui: React.ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
-// Instantes en hora local: la parrilla agrupa por la hora del reloj del local.
+// Moments in local time: the grill is grouped by the time shown on the local clock..
 const at = (h: number, m = 0): string => new Date(2026, 3, 16, h, m, 0).toISOString();
 
 const RESERVATIONS = [
@@ -86,8 +85,7 @@ const TABLES = [
 let reservationRows = RESERVATIONS;
 const calls: Array<{ url: string; method: string; body?: unknown }> = [];
 
-// Matriz de disponibilidad servida por el backend: 19:00 libre, 19:15 ajustada, 19:30 llena
-// para el grupo pedido, 19:45 libre.
+// Availability matrix served by the backend: 19:00 free, 19:15 adjusted, 19:30 full for the requested group, 19:45 free.
 const slot = (time: string, level: string, bookable = true, over: Record<string, unknown> = {}) => ({
   time,
   start: at(19, Number(time.slice(3))),
@@ -140,7 +138,7 @@ const CAPACITY_409 = {
   code: 'CAPACITY_OVERRIDE_REQUIRED',
   message: 'Over capacity: 58 of 60 seats are already committed around 19:00, so a party of 4 does not fit (2 free). A manager override is required to overbook.',
 };
-// Cuándo responde el servidor con 409 de aforo si no viene override.
+// When the server responds with a 409 capacity error if no override is provided.
 let createConflict = false;
 let confirmConflict = false;
 
@@ -221,24 +219,24 @@ const renderView = async () => {
   await waitFor(() => expect(screen.getByTestId('reservation-timeline')).toBeInTheDocument());
 };
 
-describe('hidratación del libro de reservas', () => {
-  it('pide el día al servidor para que la consulta use el índice compuesto', async () => {
+describe('hydration of the reserve book', () => {
+  it('asks the server for the day so that the query uses the composite index', async () => {
     await renderView();
     const listCall = calls.find((c) => c.url.includes('/reservation?'));
-    // Un `date` suelto: es lo que el backend traduce a un rango sargable sobre
-    // [merchant_id, reservation_date]. Filtrar el día en cliente traería toda la tabla.
+    // A loose `date`: this is what the backend translates to a sargable range over
+    // [merchant_id, reservation_date]. Filtering the day on the client would fetch the entire table.
     expect(listCall?.url).toMatch(/date=\d{4}-\d{2}-\d{2}/);
     expect(listCall?.url).toContain('limit=100');
   });
 
-  it('pinta cada reserva en su franja horaria', async () => {
+  it('Paint each reservation in its time slot.', async () => {
     await renderView();
     const card = screen.getByTestId('booking-card-1');
     expect(within(card).getByText(/#RES-1/)).toBeInTheDocument();
     expect(within(card).getByText(/07:00 PM – 08:30 PM \(90 min\)/)).toBeInTheDocument();
   });
 
-  it('muestra el nombre del cliente del CRM y el del roster', async () => {
+  it('It displays the CRM client name and the roster name.', async () => {
     await renderView();
     expect(within(screen.getByTestId('booking-card-1')).getByText('Lucía Prat')).toBeInTheDocument();
     expect(
@@ -246,64 +244,64 @@ describe('hidratación del libro de reservas', () => {
     ).toBeInTheDocument();
   });
 
-  it('destaca las peticiones especiales sólo cuando las hay', async () => {
+  it('It highlights special requests only when they exist', async () => {
     await renderView();
     expect(screen.getByTestId('special-requests-1')).toHaveTextContent('Happy Birthday!');
     expect(screen.queryByTestId('special-requests-2')).not.toBeInTheDocument();
   });
 
-  it('muestra la hora de llegada de una mesa ya sentada', async () => {
+  it('It shows the arrival time of a table that is already seated', async () => {
     await renderView();
     expect(within(screen.getByTestId('booking-card-2')).getByText(/Seated 08:04 PM/)).toBeInTheDocument();
   });
 
-  it('etiqueta el canal de origen de cada reserva', async () => {
+  it('It labels the source channel of each reservation', async () => {
     await renderView();
     expect(within(screen.getByTestId('booking-card-1')).getByText('Phone')).toBeInTheDocument();
     expect(within(screen.getByTestId('booking-card-2')).getByText('Walk-in')).toBeInTheDocument();
   });
 });
 
-describe('tira de KPIs del día', () => {
-  it('suma los comensales esperados dejando fuera las anuladas', async () => {
+describe('daily KPI strip', () => {
+  it('It sums the expected guests, excluding the cancelled ones', async () => {
     await renderView();
     // 4 + 2 + 6 = 12.
     expect(within(screen.getByTestId('kpi-expected')).getByText('12')).toBeInTheDocument();
   });
 
-  it('cuenta los cubiertos y su porcentaje de ocupación', async () => {
+  it('It counts the covers and their occupancy percentage', async () => {
     await renderView();
     const covered = screen.getByTestId('kpi-covered');
     expect(within(covered).getByText('2')).toBeInTheDocument();
     expect(within(covered).getByText(/16\.7% of expected covers/)).toBeInTheDocument();
   });
 
-  it('cuenta las confirmaciones pendientes', async () => {
+  it('It counts the pending confirmations', async () => {
     await renderView();
     expect(within(screen.getByTestId('kpi-pending')).getByText('1')).toBeInTheDocument();
   });
 
-  it('calcula la tasa de no-shows sobre el total del día', async () => {
+  it('It calculates the no-show rate over the total of the day', async () => {
     await renderView();
     const noShow = screen.getByTestId('kpi-no-show');
     expect(within(noShow).getByText('33.3%')).toBeInTheDocument();
     expect(within(noShow).getByText('1 of 3 bookings')).toBeInTheDocument();
   });
 
-  it('los KPIs miden el día entero, no lo que dejan ver los filtros', async () => {
+  it('It measures the entire day, not just what the filters show', async () => {
     const user = userEvent.setup();
     await renderView();
 
     await user.click(screen.getByRole('checkbox', { name: /seated/i }));
 
     await waitFor(() => expect(screen.queryByTestId('booking-card-1')).not.toBeInTheDocument());
-    // La tasa de no-shows del servicio no cambia porque la anfitriona filtre la vista.
+    // The service's no-show rate does not change because the host filters the view..
     expect(within(screen.getByTestId('kpi-no-show')).getByText('33.3%')).toBeInTheDocument();
   });
 });
 
-describe('motor de filtros', () => {
-  it('filtra por estado al marcar la casilla', async () => {
+describe('filtering engine', () => {
+  it('It filters by status when checking the box', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -313,7 +311,7 @@ describe('motor de filtros', () => {
     expect(screen.getByTestId('booking-card-1')).toBeInTheDocument();
   });
 
-  it('filtra por canal de origen', async () => {
+  it('It filters by source channel', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -323,7 +321,7 @@ describe('motor de filtros', () => {
     expect(screen.getByTestId('booking-card-2')).toBeInTheDocument();
   });
 
-  it('busca por petición especial', async () => {
+  it('It searches by special request', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -333,7 +331,7 @@ describe('motor de filtros', () => {
     expect(screen.getByTestId('booking-card-1')).toBeInTheDocument();
   });
 
-  it('busca por el teléfono de un acompañante', async () => {
+  it('It searches by guest phone number', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -343,7 +341,7 @@ describe('motor de filtros', () => {
     expect(screen.getByTestId('booking-card-2')).toBeInTheDocument();
   });
 
-  it('el filtro no vuelve a pedir datos al servidor', async () => {
+  it('It does not re-request data from the server when filtering', async () => {
     const user = userEvent.setup();
     await renderView();
     const before = calls.filter((c) => c.url.includes('/reservation?')).length;
@@ -354,7 +352,7 @@ describe('motor de filtros', () => {
     expect(calls.filter((c) => c.url.includes('/reservation?')).length).toBe(before);
   });
 
-  it('ofrece limpiar los filtros cuando no queda nada visible', async () => {
+  it('It offers to clear the filters when nothing is visible', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -369,14 +367,14 @@ describe('motor de filtros', () => {
   });
 });
 
-describe('controlador del ciclo de vida', () => {
-  it('sólo ofrece las transiciones legales de cada estado', async () => {
+describe('lifecycle controller', () => {
+  it('It only offers the legal transitions of each state', async () => {
     await renderView();
 
     const pending = screen.getByTestId('booking-card-1');
     expect(within(pending).getByRole('button', { name: 'Confirmed' })).toBeInTheDocument();
     expect(within(pending).getByRole('button', { name: 'Seated' })).toBeInTheDocument();
-    // Desde pendiente no se puede saltar a completada.
+    // You cannot jump from slope to completed.
     expect(within(pending).queryByRole('button', { name: 'Completed' })).not.toBeInTheDocument();
 
     const seated = screen.getByTestId('booking-card-2');
@@ -384,14 +382,14 @@ describe('controlador del ciclo de vida', () => {
     expect(within(seated).queryByRole('button', { name: 'Cancelled' })).not.toBeInTheDocument();
   });
 
-  it('cierra la botonera en los estados terminales', async () => {
+  it('It closes the action bar in terminal states', async () => {
     await renderView();
     const noShow = screen.getByTestId('booking-card-3');
     expect(within(noShow).getByText(/Lifecycle closed/)).toBeInTheDocument();
     expect(within(noShow).queryByRole('button', { name: 'Completed' })).not.toBeInTheDocument();
   });
 
-  it('sienta la mesa con un PATCH sin mandar seated_at (lo sella el servidor)', async () => {
+  it('It seats the table with a PATCH without sending seated_at (the server seals it)', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -406,7 +404,7 @@ describe('controlador del ciclo de vida', () => {
     });
   });
 
-  it('confirmar en una franja llena abre el override y reintenta con las credenciales', async () => {
+  it('It confirms a reservation in a full slot, opening the override and retrying with credentials', async () => {
     confirmConflict = true;
     const user = userEvent.setup();
     await renderView();
@@ -434,7 +432,7 @@ describe('controlador del ciclo de vida', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
-  it('anular usa el endpoint dedicado que deja rastro en el histórico', async () => {
+  it('It cancels a reservation using the dedicated endpoint that leaves a trail in the history', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -450,18 +448,18 @@ describe('controlador del ciclo de vida', () => {
   });
 });
 
-describe('alta de reserva', () => {
+describe('reservation registration', () => {
   const openDrawer = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getByRole('button', { name: /new reservation/i }));
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
   };
 
-  // La hora sólo se elige en la matriz de franjas: sin pulsar una no se puede reservar.
+  // The time is only chosen in the slot matrix: without pressing one, you cannot book.
   const pickSlot = async (user: ReturnType<typeof userEvent.setup>, time = '19:00') => {
     await user.click(await within(screen.getByRole('dialog')).findByTestId(`slot-${time}`));
   };
 
-  it('crea la reserva con la franja, el grupo, la duración y el canal', async () => {
+  it('It creates the reservation with the slot, group, duration and channel', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
@@ -488,7 +486,7 @@ describe('alta de reserva', () => {
     });
   });
 
-  it('no manda created_by: lo sella el servidor desde el token', async () => {
+  it('It does not send created_by: the server seals it from the token', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
@@ -503,7 +501,7 @@ describe('alta de reserva', () => {
     });
   });
 
-  it('enlaza un cliente existente del CRM por autocompletado', async () => {
+  it('It links an existing CRM customer via autocomplete', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
@@ -524,7 +522,7 @@ describe('alta de reserva', () => {
     });
   });
 
-  it('sin coincidencias crea un invitado ligero colgado de la reserva', async () => {
+  it('It creates a lightweight guest linked to the reservation when there are no matches', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
@@ -540,17 +538,17 @@ describe('alta de reserva', () => {
       expect(guestPost?.body).toMatchObject({
         reservation_id: 99,
         name: 'Marta Gil',
-        // Sin separadores: @IsPhoneNumber los rechaza y varchar(20) no da para tanto.
+        // Without separators: @IsPhoneNumber rejects them and varchar(20) isn't that great.
         phone: '+34600555444',
         is_primary: true,
       });
     });
-    // Sin ficha de CRM detrás, la reserva no lleva customer_id.
+    // Without a CRM record behind it, the reservation does not have a customer_id..
     const post = calls.find((c) => c.method === 'POST' && c.url.endsWith('/reservation'));
     expect(post?.body).not.toHaveProperty('customer_id');
   });
 
-  it('pinta la matriz de franjas con el semáforo del servidor y elige la hora al pulsar', async () => {
+  it('It paints the slot matrix with the server semaphore and selects the time when pressed', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
@@ -566,7 +564,7 @@ describe('alta de reserva', () => {
       /19:15 — Limited capacity: 45 of 60 seats committed \(75%\)/,
     );
 
-    // Ya no hay campo de hora libre: la franja pulsada ES la hora de la reserva.
+    // There is no longer a free time field: the selected time slot IS the reservation time.
     expect(within(dialog).queryByLabelText(/^time$/i)).not.toBeInTheDocument();
     await user.click(within(matrix).getByTestId('slot-19:45'));
     expect(within(matrix).getByTestId('slot-19:45')).toHaveAttribute('aria-pressed', 'true');
@@ -575,7 +573,7 @@ describe('alta de reserva', () => {
     expect(query?.url).toMatch(/party_size=2&duration_minutes=90/);
   });
 
-  it('bloquea una franja llena hasta que el encargado autoriza con sus credenciales', async () => {
+  it('It blocks a full slot until the manager authorizes with their credentials', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
@@ -603,7 +601,7 @@ describe('alta de reserva', () => {
     expect(await screen.findByText(/manager override/i)).toBeInTheDocument();
   });
 
-  it('no pide override en una franja libre ni manda credenciales', async () => {
+  it('It does not request override in a free slot nor sends credentials', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
@@ -619,7 +617,7 @@ describe('alta de reserva', () => {
     });
   });
 
-  it('si el servidor rechaza por aforo al guardar, pide el override para esa franja', async () => {
+  it('It requests override for a full slot when the server rejects the reservation', async () => {
     createConflict = true;
     const user = userEvent.setup();
     await renderView();
@@ -632,7 +630,7 @@ describe('alta de reserva', () => {
     const panel = await within(dialog).findByTestId('manager-override');
     expect(panel).toHaveTextContent(/58 of 60 seats/);
 
-    // Otra franja: el 409 era de las 19:00, así que el aviso desaparece.
+    // Another time slot: the 409 was at 7:00 PM, so the notice disappears.
     await user.click(within(dialog).getByTestId('slot-19:45'));
     expect(within(dialog).queryByTestId('manager-override')).not.toBeInTheDocument();
 
@@ -650,7 +648,7 @@ describe('alta de reserva', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
-  it('no deja reservar hasta elegir una franja y envía la hora de la franja', async () => {
+  it('It does not allow booking until a slot is selected and sends the slot time', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
@@ -671,7 +669,7 @@ describe('alta de reserva', () => {
     });
   });
 
-  it('rechaza un tamaño de grupo no positivo', async () => {
+  it('It rejects a non-positive group size', async () => {
     const user = userEvent.setup();
     await renderView();
     await openDrawer(user);
@@ -686,8 +684,8 @@ describe('alta de reserva', () => {
   });
 });
 
-describe('estado vacío', () => {
-  it('invita a tomar la primera reserva del servicio', async () => {
+describe('empty state', () => {
+  it('invites you to make the first reservation for the service', async () => {
     reservationRows = [];
     renderIn(<ReservationsView merchantId={3} />);
     await waitFor(() =>
@@ -696,8 +694,8 @@ describe('estado vacío', () => {
   });
 });
 
-describe('aforo y turnos', () => {
-  it('el encargado edita aforo, límite de llegadas y turnos', async () => {
+describe('capacity & shifts', () => {
+  it('the manager edits capacity, arrival limit and shifts', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -728,7 +726,7 @@ describe('aforo y turnos', () => {
     });
   });
 
-  it('no ofrece los ajustes a quien no es encargado', async () => {
+  it('does not offer the settings to those who are not the manager', async () => {
     storedRole = 'merchant_user';
     await renderView();
     expect(screen.queryByRole('button', { name: /capacity & shifts/i })).not.toBeInTheDocument();

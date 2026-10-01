@@ -1,10 +1,10 @@
-// Libro de reservas del día: la tira de KPIs, los filtros, la parrilla por horas y el
-// controlador del ciclo de vida.
-//
-// El día se filtra en el SERVIDOR (`?date=`, que resuelve un rango semiabierto sobre el índice
-// compuesto [merchant_id, reservation_date]); estado, canal y texto se filtran en cliente,
-// porque el grupo de checkboxes es multi-selección y el DTO de consulta sólo acepta un estado
-// suelto. Sobre las 100 reservas que cabe pedir de una vez, filtrar en memoria es inmediato.
+// Daily reservation book: the KPI strip, filters, hourly grid, and the
+// lifecycle controller.
+
+// The day is filtered on the SERVER (`?date=`, which resolves a semi-open range on the composite index
+// [merchant_id, reservation_date]); status, channel, and text are filtered on the client,
+// because the checkbox group is multi-select and the query DTO only accepts a single status.
+// For the 100 reservations that can be requested at once, filtering in memory is immediate.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
@@ -69,13 +69,12 @@ interface ReservationsViewProps {
   merchantId?: number;
 }
 
-// Franja que pinta la parrilla. Fuera de ella el local no sirve, pero una reserva a deshora
-// (un desayuno de empresa) NO se esconde: se agrupa en su propia hora al principio o al final.
+// Strip painted by the grill. Outside of it the place is not served, but a late reservation
+// (a business breakfast) is NOT hidden: it is grouped in its own time at the beginning or end.
 const SERVICE_START_HOUR = 11;
 const SERVICE_END_HOUR = 23;
-
-// `onNavigate` sigue en las props (MerchantFrame lo pasa a todas las vistas), pero la
-// navegación entre sub-módulos la hace ya la NavHubBar del módulo, montada por MerchantFrame.
+// `onNavigate` remains in the props (MerchantFrame passes it to all views), but the
+// navigation between sub-modules is already done by the module's NavHubBar, set up by MerchantFrame.
 export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }) => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [customers, setCustomers] = useState<CustomerRef[]>([]);
@@ -91,12 +90,12 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [transitioningId, setTransitioningId] = useState<number | null>(null);
-  // Último 409 de aforo del alta, atado a la franja que lo provocó (fecha|grupo|duración): si
-  // la anfitriona elige otra franja, el aviso deja de aplicar solo.
+  // Last 409 of capacity from the booking, tied to the slot that caused it (date|group|duration): if
+  // the hostess chooses another slot, the alert stops applying only.
   const [capacityConflict, setCapacityConflict] = useState<{ key: string; message: string } | null>(
     null,
   );
-  // Transición (confirmar) rechazada por aforo, a la espera del override del encargado.
+  // Transition (confirm) rejected by capacity, waiting for the manager's override.
   const [overridePrompt, setOverridePrompt] = useState<{
     reservation: Reservation;
     next: ReservationStatus;
@@ -105,7 +104,7 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
   const [overrideSubmitting, setOverrideSubmitting] = useState(false);
   const [overrideError, setOverrideError] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Sólo el encargado edita aforo y turnos (el backend lo exige igualmente con un 403).
+  // Only the manager can edit capacity and shifts (the backend requires this as well with a 403).
   const canManageCapacity = getStoredUser()?.role === 'merchant_admin';
   const [toast, setToast] = useState<ToastState | null>(null);
 
@@ -139,8 +138,8 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
     });
   }, [fetchReservations]);
 
-  // Catálogos de apoyo del drawer. Fallan por separado y en silencio: sin clientes el alta
-  // sigue siendo posible como invitado, y sin mesas sólo se pierde el aviso de aforo.
+  // Support catalogs for the drawer. Fail separately and silently: without customers the booking
+  // remains possible as a guest, and without tables only the capacity warning is lost.
   useEffect(() => {
     let cancelled = false;
 
@@ -173,8 +172,8 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
     return map;
   }, [customers]);
 
-  // Nombre a pintar en la tarjeta: la ficha del CRM si la reserva la enlaza, el contacto
-  // principal del roster si no, y el código de la reserva como último recurso.
+  // Name to display on the card: the CRM profile if the reservation links to it, the primary
+  // contact from the roster if not, and the reservation code as a last resort.
   const bookingName = useCallback(
     (reservation: Reservation): string => {
       if (reservation.customer_id != null) {
@@ -191,8 +190,8 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
     [customerNameById],
   );
 
-  // Los KPIs se calculan sobre el DÍA COMPLETO, no sobre lo filtrado: si midieran lo visible,
-  // marcar un checkbox cambiaría la tasa de no-shows del servicio, que es un dato del día.
+// KPIs are calculated based on the ENTIRE DAY, not on filtered data: if they measured only what's visible,
+// checking a box would change the service's no-show rate, which is a daily metric.
   const metrics = useMemo(() => computeDailyMetrics(reservations), [reservations]);
 
   const visible = useMemo(
@@ -203,8 +202,8 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
     [reservations, filters, customerNameById],
   );
 
-  // Agrupación por hora de inicio para la parrilla. Sólo se pintan las horas del servicio más
-  // las que tengan reservas fuera de ese rango.
+// Grouping by start time for the grill. Only the hours of service are painted 
+// those that have reserves outside that range.
   const slots = useMemo(() => {
     const byHour = new Map<number, Reservation[]>();
     visible.forEach((r) => {
@@ -239,11 +238,11 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
 
   const clearFilters = () => setFilters(EMPTY_FILTERS);
 
-  // ================= Ciclo de vida =================
+  // ================= Life cycle =================
 
-  // La lista de destinos legales sale del grafo, así que la UI no puede ofrecer un salto que
-  // el backend vaya a rechazar. `seated_at` NO se manda: lo sella el servidor al entrar en
-  // SEATED, que es lo que garantiza una hora de llegada fiable con varias tablets en sala.
+// The list of legal destinations falls outside the graph, so the UI cannot offer a hop that
+// the backend will reject. `seated_at` is NOT sent: it is sealed by the server upon entering
+  // SEATED, that is what guarantees a reliable arrival time with multiple tablets in the room.
   const applyTransition = async (reservation: Reservation, next: ReservationStatus) => {
     setTransitioningId(reservation.id);
     try {
@@ -260,7 +259,7 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
         type: 'success',
       });
     } catch (err) {
-      // Confirmar en una franja llena: no es un fallo, es el momento del override.
+      // Confirming on a full strip: it's not a failure, it's override time.
       if (isCapacityOverrideError(err)) {
         setOverrideError('');
         setOverridePrompt({ reservation, next, message: err.message });
@@ -312,8 +311,8 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
     try {
       const draft = { ...payload.draft };
 
-      // La ficha de CRM se crea ANTES de la reserva: sin su id no hay nada que enlazar, y si
-      // el CRM falla es mejor no dejar una reserva huérfana a medio enlazar.
+// The CRM record is created BEFORE the booking: without its ID there's nothing to link, and if
+// the CRM fails, it's best not to leave an orphaned booking half-linked.
       if (payload.newCustomer) {
         const created = await createCustomer(payload.newCustomer);
         draft.customer_id = created.id;
@@ -322,8 +321,8 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
 
       const reservation = await createReservation(draft);
 
-      // El contacto ligero se cuelga después, con la reserva ya creada. Si esta llamada falla,
-      // la reserva EXISTE: se avisa de que falta el contacto en vez de fingir un error total.
+      // The light contact is attached after the reservation is created. If this call fails,
+      // the reservation EXISTS: a warning is shown instead of simulating a total error.
       if (payload.guest) {
         try {
           await createReservationGuest({
@@ -352,8 +351,8 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
         type: 'success',
       });
     } catch (err) {
-      // Franja llena al guardar: el drawer pasa a pedir el override del encargado para ESA
-      // franja, en vez de mostrar un error sin salida.
+// Full bar on save: the drawer then requests the administrator's override for ESA
+// bar, instead of displaying a dead-end error.
       if (isCapacityOverrideError(err)) {
         const { draft } = payload;
         setCapacityConflict({
@@ -483,7 +482,7 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
           ) : null}
         </div>
 
-        {/* Aviso de petición especial: alto contraste, porque es lo que se olvida en el pase. */}
+        {/* Special request notice: high contrast, because that's what gets forgotten in the pass. */}
         {reservation.special_requests?.trim() ? (
           <p
             data-testid={`special-requests-${reservation.id}`}
@@ -496,7 +495,7 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
           </p>
         ) : null}
 
-        {/* Controlador del ciclo de vida: sólo los destinos que el grafo permite. */}
+        {/* Lifecycle controller: only the destinations that the graph allows. */}
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-[#f2ede5]">
           {isTerminalStatus(reservation.status) ? (
             <span className="font-sans text-body-sm text-[#5f5e5e] italic">
@@ -596,7 +595,7 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
         </div>
       </div>
 
-      {/* ---------- Tira de KPIs del día ---------- */}
+      {/* ---------- Daily KPI strip ---------- */}
       <section
         aria-label="Daily reservation metrics"
         data-testid="reservation-kpis"
@@ -629,7 +628,7 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
         ))}
       </section>
 
-      {/* ---------- Motor de filtros ---------- */}
+      {/* ---------- Filter motor ---------- */}
       <section
         aria-label="Reservation filters"
         className="bg-white border border-[#e8e2d8] p-6 rounded shadow-sm flex flex-col gap-4"
@@ -753,7 +752,7 @@ export const ReservationsView: React.FC<ReservationsViewProps> = ({ merchantId }
         </fieldset>
       </section>
 
-      {/* ---------- Parrilla / lista ---------- */}
+      {/* ---------- Grill / list ---------- */}
       {loading ? (
         <div className="bg-white border border-[#e8e2d8] rounded shadow-sm p-6 flex flex-col gap-3">
           {[1, 2, 3, 4].map((i) => (

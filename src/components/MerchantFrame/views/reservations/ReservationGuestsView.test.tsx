@@ -9,8 +9,7 @@ vi.mock('../../../../lib/auth-storage', () => ({
   clearAuthSession: vi.fn(),
 }));
 
-// El workspace vive siempre dentro del router de la aplicación: el panel de accesos
-// rápidos estándar usa useNavigate para caer a la URL pública cuando no hay onNavigate.
+// The workspace always lives inside the application router: the standard quick access panel uses useNavigate to drop to the public URL when there is no onNavigate.
 const renderIn = (ui: React.ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
 const at = (h: number): string => new Date(2026, 3, 16, h, 0, 0).toISOString();
@@ -30,9 +29,9 @@ const g = (
   is_active: extra.is_active ?? true,
 });
 
-// RES-1: roster completo (2 de 2) con principal contactable.
-// RES-2: roster incompleto (1 de 4), principal sin datos de contacto.
-// RES-3: sin nadie registrado.
+// RES-1: Full roster (2 out of 2) with main player contactable.
+// RES-2: Incomplete roster (1 out of 4), main player without contact information.
+// RES-3: No one registered.
 const RESERVATIONS = [
   {
     id: 1, merchant_id: 3, customer_id: null, reservation_date: at(19), duration_minutes: 90,
@@ -103,38 +102,38 @@ const renderView = async () => {
   await waitFor(() => expect(screen.getByTestId('guest-roster')).toBeInTheDocument());
 };
 
-describe('roster por reserva', () => {
-  it('agrupa a los invitados bajo su reserva', async () => {
+describe('reserve roster', () => {
+  it('group the guests under your reservation', async () => {
     await renderView();
     const card = screen.getByTestId('roster-card-1');
     expect(within(card).getByTestId('guest-row-1')).toBeInTheDocument();
     expect(within(card).getByTestId('guest-row-2')).toBeInTheDocument();
   });
 
-  it('deja fuera las fichas dadas de baja', async () => {
+  it('It excludes decommissioned cards', async () => {
     await renderView();
     expect(screen.queryByTestId('guest-row-9')).not.toBeInTheDocument();
   });
 
-  it('renderiza el badge #GST-{id} y el nombre', async () => {
+  it('renders the badge #GST-{id} and the name', async () => {
     await renderView();
     const row = screen.getByTestId('guest-row-1');
     expect(row).toHaveTextContent('#GST-1');
     expect(row).toHaveTextContent('Carlos Mendoza');
   });
 
-  it('enlaza la reserva padre con su badge #RES-{id}', async () => {
+  it('links the parent reservation with its badge #RES-{id}', async () => {
     await renderView();
     expect(screen.getByTestId('roster-card-1')).toHaveTextContent('#RES-1');
   });
 
-  it('muestra el contador del roster frente al tamaño del grupo', async () => {
+  it('shows the roster counter next to the group size', async () => {
     await renderView();
     expect(screen.getByTestId('roster-count-1')).toHaveTextContent('Registered 2 of 2 Guests');
     expect(screen.getByTestId('roster-count-2')).toHaveTextContent('Registered 1 of 4 Guests');
   });
 
-  it('enseña las reservas sin nadie registrado', async () => {
+  it('shows the reservations without anyone registered', async () => {
     await renderView();
     const empty = screen.getByTestId('roster-card-3');
     expect(empty).toHaveTextContent(/Nobody registered on this booking yet/);
@@ -142,14 +141,14 @@ describe('roster por reserva', () => {
   });
 });
 
-describe('contacto principal', () => {
-  it('marca al principal con su pill', async () => {
+describe('main contact', () => {
+  it('Mark the main one with your pill', async () => {
     await renderView();
     expect(screen.getByTestId('primary-badge-1')).toHaveTextContent('Primary contact');
     expect(screen.queryByTestId('primary-badge-2')).not.toBeInTheDocument();
   });
 
-  it('sólo ofrece "Make primary" a quien no lo es', async () => {
+  it('only offers "Make primary" to those who are not the primary', async () => {
     await renderView();
     expect(
       within(screen.getByTestId('guest-row-2')).getByRole('button', { name: /make primary/i }),
@@ -159,7 +158,7 @@ describe('contacto principal', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('promover manda un solo PATCH: el servidor degrada al anterior', async () => {
+  it('Promoting sends a single patch: the server downgrades to the previous one.', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -175,7 +174,7 @@ describe('contacto principal', () => {
     });
   });
 
-  it('avisa antes de quitar al principal y dice quién toma el relevo', async () => {
+  it('Give notice before removing the main person and say who is taking over.', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -191,7 +190,7 @@ describe('contacto principal', () => {
     );
   });
 
-  it('cancelar el aviso no borra nada', async () => {
+  it('canceling the alert does not delete anything', async () => {
     const user = userEvent.setup();
     vi.mocked(window.confirm).mockReturnValue(false);
     await renderView();
@@ -203,7 +202,7 @@ describe('contacto principal', () => {
     expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
   });
 
-  it('quitar a un acompañante corriente no pregunta nada', async () => {
+  it('Removing a regular passenger does not ask any questions', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -214,7 +213,7 @@ describe('contacto principal', () => {
     expect(window.confirm).not.toHaveBeenCalled();
   });
 
-  it('avisa del roster sin contacto principal', async () => {
+  it('Give notice of the roster without a main contact', async () => {
     reservationRows = [{ ...RESERVATIONS[0], guests: [g(1, 1, 'Carlos Mendoza')] }];
     renderIn(<ReservationGuestsView merchantId={3} />);
     await waitFor(() => expect(screen.getByTestId('guest-roster')).toBeInTheDocument());
@@ -222,20 +221,20 @@ describe('contacto principal', () => {
   });
 });
 
-describe('enlaces de contacto directo', () => {
-  it('el teléfono es un enlace tel: sin separadores', async () => {
+describe('direct contact links', () => {
+  it('the phone is a tel: link without separators', async () => {
     await renderView();
     const tel = within(screen.getByTestId('guest-row-1')).getByRole('link', { name: /600333444/ });
     expect(tel).toHaveAttribute('href', 'tel:+34600333444');
   });
 
-  it('el correo es un enlace mailto:', async () => {
+  it('the email is a mailto: link', async () => {
     await renderView();
     const mail = within(screen.getByTestId('guest-row-1')).getByRole('link', { name: /carlos@example/ });
     expect(mail).toHaveAttribute('href', 'mailto:carlos@example.com');
   });
 
-  it('sin datos no pinta enlaces muertos', async () => {
+  it('Without data, it is impossible to pinpoint dead links.', async () => {
     await renderView();
     const row = screen.getByTestId('guest-row-2');
     expect(within(row).queryAllByRole('link')).toHaveLength(0);
@@ -244,29 +243,29 @@ describe('enlaces de contacto directo', () => {
 });
 
 describe('KPIs del roster', () => {
-  it('cuenta las fichas activas del día', async () => {
+  it('Count the active chips of the day', async () => {
     await renderView();
-    // 2 en RES-1 (la inactiva no cuenta) + 1 en RES-2.
+    // 2in RES-1 (the inactive one doesn't count) + 1 in RES-2.
     expect(within(screen.getByTestId('kpi-registered')).getByText('3')).toBeInTheDocument();
   });
 
-  it('cuenta las reservas con principal contactable', async () => {
+  it('The reservations account has a main contact person.', async () => {
     await renderView();
     const kpi = screen.getByTestId('kpi-primary-contacts');
-    // Sólo RES-1: el principal de RES-2 no tiene ni teléfono ni correo.
+    // RES-1 only: the main office of RES-2 has neither a telephone nor mail.
     expect(within(kpi).getByText('1')).toBeInTheDocument();
     expect(within(kpi).getByText(/33\.3% of bookings reachable/)).toBeInTheDocument();
   });
 
-  it('promedia la composición sobre todas las reservas', async () => {
+  it('averages the composition across all reserves', async () => {
     await renderView();
-    // 3 fichas / 3 reservas.
+    // 3 chips / 3 reserves.
     expect(within(screen.getByTestId('kpi-average-party')).getByText('1.0')).toBeInTheDocument();
   });
 });
 
-describe('búsqueda y filtros', () => {
-  it('localiza a un invitado por teléfono', async () => {
+describe('search and filters', () => {
+  it('finds a guest by phone number', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -274,11 +273,11 @@ describe('búsqueda y filtros', () => {
 
     await waitFor(() => expect(screen.queryByTestId('guest-row-3')).not.toBeInTheDocument());
     expect(screen.getByTestId('guest-row-1')).toBeInTheDocument();
-    // Y revela la reserva asociada.
+    // And it reveals the associated reserve.
     expect(screen.getByTestId('roster-card-1')).toHaveTextContent('#RES-1');
   });
 
-  it('localiza a un invitado por correo', async () => {
+  it('finds a guest by email', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -288,7 +287,7 @@ describe('búsqueda y filtros', () => {
     expect(screen.getByTestId('guest-row-1')).toBeInTheDocument();
   });
 
-  it('aísla los contactos principales', async () => {
+  it('isolates the primary contacts', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -299,18 +298,18 @@ describe('búsqueda y filtros', () => {
     expect(screen.getByTestId('guest-row-3')).toBeInTheDocument();
   });
 
-  it('aísla los rosters incompletos', async () => {
+  it('isolate incomplete rosters', async () => {
     const user = userEvent.setup();
     await renderView();
 
     await user.click(screen.getByRole('checkbox', { name: /incomplete rosters/i }));
 
-    // RES-1 está completo (2 de 2) y desaparece; RES-2 sigue.
+    // RES-1 is complete (2 of 2) and disappears; RES-2 continues.
     await waitFor(() => expect(screen.queryByTestId('guest-row-1')).not.toBeInTheDocument());
     expect(screen.getByTestId('guest-row-3')).toBeInTheDocument();
   });
 
-  it('el filtro no vuelve a pedir datos al servidor', async () => {
+  it('the filter does not request data from the server again', async () => {
     const user = userEvent.setup();
     await renderView();
     const before = calls.filter((c) => c.url.includes('/reservation?')).length;
@@ -322,14 +321,14 @@ describe('búsqueda y filtros', () => {
   });
 });
 
-describe('drawer de alta y edición', () => {
+describe('drawer for high and low editing', () => {
   const openAdd = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getAllByRole('button', { name: /^add guest$/i })[0]);
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
     return screen.getByRole('dialog');
   };
 
-  it('da de alta al invitado contra la reserva elegida', async () => {
+  it('adds a guest to the selected reservation', async () => {
     const user = userEvent.setup();
     await renderView();
     const dialog = await openAdd(user);
@@ -344,13 +343,13 @@ describe('drawer de alta y edición', () => {
       expect(post?.body).toMatchObject({
         reservation_id: 2,
         name: 'Marta Gil',
-        // Sin separadores: es lo que acepta @IsPhoneNumber y lo que cabe en varchar(20).
+        // Without separators: this is what @IsPhoneNumber accepts and what fits in varchar(20).
         phone: '+34600555444',
       });
     });
   });
 
-  it('rechaza un nombre vacío', async () => {
+  it('rejects an empty name', async () => {
     const user = userEvent.setup();
     await renderView();
     const dialog = await openAdd(user);
@@ -361,23 +360,23 @@ describe('drawer de alta y edición', () => {
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
 
-  it('rechaza un nombre por encima del tope de la columna', async () => {
+  it('rejects a name that exceeds the column limit', async () => {
     const user = userEvent.setup();
     await renderView();
     const dialog = await openAdd(user);
 
     const nameField = within(dialog).getByLabelText(/guest name/i);
-    // maxLength corta en el navegador, así que se fuerza el valor para probar la regla.
+    // maxLength is truncated in the browser, so the value is forced to test the rule..
     await user.click(nameField);
     await user.paste('x'.repeat(140));
     await user.click(within(dialog).getByRole('button', { name: /^add guest$/i }));
 
-    // O bien el input recortó a 100 (válido), o se ve el error: nunca se envía algo >100.
+    // Either the input was truncated to 100 (valid), or the error is seen: nothing >100 is ever sent
     const post = calls.find((c) => c.method === 'POST');
     expect(String((post?.body as { name?: string })?.name ?? '').length).toBeLessThanOrEqual(100);
   });
 
-  it('rechaza un teléfono nacional que el backend devolvería como 400', async () => {
+  it('rejects a national phone number that the backend would return as 400', async () => {
     const user = userEvent.setup();
     await renderView();
     const dialog = await openAdd(user);
@@ -390,7 +389,7 @@ describe('drawer de alta y edición', () => {
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
 
-  it('avisa de a quién desplaza el interruptor de principal', async () => {
+  it('It alerts you to whom you move the main switch.', async () => {
     const user = userEvent.setup();
     await renderView();
     const dialog = await openAdd(user);
@@ -403,7 +402,7 @@ describe('drawer de alta y edición', () => {
     );
   });
 
-  it('el contador proyecta la ficha que se está escribiendo', async () => {
+  it('the counter projects the card that is being written', async () => {
     const user = userEvent.setup();
     await renderView();
     const dialog = await openAdd(user);
@@ -419,7 +418,7 @@ describe('drawer de alta y edición', () => {
     );
   });
 
-  it('el alta rápida registra un acompañante genérico sin cerrar el drawer', async () => {
+  it('the quick add registers a generic guest without closing the drawer', async () => {
     const user = userEvent.setup();
     await renderView();
     const dialog = await openAdd(user);
@@ -431,11 +430,11 @@ describe('drawer de alta y edición', () => {
       const post = calls.find((c) => c.method === 'POST');
       expect(post?.body).toMatchObject({ reservation_id: 2, name: 'Guest 2' });
     });
-    // El drawer sigue abierto para encadenar el siguiente.
+    // The drawer remains open to chain the next action.
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
-  it('editar bloquea el cambio de reserva', async () => {
+  it('editing locks the reservation change', async () => {
     const user = userEvent.setup();
     await renderView();
 
