@@ -1,6 +1,4 @@
-// Diálogo de override para una transición de estado (confirmar una PENDING en una franja
-// llena). Se abre cuando el servidor responde 409 CAPACITY_OVERRIDE_REQUIRED; reintenta la
-// MISMA transición con las credenciales del encargado.
+// Override dialog for a state transition (confirming a PENDING in a full strip). Opens when the server responds 409 CAPACITY_OVERRIDE_REQUIRED; retries the SAME transition with the manager's credentials.
 
 import React, { useState } from 'react';
 import { AppModal, ModalFormError, ModalFormFooter } from '../../shared/AppModal';

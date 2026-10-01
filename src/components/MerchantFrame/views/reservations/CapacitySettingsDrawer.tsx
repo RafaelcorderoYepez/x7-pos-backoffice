@@ -1,6 +1,4 @@
-// Ajustes de aforo y ritmo del local: aforo total, tamaño de franja, límite de llegadas por
-// franja y turnos de servicio. Sólo el encargado (MERCHANT_ADMIN) guarda; el servidor lo
-// vuelve a exigir.
+// Store capacity and flow adjustments: total capacity, slot size, arrival limit per slot, and service shifts. Only the manager (MERCHANT_ADMIN) saves; the server requires it again.
 
 import React, { useEffect, useState } from 'react';
 import { AppModal, ModalFormError, ModalFormFooter } from '../../shared/AppModal';

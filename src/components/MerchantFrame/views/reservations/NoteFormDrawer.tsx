@@ -1,9 +1,6 @@
-// Entrada rápida de notas de reserva.
-//
-// Está pensado para escribirse con el cliente al teléfono: las etiquetas rápidas ponen el
-// prefijo estándar de un toque, y la vista previa enseña el realce con el que la nota va a
-// aparecer en el pase antes de guardarla — porque una alergia que no se ve a tiempo es el
-// único error de este módulo que hace daño de verdad.
+// Quick entry of reservation notes.
+
+// It's designed for easy communication with the customer on the phone: quick tags add the standard prefix with a single tap, and the preview shows how the note will appear on the ticket before saving it—because an allergy that isn't noticed in time is the only flaw in this module that truly causes problems.
 
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Reservation, ReservationNote } from '../../../../types/reservation';
@@ -23,11 +20,11 @@ import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormError, ModalFormFooter } from '../../shared/AppModal';
 
 interface NoteFormDrawerProps {
-  /** Reservas a las que se puede colgar la nota (las del día en curso). */
+  /** Reservations to which the note can be attached (those of the current day). */
   reservations: Reservation[];
-  /** Reserva preseleccionada al abrir desde una tarjeta concreta. */
+  /** Pre-selected reservation when opening from a specific card. */
   initialReservationId?: number;
-  /** Nota existente cuando el drawer edita en vez de crear. */
+  /** Existing note when the drawer edits instead of creating. */
   initial?: ReservationNote;
   guestNameOf: (reservation: Reservation) => string;
   submitting: boolean;
@@ -64,8 +61,7 @@ export const NoteFormDrawer: React.FC<NoteFormDrawerProps> = ({
   const category = useMemo(() => categoryOf({ note: text }), [text]);
   const priority = useMemo(() => isPriorityNote({ note: text }), [text]);
 
-  // El textarea se referencia para devolver el foco tras insertar una etiqueta: la anfitriona
-  // pulsa el chip y sigue escribiendo sin tocar el ratón otra vez.
+// The textarea is referenced to return focus after inserting a label: the host presses the chip and continues typing without touching the mouse again.
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const caretToEndRef = useRef(false);
 
@@ -74,18 +70,18 @@ export const NoteFormDrawer: React.FC<NoteFormDrawerProps> = ({
     setText(applyQuickTag(text, tag));
   };
 
-  /**
-   * Lleva el cursor al final DESPUÉS de insertar una etiqueta.
-   *
-   * Con `requestAnimationFrame` esto corrompía la nota: el callback se programaba con la
-   * longitud del texto en el momento del clic y se ejecutaba un frame más tarde, cuando la
-   * anfitriona ya había empezado a escribir — devolvía el cursor al final del PREFIJO y el
-   * resto de la frase se intercalaba ahí. Una nota real salió como
-   * "[OCCASION] rthday cake at 21:30Surprise bi".
-   *
-   * `useLayoutEffect` corre de forma síncrona tras confirmar el DOM y antes de pintar, así que
-   * no queda ni un hueco para teclear en medio, y la posición se lee del valor ACTUAL.
-   */
+/**
+* Moves the cursor to the end AFTER inserting a tag.
+*
+* With `requestAnimationFrame` this corrupted the note: the callback was programmed with the
+length of the text at the time of the click and executed one frame later, when the
+host had already started typing — it returned the cursor to the end of the PREFIX and the
+rest of the sentence was inserted there. A real note came out as
+* "[OCCASION] rthday cake at 21:30 Surprise bi".
+*
+* `useLayoutEffect` runs synchronously after confirming the DOM and before rendering, so
+there's no space to type in between, and the position is read from the CURRENT value.
+*/
   useLayoutEffect(() => {
     if (!caretToEndRef.current) return;
     caretToEndRef.current = false;
@@ -119,7 +115,7 @@ export const NoteFormDrawer: React.FC<NoteFormDrawerProps> = ({
       >
         {formError ? <ModalFormError message={formError} /> : null}
 
-        {/* ---------- Reserva destino ---------- */}
+        {/* ---------- Destination booking ---------- */}
         <div className="flex flex-col gap-1.5">
           <label htmlFor="note-reservation" className={labelClass}>
             Reservation
@@ -151,7 +147,7 @@ export const NoteFormDrawer: React.FC<NoteFormDrawerProps> = ({
           ) : null}
         </div>
 
-        {/* ---------- Etiquetas rápidas ---------- */}
+        {/* ---------- Quick tags ---------- */}
         <div className="flex flex-col gap-2">
           <span className={labelClass}>Quick tags</span>
           <div className="flex flex-wrap gap-2">
@@ -182,7 +178,7 @@ export const NoteFormDrawer: React.FC<NoteFormDrawerProps> = ({
           </p>
         </div>
 
-        {/* ---------- Cuerpo ---------- */}
+        {/* ---------- Body ---------- */}
         <div className="flex flex-col gap-1.5">
           <label htmlFor="note-body" className={labelClass}>
             Note
@@ -204,7 +200,7 @@ export const NoteFormDrawer: React.FC<NoteFormDrawerProps> = ({
           ) : null}
         </div>
 
-        {/* ---------- Vista previa del realce ---------- */}
+        {/* ---------- Preview of the highlight ---------- */}
         {text.trim() ? (
           <div className="flex flex-col gap-2">
             <span className={labelClass}>Preview on the service screens</span>

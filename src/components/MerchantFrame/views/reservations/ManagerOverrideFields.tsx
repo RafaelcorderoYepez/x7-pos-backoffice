@@ -1,6 +1,4 @@
-// Bloque de override del encargado: sus credenciales (no las de quien está logueado)
-// autorizan a forzar una franja llena. El servidor las verifica, exige que sea MERCHANT_ADMIN
-// activo del mismo local y deja constancia de quién autorizó; nunca las guarda.
+// Manager's override block: their credentials (not those of the logged-in user) authorize forcing a full slot. The server verifies them, requires that they be an active MERCHANT_ADMIN from the same location, and records who authorized it; it never saves them.
 
 import React from 'react';
 import { overrideErrors, type ManagerOverride } from '../../../../lib/reservation-capacity';
@@ -8,7 +6,7 @@ import { overrideErrors, type ManagerOverride } from '../../../../lib/reservatio
 interface ManagerOverrideFieldsProps {
   value: ManagerOverride;
   onChange: (next: ManagerOverride) => void;
-  /** Por qué hace falta (el aviso de la franja o el mensaje del 409). */
+  /** Why it's needed (the alert of the slot or the message of the 409). */
   reason: string;
   showErrors: boolean;
   idPrefix: string;

@@ -1,9 +1,6 @@
-// Alta y edición de un miembro del roster.
-//
-// La decisión que gobierna el formulario es el interruptor de contacto principal: activarlo
-// degrada al principal anterior de esa reserva, y eso lo hace el SERVIDOR dentro de la misma
-// transacción. El drawer se limita a avisar de a quién va a desplazar, porque una anfitriona
-// que cambia el contacto de una mesa tiene que saber a quién deja de llamar el local.
+// Adding and editing a roster member.
+
+// The decision governing the form is the primary contact switch: activating it demotes the previous primary contact for that reservation, and this is done by the SERVER within the same transaction. The drawer simply notifies you who will be replaced, because a host who changes the contact for a table needs to know who the venue will no longer call.
 
 import React, { useMemo, useState } from 'react';
 import type { Reservation, ReservationGuest } from '../../../../types/reservation';
@@ -35,7 +32,7 @@ export interface GuestSubmitPayload {
 
 interface GuestFormDrawerProps {
   reservations: Reservation[];
-  /** Ficha existente cuando el drawer edita en vez de dar de alta. */
+  /** Existing guest record when the drawer is used to edit rather than add. */
   initial?: ReservationGuest;
   initialReservationId?: number;
   guestNameOf: (reservation: Reservation) => string;
@@ -43,7 +40,7 @@ interface GuestFormDrawerProps {
   formError: string;
   onCancel: () => void;
   onSubmit: (payload: GuestSubmitPayload) => void;
-  /** Alta rápida de acompañantes genéricos sin cerrar el drawer. */
+  /** Quick registration of generic companions without closing the drawer. */
   onQuickAdd?: (reservationId: number, name: string) => void;
   quickAdding?: boolean;
 }
@@ -80,8 +77,8 @@ export const GuestFormDrawer: React.FC<GuestFormDrawerProps> = ({
   const roster = useMemo(() => activeGuests(selected?.guests ?? []), [selected]);
   const currentPrimary = useMemo(() => primaryGuest(roster), [roster]);
 
-  // El recuento cuenta la ficha que se está creando: enseñar "3 de 4" mientras se teclea la
-  // cuarta es lo que le dice a la anfitriona que ya puede parar.
+  // The count includes the record being created: show "3 of 4" while typing the
+  // fourth is what tells the host that they can now stop.
   const count = useMemo(
     () => rosterCount(roster, selected?.party_size ?? 0),
     [roster, selected],
@@ -100,8 +97,7 @@ export const GuestFormDrawer: React.FC<GuestFormDrawerProps> = ({
     Boolean(linkError) ||
     submitting;
 
-  // A quién desplaza el interruptor. Nulo cuando no hay principal todavía, o cuando el que se
-  // está editando YA es el principal.
+// Who does the switch shift? Null when there is no main switch yet, or when the one being edited is already the main switch.
   const displaced =
     isPrimary && currentPrimary && currentPrimary.id !== initial?.id ? currentPrimary : null;
 
@@ -133,7 +129,7 @@ export const GuestFormDrawer: React.FC<GuestFormDrawerProps> = ({
       >
         {formError ? <ModalFormError message={formError} /> : null}
 
-        {/* ---------- Reserva padre ---------- */}
+        {/* ---------- Reserve father ---------- */}
         <div className="flex flex-col gap-1.5">
           <label htmlFor="guest-reservation" className={labelClass}>
             Reservation
@@ -167,7 +163,7 @@ export const GuestFormDrawer: React.FC<GuestFormDrawerProps> = ({
           ) : null}
         </div>
 
-        {/* ---------- Recuento frente al tamaño del grupo ---------- */}
+        {/* ---------- Count versus group size ---------- */}
         {selected ? (
           <div
             data-testid="roster-counter"
@@ -200,7 +196,7 @@ export const GuestFormDrawer: React.FC<GuestFormDrawerProps> = ({
           </div>
         ) : null}
 
-        {/* ---------- Identidad y contacto ---------- */}
+        {/* ---------- Identity and contact ---------- */}
         <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-4">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="guest-name" className={labelClass}>
@@ -266,7 +262,7 @@ export const GuestFormDrawer: React.FC<GuestFormDrawerProps> = ({
           </div>
         </div>
 
-        {/* ---------- Contacto principal ---------- */}
+        {/* ---------- Primary contact ---------- */}
         <div className="flex flex-col gap-2 border-t border-[#e8e2d8] pt-4">
           <label className="inline-flex items-center gap-3 cursor-pointer group w-fit">
             <input

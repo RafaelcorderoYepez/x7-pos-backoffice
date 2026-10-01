@@ -1,14 +1,15 @@
-// Alta rápida de reserva: el drawer que la anfitriona rellena con el cliente al teléfono.
-//
-// Dos decisiones que condicionan todo el formulario:
-//
-// 1. El cliente NO es obligatorio. El CRM (`POST /api/customers`) exige rut, dirección,
-//    ciudad, provincia y país — datos que nadie dicta por teléfono para reservar una mesa.
-//    Por eso el camino por defecto es el "invitado ligero" (un reservation_guest con nombre y
-//    contacto, que es literalmente lo que pide el criterio de aceptación), y la ficha completa
-//    del CRM queda como una opción explícita para quien sí tiene los datos delante.
-// 2. El aviso de aforo NO bloquea. Es un aviso para una persona que puede sacar mesas a la
-//    terraza o juntar dos de cuatro; convertirlo en un error impediría reservas legítimas.
+// Quick reservation setup: the form the host fills out with the customer on the phone.
+
+// Two decisions that affect the entire form:
+
+// 1. The customer is NOT required. The CRM (`POST /api/customers`) requires a national ID number, address,
+// city, province, and country — information no one dictates over the phone to reserve a table.
+
+// Therefore, the default method is the "light guest" (a reservation_guest with name and
+// contact information, which is literally what the acceptance criteria require), and the complete CRM form remains an explicit option for those who do have the information in front of them.
+
+// 2. The capacity alert DOES NOT block reservations. It's an alert for someone who can move tables to the
+// terrace or combine two tables of four; turning it into an error would prevent legitimate reservations.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { CustomerRef, ReservationDraft } from '../../../../types/reservation';
@@ -45,14 +46,14 @@ import { SlotAvailabilityMatrix } from './SlotAvailabilityMatrix';
 import { ManagerOverrideFields } from './ManagerOverrideFields';
 import { AppModal, ModalFormError, ModalFormFooter } from '../../shared/AppModal';
 
-// Contacto ligero que se adjunta a la reserva cuando no hay ficha de CRM detrás.
+// Light contact attached to the booking when there is no CRM card behind it.
 export interface GuestContactDraft {
   name: string;
   email: string;
   phone: string;
 }
 
-// Ficha completa del CRM, con los cinco campos que el DTO exige además del correo.
+// Complete CRM form, with the five fields that the DTO requires in addition to the email.
 export interface NewCustomerDraft {
   name: string;
   email: string;
@@ -66,23 +67,21 @@ export interface NewCustomerDraft {
 
 export interface ReservationSubmitPayload {
   draft: ReservationDraft;
-  /** Contacto suelto a colgar de la reserva recién creada. */
+  /** Light contact to attach to the newly created reservation. */
   guest: GuestContactDraft | null;
-  /** Ficha de CRM a crear antes de la reserva, para enlazar su customer_id. */
+  /** CRM form to create before the reservation, to link its customer_id. */
   newCustomer: NewCustomerDraft | null;
 }
 
 interface ReservationFormDrawerProps {
   customers: CustomerRef[];
-  /** Motivo por el que el directorio de clientes está vacío, si la carga falló. */
+  /** Reason why the customer directory is empty, if the load failed. */
   customersError?: string;
   /**
-   * Mensaje del último 409 CAPACITY_OVERRIDE_REQUIRED del servidor, si el guardado chocó con
-   * el aforo (p. ej. otra anfitriona ocupó la franja entre que se pintó la matriz y se pulsó
-   * guardar). Mientras exista, el drawer pide el override del encargado.
+The last 409 CAPACITY_OVERRIDE_REQUIRED message from the server appears if the save operation conflicted with capacity (e.g., another host occupied the slot between when the matrix was drawn and when save was pressed). As long as this conflict exists, the drawer requests override authorization from the manager.
    */
   capacityConflict?: { key: string; message: string } | null;
-  /** Día que el workspace tiene abierto: el drawer arranca ahí, no en "hoy". */
+  /** The day the workspace is open: the drawer starts there, not on "today". */
   defaultDate: string;
   submitting: boolean;
   formError: string;
@@ -119,8 +118,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
   onSubmit,
 }) => {
   const [date, setDate] = useState(defaultDate || todayIsoDate());
-  // La hora sale de la matriz de franjas de los turnos, no de un campo libre: arranca vacía
-  // hasta que la anfitriona pulsa una franja.
+// The time comes from the matrix of shift slots, not from a free field: it starts empty until the host presses a slot.
   const [time, setTime] = useState('');
   const [partySize, setPartySize] = useState('2');
   const [duration, setDuration] = useState(String(DEFAULT_DURATION_MINUTES));
@@ -134,9 +132,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
   const [guest, setGuest] = useState<GuestContactDraft>({ name: '', email: '', phone: '' });
   const [newCustomer, setNewCustomer] = useState<NewCustomerDraft>(EMPTY_CUSTOMER);
   const [override, setOverride] = useState<ManagerOverride>({ email: '', password: '' });
-  // Último resultado de disponibilidad, etiquetado con la consulta que lo produjo: si la
-  // anfitriona cambia día, grupo o duración, el resultado viejo deja de valer solo (sin un
-  // efecto que lo borre) y la matriz se muestra cargando hasta que llega el nuevo.
+// Latest availability result, labeled with the query that produced it: if the host changes day, group or duration, the old result ceases to be valid on its own (without an effect that deletes it) and the matrix is shown loading until the new one arrives.
   const [availabilityResult, setAvailabilityResult] = useState<{
     key: string;
     data: DayAvailability | null;
@@ -148,7 +144,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
 
   useModalDismiss(onCancel);
 
-  // Un clic fuera cierra el desplegable de sugerencias sin cerrar el drawer entero.
+  // Clicking outside closes the suggestions dropdown without closing the entire drawer.
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
       if (!searchBoxRef.current?.contains(event.target as Node)) setSuggestionsOpen(false);
@@ -157,7 +153,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
-  // Sin hora todavía sólo se valida el día; la falta de franja la explica `timeError`.
+  //Without a time slot, only the day is validated; the lack of a time slot is explained by `timeError`.
   const dateError = time ? reservationDateError(date, time) : date ? '' : 'Reservation date is required';
   const partyError = partySizeError(partySize);
   const durError = durationError(duration);
@@ -167,12 +163,11 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
     [customers, customerQuery],
   );
 
-  // Búsqueda sin resultados con algo escrito: es el momento de ofrecer crear la ficha.
+  // No results found when searching for something written: it's time to offer to create the listing.
   const noMatches = customerQuery.trim().length >= 2 && suggestions.length === 0;
 
-  // Disponibilidad en vivo: el servidor evalúa cada franja del día para ESTE grupo y esta
-  // duración, así el semáforo aparece ANTES de pulsar guardar y no como un error posterior.
-  // Espera un instante a que se deje de teclear el tamaño del grupo.
+// Live availability: The server evaluates each time slot for THIS group and this duration, so the status indicator appears BEFORE you press save, not as an error message afterward.
+// Please wait a moment for the group size to finish being entered.
   const availabilityKey =
     /^\d{4}-\d{2}-\d{2}$/.test(date) && !partyError && !durError
       ? `${date}|${partySize}|${duration}`
@@ -212,11 +207,9 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
     availabilityResult && availabilityResult.key === availabilityKey ? availabilityResult : null;
   const availability = currentResult?.data ?? null;
   const selectedSlot = findSlot(availability, time);
-  // Si la disponibilidad no carga, la matriz no puede pintarse y la reserva quedaría
-  // imposible: sólo entonces se ofrece un campo de hora de respaldo (el servidor sigue
-  // comprobando el aforo al guardar).
+// If availability does not load, the matrix cannot be painted and the reservation would be impossible: only then is a backup time field offered (the server continues to check capacity when saving).
   const availabilityFailed = Boolean(currentResult?.error);
-  // Una franja elegida deja de valer si el nuevo día, grupo o duración ya no la incluye.
+  // A selected time slot stops being valid if the new day, group or duration no longer includes it.
   const slotPicked = availabilityFailed ? Boolean(time) : Boolean(selectedSlot);
   const timeError = slotPicked
     ? ''
@@ -224,11 +217,9 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
       ? 'Reservation time is required'
       : 'Pick a time slot from the service shifts';
 
-  // Franja llena para este grupo (o el servidor acaba de rechazar el guardado por aforo):
-  // sin las credenciales del encargado no se puede reservar.
+// Slot is full for this group (or the server just rejected the booking due to capacity): without the manager's credentials you cannot book.
   const slotNeedsOverride = Boolean(selectedSlot && !selectedSlot.bookable);
-  // El 409 del servidor sólo aplica a la franja que lo provocó (misma clave que construye el
-  // padre con el borrador enviado).
+// The server's 409 error only applies to the strip that caused it (the same key that the parent constructs with the draft sent).
   const slotKey = dateError || !time
     ? ''
     : `${composeReservationDate(date, time)}|${Number(partySize)}|${Number(duration)}`;
@@ -245,15 +236,12 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
         )
       : '';
 
-  // El contacto del invitado se valida con las MISMAS reglas que el DTO del backend
-  // (@IsPhoneNumber sin región, @IsEmail, varchar(100)/varchar(20)). Se comprueba antes de
-  // enviar porque el invitado se cuelga DESPUÉS de crear la reserva: un 400 a esas alturas
-  // deja la mesa reservada y el contacto perdido.
+// The guest's contact information is validated using the SAME rules as the backend DTO (@IsPhoneNumber without region, @IsEmail, varchar(100)/varchar(20)).
+// This is checked before sending because the guest often drops the booking AFTER creating the reservation: a 400 error at that point leaves the table reserved but the contact information lost.
   const guestErrors =
     linkMode === 'guest'
       ? {
-          // El nombre puede quedar vacío: es la reserva anónima que el propio texto de
-          // ayuda del formulario ofrece.
+          // The name can be left empty: it is the anonymous reservation that the form's help text offers.
           name: guestNameError(guest.name, { required: false }),
           phone: guestPhoneError(guest.phone),
           email: guestEmailError(guest.email),
@@ -318,10 +306,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
       closeDisabled={submitting}
       size="2xl"
     >
-      {/* `noValidate`: la validación del navegador se desactiva a propósito. Con ella, un
-          tamaño de grupo de 0 bloquea el envío en silencio y el mensaje que explica por qué
-          nunca llega a pintarse — además de que `step` descarta valores perfectamente
-          legítimos. Las reglas viven en src/lib/reservations.ts, que es lo que se testea. */}
+      {/* `noValidate`: Browser validation is intentionally disabled. With it, a group size of 0 silently blocks submission and the message explaining why it never gets rendered—plus, `step` discards perfectly legitimate values. The rules reside in src/lib/reservations.ts, which is what's being tested. */}
       <form
         noValidate
         onSubmit={handleSubmit}
@@ -329,7 +314,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
       >
         {formError ? <ModalFormError message={formError} /> : null}
 
-        {/* ---------- Franja horaria y tamaño del grupo ---------- */}
+        {/* ---------- Time slot and group size ---------- */}
         <fieldset className="grid grid-cols-[repeat(auto-fit,minmax(128px,1fr))] gap-4">
           <legend className="sr-only">Booking slot</legend>
 
@@ -398,7 +383,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
           </p>
         ) : null}
 
-        {/* ---------- Aforo de la franja ---------- */}
+        {/* ---------- Slot availability ---------- */}
         <SlotAvailabilityMatrix
           availability={availability}
           loading={Boolean(availabilityKey) && !currentResult}
@@ -426,7 +411,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
             No service shifts are configured for this day.
           </p>
         ) : null}
-        {/* El botón de guardar queda desactivado sin franja: este aviso explica por qué. */}
+        {/* The save button is disabled without a time slot: this message explains why. */}
         {timeError && (availability || availabilityFailed) ? (
           <p className="text-body-sm text-[#5f5e5e] flex items-center gap-1" role="status">
             <span className="material-symbols-outlined text-base" aria-hidden="true">
@@ -445,7 +430,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
           />
         ) : null}
 
-        {/* ---------- Vínculo con el cliente ---------- */}
+        {/* ---------- Customer relationship ---------- */}
         <fieldset className="flex flex-col gap-3 border-t border-[#e8e2d8] pt-4">
           <legend className={labelClass}>Customer</legend>
 
@@ -687,7 +672,7 @@ export const ReservationFormDrawer: React.FC<ReservationFormDrawerProps> = ({
           ) : null}
         </fieldset>
 
-        {/* ---------- Canal de origen y peticiones ---------- */}
+        {/* ---------- Source channel and requests ---------- */}
         <fieldset className="flex flex-col gap-3 border-t border-[#e8e2d8] pt-4">
           <legend className={labelClass}>Booking details</legend>
 
