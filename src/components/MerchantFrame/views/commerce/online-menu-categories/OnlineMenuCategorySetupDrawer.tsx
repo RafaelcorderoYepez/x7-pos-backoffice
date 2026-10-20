@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 
 export interface OnlineMenuOption {
@@ -11,6 +11,14 @@ export interface InventoryCategoryOption {
   id: number;
   name: string;
   isActive?: boolean;
+}
+
+export interface ExistingBindingInfo {
+  id?: number;
+  menuId: number;
+  categoryId?: number;
+  displayOrder: number;
+  status?: string;
 }
 
 export interface OnlineMenuCategoryFormData {
@@ -27,7 +35,7 @@ export interface OnlineMenuCategorySetupDrawerProps {
   initialData?: OnlineMenuCategoryFormData | null;
   menus?: OnlineMenuOption[];
   categories?: InventoryCategoryOption[];
-  existingBindings?: { menuId: number; displayOrder: number; status?: string }[];
+  existingBindings?: ExistingBindingInfo[];
   suggestedDisplayOrder?: number;
   onClose: () => void;
   onSubmit: (data: OnlineMenuCategoryFormData) => Promise<void>;
@@ -66,7 +74,7 @@ interface ContentProps {
   initialData?: OnlineMenuCategoryFormData | null;
   menus: OnlineMenuOption[];
   categories: InventoryCategoryOption[];
-  existingBindings: { menuId: number; displayOrder: number; status?: string }[];
+  existingBindings: ExistingBindingInfo[];
   suggestedDisplayOrder: number;
   onClose: () => void;
   onSubmit: (data: OnlineMenuCategoryFormData) => Promise<void>;
@@ -92,8 +100,7 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
   };
 
   const [menuId, setMenuId] = useState<number>(() => {
-    if (initialData?.menuId) return initialData.menuId;
-    return 0;
+    return initialData?.menuId ?? 0;
   });
 
   const [categoryId, setCategoryId] = useState<number>(() => {
@@ -101,18 +108,18 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
     return 0;
   });
 
+  // Searchable Picker state for Inventory Category
+  const [categorySearchQuery, setCategorySearchQuery] = useState<string>('');
+  const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState<boolean>(() => {
+    // Open picker by default in create mode if no category selected
+    return !initialData?.categoryId;
+  });
+
   const [displayOrder, setDisplayOrder] = useState<number>(() => {
     if (initialData?.displayOrder !== undefined) return initialData.displayOrder;
     if (initialData?.menuId) return getNextOrderForMenu(initialData.menuId);
-    return 1;
+    return suggestedDisplayOrder || 1;
   });
-
-  const handleMenuChange = (newMenuId: number) => {
-    setMenuId(newMenuId);
-    if (mode === 'create') {
-      setDisplayOrder(getNextOrderForMenu(newMenuId));
-    }
-  };
 
   const [status, setStatus] = useState<'active' | 'deleted'>(() => {
     return initialData?.status || 'active';
@@ -120,6 +127,43 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Filter active inventory categories
+  const activeCategories = useMemo(() => {
+    return categories.filter((c) => c.isActive !== false);
+  }, [categories]);
+
+  // Searchable picker filter
+  const filteredCategories = useMemo(() => {
+    const q = categorySearchQuery.toLowerCase().trim();
+    if (!q) return activeCategories;
+    return activeCategories.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        `#cat-${c.id}`.toLowerCase().includes(q) ||
+        String(c.id).includes(q)
+    );
+  }, [activeCategories, categorySearchQuery]);
+
+  // Check duplicate mapping guardrail: same category_id + same menu_id under active status
+  const isDuplicateActive = useMemo(() => {
+    if (!menuId || !categoryId) return false;
+    return existingBindings.some(
+      (b) =>
+        b.menuId === menuId &&
+        b.categoryId === categoryId &&
+        (b.status === 'active' || !b.status) &&
+        b.id !== initialData?.id
+    );
+  }, [menuId, categoryId, existingBindings, initialData?.id]);
+
+  const handleMenuChange = (newMenuId: number) => {
+    setMenuId(newMenuId);
+    setFormError(null);
+    if (mode === 'create') {
+      setDisplayOrder(getNextOrderForMenu(newMenuId));
+    }
+  };
 
   // Close on Escape key
   useEffect(() => {
@@ -152,12 +196,27 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
     }
 
     if (!categoryId || categoryId <= 0) {
-      setFormError('Please select an Inventory Category.');
+      setFormError('Please select an active Inventory Category.');
       return;
     }
 
-    if (displayOrder === undefined || displayOrder < 0 || isNaN(displayOrder)) {
-      setFormError('Display order must be an integer greater than or equal to 0.');
+    // Integer Sequence Validation
+    const parsedOrder = Number(displayOrder);
+    if (
+      displayOrder === undefined ||
+      isNaN(parsedOrder) ||
+      parsedOrder < 0 ||
+      !Number.isInteger(parsedOrder)
+    ) {
+      setFormError('Display order must be a valid positive integer (greater than or equal to 0).');
+      return;
+    }
+
+    // Duplicate Mapping Guardrail validation in frontend
+    if (isDuplicateActive && status === 'active') {
+      setFormError(
+        'Duplicate Mapping Guardrail: This category is already bound to this digital menu under active status. Re-binding throws a 409 Conflict exception.'
+      );
       return;
     }
 
@@ -167,7 +226,7 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
         id: initialData?.id,
         menuId: Number(menuId),
         categoryId: Number(categoryId),
-        displayOrder: Math.floor(Number(displayOrder)),
+        displayOrder: Math.floor(parsedOrder),
         status,
       });
       onClose();
@@ -224,7 +283,7 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
               <p style={{ color: '#a1a1aa' }} className="text-xs text-zinc-400 mt-0.5 truncate font-poppins">
                 {mode === 'create'
                   ? 'Attach an inventory category to a digital menu and set display order'
-                  : 'Configure menu category binding'}
+                  : 'Configure menu category binding and presentation order'}
               </p>
             </div>
           </div>
@@ -246,8 +305,8 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
             <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-[#ae001a] text-xs flex items-start gap-2.5">
               <span className="material-symbols-outlined text-lg shrink-0 mt-0.5">error</span>
               <div>
-                <p className="font-bold">Validation Error</p>
-                <p className="mt-0.5">{formError}</p>
+                <p className="font-bold">Validation / Conflict Notice</p>
+                <p className="mt-0.5 leading-relaxed">{formError}</p>
               </div>
             </div>
           )}
@@ -257,10 +316,10 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold uppercase tracking-wider text-[#1d1c17] flex items-center gap-1.5 font-poppins">
                 <span className="material-symbols-outlined text-base text-purple-600">restaurant_menu</span>
-                Digital Menu Target *
+                Digital Menu Selector *
               </label>
               <span className="text-[10px] font-mono text-[#5f5e5e] bg-zinc-100 px-2 py-0.5 rounded">
-                {mode === 'create' ? 'Menu Assignment' : 'Menu Switcher'}
+                {mode === 'create' ? 'Target Menu' : 'Menu Switcher'}
               </span>
             </div>
 
@@ -291,58 +350,188 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
             </div>
           </div>
 
-          {/* Section 2: Inventory Category */}
+          {/* Section 2: Inventory Category Selector (Searchable Picker) */}
           <div className="p-4 bg-white rounded-xl border border-[#e8e2d8] shadow-2xs space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold uppercase tracking-wider text-[#1d1c17] flex items-center gap-1.5 font-poppins">
                 <span className="material-symbols-outlined text-base text-[#ae001a]">category</span>
-                Inventory Category *
+                Inventory Category Selector *
               </label>
               <span className="text-[10px] font-mono text-[#5f5e5e] bg-zinc-100 px-2 py-0.5 rounded">
-                Catalog Binding
+                Searchable Picker
               </span>
             </div>
 
-            <div>
-              {categories.length === 0 ? (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 font-poppins flex items-center gap-2">
-                  <span className="material-symbols-outlined text-base text-amber-600">warning</span>
-                  <span>No inventory categories found. Make sure categories exist in Products / Inventory.</span>
+            {/* Selected Category Display or Search Input */}
+            {selectedCategoryObj && !isCategoryPickerOpen ? (
+              <div className="p-3 bg-[#fcfcfb] border border-[#d5cfc4] rounded-lg flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-base">check</span>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-[#1d1c17] truncate font-poppins">
+                        {selectedCategoryObj.name}
+                      </span>
+                      <span className="text-[10px] font-mono bg-zinc-200 text-zinc-700 px-1.5 py-0.5 rounded font-semibold">
+                        #CAT-{selectedCategoryObj.id}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-emerald-600 font-medium font-poppins flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                      Active inventory category selected
+                    </span>
+                  </div>
                 </div>
-              ) : (
-                <select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(Number(e.target.value))}
+
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryPickerOpen(true)}
                   disabled={isSubmitting}
-                  className="w-full px-3.5 py-2.5 bg-[#fcfcfb] border border-[#d5cfc4] rounded-lg text-xs text-[#1d1c17] font-medium focus:border-[#ae001a] focus:outline-none transition-colors font-poppins cursor-pointer"
-                  required
+                  className="px-2.5 py-1.5 rounded-lg border border-[#d5cfc4] bg-white hover:bg-zinc-50 text-[11px] font-bold text-[#1d1c17] font-poppins flex items-center gap-1 transition-colors cursor-pointer shrink-0"
                 >
-                  <option value={0} disabled>
-                    Select product category to bind...
-                  </option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <p className="text-[11px] text-[#5f5e5e] mt-2 flex items-center gap-1.5 font-poppins">
-                <span className="material-symbols-outlined text-sm text-[#8c857b]">storefront</span>
-                Products in this category will appear in this section.
-              </p>
-            </div>
+                  <span className="material-symbols-outlined text-sm">swap_horiz</span>
+                  <span>Change</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {/* Search Input */}
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-base pointer-events-none">
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search active category by name or #CAT-ID..."
+                    value={categorySearchQuery}
+                    onChange={(e) => setCategorySearchQuery(e.target.value)}
+                    disabled={isSubmitting}
+                    className="w-full pl-9 pr-8 py-2 bg-[#fcfcfb] border border-[#d5cfc4] rounded-lg text-xs text-[#1d1c17] font-medium focus:border-[#ae001a] focus:outline-none transition-colors font-poppins"
+                    autoFocus={isCategoryPickerOpen}
+                  />
+                  {categorySearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setCategorySearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 text-sm cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtered Categories List */}
+                <div className="max-h-48 overflow-y-auto rounded-lg border border-[#e8e2d8] divide-y divide-[#f0ede6] bg-white shadow-2xs">
+                  {filteredCategories.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-[#5f5e5e] font-poppins">
+                      <span className="material-symbols-outlined text-2xl text-zinc-300 block mb-1">
+                        search_off
+                      </span>
+                      <span>No active inventory categories found matching your query.</span>
+                    </div>
+                  ) : (
+                    filteredCategories.map((c) => {
+                      const isSelected = c.id === categoryId;
+                      const isAlreadyBound = existingBindings.some(
+                        (b) =>
+                          b.menuId === menuId &&
+                          b.categoryId === c.id &&
+                          (b.status === 'active' || !b.status) &&
+                          b.id !== initialData?.id
+                      );
+
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setCategoryId(c.id);
+                            setIsCategoryPickerOpen(false);
+                            setCategorySearchQuery('');
+                            setFormError(null);
+                          }}
+                          className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#ae001a]/5 border-l-4 border-l-[#ae001a]'
+                              : 'hover:bg-zinc-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`material-symbols-outlined text-base ${isSelected ? 'text-[#ae001a]' : 'text-zinc-400'}`}>
+                              category
+                            </span>
+                            <span className="text-xs font-semibold text-[#1d1c17] truncate font-poppins">
+                              {c.name}
+                            </span>
+                            <span className="text-[10px] font-mono text-[#8c857b] bg-zinc-100 px-1.5 py-0.2 rounded">
+                              #CAT-{c.id}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {isAlreadyBound && (
+                              <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-poppins">
+                                Bound in Menu
+                              </span>
+                            )}
+                            {isSelected && (
+                              <span className="material-symbols-outlined text-base text-[#ae001a]">
+                                check_circle
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                {selectedCategoryObj && (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setIsCategoryPickerOpen(false)}
+                      className="text-[11px] font-bold text-zinc-600 hover:text-zinc-900 font-poppins cursor-pointer"
+                    >
+                      Cancel Picker
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Duplicate Guardrail Warning Notice */}
+            {isDuplicateActive && (
+              <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-xs text-amber-900 font-poppins flex items-start gap-2">
+                <span className="material-symbols-outlined text-base text-amber-600 shrink-0 mt-0.5">
+                  warning
+                </span>
+                <div>
+                  <strong className="block font-bold">Duplicate Category Guardrail Active:</strong>
+                  <span>
+                    This category is already assigned to this menu as Active. Re-binding will be rejected by the server with a 409 Conflict exception.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <p className="text-[11px] text-[#5f5e5e] font-poppins flex items-center gap-1">
+              <span className="material-symbols-outlined text-sm text-[#8c857b]">info</span>
+              Only active product inventory categories are available for storefront mapping.
+            </p>
           </div>
 
-          {/* Section 3: Display Order Sequence */}
+          {/* Section 3: Display Order Input (Sequence Manager) */}
           <div className="p-4 bg-white rounded-xl border border-[#e8e2d8] shadow-2xs space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold uppercase tracking-wider text-[#1d1c17] flex items-center gap-1.5 font-poppins">
                 <span className="material-symbols-outlined text-base text-blue-600">format_list_numbered</span>
-                Display Order Sequence *
+                Display Order Input *
               </label>
               <span className="text-[11px] font-mono font-bold text-[#ae001a] bg-red-50 border border-red-200 px-2 py-0.5 rounded">
-                #Order: {displayOrder}
+                #Sequence: {displayOrder}
               </span>
             </div>
 
@@ -352,9 +541,13 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
                 min="0"
                 step="1"
                 value={displayOrder}
-                onChange={(e) => setDisplayOrder(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  setDisplayOrder(isNaN(val) ? 0 : Math.max(0, val));
+                }}
                 disabled={isSubmitting}
                 className="flex-1 px-3.5 py-2 bg-[#fcfcfb] border border-[#d5cfc4] rounded-lg text-xs text-[#1d1c17] font-mono font-bold focus:border-[#ae001a] focus:outline-none transition-colors"
+                required
               />
               <button
                 type="button"
@@ -377,59 +570,54 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
             </div>
 
             <p className="text-[11px] text-[#5f5e5e] font-poppins">
-              Categories are presented on storefront menus in strict ascending order (e.g. 1 &rarr; Starters, 2 &rarr; Mains, 3 &rarr; Desserts).
+              Enforces positive integer validation. Categories are presented on customer storefronts sorted strictly ascending by display_order (e.g. 1 &rarr; Starters, 2 &rarr; Mains, 3 &rarr; Desserts).
             </p>
           </div>
 
-          {/* Section 4: Category Publication Status */}
+          {/* Section 4: Logical Status Selector (Dropdown selecting ACTIVE or DELETED) */}
           <div className="p-4 bg-white rounded-xl border border-[#e8e2d8] shadow-2xs space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-[#1d1c17] flex items-center gap-2 font-poppins">
+                <label className="text-xs font-bold uppercase tracking-wider text-[#1d1c17] flex items-center gap-2 font-poppins">
                   <span
                     className="w-2.5 h-2.5 rounded-full inline-block"
                     style={{ backgroundColor: status === 'active' ? '#10b981' : '#64748b' }}
                   />
-                  Category Publication Status
-                </span>
-                <p className="text-[11px] text-[#5f5e5e] mt-0.5 font-poppins">
-                  Controls live section visibility on the customer-facing online ordering storefront.
-                </p>
+                  Logical Status Selector *
+                </label>
               </div>
 
-              {/* Status Pill & Toggle Switch */}
-              <div className="flex items-center gap-3">
-                <span
-                  className="px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white tracking-wide uppercase shadow-2xs"
-                  style={{ backgroundColor: status === 'active' ? '#10b981' : '#64748b' }}
-                >
-                  {status === 'active' ? 'Active' : 'Archived'}
-                </span>
+              {/* Status Indicator Pill */}
+              <span
+                className="px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white tracking-wide uppercase shadow-2xs font-poppins"
+                style={{ backgroundColor: status === 'active' ? '#10b981' : '#64748b' }}
+              >
+                {status === 'active' ? 'ACTIVE IN MENU' : 'DELETED / ARCHIVED'}
+              </span>
+            </div>
 
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={status === 'active'}
-                  onClick={() => setStatus((prev) => (prev === 'active' ? 'deleted' : 'active'))}
-                  disabled={isSubmitting}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    status === 'active' ? 'bg-[#10b981]' : 'bg-[#64748b]'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                      status === 'active' ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
+            {/* Canonical Dropdown selecting ACTIVE or DELETED */}
+            <div>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as 'active' | 'deleted')}
+                disabled={isSubmitting}
+                className="w-full px-3.5 py-2.5 bg-[#fcfcfb] border border-[#d5cfc4] rounded-lg text-xs text-[#1d1c17] font-semibold focus:border-[#ae001a] focus:outline-none transition-colors font-poppins cursor-pointer"
+              >
+                <option value="active">
+                  ACTIVE — Visible in Storefront & Active in Menu
+                </option>
+                <option value="deleted">
+                  DELETED — Archived Category (Hidden from Storefront)
+                </option>
+              </select>
             </div>
 
             <div className="p-3 rounded-lg bg-[#fcfcfb] border border-[#e8e2d8] text-[11px] text-[#5f5e5e] flex items-start gap-2">
               <span className="material-symbols-outlined text-[16px] text-emerald-600 mt-0.5">verified</span>
               <div>
-                <strong className="text-[#1d1c17]">Logical Lifecycle Control: </strong>
-                Archiving logically hides the category without losing mapped products or sequence rankings.
+                <strong className="text-[#1d1c17]">Logical Status Enforcement: </strong>
+                Setting status = 'DELETED' hides the category and its items from storefront views without purging historical menu structures.
               </div>
             </div>
           </div>
@@ -449,7 +637,7 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isSubmitting || !menuId || !categoryId}
+            disabled={isSubmitting || !menuId || !categoryId || (isDuplicateActive && status === 'active')}
             className="px-6 py-2.5 rounded-lg bg-[#ae001a] hover:bg-[#d2272f] text-white text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer flex items-center gap-2 shadow-xs shrink-0 disabled:opacity-50 font-poppins"
           >
             {isSubmitting ? (

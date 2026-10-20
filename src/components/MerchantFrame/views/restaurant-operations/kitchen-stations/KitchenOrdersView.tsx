@@ -297,12 +297,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
     orderRef: true,
     stationPriority: true,
+    items: true,
     lifecycleStatus: true,
     createdTimestamp: true,
-    startedDelay: true,
-    completedPrepTime: true,
-    cancellationAudit: true,
-    items: true,
+    startedDelay: false,
+    completedPrepTime: false,
+    cancellationAudit: false,
     actions: true,
   });
 
@@ -744,10 +744,10 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
     }
 
-    // 5. Dynamic Sorting (Option 1):
-    // Tier 1: Active Orders (started / pending) -> Start of queue, arrival order (oldest first)
-    // Tier 2: Completed Orders (completed / ready) -> Below active, arrival order (oldest first)
-    // Tier 3: Cancelled Orders (cancelled) -> Bottom of queue, arrival order
+    // 5. Dynamic Sorting:
+    // Tier 1: Active Orders (started / pending) -> Prioridad más alta por delante, y a igual prioridad orden de llegada (FIFO)
+    // Tier 2: Completed Orders (completed / ready) -> Después de las órdenes activas
+    // Tier 3: Cancelled Orders (cancelled) -> DE ÚLTIMO al final de la tabla
     const getStatusTier = (status: KitchenOrderBusinessStatus | string): number => {
       switch (status) {
         case 'started':
@@ -774,67 +774,34 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       else cancelledOrders.push(o);
     });
 
-    // 1. Sort active orders chronologically (arrival order in system)
+    // 1. Órdenes activas: mayor prioridad por delante (priority DESC), luego más antiguas (FIFO)
     activeOrders.sort((a, b) => {
+      const pDiff = (b.priority ?? 0) - (a.priority ?? 0);
+      if (pDiff !== 0) return pDiff;
       const timeA = new Date(a.createdAt).getTime();
       const timeB = new Date(b.createdAt).getTime();
       if (timeA !== timeB) return timeA - timeB;
       return a.id - b.id;
     });
 
-    // 2. Real-time queue simulation with SLA Shield:
-    // - Existing orders DO NOT jump ahead upon reaching 15 min; they remain exactly where they are.
-    // - Once an order has SLA shield (waiting >= 15 min), NO order created later can be placed ahead of it.
-    const activeQueue: KitchenOrderTicket[] = [];
-
-    for (const item of activeOrders) {
-      const itemTime = new Date(item.createdAt).getTime();
-      const isPreparingItem = item.items.some((it) => it.preparationStatus === 'in_preparation');
-      const itemScore = (item.priority ?? 0) * 10 + (isPreparingItem ? 1 : 0);
-
-      // Determine the minimum barrier allowed: must be after any order that ALREADY had SLA
-      // (wait >= criticalSlaMinutes) at the time this new order was created.
-      let minInsertIndex = 0;
-      for (let i = 0; i < activeQueue.length; i++) {
-        const qTime = new Date(activeQueue[i].createdAt).getTime();
-        const waitingAtArrival = itemTime - qTime;
-        if (waitingAtArrival >= criticalSlaMinutes * 60 * 1000) {
-          minInsertIndex = i + 1;
-        }
-      }
-
-      // Within the allowed range (>= minInsertIndex), if the incoming order has HIGHER priority
-      // that the order in that position, precedes it. If it has equal or lower priority, it is placed behind (FIFO).
-      let insertIndex = activeQueue.length;
-      for (let i = minInsertIndex; i < activeQueue.length; i++) {
-        const q = activeQueue[i];
-        const isPreparingQ = q.items.some((it) => it.preparationStatus === 'in_preparation');
-        const qScore = (q.priority ?? 0) * 10 + (isPreparingQ ? 1 : 0);
-        if (itemScore > qScore) {
-          insertIndex = i;
-          break;
-        }
-      }
-
-      activeQueue.splice(insertIndex, 0, item);
-    }
-
-    // Tier 2 and Tier 3: Completed and cancelled in chronological FIFO order
+    // 2. Órdenes completadas: después de activas
     completedOrders.sort((a, b) => {
-      const timeA = new Date(a.createdAt).getTime();
-      const timeB = new Date(b.createdAt).getTime();
-      if (timeA !== timeB) return timeA - timeB;
-      return a.id - b.id;
-    });
-    cancelledOrders.sort((a, b) => {
-      const timeA = new Date(a.createdAt).getTime();
-      const timeB = new Date(b.createdAt).getTime();
-      if (timeA !== timeB) return timeA - timeB;
-      return a.id - b.id;
+      const timeA = new Date(a.completedAt || a.createdAt).getTime();
+      const timeB = new Date(b.completedAt || b.createdAt).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return b.id - a.id;
     });
 
-    return [...activeQueue, ...completedOrders, ...cancelledOrders];
-  }, [stationOrders, statusFilter, cancellationFilter, startTime, endTime, searchQuery, criticalSlaMinutes]);
+    // 3. Órdenes canceladas: AL FINAL DE TODO (de último)
+    cancelledOrders.sort((a, b) => {
+      const timeA = new Date(a.cancelledAt || a.createdAt).getTime();
+      const timeB = new Date(b.cancelledAt || b.createdAt).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return b.id - a.id;
+    });
+
+    return [...activeOrders, ...completedOrders, ...cancelledOrders];
+  }, [stationOrders, statusFilter, cancellationFilter, startTime, endTime, searchQuery]);
 
   // Paginated records for table view
   const paginatedOrders = useMemo(() => {
@@ -2066,12 +2033,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                 columns={[
                   { key: 'orderRef', label: 'Order Reference' },
                   { key: 'stationPriority', label: 'Station & Priority' },
+                  { key: 'items', label: 'Items & Dishes' },
                   { key: 'lifecycleStatus', label: 'Lifecycle Status' },
                   { key: 'createdTimestamp', label: 'Created Timestamp' },
                   { key: 'startedDelay', label: 'Started / Delay' },
                   { key: 'completedPrepTime', label: 'Completed / Prep Time' },
                   { key: 'cancellationAudit', label: 'Cancellation Audit' },
-                  { key: 'items', label: 'Items' },
                   { key: 'actions', label: 'Actions' },
                 ]}
                 visibleColumns={visibleColumns}
@@ -2122,19 +2089,19 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             <NoColumnsEmptyState />
           ) : (
             <>
-              <div className="overflow-x-auto scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                <table className="w-full table-fixed text-left text-xs border-collapse font-sans">
+              <div className="overflow-x-auto border-t border-[#e8e2d8]">
+                <table className="w-full text-left text-xs border-collapse font-sans">
                   <thead>
                     <tr className="bg-[#ece8e0] text-[#5f5e5e] font-sans font-semibold text-label-caps text-xs border-b border-[#e8e2d8]">
                       {visibleColumns.orderRef && <th className={`${densityPadding} w-36 min-w-[120px]`}>Order Reference</th>}
                       {visibleColumns.stationPriority && <th className={`${densityPadding} w-44 min-w-[130px]`}>Station &amp; Priority</th>}
-                      {visibleColumns.lifecycleStatus && <th className={`${densityPadding} text-center w-32 min-w-[100px]`}>Lifecycle Status</th>}
-                      {visibleColumns.createdTimestamp && <th className={`${densityPadding} w-36 min-w-[110px]`}>Created Timestamp</th>}
-                      {visibleColumns.startedDelay && <th className={`${densityPadding} w-36 min-w-[110px]`}>Started / Delay</th>}
-                      {visibleColumns.completedPrepTime && <th className={`${densityPadding} w-36 min-w-[110px]`}>Completed / Prep Time</th>}
-                      {visibleColumns.cancellationAudit && <th className={`${densityPadding} w-40 min-w-[120px]`}>Cancellation Audit</th>}
-                      {visibleColumns.items && <th className={`${densityPadding} text-center w-24 min-w-[70px]`}>Items</th>}
-                      {visibleColumns.actions && <th className={`${densityPadding} text-right w-28 min-w-[90px]`}>Actions</th>}
+                      {visibleColumns.items && <th className={`${densityPadding} w-36 min-w-[160px]`}>Items &amp; Dishes</th>}
+                      {visibleColumns.lifecycleStatus && <th className={`${densityPadding} text-center w-28 min-w-[90px]`}>Status</th>}
+                      {visibleColumns.createdTimestamp && <th className={`${densityPadding} w-36 min-w-[110px]`}>Created</th>}
+                      {visibleColumns.startedDelay && <th className={`${densityPadding} w-32 min-w-[100px]`}>Started / Delay</th>}
+                      {visibleColumns.completedPrepTime && <th className={`${densityPadding} w-32 min-w-[100px]`}>Completed / Prep Time</th>}
+                      {visibleColumns.cancellationAudit && <th className={`${densityPadding} w-32 min-w-[100px]`}>Cancellation Audit</th>}
+                      {visibleColumns.actions && <th className={`${densityPadding} text-right w-20 min-w-[70px]`}>Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e8e2d8] text-xs font-sans">
@@ -2185,26 +2152,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     const isTableAllHeld = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'held');
                     const elapsedMinutes = Math.floor(Math.max(0, (currentTime - new Date(order.createdAt).getTime()) / 1000) / 60);
 
-                    const prepDuration =
-                      isCompleted && order.completedAt && order.createdAt
-                        ? formatDuration(order.createdAt, order.completedAt)
-                        : null;
-
-                    const waitDelay =
-                      (isStarted || isCompleted) && order.startedAt && order.createdAt
-                        ? formatDuration(order.createdAt, order.startedAt)
-                        : null;
+                    const totalPieces = order.items?.reduce((acc, curr) => acc + curr.quantity, 0) || 0;
 
                     return (
                       <tr
                         key={order.id}
-                        className={`transition-colors duration-150 group ${
-                          isCancelled
-                            ? 'bg-stone-50/60 opacity-60 hover:opacity-100 hover:bg-[#f8f3eb]'
-                            : isCompleted
-                            ? 'bg-white hover:bg-[#f8f3eb]'
-                            : 'bg-white hover:bg-[#f8f3eb]'
-                        }`}
+                        className="bg-white hover:bg-[#f8f3eb] transition-colors duration-150 group"
                       >
                         {/* Order Reference */}
                         {visibleColumns.orderRef && (
@@ -2214,85 +2167,104 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                 #KO-{order.id}
                               </span>
                               {order.priority > 0 && (
-                                <span className="material-symbols-outlined text-xs text-[#ae001a]">
+                                <span className="material-symbols-outlined text-xs text-[#ae001a]" title={`Priority Rush +${order.priority}`}>
                                   flag
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] text-[#5f5e5e] font-mono">
+                            <div className="flex items-center gap-2 text-[11px] text-[#5f5e5e] font-mono mt-0.5">
                               {order.orderId ? (
                                 <span>#ORD-{order.orderId}</span>
                               ) : order.onlineOrderId ? (
                                 <span>#ONL-{order.onlineOrderId}</span>
-                              ) : order.notes ? (
-                                <span className="text-[#854d0e] font-semibold">{order.notes.split('•')[0].trim()}</span>
                               ) : (
-                                <span>Direct POS</span>
+                                <span>Direct KDS</span>
                               )}
                             </div>
+                            {order.notes && (
+                              <div className="text-[11px] text-[#854d0e] font-semibold mt-0.5 truncate max-w-[150px]" title={order.notes}>
+                                {order.notes.split('•')[0].trim()}
+                              </div>
+                            )}
                           </td>
                         )}
 
                         {/* Station & Priority */}
                         {visibleColumns.stationPriority && (
                           <td className={densityPadding}>
-                            <span className="font-normal text-[#1d1c17] text-xs block">
+                            <span className="font-medium text-[#1d1c17] text-xs block leading-tight">
                               {order.stationName || 'Unassigned Station'}
                             </span>
-                            <div className="flex items-center gap-1 mt-0.5">
+                            <div className="flex items-center gap-1 mt-1">
                               {order.priority >= 3 ? (
-                                <span className="text-[10px] font-normal uppercase px-1.5 py-0.2 rounded border bg-purple-50 text-purple-700 border-purple-200">
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border bg-purple-50 text-purple-700 border-purple-200">
                                   VIP Rush (+3)
                                 </span>
                               ) : order.priority === 2 ? (
-                                <span className="text-[10px] font-normal uppercase px-1.5 py-0.2 rounded border bg-red-50 text-red-700 border-red-200">
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border bg-red-50 text-red-700 border-red-200">
                                   Urgent (+2)
                                 </span>
                               ) : order.priority === 1 ? (
-                                <span className="text-[10px] font-normal uppercase px-1.5 py-0.2 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border bg-amber-50 text-amber-700 border-amber-200">
                                   High (+1)
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-normal uppercase px-1.5 py-0.2 rounded border bg-zinc-100 text-zinc-600 border-zinc-200">
+                                <span className="text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded border bg-zinc-100 text-zinc-600 border-zinc-200">
                                   Normal (0)
                                 </span>
                               )}
                               {elapsedMinutes >= criticalSlaMinutes && !isCompleted && !isCancelled && (
-                                <span className="text-[10px] bg-red-600 text-white border border-red-700 px-1.5 py-0.2 rounded font-bold tracking-wide flex items-center gap-0.5 shadow-xs animate-pulse">
+                                <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5 animate-pulse">
                                   <span className="material-symbols-outlined text-[10px]">shield</span>
-                                  SLA
+                                  SLA {elapsedMinutes}m
                                 </span>
                               )}
                             </div>
                           </td>
                         )}
 
-                        {/* Lifecycle Status */}
+                        {/* Items & Dishes breakdown */}
+                        {visibleColumns.items && (
+                          <td className={densityPadding}>
+                            {order.items && order.items.length > 0 ? (
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-xs text-[#1d1c17]">
+                                  {totalPieces} pc{totalPieces === 1 ? '' : 's'} • {order.items.length} dish{order.items.length === 1 ? '' : 'es'}
+                                </span>
+                                <span
+                                  className="text-[11px] text-[#5f5e5e] truncate max-w-[280px]"
+                                  title={order.items.map(i => `${i.quantity}x ${i.productName}${i.variantName ? ` (${i.variantName})` : ''}`).join(', ')}
+                                >
+                                  {order.items.map(i => `${i.quantity}x ${i.productName}`).join(' • ')}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[#8a857a] italic text-xs">—</span>
+                            )}
+                          </td>
+                        )}
+
+                        {/* Lifecycle Status (Standardized Flat Badge) */}
                         {visibleColumns.lifecycleStatus && (
                           <td className={`${densityPadding} text-center`}>
                             {isCompleted ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
-                                <span className="material-symbols-outlined text-xs">check_circle</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
                                 Completed
                               </span>
                             ) : isStarted ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 uppercase">
-                                <span className="material-symbols-outlined text-xs animate-spin">skillet</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
                                 Started
                               </span>
                             ) : isCancelled ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 uppercase">
-                                <span className="material-symbols-outlined text-xs">cancel</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200">
                                 Cancelled
                               </span>
                             ) : isTableAllHeld ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase">
-                                <span className="material-symbols-outlined text-xs">pause_circle</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
                                 Held
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-300 uppercase">
-                                <span className="material-symbols-outlined text-xs">schedule</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-zinc-100 text-zinc-600 border border-zinc-200">
                                 Pending
                               </span>
                             )}
@@ -2302,98 +2274,62 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                         {/* Created At */}
                         {visibleColumns.createdTimestamp && (
                           <td className={`${densityPadding} font-mono text-[11px] text-[#1d1c17]`}>
-                            {formatDateClock(order.createdAt)}
+                            <div>{formatDateClock(order.createdAt)}</div>
+                            <span className="text-[10px] text-[#5f5e5e] font-sans">
+                              ({elapsedMinutes}m ago)
+                            </span>
                           </td>
                         )}
 
-                        {/* Started At / Delay */}
+                        {/* Started At / Delay (Optional) */}
                         {visibleColumns.startedDelay && (
                           <td className={`${densityPadding} font-mono text-[11px]`}>
-                            {order.startedAt ? (
-                              <div>
-                                <span className="text-[#1d1c17]">{formatDateClock(order.startedAt)}</span>
-                                {waitDelay && (
-                                  <span className="block text-[10px] text-[#5f5e5e]">
-                                    Wait: {waitDelay}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-[#8a857a]">—</span>
-                            )}
+                            {order.startedAt ? formatDateClock(order.startedAt) : <span className="text-[#8a857a]">—</span>}
                           </td>
                         )}
 
-                        {/* Completed At / Total Duration */}
+                        {/* Completed At / Prep Time (Optional) */}
                         {visibleColumns.completedPrepTime && (
                           <td className={`${densityPadding} font-mono text-[11px]`}>
-                            {order.completedAt ? (
-                              <div>
-                                <span className="text-emerald-700 font-semibold">{formatDateClock(order.completedAt)}</span>
-                                {prepDuration && (
-                                  <span className="block text-[10px] text-emerald-600 font-bold">
-                                    Prep: {prepDuration}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-[#8a857a]">—</span>
-                            )}
+                            {order.completedAt ? formatDateClock(order.completedAt) : <span className="text-[#8a857a]">—</span>}
                           </td>
                         )}
 
-                        {/* Cancellation Audit */}
+                        {/* Cancellation Audit (Optional) */}
                         {visibleColumns.cancellationAudit && (
                           <td className={densityPadding}>
-                            {isCancelled ? (
-                              <div className="text-xs">
-                                <span className="inline-block bg-red-50 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold border border-red-200">
-                                  {order.cancellationReason
-                                    ? order.cancellationReason.replace(/_/g, ' ')
-                                    : 'unspecified'}
-                                </span>
-                                {order.cancelledByUserId && (
-                                  <span className="block text-[10px] text-[#8a857a] mt-0.5">
-                                    By User #{order.cancelledByUserId}
-                                  </span>
-                                )}
-                              </div>
+                            {isCancelled && order.cancellationReason ? (
+                              <span className="inline-block bg-red-50 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-red-200">
+                                {order.cancellationReason.replace(/_/g, ' ')}
+                              </span>
                             ) : (
                               <span className="text-[#8a857a] text-xs">—</span>
                             )}
                           </td>
                         )}
 
-                        {/* Items Count */}
-                        {visibleColumns.items && (
-                          <td className={`${densityPadding} text-center font-mono font-bold text-xs`}>
-                            <span className="inline-block px-2 py-0.5 rounded bg-zinc-100 text-[#1d1c17] border border-zinc-200">
-                              {order.items.length} items
-                            </span>
-                          </td>
-                        )}
-
-                        {/* Actions */}
+                        {/* Actions (Inspect and Cancel Icon Buttons) */}
                         {visibleColumns.actions && (
-                          <td className={`${densityPadding} text-right space-x-1.5`}>
-                            {order.businessStatus === 'completed' && (
+                          <td className={`${densityPadding} text-right whitespace-nowrap`}>
+                            <div className="flex items-center justify-end gap-1">
                               <button
-                                onClick={() => handleRecallOrder(order.id)}
-                                className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer shadow-2xs"
-                                title="Recall order back to active kitchen board"
+                                type="button"
+                                onClick={() => setInspectingTicket(order)}
+                                className="p-1.5 text-zinc-600 hover:text-[#ae001a] hover:bg-[#fef9f1] rounded transition-colors cursor-pointer"
+                                title="Inspect ticket details"
                               >
-                                <span className="material-symbols-outlined text-[14px]">replay</span>
-                                <span>Recall</span>
+                                <span className="material-symbols-outlined text-[18px]">manage_search</span>
                               </button>
-                            )}
-                            <button
-                              onClick={() => setInspectingTicket(order)}
-                              className="px-2.5 py-1 bg-[#f4efe6] hover:bg-[#ae001a] hover:text-white text-[#1d1c17] border border-[#e8e2d8] rounded text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer"
-                              title="Inspect Order Details &amp; Line Items"
-                            >
-                              <span className="material-symbols-outlined text-sm">manage_search</span>
-                              <span>Inspect</span>
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => setCancellingTicket(order)}
+                                disabled={isCompleted || isCancelled}
+                                className="p-1.5 text-zinc-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
+                                title={isCancelled ? 'Order already cancelled' : isCompleted ? 'Completed order cannot be cancelled' : 'Cancel Kitchen Order'}
+                              >
+                                <span className="material-symbols-outlined text-[18px]">cancel</span>
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>

@@ -57,7 +57,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
   // Filters & Views
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedMenuFilter, setSelectedMenuFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [statusFilter, setStatusFilter] = useState<'All' | 'active' | 'deleted'>('All');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   // Table options & pagination
@@ -129,6 +129,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
           name: String(m.name || `Menu #${m.id}`),
           isActive: Boolean(m.is_active ?? m.isActive ?? true),
         }));
+        mappedMenus.sort((a, b) => a.id - b.id);
         setMenus(mappedMenus);
       }
     } catch (err) {
@@ -264,20 +265,24 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
   const kpiDistinctMenus = useMemo(() => {
     return new Set(categoriesBound.filter((c) => c.status === 'active').map((c) => c.menuId)).size;
   }, [categoriesBound]);
+  const kpiAvgPerMenu = useMemo(() => {
+    if (kpiDistinctMenus === 0) return '0.0';
+    return (kpiActive / kpiDistinctMenus).toFixed(1);
+  }, [kpiActive, kpiDistinctMenus]);
 
   // Filtered Items
   const filteredItems = useMemo(() => {
     return categoriesBound.filter((item) => {
-      // Menu filter
+      // Menu filter (isolates category mappings to specific OnlineMenu)
       if (selectedMenuFilter !== 'all' && item.menuId !== Number(selectedMenuFilter)) {
         return false;
       }
 
-      // Status filter
-      if (statusFilter === 'ACTIVE' && item.status !== 'active') return false;
-      if (statusFilter === 'ARCHIVED' && item.status !== 'deleted') return false;
+      // Status filter (Canonical KDS status pills)
+      if (statusFilter === 'active' && item.status !== 'active') return false;
+      if (statusFilter === 'deleted' && item.status !== 'deleted') return false;
 
-      // Universal search
+      // Universal search across category.name, menu name, and badges
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const catName = item.category?.name?.toLowerCase() || '';
@@ -465,6 +470,121 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
     }
   };
 
+  // Drag and Drop State for Sequence Reordering
+  const [draggedItem, setDraggedItem] = useState<OnlineMenuCategoryItem | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, item: OnlineMenuCategoryItem) => {
+    if (item.status !== 'active') return;
+    setDraggedItem(item);
+    e.dataTransfer.setData('text/plain', String(item.id));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetItem: OnlineMenuCategoryItem) => {
+    if (!draggedItem || draggedItem.id === targetItem.id) return;
+    if (draggedItem.menuId !== targetItem.menuId) return;
+    if (targetItem.status !== 'active') return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverItemId !== targetItem.id) {
+      setDragOverItemId(targetItem.id);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverItemId(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetItem: OnlineMenuCategoryItem) => {
+    e.preventDefault();
+    setDragOverItemId(null);
+
+    if (!draggedItem || draggedItem.id === targetItem.id) {
+      setDraggedItem(null);
+      return;
+    }
+
+    if (draggedItem.menuId !== targetItem.menuId || targetItem.status !== 'active') {
+      setDraggedItem(null);
+      return;
+    }
+
+    const sameMenuCategories = categoriesBound
+      .filter((c) => c.menuId === draggedItem.menuId && c.status === 'active')
+      .sort((a, b) => {
+        if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+        return a.id - b.id;
+      });
+
+    const sourceIndex = sameMenuCategories.findIndex((c) => c.id === draggedItem.id);
+    const targetIndex = sameMenuCategories.findIndex((c) => c.id === targetItem.id);
+
+    if (sourceIndex === -1 || targetIndex === -1) {
+      setDraggedItem(null);
+      return;
+    }
+
+    // Reorder array by moving draggedItem to targetIndex
+    const reordered = [...sameMenuCategories];
+    const [moved] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    // Build map of new strict 1-based display orders
+    const orderMap = new Map<number, number>();
+    reordered.forEach((c, idx) => {
+      orderMap.set(c.id, idx + 1);
+    });
+
+    // Optimistic Update
+    setCategoriesBound((prev) =>
+      prev
+        .map((c) => {
+          if (orderMap.has(c.id)) {
+            return { ...c, displayOrder: orderMap.get(c.id)! };
+          }
+          return c;
+        })
+        .sort((a, b) => a.displayOrder - b.displayOrder || a.id - b.id)
+    );
+
+    const movedItemName = draggedItem.category?.name || 'Category';
+    const sourceItemId = draggedItem.id;
+    setDraggedItem(null);
+
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch(`${API_BASE}/online-menu-categories/${sourceItemId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ displayOrder: targetIndex + 1 }),
+      });
+      if (!res.ok) {
+        await fetch(`${API_BASE}/online-menu-categories/${sourceItemId}`, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ displayOrder: targetIndex + 1 }),
+        });
+      }
+
+      showToast(`Reordered "${movedItemName}" to sequence #${targetIndex + 1}`);
+      fetchMenuCategories(true);
+    } catch (err) {
+      console.error('Error reordering via drag-and-drop:', err);
+      fetchMenuCategories(true);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverItemId(null);
+  };
+
   // Submit Drawer (Create / Update)
   const handleSaveDrawer = async (data: OnlineMenuCategoryFormData) => {
     const token = getAccessToken();
@@ -481,11 +601,15 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
           menuId: data.menuId,
           categoryId: data.categoryId,
           displayOrder: data.displayOrder,
+          status: data.status,
         }),
       });
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          throw new Error('Conflict (409): This category is already actively bound to this digital menu.');
+        }
         throw new Error(errJson.message || `Failed to bind category (${res.status})`);
       }
       showToast('Category successfully bound to digital menu!');
@@ -503,6 +627,9 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          throw new Error('Conflict (409): This category is already actively bound to this digital menu.');
+        }
         throw new Error(errJson.message || `Failed to update category binding (${res.status})`);
       }
       showToast('Category binding updated successfully!');
@@ -682,24 +809,22 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
 
       {/* 1. Header Card Workspace (KDS standard layout) */}
       <div className="bg-white border border-[#e8e2d8] rounded-xl p-6 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
-              category
-            </span>
-            <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
-              ONLINE MENU CATEGORIES WORKSPACE
-            </h2>
-          </div>
-          <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
-            Bind product inventory categories to online digital menus, organize display sequence for customer storefronts, and manage operational lifecycles.
-          </p>
+        <div className="flex items-center gap-2.5">
+          <span className="material-symbols-outlined text-[#ae001a] text-2xl font-normal select-none">
+            category
+          </span>
+          <h2 className="text-[#ae001a] font-bold text-heading-lg tracking-wider uppercase font-sans">
+            ONLINE MENU CATEGORIES WORKSPACE
+          </h2>
         </div>
+        <p className="text-[#5f5e5e] text-body-sm font-sans mt-1">
+          Bind product inventory categories to online digital menus, organize display sequence for customer storefronts, and manage operational lifecycles.
+        </p>
       </div>
 
       {/* 2. Hero KPIs Strip (KDS KitchenDisplayDevices layout: flex items-center justify-between) */}
       <div className="grid grid-cols-4 gap-4 w-full">
-        {/* KPI 1: Total Bound Categories */}
+        {/* KPI 1: Total Category Mappings */}
         <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
@@ -707,7 +832,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
             </div>
             <div className="min-w-0">
               <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
-                Total Bound
+                Total Category Mappings
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
                 {isLoading ? '...' : kpiTotal}
@@ -715,11 +840,11 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
             </div>
           </div>
           <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-200 shrink-0">
-            CATEGORIES
+            TOTAL
           </span>
         </div>
 
-        {/* KPI 2: Active in Menu */}
+        {/* KPI 2: Active Menu Categories */}
         <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
@@ -727,7 +852,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
             </div>
             <div className="min-w-0">
               <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
-                Active
+                Active Menu Categories
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
                 {isLoading ? '...' : kpiActive}
@@ -739,7 +864,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
           </span>
         </div>
 
-        {/* KPI 3: Archived / Deleted */}
+        {/* KPI 3: Archived Categories */}
         <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-slate-50 text-slate-700 flex items-center justify-center border border-slate-200 shrink-0">
@@ -747,7 +872,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
             </div>
             <div className="min-w-0">
               <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
-                Archived / Deleted
+                Archived Categories
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
                 {isLoading ? '...' : kpiArchived}
@@ -759,46 +884,47 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
           </span>
         </div>
 
-        {/* KPI 4: Covered Menus */}
+        {/* KPI 4: Avg Categories per Menu */}
         <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center border border-purple-200 shrink-0">
-              <span className="material-symbols-outlined text-xl">restaurant_menu</span>
+              <span className="material-symbols-outlined text-xl">auto_stories</span>
             </div>
             <div className="min-w-0">
               <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
-                Covered Menus
+                Avg Categories per Menu
               </div>
               <div className="text-2xl font-extrabold text-[#1d1c17]">
-                {isLoading ? '...' : kpiDistinctMenus}
+                {isLoading ? '...' : kpiAvgPerMenu}
               </div>
             </div>
           </div>
           <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
-            MENUS
+            AVG / MENU
           </span>
         </div>
       </div>
 
-      {/* 3. Unified Multi-Dimensional Filter Bar Controls (Standard layout) */}
-      <div className="bg-white border border-[#e8e2d8] rounded-xl p-4 sm:p-5 shadow-sm flex flex-col gap-3.5">
-        {/* ROW 1: Search, Menu Filter, View Mode Switcher, Auto-Refresh & Updated Timestamp */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* 3. Canonical Unified Filter Toolbar (Standard KDS layout) */}
+      <div className="bg-white border border-[#e8e2d8] rounded-xl p-4 sm:p-5 shadow-sm flex flex-col gap-4">
+        {/* Row 1: Search on left, Digital Menu selector, View Switcher + Reload on right */}
+        <div className="flex flex-wrap items-center justify-between gap-3 w-full">
           <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
             {/* Search Input */}
-            <div className="relative flex-1 min-w-[260px] max-w-lg">
+            <div className="relative flex-1 min-w-[220px] max-w-sm">
               <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-lg text-[#5f5e5e]">
                 search
               </span>
               <input
                 type="text"
+                placeholder="Search categories by name, menu, code..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
                   setCurrentPage(1);
                 }}
-                placeholder="Search categories by name, menu..."
-                className="h-[34px] w-full pl-9 pr-8 text-xs rounded-lg border border-[#d5cfc4] focus:outline-none focus:border-[#ae001a] bg-[#fcfcfb] text-[#1d1c17] placeholder:text-[#8c857b] transition-colors duration-200 font-poppins"
+                className="h-[34px] w-full pl-9 pr-8 text-xs rounded-lg border border-[#d5cfc4] focus:outline-none focus:border-[#ae001a] bg-[#fcfcfb] text-[#1d1c17] placeholder:text-[#8c857b] transition-colors duration-200 font-sans"
+                aria-label="Search menu categories"
               />
               {searchQuery && (
                 <button
@@ -808,14 +934,13 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
                     setCurrentPage(1);
                   }}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#5f5e5e] hover:text-[#ae001a] transition-colors duration-200 cursor-pointer"
-                  title="Clear search"
                 >
                   ✕
                 </button>
               )}
             </div>
 
-            {/* Menu Association Dropdown Selector */}
+            {/* Digital Menu Dropdown Selector */}
             <div className="flex items-center gap-1.5 text-xs text-[#5f5e5e]">
               <span className="material-symbols-outlined text-base">restaurant_menu</span>
               <select
@@ -824,7 +949,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
                   setSelectedMenuFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="h-[34px] px-3 bg-[#fcfcfb] rounded-lg border border-[#d5cfc4] text-xs focus:border-[#ae001a] outline-none font-poppins text-[#1d1c17] cursor-pointer max-w-[220px] transition-colors duration-200"
+                className="h-[34px] px-3 bg-[#fcfcfb] rounded-lg border border-[#d5cfc4] text-xs focus:border-[#ae001a] outline-none font-sans text-[#1d1c17] cursor-pointer max-w-[220px] transition-colors duration-200"
                 aria-label="Filter by digital menu"
               >
                 <option value="all">All Digital Menus ({menus.length})</option>
@@ -837,14 +962,13 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
             </div>
           </div>
 
-          {/* Right Toolbar: View Mode Switcher, Auto-Refresh Widget & Updated */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* View Switcher Toggle */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* View Switcher Toggle (Table View vs Cards) */}
             <div className="flex items-center h-[34px] bg-[#f2ede5] p-0.5 rounded-lg border border-[#e8e2d8] shrink-0">
               <button
                 type="button"
                 onClick={() => setViewMode('table')}
-                className={`h-full px-3 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer font-poppins ${
+                className={`h-full px-3 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer font-sans ${
                   viewMode === 'table'
                     ? 'bg-white text-[#1d1c17] shadow-xs border border-[#e8e2d8]'
                     : 'text-[#5f5e5e] hover:text-[#ae001a]'
@@ -852,25 +976,25 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
                 title="Table View"
               >
                 <span className={`material-symbols-outlined text-[16px] ${viewMode === 'table' ? 'text-[#ae001a]' : ''}`}>table_rows</span>
-                Table
+                Table View
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('cards')}
-                className={`h-full px-3 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer font-poppins ${
+                className={`h-full px-3 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer font-sans ${
                   viewMode === 'cards'
                     ? 'bg-white text-[#1d1c17] shadow-xs border border-[#e8e2d8]'
                     : 'text-[#5f5e5e] hover:text-[#ae001a]'
                 }`}
-                title="Card Grid View"
+                title="Cards View"
               >
                 <span className={`material-symbols-outlined text-[16px] ${viewMode === 'cards' ? 'text-[#ae001a]' : ''}`}>grid_view</span>
                 Cards
               </button>
             </div>
 
-            {/* Auto-Refresh Widget */}
-            <div className="flex items-center h-[34px] px-2.5 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] gap-1.5 text-xs text-[#5f5e5e] shrink-0 font-poppins">
+            {/* Canonical Auto Refresh */}
+            <div className="flex items-center h-[34px] px-2.5 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] gap-1.5 text-xs text-[#5f5e5e] shrink-0 font-sans">
               <button
                 type="button"
                 onClick={() => void fetchMenuCategories(true)}
@@ -885,7 +1009,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
               <select
                 value={autoRefreshInterval}
                 onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
-                className="bg-transparent text-[11px] font-semibold text-[#1d1c17] focus:outline-none cursor-pointer h-full font-poppins"
+                className="bg-transparent text-[11px] font-semibold text-[#1d1c17] focus:outline-none cursor-pointer h-full font-sans"
               >
                 <option value={0}>Auto: Off</option>
                 <option value={5}>Auto: 5s</option>
@@ -895,8 +1019,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
               </select>
             </div>
 
-            {/* Last Updated Timestamp */}
-            <div className="hidden sm:flex items-center h-[34px] gap-1 text-[11px] text-[#5f5e5e] pl-1 shrink-0 font-poppins">
+            <div className="hidden sm:flex items-center h-[34px] gap-1 text-[11px] text-[#5f5e5e] pl-1 shrink-0 font-sans">
               <span className="material-symbols-outlined text-sm">schedule</span>
               <span>Updated:</span>
               <span className="font-mono font-bold text-[#1d1c17]">{lastUpdated.toLocaleTimeString()}</span>
@@ -904,69 +1027,11 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
           </div>
         </div>
 
-        {/* ROW 1.5: Menu Context Quick Tabs */}
-        {menus.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pt-2.5 border-t border-[#f0ede6] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-1 font-poppins">
-              Menu Context:
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedMenuFilter('all');
-                setCurrentPage(1);
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold font-poppins transition-all cursor-pointer whitespace-nowrap shrink-0 border ${
-                selectedMenuFilter === 'all'
-                  ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs font-bold'
-                  : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
-              }`}
-            >
-              <span>All Menus</span>
-              <span
-                className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
-                  selectedMenuFilter === 'all' ? 'bg-white/20 text-white' : 'bg-[#e8e2d8] text-[#5f5e5e]'
-                }`}
-              >
-                {categoriesBound.length}
-              </span>
-            </button>
-            {menus.map((m) => {
-              const count = categoriesBound.filter((c) => c.menuId === m.id).length;
-              const isSelected = selectedMenuFilter === String(m.id);
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedMenuFilter(isSelected ? 'all' : String(m.id));
-                    setCurrentPage(1);
-                  }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold font-poppins transition-all cursor-pointer whitespace-nowrap shrink-0 border ${
-                    isSelected
-                      ? 'bg-purple-800 text-white border-purple-800 shadow-xs font-bold'
-                      : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100 hover:text-purple-950'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[14px]">restaurant_menu</span>
-                  <span>{m.name}</span>
-                  <span
-                    className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold font-mono ${
-                      isSelected ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ROW 2: STATUS Multi-Select Pills & Bind Category Action */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-[#f0ede6]">
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-0.5 font-poppins">
+        {/* Row 2: STATUS Pills Strip on left, Primary Add Button on right (Canonical KDS layout) */}
+        <div className="flex items-center justify-between gap-3 pt-3 border-t border-[#f0ede6] min-w-0">
+          {/* Left: STATUS Pills Strip */}
+          <div className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-1 font-sans">
               Status:
             </span>
 
@@ -977,7 +1042,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
                 setStatusFilter('All');
                 setCurrentPage(1);
               }}
-              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold font-poppins transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
                 statusFilter === 'All'
                   ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
                   : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
@@ -985,7 +1050,7 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
             >
               <span>All</span>
               <span
-                className={`text-[8.5px] px-1 py-0 rounded-full font-bold font-poppins ${
+                className={`text-[8.5px] px-1.5 py-0.2 rounded-full font-bold ${
                   statusFilter === 'All' ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
                 }`}
               >
@@ -993,48 +1058,48 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
               </span>
             </button>
 
-            {/* Active Pill (Icon: check_circle, #10b981) */}
+            {/* ACTIVE Pill */}
             <button
               type="button"
               onClick={() => {
-                setStatusFilter(statusFilter === 'ACTIVE' ? 'All' : 'ACTIVE');
+                setStatusFilter('active');
                 setCurrentPage(1);
               }}
-              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold font-poppins transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'ACTIVE'
-                  ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
-                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100/70 hover:text-emerald-900'
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
+                statusFilter === 'active'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                  : 'bg-emerald-50/50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/50 hover:text-emerald-900'
               }`}
             >
-              <span className="material-symbols-outlined text-[12px]">check_circle</span>
+              <span className="material-symbols-outlined text-[13px]">check_circle</span>
               <span>ACTIVE</span>
               <span
-                className={`text-[8.5px] px-1 py-0 rounded-full font-bold font-poppins ${
-                  statusFilter === 'ACTIVE' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                className={`text-[8.5px] px-1.5 py-0.2 rounded-full font-bold ${
+                  statusFilter === 'active' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
                 }`}
               >
                 {kpiActive}
               </span>
             </button>
 
-            {/* Archived Pill (Icon: pause_circle, #64748b) */}
+            {/* ARCHIVED / DELETED Pill */}
             <button
               type="button"
               onClick={() => {
-                setStatusFilter(statusFilter === 'ARCHIVED' ? 'All' : 'ARCHIVED');
+                setStatusFilter('deleted');
                 setCurrentPage(1);
               }}
-              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold font-poppins transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'ARCHIVED'
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
+                statusFilter === 'deleted'
                   ? 'bg-slate-700 text-white border-slate-700 shadow-xs'
-                  : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200/60 hover:text-slate-900'
+                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100/80 hover:text-slate-900'
               }`}
             >
-              <span className="material-symbols-outlined text-[12px]">pause_circle</span>
+              <span className="material-symbols-outlined text-[13px]">pause_circle</span>
               <span>ARCHIVED</span>
               <span
-                className={`text-[8.5px] px-1 py-0 rounded-full font-bold font-poppins ${
-                  statusFilter === 'ARCHIVED' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                className={`text-[8.5px] px-1.5 py-0.2 rounded-full font-bold ${
+                  statusFilter === 'deleted' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
                 }`}
               >
                 {kpiArchived}
@@ -1042,15 +1107,15 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
             </button>
           </div>
 
-          {/* Primary Action Button: BIND CATEGORY */}
+          {/* Right: Primary Action Button */}
           <button
             type="button"
             onClick={handleOpenCreateDrawer}
-            className="bg-[#ae001a] text-white font-bold text-label-caps px-6 py-2.5 rounded hover:bg-[#d2272f] transition-colors flex items-center gap-2 font-sans cursor-pointer shrink-0 ml-auto"
+            className="h-[34px] px-4 rounded-lg bg-[#ae001a] text-white font-bold text-xs hover:bg-[#d2272f] transition-colors flex items-center gap-1.5 font-sans cursor-pointer shadow-xs whitespace-nowrap shrink-0"
             title="Bind new category to digital menu"
           >
             <span className="material-symbols-outlined text-[18px]">add</span>
-            BIND CATEGORY
+            <span>BIND CATEGORY</span>
           </button>
         </div>
       </div>
@@ -1234,17 +1299,38 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
                             group.items.map((item) => (
                               <tr
                                 key={item.id}
-                                className="hover:bg-[#f8f3eb] transition-colors duration-200 group border-l-4 border-l-purple-500/20"
+                                draggable={item.status === 'active'}
+                                onDragStart={(e) => handleDragStart(e, item)}
+                                onDragOver={(e) => handleDragOver(e, item)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDrop(e, item)}
+                                onDragEnd={handleDragEnd}
+                                className={`transition-all duration-200 group border-l-4 border-l-purple-500/20 ${
+                                  dragOverItemId === item.id
+                                    ? 'bg-amber-100/80 ring-2 ring-[#ae001a]/70'
+                                    : 'hover:bg-[#f8f3eb]'
+                                } ${draggedItem?.id === item.id ? 'opacity-30' : ''}`}
                               >
                                 {/* Column 1: Category Name */}
                                 {visibleColumns.category && (
                                   <td className={`${densityPadding} font-sans pl-8`}>
                                     <div className="flex items-center gap-2">
+                                      {item.status === 'active' && (
+                                        <span
+                                          className="material-symbols-outlined text-[16px] text-zinc-300 group-hover:text-[#ae001a] cursor-grab active:cursor-grabbing select-none shrink-0 transition-colors duration-200"
+                                          title="Drag to reorder sequence"
+                                        >
+                                          drag_indicator
+                                        </span>
+                                      )}
                                       <span className="material-symbols-outlined text-[14px] text-[#8c857b] shrink-0">
                                         subdirectory_arrow_right
                                       </span>
                                       <span className="font-bold text-xs text-[#1d1c17] truncate group-hover:text-[#ae001a] transition-colors duration-200 font-poppins" title={item.category?.name}>
                                         {item.category?.name || `Category #${item.categoryId}`}
+                                      </span>
+                                      <span className="text-[10px] text-[#8c857b] font-mono font-bold bg-[#ece8e0] px-1.5 py-0.5 rounded font-poppins shrink-0">
+                                        #CAT-{item.categoryId}
                                       </span>
                                     </div>
                                   </td>
@@ -1490,14 +1576,39 @@ export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> =
                     {group.items.map((item) => (
                       <div
                         key={item.id}
-                        className="bg-white border border-[#e8e2d8] rounded p-5 shadow-xs hover:border-[#ae001a] transition-all duration-200 flex flex-col justify-between group"
+                        draggable={item.status === 'active'}
+                        onDragStart={(e) => handleDragStart(e, item)}
+                        onDragOver={(e) => handleDragOver(e, item)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, item)}
+                        onDragEnd={handleDragEnd}
+                        className={`bg-white border rounded p-5 shadow-xs transition-all duration-200 flex flex-col justify-between group ${
+                          dragOverItemId === item.id
+                            ? 'border-2 border-[#ae001a] bg-amber-50/50 scale-[1.01]'
+                            : 'border-[#e8e2d8] hover:border-[#ae001a]'
+                        } ${draggedItem?.id === item.id ? 'opacity-30' : ''}`}
                       >
                         <div>
                           {/* Header: Title & Status */}
                           <div className="flex items-center justify-between gap-2 pb-3 border-b border-[#f0ede6]">
-                            <h3 className="font-bold text-sm text-[#1d1c17] group-hover:text-[#ae001a] transition-colors font-poppins truncate" title={item.category?.name}>
-                              {item.category?.name || `Category #${item.categoryId}`}
-                            </h3>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              {item.status === 'active' && (
+                                <span
+                                  className="material-symbols-outlined text-[18px] text-zinc-300 group-hover:text-[#ae001a] cursor-grab active:cursor-grabbing select-none shrink-0 transition-colors duration-200"
+                                  title="Drag to reorder sequence"
+                                >
+                                  drag_indicator
+                                </span>
+                              )}
+                              <div className="flex items-center gap-2 truncate">
+                                <h3 className="font-bold text-sm text-[#1d1c17] group-hover:text-[#ae001a] transition-colors duration-200 font-poppins truncate" title={item.category?.name}>
+                                  {item.category?.name || `Category #${item.categoryId}`}
+                                </h3>
+                                <span className="text-[10px] text-[#8c857b] font-mono font-bold bg-[#ece8e0] px-1.5 py-0.5 rounded font-poppins shrink-0">
+                                  #CAT-{item.categoryId}
+                                </span>
+                              </div>
+                            </div>
 
                             <div className="flex items-center gap-2 shrink-0">
                               {item.status === 'active' ? (
