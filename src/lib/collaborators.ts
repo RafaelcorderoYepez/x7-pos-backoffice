@@ -1,8 +1,8 @@
-// Reglas del directorio de colaboradores: identidad visible, vínculo único con la cuenta
-// de plataforma y búsqueda por los cuatro ejes con los que RR. HH. localiza a alguien.
+// Contributor directory rules: visible identity, unique link to account
+// of platform and search by the four axes with which RR. HH. locate someone.
 //
-// Vive fuera de la vista para poder probarse sin montar React: son las reglas que las
-// historias exigen demostrar (guarda de vínculo único, búsqueda por #CLB/#USR/email).
+// Live out of sight so you can test yourself without setting up React: these are the rules that
+// stories require proof (single link save, search by #CLB/#USR/email).
 
 import type { Collaborator } from '../types/collaborator';
 import { normalizeCollaboratorStatus } from '../types/collaborator';
@@ -10,12 +10,12 @@ import type { MerchantUser } from '../types/user';
 
 // ================= Referencias visibles =================
 
-// Los códigos que la parrilla enseña y por los que se puede buscar tal cual.
+// The codes that the grid shows and by which you can search as is.
 export const collaboratorRef = (id: number): string => `#CLB-${id}`;
 export const userRef = (userId: number): string => `#USR-${userId}`;
 
-// Iniciales para el avatar. Se toman de las dos primeras palabras del nombre visible; un
-// nombre vacío cae a '?' en vez de dejar el círculo mudo.
+// Initials for the avatar. They are taken from the first two words of the visible name; a
+// empty name drops to '?' instead of leaving the silent circle.
 export const collaboratorInitials = (name?: string | null): string => {
   const words = (name ?? '')
     .trim()
@@ -26,18 +26,18 @@ export const collaboratorInitials = (name?: string | null): string => {
   return (words[0][0] + words[1][0]).toUpperCase();
 };
 
-// El correo de la cuenta enlazada. El backend lo sirve como `email`, pero el mapeo original
-// lo metía en `lastname`: se leen ambos para que la ficha funcione contra las dos versiones.
+// The email of the linked account. The backend serves it as `email`, but the original mapping
+// I put it in `lastname`: both are read so that the token works against both versions.
 export const collaboratorEmail = (c: Collaborator): string =>
   c.user?.email ?? c.user?.lastname ?? '';
 
 export const collaboratorUsername = (c: Collaborator): string =>
   c.user?.username ?? c.user?.firstname ?? '';
 
-// ================= Búsqueda =================
+// ================= Search =================
 
-// Los cuatro ejes de la historia: nombre, #CLB-id, #USR-user_id y correo de la cuenta.
-// Se indexa también el id pelado para que teclear "12" encuentre a #CLB-12 sin el prefijo.
+// The four axes of the story: name, #CLB-id, #USR-user_id and account email.
+// The stripped id is also indexed so that typing "12" finds #CLB-12 without the prefix.
 export const collaboratorHaystack = (c: Collaborator): string =>
   [
     c.name ?? '',
@@ -57,10 +57,10 @@ export const matchesCollaboratorSearch = (c: Collaborator, term: string): boolea
   return collaboratorHaystack(c).includes(value);
 };
 
-// ================= Vínculo único con la cuenta =================
+// ================= Unique link to account =================
 
-// @Index(['user_id'], { unique: true }): una cuenta de plataforma sólo puede tener UNA
-// ficha de colaborador. El formulario no debe ofrecer siquiera las ya enlazadas.
+// @Index(['user_id'], { unique: true }): a platform account can only have ONE
+// collaborator file. The form should not even offer those already linked.
 export const isUserAlreadyLinked = (
   collaborators: Collaborator[],
   userId: number,
@@ -70,8 +70,8 @@ export const isUserAlreadyLinked = (
     (c) => c.user_id === userId && c.id !== currentCollaboratorId,
   );
 
-// Cuentas que aún pueden convertirse en colaborador. Al editar se conserva la propia, o el
-// select se quedaría sin la opción que ya tiene seleccionada.
+// Accounts that can still become a contributor. When editing, one preserves one's own, or the
+// select would be left without the option that is already selected.
 export const availableUsersFor = (
   users: MerchantUser[],
   collaborators: Collaborator[],
@@ -82,9 +82,9 @@ export const availableUsersFor = (
 export const duplicateUserBindingError = (userId: number): string =>
   `User account ${userRef(userId)} is already registered as an active collaborator.`;
 
-// El backend responde 409 con su propio texto; para el operador vale más el mensaje de la
-// historia, que nombra la cuenta concreta. Sólo se traduce el conflicto de vínculo único:
-// cualquier otro 409 se muestra tal cual llega, que para eso lo manda el servidor.
+// The backend responds 409 with its own text; For the operator, the message of the
+// story, which names the specific account. Only the single link conflict is translated:
+// Any other 409 is shown as it arrives, which is what the server sends it for.
 export const conflictMessageFor = (userId: number, apiMessage?: string): string => {
   const raw = (apiMessage ?? '').toLowerCase();
   return raw.includes('already a collaborator') || raw.includes('user_id')
@@ -96,8 +96,8 @@ export const conflictMessageFor = (userId: number, apiMessage?: string): string 
 
 export const MAX_COLLABORATOR_NAME = 150;
 
-// El nombre por defecto sale de la cuenta, pero el comercio puede sobreescribirlo: en sala
-// se llama a la gente por su nombre de pila, no por su usuario de plataforma.
+// The default name leaves the account, but the merchant can overwrite it: in room
+// People are called by their first name, not by their platform username.
 export const defaultNameForUser = (user?: MerchantUser | null): string =>
   user?.username?.trim() || user?.email?.split('@')[0] || '';
 
@@ -115,7 +115,7 @@ export const collaboratorNameError = (name: string): string => {
 export interface CollaboratorFilters {
   search: string;
   role: string;
-  // '' = todos. La historia pide que arranque en ACTIVE.
+  // '' = all. The story asks that it start in ACTIVE.
   status: string;
   shiftId: string;
 }
@@ -152,10 +152,10 @@ export const hasActiveFilters = (filters: CollaboratorFilters): boolean =>
   filters.shiftId.length > 0 ||
   filters.status !== DEFAULT_COLLABORATOR_FILTERS.status;
 
-// ================= Presentación =================
+// ================= Presentation =================
 
-// "Aug 24, 2026" — la fecha de alta que pide la parrilla. Se construye a mano y no con
-// toLocaleDateString para que no dependa del locale de la máquina que lo pinte.
+// "Aug 24, 2026" — the registration date requested by the grid. It is built by hand and not with
+// toLocaleDateString so that it does not depend on the locale of the machine that paints it.
 const MONTHS = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',

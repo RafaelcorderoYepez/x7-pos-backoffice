@@ -268,7 +268,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     setIsDrawerOpen(true);
   };
 
-  // Abrir Drawer de Solo Lectura
+  // Open Read-Only Drawer
   const handleOpenView = (rec: ProductRecipe) => {
     setSelectedRecipe(rec);
     setDrawerMode('view');
@@ -494,7 +494,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     const matchesProduct =
       productFilter === 'ALL' || String(rec.finishedProductId) === productFilter;
 
-    // Filtro por Estado (Activo / Inactivo en cascada con el Producto terminado)
+    // Filter by Status (Active / Inactive cascading with the finished Product)
     const isProdActive = prod ? prod.isActive !== false : true;
     const recIsActive = rec.isActive !== false && isProdActive;
     const matchesStatus =
@@ -532,7 +532,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Banner de Error */}
+      {/* Error Banner */}
       {error && (
         <div className="bg-red-50 border border-red-200 text-[#ae001a] p-4 rounded-lg text-sm font-semibold flex justify-between items-center">
           <span>{error}</span>
@@ -561,7 +561,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
           />
         </div>
 
-        {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
+        {/* Row 2: Filters on the left, Buttons on the right */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <select
@@ -604,7 +604,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
 
 
 
-      {/* Grid de Datos Principal */}
+      {/* Main Data Grid */}
       <div className="bg-white border border-[#e8e2d8] rounded-xl shadow-xs overflow-hidden">
         {(() => {
           const densityPadding = getDensityPadding(rowDensity);

@@ -1,13 +1,13 @@
-// Canal de tiempo real del dining system: el vocabulario de eventos que comparten el POS,
-// el backoffice y el gateway del backend, y el transporte que los trae.
-// El backend expone un único namespace socket.io (/realtime) y mete a cada socket en la sala
-// de su comercio al autenticar, así que aquí no hay que suscribirse a nada: basta conectar
-// con el token y escuchar. Si el gateway está apagado (WS_ENABLED=false) o la red se cae,
-// esto queda inerte y la vista sigue funcionando con sus fetch normales.
+// Dining system real-time channel: the vocabulary of events that share the POS,
+// the backoffice and the backend gateway, and the transport that brings them.
+// The backend exposes a single socket.io namespace (/realtime) and puts each socket in the room
+// of your business when authenticating, so there is no need to subscribe to anything here: just connect
+// with the token and listen. If the gateway is powered off (WS_ENABLED=false) or the network goes down,
+// This remains inert and the view continues to function with its normal fetches.
 
 import { io, type Socket } from 'socket.io-client';
 
-// ================= Vocabulario de eventos =================
+// ================= Event Vocabulary =================
 
 export const DINING_EVENTS = {
   tableStatusChanged: 'dining:table_status_changed',
@@ -55,8 +55,8 @@ export interface DiningRealtimeHandlers {
   onTableTransferred?: (p: TableTransferredPayload) => void;
   onAssignmentChanged?: (p: AssignmentChangedPayload) => void;
   onFloorPlanUpdated?: (p: FloorPlanUpdatedPayload) => void;
-  // Se dispara al RE-conectar (nunca en la primera conexión): la tablet estuvo sin red y se
-  // ha perdido eventos, así que quien escucha debe reconciliar su estado local.
+  // Triggers when RE-connecting (never on the first connection): the tablet was without network and was
+  // has missed events, so the listener must reconcile their local state.
   onReconnect?: (lastSeenAt: string) => void;
   onConnectionChange?: (connected: boolean) => void;
 }
@@ -65,8 +65,8 @@ export interface DiningRealtimeConnection {
   close: () => void;
 }
 
-// El gateway vive junto a la API. En dev el proxy de vite sólo cubre /api, así que
-// VITE_WS_URL permite apuntar el socket al backend (http://localhost:3001) sin tocar el resto.
+// The gateway lives next to the API. In dev the vite proxy only covers /api, so
+// VITE_WS_URL allows you to point the socket to the backend (http://localhost:3001) without touching the rest.
 export const realtimeUrl = (): string => {
   const configured = import.meta.env.VITE_WS_URL as string | undefined;
   const origin =
@@ -75,14 +75,14 @@ export const realtimeUrl = (): string => {
   return `${origin.replace(/\/$/, '')}/realtime`;
 };
 
-// Conecta y devuelve el cierre. Nunca lanza: un fallo de transporte degrada a "sin tiempo
-// real", que es exactamente cómo se comportaba la vista antes de existir este canal.
+// Connect and return closure. Never launches: a transport failure degrades to "no time"
+// real", which is exactly how the view behaved before this channel existed.
 export const connectDiningRealtime = (
   token: string,
   handlers: DiningRealtimeHandlers,
 ): DiningRealtimeConnection => {
   let socket: Socket | null = null;
-  // Marca de agua para la reconciliación: desde cuándo puede haberse perdido un evento.
+  // Reconciliation watermark: how long you may have missed an event.
   let lastSeenAt = new Date().toISOString();
   let hasConnected = false;
 
@@ -96,8 +96,8 @@ export const connectDiningRealtime = (
       transports: ['websocket'],
       reconnection: true,
       reconnectionDelay: 1000,
-      // Techo bajo a propósito: en un servicio de sala, una tablet que recupera el wifi debe
-      // volver a estar sincronizada en segundos, no esperar un backoff de medio minuto.
+      // Low ceiling on purpose: in a room service, a tablet that recovers Wi-Fi must
+      // be synchronized again in seconds, do not wait for a backoff of half a minute.
       reconnectionDelayMax: 5000,
     });
   } catch {
@@ -107,7 +107,7 @@ export const connectDiningRealtime = (
   socket.on('connect', () => {
     handlers.onConnectionChange?.(true);
     if (hasConnected) {
-      // Segunda conexión en adelante: hubo un hueco sin escuchar.
+      // Second connection onwards: there was a gap without listening.
       handlers.onReconnect?.(lastSeenAt);
     }
     hasConnected = true;
@@ -118,8 +118,8 @@ export const connectDiningRealtime = (
     handlers.onConnectionChange?.(false);
   });
 
-  // Un error de conexión (gateway apagado, token caducado) no debe romper la vista: se
-  // reporta como "desconectado" y socket.io sigue reintentando por su cuenta.
+  // A connection error (gateway turned off, token expired) should not break the view: it
+  // reports as "disconnected" and socket.io keeps retrying on its own.
   socket.on('connect_error', () => {
     handlers.onConnectionChange?.(false);
   });
@@ -147,7 +147,7 @@ export const connectDiningRealtime = (
         socket?.removeAllListeners();
         socket?.disconnect();
       } catch {
-        // Cerrar un socket ya muerto no es un error que deba escalar a la vista.
+        // Closing an already dead socket is not a bug that should be escalated into view.
       }
     },
   };

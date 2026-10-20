@@ -497,86 +497,86 @@ export const OnlineMenusView: React.FC<OnlineMenusViewProps> = ({ onNavigate }) 
         </div>
       </div>
 
-      {/* 2. Hero KPIs Strip (4 Cards strictly in 1 single horizontal row, dark #222222) */}
-      <div className="grid grid-cols-4 gap-3 w-full">
+      {/* 2. Hero KPIs Strip (KDS KitchenDisplayDevices layout: flex items-center justify-between) */}
+      <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Digital Menus */}
-        <div className="bg-[#222222] hover:bg-[#2c2b25] text-white p-3.5 rounded-lg border-t-4 border-t-blue-500 shadow-xs flex flex-col justify-between h-28 group transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors font-poppins">
-              Total Digital Menus
-            </span>
-            <div className="w-7 h-7 rounded bg-blue-500/20 text-blue-400 flex items-center justify-center">
-              <span className="material-symbols-outlined text-base">restaurant_menu</span>
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
+              <span className="material-symbols-outlined text-xl">restaurant_menu</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
+                Total Menus
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {isLoading ? '...' : totalMenus}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-black text-white leading-none font-poppins">
-              {isLoading ? '...' : totalMenus}
-            </p>
-            <p className="text-[10px] text-zinc-400 mt-1 font-medium truncate font-poppins">
-              Configured digital catalogs
-            </p>
-          </div>
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-200 shrink-0">
+            CATALOGS
+          </span>
         </div>
 
         {/* KPI 2: Published Menus */}
-        <div className="bg-[#222222] hover:bg-[#2c2b25] text-white p-3.5 rounded-lg border-t-4 border-t-emerald-500 shadow-xs flex flex-col justify-between h-28 group transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors font-poppins">
-              Published Menus
-            </span>
-            <div className="w-7 h-7 rounded bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <span className="material-symbols-outlined text-base">check_circle</span>
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
+              <span className="material-symbols-outlined text-xl">check_circle</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
+                Published Menus
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {isLoading ? '...' : publishedMenusCount}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-black text-emerald-400 leading-none font-poppins">
-              {isLoading ? '...' : publishedMenusCount}
-            </p>
-            <p className="text-[10px] text-zinc-400 mt-1 font-medium truncate font-poppins">
-              Live & visible to customers
-            </p>
-          </div>
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+            LIVE
+          </span>
         </div>
 
         {/* KPI 3: Draft / Inactive Menus */}
-        <div className="bg-[#222222] hover:bg-[#2c2b25] text-white p-3.5 rounded-lg border-t-4 border-t-slate-500 shadow-xs flex flex-col justify-between h-28 group transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors font-poppins">
-              Draft / Inactive Menus
-            </span>
-            <div className="w-7 h-7 rounded bg-slate-500/20 text-slate-300 flex items-center justify-center">
-              <span className="material-symbols-outlined text-base">pause_circle</span>
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-slate-50 text-slate-700 flex items-center justify-center border border-slate-200 shrink-0">
+              <span className="material-symbols-outlined text-xl">pause_circle</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
+                Draft / Inactive
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {isLoading ? '...' : draftMenusCount}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-black text-slate-300 leading-none font-poppins">
-              {isLoading ? '...' : draftMenusCount}
-            </p>
-            <p className="text-[10px] text-zinc-400 mt-1 font-medium truncate font-poppins">
-              Hidden from storefront
-            </p>
-          </div>
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
+            DRAFT
+          </span>
         </div>
 
-        {/* KPI 4: Stores with Active Menus (Story 4299) */}
-        <div className="bg-[#222222] hover:bg-[#2c2b25] text-white p-3.5 rounded-lg border-t-4 border-t-purple-500 shadow-xs flex flex-col justify-between h-28 group transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors font-poppins">
-              Stores with Active Menus
-            </span>
-            <div className="w-7 h-7 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center">
-              <span className="material-symbols-outlined text-base">storefront</span>
+        {/* KPI 4: Stores with Active Menus */}
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center border border-purple-200 shrink-0">
+              <span className="material-symbols-outlined text-xl">storefront</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
+                Stores with Menus
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {isLoading ? '...' : storesWithActiveMenusCount}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-black text-white leading-none font-poppins">
-              {isLoading ? '...' : storesWithActiveMenusCount}
-            </p>
-            <p className="text-[10px] text-zinc-400 mt-1 font-medium truncate font-poppins">
-              Channels with live catalogs
-            </p>
-          </div>
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
+            CHANNELS
+          </span>
         </div>
       </div>
 

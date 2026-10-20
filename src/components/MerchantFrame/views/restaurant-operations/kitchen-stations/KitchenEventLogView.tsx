@@ -1432,7 +1432,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                               isExpanded ? 'bg-[#fef9f1]' : 'hover:bg-[#f8f3eb] bg-white'
                             }`}
                           >
-                            {/* Columna 1: Timestamp de llegada con Chevron */}
+                            {/* Column 1: Arrival timestamp with Chevron */}
                             {visibleColumns.eventTime && (
                               <td className={`${densityPadding} truncate`}>
                                 <div className="flex items-center gap-2 min-w-0">
@@ -1491,7 +1491,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                               </td>
                             )}
 
-                            {/* Columna 3: Order Ref y conteo de eventos */}
+                            {/* Column 3: Order Ref and event count */}
                             {visibleColumns.orderRef && (
                               <td className={`${densityPadding} truncate`}>
                                 <div className="flex items-center gap-1.5 min-w-0">
@@ -1554,7 +1554,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                             )}
                           </tr>
 
-                          {/* Subfilas con los eventos individuales desglosados */}
+                          {/* Subrows with individual events broken down */}
                           {isExpanded &&
                             group.events.map((record) => (
                               <tr
@@ -1668,7 +1668,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                                   </td>
                                 )}
 
-                                {/* Actions: solo el icono */}
+                                {/* Actions: icon only */}
                                 {visibleColumns.actions && (
                                   <td className={`${densityPadding} text-right whitespace-nowrap`}>
                                     <button

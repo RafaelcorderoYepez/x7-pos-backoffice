@@ -1,16 +1,16 @@
-// Reglas del roster de comensales: quién es el contacto principal, cuánta gente queda por
-// registrar frente al tamaño del grupo, y cómo se localiza a un invitado por su contacto.
+// Rules for the diner roster: who is the main contact, how many people are left
+// record versus group size, and how a guest is located by their contact.
 //
-// La regla que gobierna todo lo demás es la del PRINCIPAL: cada reserva tiene exactamente uno.
-// El backend la impone al escribir (degrada al anterior y eleva al siguiente si el principal
-// se va); aquí se replica para poder avisar ANTES de enviar y para detectar un roster que ya
-// venga torcido de datos antiguos.
+// The rule that governs everything else is that of the PRINCIPAL: each reserve has exactly one.
+// The backend enforces it on write (demotes to the previous and elevates to the next if the main
+// leaves); here it is replicated to be able to notify BEFORE sending and to detect a roster that is already
+// comes twisted from old data.
 
 import type { Reservation, ReservationGuest } from '../types/reservation';
 
-// ================= Topes de columna =================
+// ================= Column stops =================
 
-// varchar(100) / varchar(100) / varchar(20) en `reservation_guests`.
+// varchar(100) / varchar(100) / varchar(20) in `reservation_guests`.
 export const GUEST_NAME_MAX = 100;
 export const GUEST_EMAIL_MAX = 100;
 export const GUEST_PHONE_MAX = 20;
@@ -24,10 +24,10 @@ export const primaryGuest = (guests: ReservationGuest[]): ReservationGuest | nul
   activeGuests(guests).find((g) => g.is_primary) ?? null;
 
 /**
- * Estado de la garantía "exactamente un principal" en un roster.
+ * Guarantee status "exactly one principal" in a roster.
  *
- * `none` y `multiple` son ambos estados rotos, pero distintos: sin principal la sala no sabe
- * a quién llamar, y con varios no sabe a cuál. Se distinguen para poder explicarlo.
+ * `none` and `multiple` are both broken states, but different: without main the room does not know
+ * who to call, and with several he doesn't know which one. They are distinguished to be able to explain it.
  */
 export type PrimaryIntegrity = 'ok' | 'none' | 'multiple' | 'empty';
 
@@ -51,10 +51,10 @@ export const primaryIntegrityMessage = (state: PrimaryIntegrity): string => {
 };
 
 /**
- * Roster resultante de marcar a `guestId` como principal.
+ * Roster resulting from marking `guestId` as main.
  *
- * Refleja lo que el backend hará al guardar (degradar a los demás) para que la tabla se
- * actualice sin esperar a la recarga. No se envía: la verdad la escribe el servidor.
+ * Reflects what the backend will do on save (downgrade) so that the table is
+ * Update without waiting for reload. It is not sent: the truth is written by the server.
  */
 export const withPrimary = (
   guests: ReservationGuest[],
@@ -63,10 +63,10 @@ export const withPrimary = (
   guests.map((g) => ({ ...g, is_primary: g.is_active && g.id === guestId }));
 
 /**
- * A quién le tocaría el relevo si el principal actual se va.
+ * Who would take over if the current principal leaves.
  *
- * Mismo criterio que el servicio: el invitado activo más antiguo, que es quien se registró
- * primero y casi siempre quien hizo la reserva.
+ * Same criteria as the service: the oldest active guest, which is the one who registered
+ * first and almost always who made the reservation.
  */
 export const successorPrimary = (
   guests: ReservationGuest[],
@@ -84,15 +84,15 @@ export const primaryHandoverPrompt = (
     ? `${leaving.name} is the primary contact. Removing them promotes ${successor.name} to primary.`
     : `${leaving.name} is the only guest on this booking. Removing them leaves it with no contact.`;
 
-// ================= Recuento frente al tamaño del grupo =================
+// ================= Count vs Group Size =================
 
 export interface RosterCount {
   registered: number;
   partySize: number;
-  /** Comensales del grupo que todavía no tienen ficha. */
+  /** Diners in the group who do not yet have a file. */
   missing: number;
   complete: boolean;
-  /** Hay más fichas que comensales declarados: alguien se apuntó de más. */
+  /** There are more chips than declared diners: someone signed up too much. */
   overfilled: boolean;
 }
 
@@ -115,13 +115,13 @@ export const rosterCount = (
 export const rosterCountLabel = (count: RosterCount): string =>
   `Registered ${count.registered} of ${count.partySize} Guests`;
 
-// ================= Alta rápida de acompañantes =================
+// ================= Quick registration of companions =================
 
 /**
- * Nombre por defecto del siguiente acompañante genérico.
+ * Default name of the next generic companion.
  *
- * Numera por el HUECO que queda en el grupo, no por el total de fichas: si el roster tiene a
- * "Carlos" y una ficha "Guest 2", el siguiente es "Guest 3" y no "Guest 2" otra vez.
+ * Number by the GAP left in the group, not by the total chips: if the roster has
+ * "Carlos" and a "Guest 2" tab, the next one is "Guest 3" and not "Guest 2" again.
  */
 export const nextCompanionName = (guests: ReservationGuest[]): string => {
   const used = new Set(
@@ -135,17 +135,17 @@ export const nextCompanionName = (guests: ReservationGuest[]): string => {
   return `Guest ${n}`;
 };
 
-// ================= Validación del formulario =================
+// ================= Form validation =================
 
 /**
- * Regla del nombre de un invitado.
+ * Guest name rule.
  *
- * Si es OBLIGATORIO depende del formulario, y esa es la única diferencia entre los dos sitios
- * que lo usan: en el roster una ficha sin nombre no sirve de nada, mientras que el drawer de
- * alta de reserva admite dejarlo vacío a propósito — es la reserva anónima ("mesa para dos a
- * nombre de nadie") que se toma cuando el cliente no quiere dar el nombre por teléfono.
- * Unificar las dos en "siempre obligatorio" rompió esa reserva anónima, así que la diferencia
- * viaja explícita en el parámetro en vez de en dos copias de la función.
+ * Whether it is MANDATORY depends on the form, and that is the only difference between the two sites
+ * that use it: in the roster a token without a name is useless, while the drawer of
+ * reservation registration admits leaving it empty on purpose — it is the anonymous reservation ("table for two to
+ * no one's name") which is taken when the client does not want to give the name over the phone.
+ * Unifying the two into "always mandatory" broke that anonymous reservation, so the difference
+ * it travels explicitly in the parameter instead of in two copies of the function.
  */
 export const guestNameError = (
   raw: string,
@@ -169,13 +169,13 @@ export const guestEmailError = (raw: string): string => {
   return '';
 };
 
-// Los separadores que la gente dicta no viajan al backend.
+// The separators that people dictate don't travel to the backend.
 export const normalizeGuestPhone = (raw: string): string => raw.replace(/[\s().-]/g, '');
 
 /**
- * El DTO valida con `@IsPhoneNumber()` SIN región, lo que exige formato internacional: un
- * "600333444" a secas devuelve 400. Se comprueba aquí para decirlo en el idioma del formulario
- * en vez de enseñar el error crudo del servidor.
+ * The DTO validates with `@IsPhoneNumber()` WITHOUT region, which requires international format: a
+ * "600333444" simply returns 400. It is checked here to say it in the language of the form
+ * instead of showing the raw server error.
  */
 export const guestPhoneError = (raw: string): string => {
   const value = normalizeGuestPhone(raw);
@@ -190,11 +190,11 @@ export const guestPhoneError = (raw: string): string => {
   return '';
 };
 
-// ================= Presentación =================
+// ================= Presentation =================
 
 export const guestCode = (id: number): string => `#GST-${id}`;
 
-// `tel:` exige el número sin separadores; `mailto:` el correo tal cual.
+// `tel:` requires the number without separators; `mailto:` the mail as is.
 export const telHref = (phone?: string | null): string | null => {
   const value = normalizeGuestPhone(phone ?? '');
   return value ? `tel:${value}` : null;
@@ -208,10 +208,10 @@ export const mailtoHref = (email?: string | null): string | null => {
 export const hasContactDetails = (guest: ReservationGuest): boolean =>
   Boolean(guest.phone?.trim() || guest.email?.trim());
 
-// ================= Feed y búsqueda =================
+// ================= Feed and Search =================
 
 export interface GuestWithContext extends ReservationGuest {
-  /** Reserva a la que pertenece, ya resuelta para poder buscar y mostrar la fecha. */
+  /** Reservation to which it belongs, already resolved to be able to search and display the date. */
   reservationLabel: string;
   reservationDate: string;
   partySize: number;
@@ -219,9 +219,9 @@ export interface GuestWithContext extends ReservationGuest {
 
 export interface GuestFilters {
   search: string;
-  /** Sólo los contactos principales de cada reserva. */
+  /** Only the main contacts for each reservation. */
   primaryOnly: boolean;
-  /** Sólo reservas cuyo roster aún no cubre el tamaño del grupo. */
+  /** Only reserves whose roster does not yet cover the group size. */
   incompleteOnly: boolean;
 }
 
@@ -234,7 +234,7 @@ export const EMPTY_GUEST_FILTERS: GuestFilters = {
 export const hasActiveGuestFilters = (f: GuestFilters): boolean =>
   f.search.trim().length > 0 || f.primaryOnly || f.incompleteOnly;
 
-// Nombre, correo y teléfono: los tres identificadores con los que un cliente se presenta.
+// Name, email and telephone: the three identifiers with which a client presents himself.
 export const guestHaystack = (guest: GuestWithContext): string =>
   [
     guest.name,
@@ -261,28 +261,28 @@ export const matchesGuestFilters = (
   return true;
 };
 
-// ================= KPIs del roster =================
+// ================= Roster KPIs =================
 
 export interface GuestMetrics {
-  /** Fichas ReservationGuest activas en el día. */
+  /** ReservationGuest tokens active on the day. */
   totalRegisteredGuests: number;
-  /** Reservas cuyo contacto principal tiene teléfono o correo utilizable. */
+  /** Reservations whose main contact has a usable telephone or email. */
   primaryContactsCaptured: number;
-  /** Reservas con roster (el denominador honesto de la ratio anterior). */
+  /** Reserves with roster (the honest denominator of the previous ratio). */
   bookingsWithRoster: number;
-  /** Media de fichas por reserva, con un decimal. */
+  /** Average number of chips per reservation, with a decimal. */
   averagePartyComposition: number;
-  /** Reservas cuyo roster no llega al party_size declarado. */
+  /** Reservations whose roster does not reach the declared party_size. */
   incompleteRosters: number;
 }
 
 /**
- * Métricas del roster para el día.
+ * Roster metrics for the day.
  *
- * "Primary Contacts Captured" cuenta RESERVAS, no invitados: la pregunta operativa es a cuántas
- * mesas se puede llamar si se retrasan, y una reserva con tres teléfonos sigue siendo una.
- * La media se calcula sobre TODAS las reservas del día, incluidas las que aún no tienen a
- * nadie apuntado — son justamente las que tiran de la media hacia abajo y hay que ver.
+ * "Primary Contacts Captured" counts RESERVATIONS, not guests: the operative question is how many
+ * Tables can be called if they are late, and a reservation with three phones is still one.
+ * The average is calculated on ALL reservations for the day, including those that are not yet available.
+ * no one pointed out — they are precisely the ones that pull the average down and we have to see.
  */
 export const computeGuestMetrics = (
   reservations: Reservation[],

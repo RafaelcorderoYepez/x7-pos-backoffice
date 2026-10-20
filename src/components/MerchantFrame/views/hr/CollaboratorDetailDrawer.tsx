@@ -82,7 +82,7 @@ export const CollaboratorDetailDrawer: React.FC<CollaboratorDetailDrawerProps> =
       closeAriaLabel="Close collaborator profile"
     >
       <div className="flex flex-col overflow-hidden flex-1 text-left font-sans">
-        {/* ---------------- Cabecera de perfil ---------------- */}
+        {/* ---------------- Profile header ---------------- */}
         <div className="p-6 flex items-start gap-4 border-b border-[#e8e2d8]">
           <span
             aria-hidden="true"

@@ -393,7 +393,7 @@ export const ReservationGuestsView: React.FC<ReservationGuestsViewProps> = ({ me
         </div>
       </div>
 
-      {/* ---------- KPIs del roster ---------- */}
+      {/* ---------- Roster KPIs ---------- */}
       <section
         aria-label="Guest roster metrics"
         data-testid="guest-kpis"

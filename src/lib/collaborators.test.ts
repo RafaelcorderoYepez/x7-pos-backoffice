@@ -41,109 +41,109 @@ const user = (over: Partial<MerchantUser> & { id: number }): MerchantUser => ({
 });
 
 describe('referencias visibles', () => {
-  it('compone los códigos que enseña la parrilla', () => {
+  it('compose the codes that the grill teaches', () => {
     expect(collaboratorRef(12)).toBe('#CLB-12');
     expect(userRef(9)).toBe('#USR-9');
   });
 
-  it('saca iniciales de nombre y apellido', () => {
-    expect(collaboratorInitials('Juan Pérez')).toBe('JP');
+  it('take initials of first and last name', () => {
+    expect(collaboratorInitials('Juan Perez')).toBe('JP');
   });
 
-  it('con un solo nombre usa sus dos primeras letras', () => {
+  it('with a single name use its first two letters', () => {
     expect(collaboratorInitials('Madonna')).toBe('MA');
   });
 
-  it('un nombre vacío no deja el avatar mudo', () => {
+  it('an empty name does not leave the avatar mute', () => {
     expect(collaboratorInitials('')).toBe('?');
     expect(collaboratorInitials(null)).toBe('?');
   });
 
-  it('lee el correo del campo con nombre real', () => {
+  it('read the email from the field with real name', () => {
     expect(
       collaboratorEmail(collaborator({ id: 1, user: { id: 9, email: 'a@b.com' } })),
     ).toBe('a@b.com');
   });
 
-  it('y también del mapeo antiguo, que metía el correo en el apellido', () => {
+  it('and also from the old mapping, which included the email in the surname', () => {
     expect(
       collaboratorEmail(collaborator({ id: 1, user: { id: 9, lastname: 'legacy@b.com' } })),
     ).toBe('legacy@b.com');
   });
 });
 
-describe('búsqueda', () => {
+describe('search', () => {
   const c = collaborator({
     id: 12,
     user_id: 9,
-    name: 'Juan Pérez',
+    name: 'Juan Perez',
     user: { id: 9, username: 'jperez', email: 'juan@store.com' },
   });
 
-  it('encuentra por nombre', () => {
+  it('find by name', () => {
     expect(matchesCollaboratorSearch(c, 'juan')).toBe(true);
   });
 
-  it('encuentra por referencia de colaborador', () => {
+  it('find by collaborator reference', () => {
     expect(matchesCollaboratorSearch(c, '#CLB-12')).toBe(true);
   });
 
-  it('encuentra por referencia de cuenta de plataforma', () => {
+  it('find by platform account reference', () => {
     expect(matchesCollaboratorSearch(c, '#USR-9')).toBe(true);
   });
 
-  it('encuentra por correo', () => {
+  it('find by mail', () => {
     expect(matchesCollaboratorSearch(c, 'juan@store.com')).toBe(true);
   });
 
-  it('acepta el id pelado, sin prefijo', () => {
+  it('accepts stripped id, without prefix', () => {
     expect(collaboratorHaystack(c)).toContain('12');
     expect(matchesCollaboratorSearch(c, '12')).toBe(true);
   });
 
-  it('una búsqueda vacía no descarta nada', () => {
+  it('an empty search discards nothing', () => {
     expect(matchesCollaboratorSearch(c, '   ')).toBe(true);
   });
 
-  it('descarta lo que no casa', () => {
+  it('discard what doesn't fit', () => {
     expect(matchesCollaboratorSearch(c, 'zzz')).toBe(false);
   });
 });
 
-describe('vínculo único con la cuenta', () => {
+describe('unique link to account', () => {
   const existing = [collaborator({ id: 1, user_id: 9 }), collaborator({ id: 2, user_id: 10 })];
 
-  it('detecta una cuenta ya enlazada', () => {
+  it('detects an account already linked', () => {
     expect(isUserAlreadyLinked(existing, 9)).toBe(true);
   });
 
-  it('al editar, la propia ficha no cuenta como conflicto', () => {
+  it('when editing, the tab itself does not count as a conflict', () => {
     expect(isUserAlreadyLinked(existing, 9, 1)).toBe(false);
   });
 
-  it('deja fuera del selector las cuentas ya enlazadas', () => {
+  it('leaves already linked accounts out of the selector', () => {
     const users = [user({ id: 9 }), user({ id: 10 }), user({ id: 11 })];
     expect(availableUsersFor(users, existing).map((u) => u.id)).toEqual([11]);
   });
 
-  it('al editar conserva la cuenta que la ficha ya tiene', () => {
+  it('When editing, it preserves the account that the file already has', () => {
     const users = [user({ id: 9 }), user({ id: 11 })];
     expect(availableUsersFor(users, existing, 1).map((u) => u.id)).toEqual([9, 11]);
   });
 
-  it('redacta el aviso con el código de la cuenta', () => {
+  it('write the notice with the account code', () => {
     expect(duplicateUserBindingError(9)).toBe(
       'User account #USR-9 is already registered as an active collaborator.',
     );
   });
 
-  it('traduce el 409 del backend al mensaje de la historia', () => {
+  it('translate 409 from backend to story message', () => {
     expect(
       conflictMessageFor(9, "User with ID '9' is already a collaborator."),
     ).toBe('User account #USR-9 is already registered as an active collaborator.');
   });
 
-  it('un 409 por otro motivo se muestra tal cual lo manda el servidor', () => {
+  it('a 409 for another reason is displayed as the server sends it', () => {
     expect(conflictMessageFor(9, 'Collaborator is already deleted')).toBe(
       'Collaborator is already deleted',
     );
@@ -151,11 +151,11 @@ describe('vínculo único con la cuenta', () => {
 });
 
 describe('nombre visible', () => {
-  it('propone el usuario de la cuenta', () => {
+  it('proposes the account user', () => {
     expect(defaultNameForUser(user({ id: 9, username: 'jperez' }))).toBe('jperez');
   });
 
-  it('sin usuario, cae a la parte local del correo', () => {
+  it('without user, falls to the local part of the mail', () => {
     expect(
       defaultNameForUser(user({ id: 9, username: null, email: 'juan@store.com' })),
     ).toBe('juan');
@@ -165,7 +165,7 @@ describe('nombre visible', () => {
     expect(collaboratorNameError('   ')).toBe('A display name is required.');
   });
 
-  it('corta en 150 caracteres, que es lo que aguanta la columna', () => {
+  it('cuts it to 150 characters, which is what the column can hold', () => {
     expect(collaboratorNameError('x'.repeat(151))).toContain('cannot exceed 150');
     expect(collaboratorNameError('x'.repeat(150))).toBe('');
   });
@@ -175,16 +175,16 @@ describe('filtros', () => {
   const rows = [
     collaborator({ id: 1, name: 'Ana', role: 'waiter', status: 'active', shift_id: 7 }),
     collaborator({ id: 2, name: 'Beto', role: 'cook', status: 'inactive' }),
-    // Dato heredado en español: tiene que filtrarse como 'vacation'.
+    // Inherited data in Spanish: it has to be filtered as 'vacation'.
     collaborator({ id: 3, name: 'Cris', role: 'waiter', status: 'vacaciones' }),
   ];
 
-  it('arranca mostrando sólo la plantilla activa', () => {
+  it('starts showing only the active template', () => {
     expect(DEFAULT_COLLABORATOR_FILTERS.status).toBe('active');
     expect(filterCollaborators(rows, DEFAULT_COLLABORATOR_FILTERS).map((c) => c.id)).toEqual([1]);
   });
 
-  it('filtra por rol', () => {
+  it('filter by role', () => {
     const out = filterCollaborators(rows, {
       ...DEFAULT_COLLABORATOR_FILTERS,
       status: '',
@@ -193,7 +193,7 @@ describe('filtros', () => {
     expect(out.map((c) => c.id)).toEqual([1, 3]);
   });
 
-  it('normaliza el estado heredado en español', () => {
+  it('normalizes inherited state in Spanish', () => {
     const out = filterCollaborators(rows, {
       ...DEFAULT_COLLABORATOR_FILTERS,
       status: 'vacation',
@@ -201,7 +201,7 @@ describe('filtros', () => {
     expect(out.map((c) => c.id)).toEqual([3]);
   });
 
-  it('filtra por turno asignado', () => {
+  it('filter by assigned shift', () => {
     const out = filterCollaborators(rows, {
       ...DEFAULT_COLLABORATOR_FILTERS,
       status: '',
@@ -217,17 +217,17 @@ describe('filtros', () => {
   });
 });
 
-describe('presentación', () => {
-  it('formatea la fecha de alta', () => {
+describe('presentation', () => {
+  it('format the discharge date', () => {
     expect(formatRegistrationDate('2026-08-24T10:00:00Z')).toMatch(/^Aug \d{2}, 2026$/);
   });
 
-  it('sobrevive a una fecha ausente o ilegible', () => {
+  it('survives an absent or illegible date', () => {
     expect(formatRegistrationDate(null)).toBe('—');
     expect(formatRegistrationDate('ayer')).toBe('—');
   });
 
-  it('formatea el volumen de ventas', () => {
+  it('format sales volume', () => {
     expect(formatSalesVolume(15420.5)).toBe('$15,420.50');
     expect(formatSalesVolume(0)).toBe('$0.00');
   });

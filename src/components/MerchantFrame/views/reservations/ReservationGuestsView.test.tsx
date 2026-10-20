@@ -47,7 +47,7 @@ const RESERVATIONS = [
     id: 2, merchant_id: 3, customer_id: null, reservation_date: at(20), duration_minutes: 120,
     seated_at: null, party_size: 4, status: 'pending', source: 'online', special_requests: null,
     created_by: 2,
-    guests: [g(3, 2, 'Lucía Prat', { is_primary: true })],
+    guests: [g(3, 2, 'Lucia Prat', { is_primary: true })],
   },
   {
     id: 3, merchant_id: 3, customer_id: null, reservation_date: at(21), duration_minutes: 90,
@@ -242,7 +242,7 @@ describe('direct contact links', () => {
   });
 });
 
-describe('KPIs del roster', () => {
+describe('Roster KPIs', () => {
   it('Count the active chips of the day', async () => {
     await renderView();
     // 2in RES-1 (the inactive one doesn't count) + 1 in RES-2.

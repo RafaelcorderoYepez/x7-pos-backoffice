@@ -1,7 +1,7 @@
-// Dominio de liquidaciones a merchants (plataforma → merchant).
-// La plataforma recauda las órdenes de cada restaurante y le paga al merchant el neto
-// del día (el "pago de caja"). Estos tipos modelan ese flujo.
-// Propiedades en snake_case para coincidir con el contrato REST (/api/v1/platform/...).
+// Merchant settlements domain (platform → merchant).
+// The platform collects orders from each restaurant and pays the merchant the net
+// daily amount ("cashout"). These types model that flow.
+// Properties in snake_case to match REST contract (/api/v1/platform/...).
 
 export type OrderChannel = 'POS' | 'ONLINE' | 'QR' | 'DELIVERY';
 export type OrderPaymentMethod = 'CASH' | 'CARD' | 'TRANSFER' | 'WALLET';
@@ -17,19 +17,19 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   PENDING: 'Pending',
 };
 
-// Una orden de un merchant en uno de sus restaurantes (branch).
+// A merchant order in one of their restaurant branches.
 export interface MerchantOrder {
   id: number;
   company_id: number;
   merchant_name: string;
   branch_name: string;
   order_number: string;
-  order_date: string; // Día de negocio (YYYY-MM-DD o ISO).
+  order_date: string; // Business day (YYYY-MM-DD or ISO).
   channel: OrderChannel;
   payment_method: OrderPaymentMethod;
   gross_amount: number | string;
   status: OrderStatus;
-  settlement_id?: number | null; // Liquidación que ya incluyó esta orden.
+  settlement_id?: number | null; // Settlement that already included this order.
   created_at?: string;
 }
 
@@ -51,16 +51,16 @@ export const SETTLEMENT_STATUS_LABELS: Record<SettlementStatus, string> = {
   FAILED: 'Failed',
 };
 
-// Liquidación diaria de un merchant: el monto neto que la plataforma le transfiere.
+// Daily merchant settlement: the net amount transferred by the platform.
 export interface MerchantSettlement {
   id: number;
   company_id: number;
   merchant_name: string;
-  settlement_date: string; // Día de negocio liquidado.
+  settlement_date: string; // Settled business day.
   orders_count: number;
-  gross_collected: number | string; // Suma de órdenes COMPLETED del día.
-  refunds: number | string; // Suma de reembolsos (REFUNDED) del día.
-  platform_fee: number | string; // Comisión de la plataforma.
+  gross_collected: number | string; // Sum of COMPLETED orders for the day.
+  refunds: number | string; // Sum of REFUNDED orders for the day.
+  platform_fee: number | string; // Platform fee commission.
   net_payout: number | string; // gross_collected - platform_fee - refunds.
   status: SettlementStatus;
   payout_reference?: string | null;
@@ -69,7 +69,7 @@ export interface MerchantSettlement {
   orders?: MerchantOrder[];
 }
 
-// DTO para ejecutar el payout ("pago de caja").
+// DTO to execute payout ("cashout").
 export interface ExecutePayoutDto {
   reference?: string;
 }

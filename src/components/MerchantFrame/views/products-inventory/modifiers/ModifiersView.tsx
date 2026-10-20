@@ -66,7 +66,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
 
   const topRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll al inicio al montar la vista
+  // Auto-scroll at startup when mounting view
   useEffect(() => {
     if (topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'instant' });
@@ -263,7 +263,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
   const handleSaveModifier = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formPriceDelta.trim() || formProduct === 'NULL') {
-      alert('Por favor, completa todos los campos obligatorios.');
+      alert('Please fill in all required fields.');
       return;
     }
 
@@ -364,10 +364,10 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
           />
         </div>
 
-        {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
+        {/* Row 2: Filters on the left, Buttons on the right */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Filtro por Producto */}
+            {/* Filter by Product */}
             <select
               value={productFilter}
               onChange={(e) => {
@@ -384,7 +384,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
               ))}
             </select>
 
-            {/* Filtro por Estado */}
+            {/* Filter by State */}
             <select
               value={statusFilter}
               onChange={(e) => {

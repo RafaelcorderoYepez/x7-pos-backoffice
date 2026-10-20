@@ -1,11 +1,11 @@
-// Motor del histórico de estados de reserva: tiempo en cada estado, las tres duraciones
-// operativas, la detección de cambios de última hora, los KPI del turno y los filtros.
+// Reservation state history engine: time in each state, the three durations
+// operational, last-minute change detection, shift KPIs and filters.
 //
-// Todo se calcula a partir de las marcas `changed_at` del histórico (Δt = changed_atₙ −
-// changed_atₙ₋₁), no de columnas sueltas de la reserva: el histórico es el registro auditable
-// y es lo que el criterio de aceptación exige. El servidor entrega cada entrada con la
-// anterior de su reserva (`previous_status` / `previous_changed_at`), resuelta contra el ciclo
-// de vida completo, así que el Δt es exacto aunque el filtro de día deje fuera el alta.
+// Everything is calculated from the `changed_at` marks of the history (Δt = changed_atₙ −
+// changed_atₙ₋₁), not from individual columns of the reserve: the history is the auditable record
+// and that is what the acceptance criterion requires. The server delivers each entry with the
+// previous of your reservation (`previous_status` / `previous_changed_at`), resolved against the loop
+// of life, so the Δt is accurate even if the day filter leaves out the discharge.
 
 import type {
   Reservation,
@@ -15,9 +15,9 @@ import type {
 } from '../types/reservation';
 import { authorLabel } from './reservation-notes';
 
-// Minutos antes de la hora de la reserva a partir de los cuales una anulación o un no-show
-// cuentan como "de última hora". Lo que ocurre DESPUÉS de la hora también cuenta: una
-// anulación a la hora de sentarse es aún más tardía, no menos.
+// Minutes before the reservation time from which a cancellation or no-show
+// count as "breaking news." What happens AFTER the hour also counts: a
+// cancellation at seating time is even later, not less.
 export const LATE_CHANGE_WINDOW_MINUTES = 30;
 
 const MINUTE_MS = 60_000;
@@ -30,10 +30,10 @@ const timeOf = (iso?: string | null): number | null => {
   return Number.isNaN(t) ? null : t;
 };
 
-// ================= Orden =================
+// ================= Order =================
 
-// Orden de inserción: por changed_at y, a igualdad (alta + confirmación en el mismo
-// milisegundo desde un script), por id. Sin el desempate el Δt podría salir negativo.
+// Insertion order: by changed_at and, at equality (high + commit on the same
+// millisecond from a script), by id. Without the tiebreaker the Δt could be negative.
 export const sortHistoryChronologically = <T extends Pick<ReservationStatusHistoryEntry, 'id' | 'changed_at'>>(
   entries: T[],
 ): T[] =>
@@ -41,16 +41,16 @@ export const sortHistoryChronologically = <T extends Pick<ReservationStatusHisto
     (a, b) => (timeOf(a.changed_at) ?? 0) - (timeOf(b.changed_at) ?? 0) || a.id - b.id,
   );
 
-/** changed_at DESC estricto, que es el orden del feed que pide la historia. */
+/** changed_at strict DESC, which is the order of the feed that the story requests. */
 export const sortHistoryByRecency = <T extends Pick<ReservationStatusHistoryEntry, 'id' | 'changed_at'>>(
   entries: T[],
 ): T[] => sortHistoryChronologically(entries).reverse();
 
-// ================= Cambios de última hora =================
+// ================= Last minute changes =================
 
 export interface LateChange {
   status: 'cancelled' | 'no_show';
-  /** Minutos que faltaban para la hora de la reserva; negativo = ya había pasado. */
+  /** Minutes left until the reservation time; negative = it had already happened. */
   minutesBeforeStart: number;
 }
 
@@ -78,9 +78,9 @@ export const lateChangeLabel = (late: LateChange): string => {
   return `${what} — ${-late.minutesBeforeStart} min after start`;
 };
 
-// ================= Tiempo en estado =================
+// ================= Time in state =================
 
-/** Δt = changed_atₙ − changed_atₙ₋₁: tiempo que la reserva pasó en `previous_status`. */
+/** Δt = changed_atₙ − changed_atₙ₋₁: time the reservation spent in `previous_status`. */
 export const timeInPreviousMs = (
   entry: Pick<StatusHistoryFeedEntry, 'changed_at' | 'previous_changed_at'>,
 ): number | null => {
@@ -94,17 +94,17 @@ export type EntryDurationKind = 'confirmation_lead' | 'reception_wait' | 'dining
 export interface EntryDuration {
   kind: EntryDurationKind;
   ms: number;
-  /** Sólo en `dining`: duración reservada y desvío contra ella (positivo = se alargó). */
+  /** Only in `dining`: reserved duration and offset against it (positive = lengthened). */
   bookedMs?: number;
   overrunMs?: number;
 }
 
 /**
- * La duración operativa que CIERRA esta transición, si cierra alguna:
- *  - CONFIRMED tras PENDING → plazo de confirmación (el Δt de la entrada);
- *  - SEATED → espera en recepción, desde la hora de la reserva (no desde el estado anterior:
- *    un grupo confirmado hace tres días no ha esperado tres días en la puerta);
- *  - COMPLETED tras SEATED → duración de la comida, contra `duration_minutes`.
+ * The operational duration that CLOSES this transition, if it closes any:
+ *  - CONFIRMED after PENDING → confirmation period (the Δt of the entry);
+ *  - SEATED → waiting at reception, from the time of reservation (not from the previous state:
+ *    a group confirmed three days ago has not waited three days at the door);
+ *  - COMPLETED after SEATED → duration of the meal, against `duration_minutes`.
  */
 export const entryDuration = (entry: StatusHistoryFeedEntry): EntryDuration | null => {
   const delta = timeInPreviousMs(entry);
@@ -127,30 +127,30 @@ export const entryDuration = (entry: StatusHistoryFeedEntry): EntryDuration | nu
   return null;
 };
 
-// ================= Duraciones de una reserva =================
+// ================= Durations of a reservation =================
 
 export interface ReservationDurations {
   /** PENDING → CONFIRMED. */
   confirmationLeadMs: number | null;
-  /** Hora de la reserva → SEATED. Negativo = el grupo se sentó antes de su hora. */
+  /** Reservation time → SEATED. Negative = the group sat down before their time. */
   receptionWaitMs: number | null;
   /** SEATED → COMPLETED. */
   diningMs: number | null;
-  /** Duración reservada (duration_minutes) contra la que se compara la sobremesa. */
+  /** Reserved duration (duration_minutes) against which the desktop is compared. */
   bookedDiningMs: number;
-  /** diningMs − bookedDiningMs; positivo = la mesa se alargó más de lo reservado. */
+  /** diningMs − bookedDiningMs; positive = the table was longer than reserved. */
   diningOverrunMs: number | null;
 }
 
-// Primera entrada con `status` en o después de `fromIndex`. Se usa la PRIMERA porque es la
-// transición real: una segunda entrada igual sólo podría venir de datos heredados.
+// First entry with `status` on or after `fromIndex`. The FIRST is used because it is the
+// real transition: a second equal entry could only come from inherited data.
 const firstIndexOf = (
   chronological: ReservationStatusHistoryEntry[],
   status: ReservationStatus,
   fromIndex = 0,
 ): number => chronological.findIndex((e, i) => i >= fromIndex && e.status === status);
 
-/** Resumen de un ciclo de vida completo (la búsqueda por #RES). */
+/** Summary of a complete life cycle (search for #RES). */
 export const computeDurations = (
   reservation: Pick<Reservation, 'reservation_date' | 'duration_minutes' | 'seated_at' | 'status_history'>,
 ): ReservationDurations => {
@@ -167,7 +167,7 @@ export const computeDurations = (
 
   const seatedIdx = firstIndexOf(chronological, 'seated');
   const completedIdx = seatedIdx >= 0 ? firstIndexOf(chronological, 'completed', seatedIdx) : -1;
-  // El histórico manda; `seated_at` sólo cubre reservas antiguas sin la entrada SEATED.
+  // History rules; `seated_at` only covers old reservations without the SEATED entry.
   const seatedAt = at(seatedIdx) ?? timeOf(reservation.seated_at);
   const completedAt = at(completedIdx);
   const start = timeOf(reservation.reservation_date);
@@ -186,16 +186,16 @@ export const computeDurations = (
   };
 };
 
-// ================= KPIs del turno =================
+// ================= Shift KPIs =================
 
 export interface ShiftMetrics {
-  /** Entradas del histórico registradas en el día. */
+  /** History entries recorded on the day. */
   transitions: number;
   /** Transiciones a SEATED. */
   seatedParties: number;
   /** Transiciones a CANCELLED o NO_SHOW. */
   cancellationsAndNoShows: number;
-  /** Cambios hechos por procesos automáticos (changed_by = null). */
+  /** Changes made by automatic processes (changed_by = null). */
   automatedActions: number;
   lateChanges: number;
   avgConfirmationLeadMs: number | null;
@@ -245,9 +245,9 @@ export const computeShiftMetrics = (entries: StatusHistoryFeedEntry[]): ShiftMet
   };
 };
 
-// ================= Presentación =================
+// ================= Presentation =================
 
-/** "45s", "12m", "1h 05m", "2d 3h". Sin signo: el llamador decide si es "antes" o "después". */
+/** "45s", "12m", "1h 05m", "2d 3h". Unsigned: The caller decides whether it is "before" or "after". */
 export const formatDuration = (ms: number | null | undefined): string => {
   if (ms == null || Number.isNaN(ms)) return '—';
   const totalSeconds = Math.round(Math.abs(ms) / 1000);
@@ -275,7 +275,7 @@ export const diningOverrunLabel = (ms: number | null | undefined): string => {
   return ms > 0 ? `+${formatDuration(ms)} over` : `${formatDuration(ms)} under`;
 };
 
-/** Frase de la duración que cierra una entrada del feed. */
+/** Duration phrase that closes a feed entry. */
 export const entryDurationLabel = (duration: EntryDuration): string => {
   switch (duration.kind) {
     case 'confirmation_lead':
@@ -287,7 +287,7 @@ export const entryDurationLabel = (duration: EntryDuration): string => {
   }
 };
 
-/** "16/04/2026 19:05:12" — con segundos: es una marca de auditoría, no una hora de servicio. */
+/** "04/16/2026 19:05:12" — with seconds: it is an audit mark, not a service hour. */
 export const auditTimestamp = (iso?: string | null): string => {
   const t = timeOf(iso);
   if (t == null) return '—';
@@ -296,8 +296,8 @@ export const auditTimestamp = (iso?: string | null): string => {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
 
-// `changed_by` null es un proceso automático (p. ej. el marcado de no-show por vencimiento);
-// con id, la misma firma que las notas: "Ana Ruiz (Host)" o "Staff #12" sin catálogo.
+// `changed_by` null is an automatic process (e.g. marking no-show due to expiration);
+// with id, the same signature as the notes: "Ana Ruiz (Host)" or "Staff #12" without catalog.
 export const actorLabel = (
   changedBy: number | null | undefined,
   staffById?: Map<number, { name?: string; role?: string }>,
@@ -305,11 +305,11 @@ export const actorLabel = (
 
 // ================= Filtros =================
 
-/** 'all' = cualquiera; 'automated' = changed_by null; número = ese usuario. */
+/** 'all' = any; 'automated' = changed_by null; number = that user. */
 export type ActorFilter = 'all' | 'automated' | number;
 
 export interface HistoryFilters {
-  /** '' = cualquier estado destino. */
+  /** '' = any destination state. */
   status: ReservationStatus | '';
   actor: ActorFilter;
 }
@@ -330,8 +330,8 @@ export const matchesHistoryFilters = (
 };
 
 /**
- * "#RES-14", "res-14", "RES 14" o "14" → 14. Cualquier otra cosa → null: la búsqueda es por
- * id de reserva, así que un texto que no lo contiene no debe disparar una consulta.
+ * "#RES-14", "res-14", "RES 14" or "14" → 14. Anything else → null: the search is by
+ * reservation id, so a text that does not contain it should not trigger a query.
  */
 export const parseReservationLookup = (raw: string): number | null => {
   const match = raw.trim().match(/^(?:#?\s*res\s*[-\s]?\s*)?(\d{1,9})$/i);
@@ -341,9 +341,9 @@ export const parseReservationLookup = (raw: string): number | null => {
 };
 
 /**
- * Opciones del desplegable de empleado: sólo quien ha tocado algo en el día (un catálogo de
- * 40 empleados donde 38 no aparecen no ayuda a auditar), ordenadas por nombre, y "Automated
- * System" si algún proceso automático cambió estados.
+ * Employee dropdown options: only who has touched something during the day (a catalog of
+ * 40 employees where 38 do not appear does not help audit), sorted by name, and "Automated
+ * System" if any automatic processes changed states.
  */
 export const actorOptions = (
   entries: StatusHistoryFeedEntry[],

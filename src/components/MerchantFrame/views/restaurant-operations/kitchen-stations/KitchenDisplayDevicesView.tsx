@@ -973,7 +973,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             description="No display hardware units match your current search criteria or filter matrix. Try resetting your search query or station filters."
           />
         ) : (
-          /* Quick-Launch Cards Mode: Estrictamente 2 tarjetas por fila horizontal */
+          /* Quick-Launch Cards Mode: Strictly 2 cards per horizontal row */
           <div className="grid grid-cols-2 gap-3.5">
           {filteredDevices.map((device) => {
             const isInactive = device.status === 'deleted';

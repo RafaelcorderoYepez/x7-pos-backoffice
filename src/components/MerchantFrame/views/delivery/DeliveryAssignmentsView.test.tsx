@@ -95,7 +95,7 @@ const DRIVERS = [
 const ORDERS = [
   { id: 201, orderNumber: '000201', deliveryAddress: 'Av 1 #2', kitchenStatus: 'ready', businessStatus: 'in_progress' },
   { id: 202, orderNumber: '000202', deliveryAddress: 'Av 3', kitchenStatus: 'preparing', businessStatus: 'in_progress' },
-  // Ya tiene la asignación abierta #ASN-1.
+  // You already have the open assignment #ASN-1.
   { id: 101, orderNumber: '000101', deliveryAddress: 'Calle 5', kitchenStatus: 'ready', businessStatus: 'in_progress' },
   { id: 203, orderNumber: '000203', deliveryAddress: 'Av 4', kitchenStatus: 'ready', businessStatus: 'cancelled' },
 ];
@@ -277,7 +277,7 @@ describe('DeliveryAssignmentsView', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await renderView();
     expect(within(screen.getByTestId('assignment-card-1')).getByText('Assigned 12 mins ago')).toBeInTheDocument();
-    // Evita que el sondeo reemplace los datos: el reloj es lo que se prueba.
+    // Prevents polling from replacing data: the clock is what is tested.
     act(() => {
       vi.advanceTimersByTime(3 * 60_000);
     });
@@ -294,7 +294,7 @@ describe('DeliveryAssignmentsView', () => {
         .map((b) => b.textContent?.replace(/two_wheeler|open_in_new|local_shipping/g, '').trim());
     expect(names(1)).toEqual(['Reassign driver', 'Mark picked up', 'Mark failed', 'Cancel', 'Live tracking']);
     expect(names(2)).toEqual(['Mark in transit', 'Mark delivered', 'Mark failed', 'Cancel', 'Live tracking']);
-    // Pending DSP sin id externo: no puede pasar a assigned.
+    // Pending DSP without external id: cannot be assigned.
     expect(names(3)).toEqual(['Mark failed', 'Cancel']);
     expect(names(6)).toEqual(['Assign driver', 'Mark failed', 'Cancel']);
     expect(within(screen.getByTestId('actions-5')).queryAllByRole('button')).toHaveLength(0);

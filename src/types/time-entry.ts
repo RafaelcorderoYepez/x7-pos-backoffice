@@ -1,14 +1,14 @@
-// Tipos del control de fichajes: cada fila es una jornada de un colaborador, con su marca
-// de entrada, la de salida (o ninguna, si sigue trabajando) y el descanso no retribuido.
+// Types of transfer control: each row is a day of a collaborator, with his brand
+// entry, exit (or none, if you continue working) and unpaid rest.
 //
-// Refleja el contrato real de /api/collaborator-time-entries: escalares en snake_case y
-// las relaciones `collaborator` y `shift` hidratadas por el backend.
+// Reflects the actual contract from /api/collaborator-time-entries: scalars in snake_case and
+// the `collaborator` and `shift` relationships hydrated by the backend.
 
-// ================= Estado del fichaje =================
+// ================= Transfer status =================
 
-// Lo que la parrilla puede decir de una jornada. No es una columna: se DERIVA de las marcas
-// y del turno programado (ver classifyEntry en lib/time-entries.ts), porque el estado real
-// depende de la hora a la que se mire.
+// What the grill can say about a day. It is not a column: it is DERIVED from the marks
+// and of the scheduled shift (see classifyEntry in lib/time-entries.ts), because the actual state
+// It depends on the time you look at it.
 export type PunchStatus =
   | 'on_duty'
   | 'on_time'
@@ -32,7 +32,7 @@ export const PUNCH_STATUS_LABELS: Record<PunchStatus, string> = {
   overtime: 'Overtime',
 };
 
-// Azul en curso, verde a tiempo, ámbar tarde, rojo incidencia, morado horas extra.
+// Blue in progress, green on time, amber late, red incidence, purple overtime.
 export const PUNCH_STATUS_BADGE_STYLES: Record<PunchStatus, string> = {
   on_duty: 'bg-blue-500/10 text-blue-700',
   on_time: 'bg-green-500/10 text-green-700',
@@ -41,10 +41,10 @@ export const PUNCH_STATUS_BADGE_STYLES: Record<PunchStatus, string> = {
   overtime: 'bg-purple-500/10 text-purple-700',
 };
 
-// ================= Motivos de ajuste =================
+// ================= Reasons for adjustment =================
 
-// La historia fija estos cuatro; el campo del backend es varchar libre, así que el
-// formulario también admite escribir uno propio.
+// History fixes these four; the backend field is free varchar, so the
+// form also supports writing your own.
 export const ADJUSTMENT_REASONS = [
   'Missed Punch',
   'System Outage',
@@ -62,8 +62,8 @@ export interface TimeEntryCollaboratorRef {
   role: string;
 }
 
-// El turno no tiene columna `name` en la base: la etiqueta se compone del rol y la hora de
-// inicio, igual que en el resto del módulo de RR. HH.
+// The shift has no `name` column in the base: the label is made up of the role and the time of
+// start, the same as in the rest of the HR module. HH.
 export interface TimeEntryShiftRef {
   id: number;
   role?: string | null;
@@ -93,7 +93,7 @@ export interface TimeEntry {
   shift?: TimeEntryShiftRef | null;
 }
 
-// Una corrección de supervisor. La tabla sólo se inserta: el histórico no se reescribe.
+// A supervisor correction. The table is only inserted: the history is not rewritten.
 export interface TimeEntryRevision {
   id: number;
   time_entry_id: number;
@@ -108,7 +108,7 @@ export interface TimeEntryRevision {
   created_at: string;
 }
 
-// ================= DTOs de escritura =================
+// ================= Write DTOs =================
 
 export interface CreateTimeEntryDto {
   company_id: number;
@@ -121,8 +121,8 @@ export interface CreateTimeEntryDto {
   adjustment_reason?: string;
 }
 
-// El backend actualiza con PUT (no PATCH) y recalcula las horas por su cuenta: mandarlas
-// desde el cliente permitiría cuadrar la nómina sin que las marcas lo respalden.
+// The backend updates with PUT (not PATCH) and recalculates the hours on its own: send them
+// from the client would allow the payroll to be balanced without the brands supporting it.
 export interface UpdateTimeEntryDto {
   clock_in?: string;
   clock_out?: string | null;

@@ -990,7 +990,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
   };
 
   // On reconnect we request only changes while offline, instead of
-  // recargar la parrilla entera. Si el backend no expone el delta, recarga completa.
+  // reload the entire grill. If the backend does not expose the delta, it reloads completely.
   const resyncFromDelta = async (since: string) => {
     try {
       const res = await fetch(

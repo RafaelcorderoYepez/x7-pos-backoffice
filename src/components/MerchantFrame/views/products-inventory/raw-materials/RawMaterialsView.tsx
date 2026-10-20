@@ -28,7 +28,7 @@ interface RawMaterial {
   cost_per_unit?: number | null;
   description?: string | null;
   isActive: boolean;
-  // Campos del stock relacionados a mostrar
+  // Related stock fields to display
   currentQty?: number;
   minimumQty?: number | null;
   weightedAverageUnitCost?: number | string | null;
@@ -438,7 +438,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
     }
   };
 
-  // Filtrado de materiales reactivo
+  // Filtering of reactive materials
   const filteredMaterials = materials.filter((m) => {
     if (statusFilter === 'Active' && !m.isActive) return false;
     if (statusFilter === 'Inactive' && m.isActive) return false;
@@ -506,7 +506,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
           />
         </div>
 
-        {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
+        {/* Row 2: Filters on the left, Buttons on the right */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex flex-wrap items-center gap-3">
             {/* Categories */}
@@ -521,7 +521,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
               ))}
             </select>
 
-            {/* Unidades de Compra */}
+            {/* Purchase Units */}
             <select
               value={purchaseUnitFilter}
               onChange={(e) => setPurchaseUnitFilter(e.target.value)}
@@ -534,7 +534,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
               <option value="BAG">BAG</option>
             </select>
 
-            {/* Unidades de Consumo */}
+            {/* Consumption Units */}
             <select
               value={consumptionUnitFilter}
               onChange={(e) => setConsumptionUnitFilter(e.target.value)}
@@ -1062,7 +1062,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
         document.body
       )}
 
-      {/* Modal de Advertencia de Impacto de Conversion (Recipes Warning) */}
+      {/* Conversion Impact Warning Modal (Recipes Warning) */}
       {isWarningModalOpen && (
         <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 font-sans">
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsWarningModalOpen(false)} />

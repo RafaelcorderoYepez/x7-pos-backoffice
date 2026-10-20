@@ -1,6 +1,6 @@
-// Piezas de una asignación compartidas por la tarjeta Kanban y la fila de la tabla:
-// píldora de estado, insignia de flota (repartidor propio o DSP), línea de tiempos y
-// botones de acción (sólo las transiciones que el backend admite desde el estado actual).
+// Pieces of an assignment shared by the Kanban card and the table row:
+// status pill, fleet badge (own delivery driver or DSP), timeline and
+// action buttons (only transitions that the backend supports from the current state).
 
 import React from 'react';
 import type { DeliveryAssignment, DeliveryStatus } from '../../../../types/delivery-assignments';
@@ -33,8 +33,8 @@ export const AssignmentStatusPill: React.FC<{ status: DeliveryStatus }> = ({ sta
     <span
       data-testid="status-pill"
       data-color={meta.color}
-      // Color por variable: así el hover puede pasar a fondo blanco + texto rojo, legible
-      // (texto rojo sobre azul o morado no se lee).
+      // Color by variable: so the hover can go to a white background + red, readable text
+      // (red text on blue or purple is not readable).
       className="inline-flex items-center whitespace-nowrap px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-white bg-[var(--pill)] ring-1 ring-[var(--pill)] hover:bg-white! hover:text-primary! transition-colors duration-200"
       style={{ '--pill': meta.color } as React.CSSProperties}
     >
@@ -43,8 +43,8 @@ export const AssignmentStatusPill: React.FC<{ status: DeliveryStatus }> = ({ sta
   );
 };
 
-// `trailing` (la píldora de estado en la tarjeta) va en la primera fila: así el número de
-// pedido y la dirección usan todo el ancho de la columna en vez de partirse palabra a palabra.
+// `trailing` (the status pill on the card) goes in the first row: so the number of
+// order and address use the entire width of the column instead of splitting word by word.
 export const AssignmentIdBadges: React.FC<{ assignment: DeliveryAssignment; trailing?: React.ReactNode }> = ({
   assignment,
   trailing,

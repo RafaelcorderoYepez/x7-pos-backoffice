@@ -169,9 +169,9 @@ export const OnlineOrderingHubView: React.FC<OnlineOrderingHubViewProps> = ({
       subtitle: 'Taxonomy & Navigation',
       description: 'Structure digital menu sections, item families, display sorting order, and customer-facing browse categories.',
       icon: 'category',
-      badge: 'In Development',
-      badgeVariant: 'amber',
-      actionText: 'Preview',
+      badge: 'Operational',
+      badgeVariant: 'emerald',
+      actionText: 'Manage Categories',
     },
     {
       id: 'online-menu-items',

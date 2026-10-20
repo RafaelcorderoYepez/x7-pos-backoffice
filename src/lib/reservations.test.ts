@@ -29,8 +29,8 @@ import {
   windowsOverlap,
 } from './reservations';
 
-// Instantes en hora LOCAL: la parrilla, el rango del día y el formateador de 12 h leen el
-// reloj del local, así que los tests tienen que hablar el mismo idioma en cualquier zona.
+// Instants in LOCAL time: grid, day range and 12h formatter read the
+// local clock, so the tests have to speak the same language in any area.
 const at = (h: number, m = 0): string => new Date(2026, 3, 16, h, m, 0).toISOString();
 
 const booking = (over: Partial<Reservation> & { id: number }): Reservation => ({
@@ -47,28 +47,28 @@ const booking = (over: Partial<Reservation> & { id: number }): Reservation => ({
   ...over,
 });
 
-describe('máquina de estados del ciclo de vida', () => {
-  it('permite el camino normal del servicio', () => {
+describe('life cycle state machine', () => {
+  it('allows the normal path of service', () => {
     expect(canTransition('pending', 'confirmed')).toBe(true);
     expect(canTransition('confirmed', 'seated')).toBe(true);
     expect(canTransition('seated', 'completed')).toBe(true);
   });
 
-  it('bloquea el salto ilegal de anulada a completada', () => {
+  it('blocks illegal jump from aborted to completed', () => {
     expect(canTransition('cancelled', 'completed')).toBe(false);
   });
 
-  it('no deja resucitar una ausencia ni una reserva ya terminada', () => {
+  it('It does not allow an absence or a reservation that has already been completed to be resurrected', () => {
     expect(canTransition('no_show', 'seated')).toBe(false);
     expect(canTransition('completed', 'seated')).toBe(false);
   });
 
-  it('una mesa ya sentada sólo puede terminar', () => {
+  it('a table already seated can only end', () => {
     expect(allowedTransitions('seated')).toEqual(['completed']);
     expect(canTransition('seated', 'cancelled')).toBe(false);
   });
 
-  it('marca los tres estados finales como terminales', () => {
+  it('marks the three final states as terminal', () => {
     (['completed', 'cancelled', 'no_show'] as ReservationStatus[]).forEach((status) => {
       expect(isTerminalStatus(status)).toBe(true);
       expect(allowedTransitions(status)).toEqual([]);
@@ -76,30 +76,30 @@ describe('máquina de estados del ciclo de vida', () => {
     expect(isTerminalStatus('pending')).toBe(false);
   });
 
-  it('la lista de espera puede entrar al libro', () => {
+  it('the waiting list can enter the book', () => {
     expect(canTransition('white_list', 'confirmed')).toBe(true);
   });
 
-  it('explica el salto ilegal con los nombres legibles de los estados', () => {
+  it('explains illegal jumping with readable state names', () => {
     expect(illegalTransitionMessage('cancelled', 'completed')).toBe(
       'Illegal lifecycle jump: a Cancelled reservation cannot become Completed.',
     );
   });
 });
 
-describe('sello automático de llegada (seated_at)', () => {
+describe('automatic arrival seal (seated_at)', () => {
   const now = new Date(2026, 3, 16, 19, 5, 0);
 
-  it('sella la hora al entrar en SEATED', () => {
+  it('stamps the time when entering SEATED', () => {
     const stamp = seatedStampFor(booking({ id: 1, status: 'confirmed' }), 'seated', now);
     expect(stamp).toBe(now.toISOString());
   });
 
-  it('no sella nada en las demás transiciones', () => {
+  it('does not seal anything in the other transitions', () => {
     expect(seatedStampFor(booking({ id: 1 }), 'confirmed', now)).toBeUndefined();
   });
 
-  it('no reescribe una marca previa: la primera es la hora real de llegada', () => {
+  it('does not rewrite a previous mark: the first is the actual arrival time', () => {
     const first = at(19, 2);
     expect(
       seatedStampFor(booking({ id: 1, status: 'seated', seated_at: first }), 'seated', now),
@@ -108,23 +108,23 @@ describe('sello automático de llegada (seated_at)', () => {
 });
 
 describe('candidata a no-show', () => {
-  it('pasada la cortesía de 15 min una confirmada es candidata', () => {
+  it('After the courtesy of 15 minutes, a confirmed candidate is', () => {
     const late = new Date(2026, 3, 16, 19, 16, 0);
     expect(isNoShowCandidate(booking({ id: 1, status: 'confirmed' }), late)).toBe(true);
   });
 
-  it('dentro de la cortesía todavía no lo es', () => {
+  it('within courtesy it is still not', () => {
     const grace = new Date(2026, 3, 16, 19, 14, 0);
     expect(isNoShowCandidate(booking({ id: 1, status: 'confirmed' }), grace)).toBe(false);
   });
 
-  it('una reserva ya sentada nunca es candidata', () => {
+  it('a reservation already seated is never a candidate', () => {
     const late = new Date(2026, 3, 16, 20, 0, 0);
     expect(isNoShowCandidate(booking({ id: 1, status: 'seated' }), late)).toBe(false);
   });
 });
 
-describe('KPIs del día', () => {
+describe('KPIs of the day', () => {
   const day: Reservation[] = [
     booking({ id: 1, status: 'pending', party_size: 2 }),
     booking({ id: 2, status: 'confirmed', party_size: 4 }),
@@ -134,37 +134,37 @@ describe('KPIs del día', () => {
     booking({ id: 6, status: 'no_show', party_size: 6 }),
   ];
 
-  it('suma los comensales esperados dejando fuera las anuladas', () => {
-    // 2 + 4 + 3 + 5 + 6 = 20; los 8 de la anulada no se esperan.
+  it('add the expected diners leaving out the canceled ones', () => {
+    // 2 + 4 + 3 + 5 + 6 = 20; The 8 of the canceled one are not expected.
     expect(computeDailyMetrics(day).totalExpectedGuests).toBe(20);
   });
 
-  it('cuenta como cubiertos los sentados y los que ya terminaron', () => {
+  it('those seated and those who have already finished count as covered', () => {
     expect(computeDailyMetrics(day).coveredGuests).toBe(8);
   });
 
-  it('cuenta las confirmaciones pendientes', () => {
+  it('count pending confirmations', () => {
     expect(computeDailyMetrics(day).pendingConfirmations).toBe(1);
   });
 
-  it('calcula la tasa de no-show sobre el total de reservas del día', () => {
-    // 1 de 6 reservas.
+  it('calculates the no-show rate on the total reservations of the day', () => {
+    // 1 of 6 reservations.
     expect(computeDailyMetrics(day).noShowRate).toBeCloseTo(16.666, 2);
   });
 
-  it('calcula la ocupación sobre los comensales esperados', () => {
-    // 8 cubiertos de 20 esperados.
+  it('calculates occupancy based on expected diners', () => {
+    // 8 covered out of 20 expected.
     expect(computeDailyMetrics(day).occupancyRate).toBe(40);
   });
 
-  it('un día vacío no divide por cero', () => {
+  it('an empty day does not divide by zero', () => {
     const empty = computeDailyMetrics([]);
     expect(empty.noShowRate).toBe(0);
     expect(empty.occupancyRate).toBe(0);
     expect(empty.totalExpectedGuests).toBe(0);
   });
 
-  it('formatea los porcentajes con un decimal', () => {
+  it('format percentages with a decimal', () => {
     expect(formatPercent(16.666)).toBe('16.7%');
   });
 });
@@ -193,29 +193,29 @@ describe('filtros', () => {
     ],
   });
 
-  it('sin filtros no esconde nada', () => {
+  it('without filters it hides nothing', () => {
     expect(hasActiveFilters(EMPTY_FILTERS)).toBe(false);
     expect(matchesReservationFilters(withRequest, EMPTY_FILTERS)).toBe(true);
   });
 
-  it('filtra por estado (multi-selección)', () => {
+  it('filter by status (multi-selection)', () => {
     const filters = { ...EMPTY_FILTERS, statuses: ['seated' as ReservationStatus] };
     expect(matchesReservationFilters(withGuest, filters)).toBe(true);
     expect(matchesReservationFilters(withRequest, filters)).toBe(false);
   });
 
-  it('filtra por canal de origen', () => {
+  it('filter by source channel', () => {
     const filters = { ...EMPTY_FILTERS, sources: ['online'] };
     expect(matchesReservationFilters(withRequest, filters)).toBe(true);
     expect(matchesReservationFilters(withGuest, filters)).toBe(false);
   });
 
-  it('busca por texto en las peticiones especiales', () => {
+  it('search by text in special requests', () => {
     const filters = { ...EMPTY_FILTERS, search: 'window' };
     expect(matchesReservationFilters(withRequest, filters)).toBe(true);
   });
 
-  it('busca por teléfono y correo de un acompañante del roster', () => {
+  it('search by phone and email for a companion on the roster', () => {
     expect(
       matchesReservationFilters(withGuest, { ...EMPTY_FILTERS, search: '600 123' }),
     ).toBe(true);
@@ -224,14 +224,14 @@ describe('filtros', () => {
     ).toBe(true);
   });
 
-  it('busca por el nombre del cliente del CRM', () => {
+  it('search by CRM customer name', () => {
     const linked = booking({ id: 3, customer_id: 44 });
     expect(
-      matchesReservationFilters(linked, { ...EMPTY_FILTERS, search: 'lucía' }, 'Lucía Prat'),
+      matchesReservationFilters(linked, { ...EMPTY_FILTERS, search: 'lucia' }, 'Lucia Prat'),
     ).toBe(true);
   });
 
-  it('combina estado y texto con Y lógico', () => {
+  it('combine state and text with logical AND', () => {
     const filters = {
       statuses: ['confirmed' as ReservationStatus],
       sources: [],
@@ -243,57 +243,57 @@ describe('filtros', () => {
     ).toBe(false);
   });
 
-  it('el haystack incluye el código de la reserva', () => {
+  it('the haystack includes the reservation code', () => {
     expect(reservationHaystack(withRequest)).toContain('#res-1');
   });
 
-  it('toggleInList añade y quita', () => {
+  it('toggleInList adds and removes', () => {
     expect(toggleInList(['a'], 'b')).toEqual(['a', 'b']);
     expect(toggleInList(['a', 'b'], 'a')).toEqual(['b']);
   });
 });
 
 describe('ventanas semiabiertas', () => {
-  it('dos reservas seguidas no se solapan', () => {
+  it('two reservations in a row do not overlap', () => {
     expect(windowsOverlap(0, 100, 100, 200)).toBe(false);
     expect(windowsOverlap(0, 101, 100, 200)).toBe(true);
   });
 });
 
 describe('fechas y formato', () => {
-  it('el rango del día cubre las 24 h locales', () => {
+  it('the day range covers 24 local hours', () => {
     const { from, to } = buildDayRange('2026-04-16');
     expect(new Date(from).getTime()).toBe(new Date(2026, 3, 16, 0, 0, 0, 0).getTime());
     expect(new Date(to).getTime()).toBe(new Date(2026, 3, 17, 0, 0, 0, 0).getTime());
   });
 
-  it('formatea la hora en 12 h con AM/PM', () => {
+  it('formats the time in 12 hours with AM/PM', () => {
     expect(clockTime(at(19, 5))).toBe('07:05 PM');
     expect(clockTime(at(0, 30))).toBe('12:30 AM');
     expect(clockTime(null)).toBe('');
   });
 
-  it('etiqueta las franjas de la parrilla', () => {
+  it('label grill stripes', () => {
     expect(hourSlotLabel(13)).toBe('01:00 PM');
     expect(hourSlotLabel(0)).toBe('12:00 AM');
   });
 
-  it('describe la ventana de la reserva con su duración', () => {
+  it('describes the booking window with its duration', () => {
     expect(formatBookingWindow(booking({ id: 1 }))).toBe('07:00 PM – 08:30 PM (90 min)');
   });
 
-  it('compone y descompone la fecha del formulario sin perder la hora local', () => {
+  it('compose and decompose the form date without losing local time', () => {
     const iso = composeReservationDate('2026-04-16', '19:30');
     expect(splitReservationDate(iso)).toEqual({ date: '2026-04-16', time: '19:30' });
   });
 
-  it('el código de la reserva usa el formato de la historia', () => {
+  it('the reservation code uses the story format', () => {
     expect(reservationCode(12)).toBe('#RES-12');
   });
 });
 
-describe('validación del alta', () => {
-  it('exige un tamaño de grupo entero y mayor que cero', () => {
+describe('discharge validation', () => {
+  it('requires a group size that is integer and greater than zero', () => {
     expect(partySizeError('4')).toBe('');
     expect(partySizeError('0')).toBe('Party size must be greater than 0');
     expect(partySizeError('-2')).toBe('Party size must be greater than 0');
@@ -301,42 +301,42 @@ describe('validación del alta', () => {
     expect(partySizeError('')).toBe('Party size is required');
   });
 
-  it('exige una duración positiva', () => {
+  it('requires a positive duration', () => {
     expect(durationError('90')).toBe('');
     expect(durationError('0')).toBe('Duration must be greater than 0');
   });
 
-  it('exige fecha y hora válidas', () => {
+  it('requires valid date and time', () => {
     expect(reservationDateError('2026-04-16', '19:00')).toBe('');
     expect(reservationDateError('', '19:00')).toBe('Reservation date is required');
     expect(reservationDateError('2026-04-16', '')).toBe('Reservation time is required');
   });
 });
 
-describe('autocompletado de clientes', () => {
+describe('customer autocompletion', () => {
   const customers = [
-    { id: 1, name: 'Lucía Prat', email: 'lucia@example.com', phone: '600111222' },
+    { id: 1, name: 'Lucia Prat', email: 'lucia@example.com', phone: '600111222' },
     { id: 2, name: 'Carlos Mendoza', email: 'carlos@example.com', phone: '600333444' },
   ];
 
-  it('busca por nombre, teléfono y correo', () => {
-    expect(searchCustomers(customers, 'lucía').map((c) => c.id)).toEqual([1]);
+  it('search by name, phone number and email', () => {
+    expect(searchCustomers(customers, 'lucia').map((c) => c.id)).toEqual([1]);
     expect(searchCustomers(customers, '600333').map((c) => c.id)).toEqual([2]);
     expect(searchCustomers(customers, 'carlos@').map((c) => c.id)).toEqual([2]);
   });
 
-  it('con la caja vacía no propone nada', () => {
+  it('with the empty box it does not propose anything', () => {
     expect(searchCustomers(customers, '   ')).toEqual([]);
   });
 });
 
-describe('normalización defensiva', () => {
-  it('un estado heredado cae a pending en vez de romper la fila', () => {
+describe('defensive normalization', () => {
+  it('an inherited state drops to pending instead of breaking the queue', () => {
     const raw = { ...booking({ id: 1 }), status: 'walk_in_hold' as ReservationStatus };
     expect(normalizeReservation(raw).status).toBe('pending');
   });
 
-  it('los números que llegan como texto se convierten', () => {
+  it('numbers arriving as text are converted', () => {
     const raw = {
       ...booking({ id: 1 }),
       party_size: '4' as unknown as number,

@@ -90,7 +90,7 @@ export async function enqueueOfflineAction(
     getAllReq.onsuccess = () => {
       const existing = (getAllReq.result || []) as KdsQueuedAction[];
 
-      // Prevención de doble-clic rápido accidental (debounce < 300ms misma acción y misma comanda/ítem)
+      // Accidental quick double-click prevention (debounce < 300ms same action and same command/item)
       const isRapidDoubleClick = existing.some(
         (a) =>
           a.actionType === action.actionType &&
@@ -107,7 +107,7 @@ export async function enqueueOfflineAction(
       }
 
       // 1. Si es BUMP_ORDER:
-      // Removemos acciones intermedias de ítems pendientes para esta comanda
+      // We remove intermediate actions from pending items for this command
       if (action.actionType === 'BUMP_ORDER' && action.kitchenOrderId) {
         existing.forEach((a) => {
           if (
@@ -118,8 +118,8 @@ export async function enqueueOfflineAction(
             store.delete(a.id);
           }
         });
-        // IMPORTANTE: NO borramos RECALL_ORDER previos ni cancelamos el BUMP.
-        // Toda la secuencia de movimientos (recall -> bump -> recall -> bump) se preserva auditada.
+        // IMPORTANT: We DO NOT delete previous RECALL_ORDER or cancel the BUMP.
+        // The entire sequence of movements (recall -> bump -> recall -> bump) is preserved audited.
       }
 
       // 2. Si es UPDATE_ITEM_STATUS:
@@ -159,7 +159,7 @@ export async function enqueueOfflineAction(
         }
       }
 
-      // Encolar acción preservando orden cronológico completo
+      // Queue action preserving complete chronological order
       console.log('[X7-KDS-SYNC] Enqueuing action:', action.actionType, 'orderId:', action.kitchenOrderId, 'itemId:', action.kitchenOrderItemId);
       const fullAction: KdsQueuedAction = {
         ...action,
@@ -273,7 +273,7 @@ export async function flushOfflineQueue(
     return { success: true, syncedCount: 0, errors: [] };
   }
 
-  // Filtrar y normalizar el payload para garantizar compatibilidad estricta con OfflineKitchenActionDto
+  // Filter and normalize the payload to ensure strict compatibility with OfflineKitchenActionDto
   const actionsPayload = queued.map((a) => {
     const act: Record<string, unknown> = {
       actionType: a.actionType,
@@ -355,7 +355,7 @@ export async function clearOfflineData(): Promise<void> {
     const db = await openKdsDb();
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
-        // En caso de que el inspector de DevTools mantenga un lock de lectura abierto
+        // In case the DevTools inspector keeps a read lock open
         resolve();
       }, 500);
 

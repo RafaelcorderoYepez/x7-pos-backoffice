@@ -1,6 +1,6 @@
-// Lógica pura del flujo de liquidación (payout diario a merchants).
-// Sin dependencias de React ni de red: fácilmente unit-testeable y reutilizable
-// tanto por la vista como por el preview de "Generate settlements".
+// Pure logic of the settlement flow (daily payout to merchants).
+// No React or network dependencies: easily unit-testable and reusable
+// both for the view and for the preview of "Generate settlements".
 
 import type {
   MerchantOrder,
@@ -9,7 +9,7 @@ import type {
   SettlementStatus,
 } from '../types/settlements';
 
-// Comisión por defecto que la plataforma retiene del recaudo bruto (5%).
+// Default commission that the platform retains from the gross collection (5%).
 export const DEFAULT_PLATFORM_COMMISSION_RATE = 0.05;
 
 export const num = (v: number | string | null | undefined): number => {
@@ -29,7 +29,7 @@ export const formatDate = (value?: string | null): string => {
   return isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
 };
 
-// Neto a transferir al merchant: bruto recaudado − comisión − reembolsos.
+// Net to be transferred to the merchant: gross collected − commission − refunds.
 export const computeNetPayout = (
   grossCollected: number,
   platformFee: number,
@@ -51,12 +51,12 @@ export interface BuiltSettlement {
   order_ids: number[];
 }
 
-// Agrupa las órdenes por (merchant, día de negocio) y calcula la liquidación de cada grupo.
-// - gross_collected: suma de órdenes COMPLETED.
-// - refunds: suma (en positivo) de órdenes REFUNDED.
+// Group orders by (merchant, business day) and calculate settlement for each group.
+// - gross_collected: sum of COMPLETED orders.
+// - refunds: sum (positive) of REFUNDED orders.
 // - platform_fee: gross_collected * commissionRate.
 // - net_payout: gross_collected − platform_fee − refunds.
-// Las órdenes VOIDED/PENDING se excluyen del dinero pero PENDING no cuenta como recaudo.
+// VOIDED/PENDING orders are excluded from the money but PENDING does not count as collection.
 export function buildSettlementsFromOrders(
   orders: MerchantOrder[],
   commissionRate: number = DEFAULT_PLATFORM_COMMISSION_RATE,
@@ -102,13 +102,13 @@ export function buildSettlementsFromOrders(
 
   return Array.from(groups.values()).sort((a, b) => {
     if (a.settlement_date !== b.settlement_date) {
-      return a.settlement_date < b.settlement_date ? 1 : -1; // Más reciente primero.
+      return a.settlement_date < b.settlement_date ? 1 : -1; // Most recent first.
     }
     return a.merchant_name.localeCompare(b.merchant_name);
   });
 }
 
-// Una liquidación "lista para pagar" tiene neto positivo y no ha sido pagada/bloqueada.
+// A settlement ready to pay has positive net and has not been paid or blocked.
 export const isReadyToPay = (
   s: Pick<MerchantSettlement, 'status' | 'net_payout'>,
 ): boolean => (s.status === 'PENDING' || s.status === 'PROCESSING') && num(s.net_payout) > 0;

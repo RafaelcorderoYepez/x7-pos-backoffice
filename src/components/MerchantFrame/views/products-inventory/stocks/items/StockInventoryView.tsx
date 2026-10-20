@@ -144,7 +144,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       };
 
-      // 1. Cargar lista maestra de ubicaciones para verificar estado activo real por ID
+      // 1. Upload master list of locations to check actual active status by ID
       const locationsMap = new Map<string, Record<string, unknown>>();
       const locationsNameMap = new Map<string, Record<string, unknown>>();
       try {
@@ -169,7 +169,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         console.warn('Could not fetch locations list:', lErr);
       }
 
-      // 2. Cargar lista maestra de materias primas para verificar estado activo actualizado
+      // 2. Upload raw material master list to check updated active status
       const suppliesMap = new Map<string, Record<string, unknown>>();
       const suppliesNameMap = new Map<string, Record<string, unknown>>();
       try {
@@ -427,7 +427,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
 
   // Group by Location or by Raw Material
-  // Helper para determinar de forma exhaustiva el costo unitario (WACC/CPP, cost_per_unit, unit_cost)
+  // Helper to comprehensively determine unit cost (WACC/CPP, cost_per_unit, unit_cost)
   const getItemUnitCost = (item: unknown): number => {
     if (!item || typeof item !== 'object') return 0;
     const it = item as Record<string, unknown>;
@@ -664,7 +664,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
           </div>
         </div>
 
-        {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
+        {/* Row 2: Filters on the left, Buttons on the right */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             {/* Specific Location Selector */}
@@ -706,7 +706,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         </div>
       </div>
 
-      {/* 3. Data Grid Principal con Encabezado Oscuro Permanente */}
+      {/* 3. Main Data Grid with Permanent Dark Header */}
       <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded-xl shadow-xs">
         <div className="p-4 bg-[#222222] flex justify-between items-center relative">
           <div className="flex items-center gap-3">
@@ -834,7 +834,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
                   return (
                     <React.Fragment key={group.key}>
-                      {/* Fila Principal de Grupo */}
+                      {/* Group Main Row */}
                       <tr
                         className={`group transition-colors cursor-pointer ${
                           isExpanded ? 'bg-[#fef9f1]' : 'hover:bg-[#f8f3eb]'
@@ -985,7 +985,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
                         )}
                       </tr>
 
-                      {/* Sub-filas desglosadas al expandir */}
+                      {/* Sub-rows broken down when expanding */}
                       {isExpanded &&
                         group.items.map((subItem) => {
                           const currentStock = Number(subItem.currentQty || 0);
@@ -1214,7 +1214,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
               </button>
             </div>
 
-            {/* Cuerpo del Drawer */}
+            {/* Drawer Body */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {/* Item Context */}
               <div className="bg-zinc-50 p-4 border border-zinc-200 rounded-lg flex gap-4 items-center">
@@ -1317,7 +1317,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         document.body
       )}
 
-      {/* Renderizar Drawer usando un Portal en document.body para evitar recortes y traslapes de z-index */}
+      {/* Render Drawer using a Portal in document.body to avoid z-index clipping and overlapping */}
       {isAdjustOpen && selectedItemForAdjust && createPortal(
         <div className="fixed inset-0 z-[9999] overflow-hidden flex justify-end font-sans">
           {/* Backdrop */}

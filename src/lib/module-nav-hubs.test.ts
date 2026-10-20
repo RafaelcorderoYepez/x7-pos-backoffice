@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-// `?raw` (Vite) en vez de node:fs: el tsconfig de la app no carga los tipos de Node.
+// `?raw` (Vite) instead of node:fs: the app's tsconfig does not load Node. types.
 import featuresTxt from '../../public/Features.txt?raw';
 import merchantFrameSource from '../components/MerchantFrame/MerchantFrame.tsx?raw';
 import { MODULE_NAV_HUBS, navHubById, navHubForFeature } from './module-nav-hubs';
 
-// Etiquetas EXACTAS de las historias de cada módulo.
+// EXACT tags for the stories in each module.
 const STORY_LABELS: Record<string, { back: string; items: string[] }> = {
   'subscription-system': {
     back: 'SUBSCRIPTION SYSTEM COMMAND HUB',
@@ -189,8 +189,8 @@ describe('module NavHubBars', () => {
   it('resolves a feature to its module and a hub id to its hub', () => {
     expect(navHubForFeature('collaborators-contracts')?.appId).toBe('hr');
     expect(navHubForFeature('receipt-orders')?.hubLabel).toBe('BILLING & TRANSACTIONS COMMAND HUB');
-    expect(navHubForFeature('kitchen-stations')).toBeNull(); // el KDS monta su propia barra
-    expect(navHubForFeature('products')).toBeNull(); // Products / Inventory System monta su propia barra igual que el KDS
+    expect(navHubForFeature('kitchen-stations')).toBeNull(); // the KDS sets up its own bar
+    expect(navHubForFeature('products')).toBeNull(); // Products / Inventory System mounts its own bar just like the KDS
     expect(navHubById('pos-hub')?.appId).toBe('pos');
     expect(navHubById('collaborators')).toBeNull();
   });

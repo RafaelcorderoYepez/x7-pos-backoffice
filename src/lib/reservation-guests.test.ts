@@ -63,50 +63,50 @@ const withContext = (g: ReservationGuest, label = 'Carlos Mendoza'): GuestWithCo
 });
 
 describe('contacto principal', () => {
-  it('ignora las fichas dadas de baja', () => {
+  it('ignore deleted tokens', () => {
     const roster = [guest({ id: 1, is_active: false }), guest({ id: 2 })];
     expect(activeGuests(roster).map((g) => g.id)).toEqual([2]);
   });
 
-  it('un principal dado de baja ya no cuenta como principal', () => {
+  it('a deregistered principal no longer counts as a principal', () => {
     const roster = [guest({ id: 1, is_primary: true, is_active: false }), guest({ id: 2 })];
     expect(primaryGuest(roster)).toBeNull();
   });
 
-  it('reconoce el roster sano', () => {
+  it('recognizes the healthy roster', () => {
     expect(primaryIntegrity([guest({ id: 1, is_primary: true }), guest({ id: 2 })])).toBe('ok');
   });
 
-  it('distingue quedarse sin principal de tener varios', () => {
+  it('distinguishes being left without principal from having several', () => {
     expect(primaryIntegrity([guest({ id: 1 }), guest({ id: 2 })])).toBe('none');
     expect(
       primaryIntegrity([guest({ id: 1, is_primary: true }), guest({ id: 2, is_primary: true })]),
     ).toBe('multiple');
   });
 
-  it('un roster vacío no es un roster roto', () => {
+  it('an empty roster is not a broken roster', () => {
     expect(primaryIntegrity([])).toBe('empty');
     expect(primaryIntegrityMessage('empty')).toBe('');
     expect(primaryIntegrityMessage('ok')).toBe('');
   });
 
-  it('explica los dos estados rotos de forma distinta', () => {
+  it('explains the two broken states differently', () => {
     expect(primaryIntegrityMessage('none')).toMatch(/nobody to call/i);
     expect(primaryIntegrityMessage('multiple')).toMatch(/more than one/i);
   });
 
-  it('marcar principal degrada a los demás', () => {
+  it('mark primary demeans others', () => {
     const roster = [guest({ id: 1, is_primary: true }), guest({ id: 2 }), guest({ id: 3 })];
     const next = withPrimary(roster, 2);
     expect(next.map((g) => g.is_primary)).toEqual([false, true, false]);
   });
 
-  it('nunca eleva a una ficha dada de baja', () => {
+  it('never raises a dropped token', () => {
     const roster = [guest({ id: 1, is_active: false }), guest({ id: 2, is_primary: true })];
     expect(withPrimary(roster, 1).find((g) => g.id === 1)?.is_primary).toBe(false);
   });
 
-  it('el relevo es el invitado activo más antiguo', () => {
+  it('relay is the oldest active guest', () => {
     const roster = [
       guest({ id: 5, is_primary: true }),
       guest({ id: 9 }),
@@ -116,11 +116,11 @@ describe('contacto principal', () => {
     expect(successorPrimary(roster, 5)?.id).toBe(7);
   });
 
-  it('sin nadie más no hay relevo', () => {
+  it('without anyone else there is no relief', () => {
     expect(successorPrimary([guest({ id: 1, is_primary: true })], 1)).toBeNull();
   });
 
-  it('avisa de a quién pasa el testigo', () => {
+  it('informs who passes the baton to', () => {
     const leaving = guest({ id: 1, name: 'Carlos', is_primary: true });
     expect(primaryHandoverPrompt(leaving, guest({ id: 2, name: 'Ana' }))).toMatch(
       /promotes Ana to primary/,
@@ -129,8 +129,8 @@ describe('contacto principal', () => {
   });
 });
 
-describe('recuento frente al tamaño del grupo', () => {
-  it('cuenta sólo las fichas activas', () => {
+describe('count vs group size', () => {
+  it('counts only active chips', () => {
     const roster = [guest({ id: 1 }), guest({ id: 2 }), guest({ id: 3, is_active: false })];
     const count = rosterCount(roster, 4);
     expect(count.registered).toBe(2);
@@ -138,80 +138,80 @@ describe('recuento frente al tamaño del grupo', () => {
     expect(count.complete).toBe(false);
   });
 
-  it('marca el roster completo', () => {
+  it('check the complete roster', () => {
     const count = rosterCount([guest({ id: 1 }), guest({ id: 2 })], 2);
     expect(count.complete).toBe(true);
     expect(count.missing).toBe(0);
   });
 
-  it('detecta más fichas que comensales declarados', () => {
+  it('detects more chips than declared diners', () => {
     expect(rosterCount([guest({ id: 1 }), guest({ id: 2 })], 1).overfilled).toBe(true);
   });
 
-  it('etiqueta el recuento como pide la historia', () => {
+  it('label the count as the story asks', () => {
     expect(rosterCountLabel(rosterCount([guest({ id: 1 }), guest({ id: 2 }), guest({ id: 3 })], 4)))
       .toBe('Registered 3 of 4 Guests');
   });
 });
 
-describe('alta rápida de acompañantes', () => {
-  it('numera por el hueco que queda', () => {
+describe('quick registration of companions', () => {
+  it('number for the gap left', () => {
     expect(nextCompanionName([guest({ id: 1, name: 'Carlos' })])).toBe('Guest 2');
   });
 
-  it('no repite un número ya usado', () => {
-    // Hay dos fichas, pero "Guest 2" ya existe: el siguiente es el 3.
+  it('does not repeat a number already used', () => {
+    // There are two tiles, but "Guest 2" already exists: the next one is 3.
     const roster = [guest({ id: 1, name: 'Carlos' }), guest({ id: 2, name: 'Guest 2' })];
     expect(nextCompanionName(roster)).toBe('Guest 3');
   });
 
-  it('empieza en 1 con el roster vacío', () => {
+  it('starts at 1 with empty roster', () => {
     expect(nextCompanionName([])).toBe('Guest 1');
   });
 });
 
-describe('validación del formulario', () => {
-  it('exige nombre y respeta el tope de la columna', () => {
+describe('form validation', () => {
+  it('demands a name and respects the top of the column', () => {
     expect(guestNameError('Carlos Mendoza')).toBe('');
     expect(guestNameError('   ')).toBe('Guest name is required');
     expect(guestNameError('x'.repeat(101))).toMatch(/100 characters or fewer/);
   });
 
-  it('permite dejar el nombre vacío cuando el formulario no lo exige', () => {
-    // El drawer de alta de reserva admite la reserva anónima: nombre vacío es válido ahí, y
-    // el tope de la columna se sigue comprobando.
+  it('allows leaving the name empty when the form does not require it', () => {
+    // The reservation registration drawer supports anonymous reservation: empty name is valid there, and
+    // the column stop is still being checked.
     expect(guestNameError('', { required: false })).toBe('');
     expect(guestNameError('x'.repeat(101), { required: false })).toMatch(
       /100 characters or fewer/,
     );
   });
 
-  it('valida el correo y su tope', () => {
+  it('validate the email and its limit', () => {
     expect(guestEmailError('carlos@example.com')).toBe('');
     expect(guestEmailError('')).toBe('');
     expect(guestEmailError('nope')).toMatch(/valid email/);
     expect(guestEmailError(`${'a'.repeat(95)}@example.com`)).toMatch(/100 characters or fewer/);
   });
 
-  it('exige el formato internacional del teléfono', () => {
-    // @IsPhoneNumber() sin región: un número nacional a secas devuelve 400.
+  it('requires the international phone format', () => {
+    // @IsPhoneNumber() without region: a simple national number returns 400.
     expect(guestPhoneError('+34600123456')).toBe('');
     expect(guestPhoneError('+34 600 123 456')).toBe('');
     expect(guestPhoneError('600123456')).toMatch(/international format/);
     expect(guestPhoneError('')).toBe('');
   });
 
-  it('rechaza un teléfono por encima de los 20 caracteres de la columna', () => {
+  it('rejects a phone number above 20 characters in the column', () => {
     expect(guestPhoneError(`+${'1'.repeat(25)}`)).toMatch(/20 characters or fewer/);
   });
 
-  it('normaliza el teléfono quitando separadores', () => {
+  it('normalizes the phone by removing separators', () => {
     expect(normalizeGuestPhone('+34 600-123 (456)')).toBe('+34600123456');
   });
 });
 
-describe('enlaces de contacto directo', () => {
-  it('compone tel: sin separadores', () => {
+describe('direct contact links', () => {
+  it('compose tel: without dividers', () => {
     expect(telHref('+34 600 123 456')).toBe('tel:+34600123456');
   });
 
@@ -219,37 +219,37 @@ describe('enlaces de contacto directo', () => {
     expect(mailtoHref(' carlos@example.com ')).toBe('mailto:carlos@example.com');
   });
 
-  it('sin dato no inventa un enlace muerto', () => {
+  it('without data it does not invent a dead link', () => {
     expect(telHref(null)).toBeNull();
     expect(mailtoHref('')).toBeNull();
   });
 
-  it('sabe si una ficha es contactable', () => {
+  it('knows if a token is contactable', () => {
     expect(hasContactDetails(guest({ id: 1, phone: '+34600123456' }))).toBe(true);
     expect(hasContactDetails(guest({ id: 2, email: 'a@b.com' }))).toBe(true);
     expect(hasContactDetails(guest({ id: 3 }))).toBe(false);
   });
 
-  it('el código del invitado usa el formato de la historia', () => {
+  it('guest code uses story format', () => {
     expect(guestCode(12)).toBe('#GST-12');
   });
 });
 
-describe('búsqueda y filtros', () => {
+describe('search and filters', () => {
   const carlos = withContext(
     guest({ id: 1, name: 'Carlos Mendoza', phone: '+34600333444', is_primary: true }),
   );
   const ana = withContext(
     guest({ id: 2, reservation_id: 7, name: 'Ana Ruiz', email: 'ana@example.com' }),
-    'Lucía Prat',
+    'Lucia Prat',
   );
 
-  it('sin filtros no esconde nada', () => {
+  it('without filters it hides nothing', () => {
     expect(hasActiveGuestFilters(EMPTY_GUEST_FILTERS)).toBe(false);
     expect(matchesGuestFilters(carlos, EMPTY_GUEST_FILTERS, new Set())).toBe(true);
   });
 
-  it('busca por nombre, teléfono y correo', () => {
+  it('search by name, phone number and email', () => {
     const by = (search: string, g = carlos) =>
       matchesGuestFilters(g, { ...EMPTY_GUEST_FILTERS, search }, new Set());
     expect(by('mendoza')).toBe(true);
@@ -257,28 +257,28 @@ describe('búsqueda y filtros', () => {
     expect(by('ana@example', ana)).toBe(true);
   });
 
-  it('busca por la reserva a la que pertenece', () => {
+  it('search for the reservation to which it belongs', () => {
     expect(
       matchesGuestFilters(ana, { ...EMPTY_GUEST_FILTERS, search: '#res-7' }, new Set()),
     ).toBe(true);
     expect(
-      matchesGuestFilters(ana, { ...EMPTY_GUEST_FILTERS, search: 'lucía' }, new Set()),
+      matchesGuestFilters(ana, { ...EMPTY_GUEST_FILTERS, search: 'lucia' }, new Set()),
     ).toBe(true);
   });
 
-  it('aísla los contactos principales', () => {
+  it('isolate main contacts', () => {
     const filters = { ...EMPTY_GUEST_FILTERS, primaryOnly: true };
     expect(matchesGuestFilters(carlos, filters, new Set())).toBe(true);
     expect(matchesGuestFilters(ana, filters, new Set())).toBe(false);
   });
 
-  it('aísla los rosters incompletos', () => {
+  it('isolate incomplete rosters', () => {
     const filters = { ...EMPTY_GUEST_FILTERS, incompleteOnly: true };
     expect(matchesGuestFilters(ana, filters, new Set([7]))).toBe(true);
     expect(matchesGuestFilters(carlos, filters, new Set([7]))).toBe(false);
   });
 
-  it('el haystack cubre los tres identificadores', () => {
+  it('the haystack covers all three identifiers', () => {
     const hay = guestHaystack(carlos);
     expect(hay).toContain('carlos mendoza');
     expect(hay).toContain('+34600333444');
@@ -286,7 +286,7 @@ describe('búsqueda y filtros', () => {
   });
 });
 
-describe('KPIs del roster', () => {
+describe('Roster KPIs', () => {
   const day = [
     booking({
       id: 1,
@@ -296,36 +296,36 @@ describe('KPIs del roster', () => {
         guest({ id: 2 }),
       ],
     }),
-    // Principal sin datos de contacto: no cuenta como reserva contactable.
+    // Principal without contact details: does not count as a contactable reservation.
     booking({ id: 2, party_size: 2, guests: [guest({ id: 3, reservation_id: 2, is_primary: true })] }),
-    // Roster vacío: tira la media hacia abajo, que es justo lo que hay que ver.
+    // Empty roster: It pulls the average down, which is just what you need to see.
     booking({ id: 3, party_size: 6, guests: [] }),
   ];
 
-  it('cuenta las fichas activas del día', () => {
+  it('counts the active chips of the day', () => {
     expect(computeGuestMetrics(day).totalRegisteredGuests).toBe(3);
   });
 
-  it('cuenta RESERVAS contactables, no invitados con teléfono', () => {
+  it('RESERVATIONS account contactable, not guests with telephone', () => {
     expect(computeGuestMetrics(day).primaryContactsCaptured).toBe(1);
   });
 
-  it('promedia sobre todas las reservas, incluidas las de roster vacío', () => {
+  it('averaged over all reserves, including those with empty rosters', () => {
     // 3 fichas / 3 reservas.
     expect(computeGuestMetrics(day).averagePartyComposition).toBe(1);
   });
 
-  it('cuenta los rosters que no llegan al tamaño del grupo', () => {
+  it('counts rosters that do not reach the group size', () => {
     expect(computeGuestMetrics(day).incompleteRosters).toBe(3);
   });
 
-  it('un día vacío no divide por cero', () => {
+  it('an empty day does not divide by zero', () => {
     const m = computeGuestMetrics([]);
     expect(m.averagePartyComposition).toBe(0);
     expect(contactCaptureRate(m, 0)).toBe(0);
   });
 
-  it('calcula la ratio de captura de contacto', () => {
+  it('calculate contact capture ratio', () => {
     expect(contactCaptureRate(computeGuestMetrics(day), day.length)).toBeCloseTo(33.33, 1);
   });
 });

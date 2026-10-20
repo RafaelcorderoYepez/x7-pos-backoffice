@@ -1,7 +1,7 @@
-// Contratos del radar en vivo de Delivery Tracking, espejo de
+// Delivery Tracking Live Radar Contracts, Mirror
 // x7-pos-back-end/src/commerce/delivery-system/delivery-tracking/delivery-tracking.service.ts
-// (`LiveTrackingEntry`, `TelemetrySummaryResult`, `DeliveryRouteResult`). Las fechas llegan
-// como cadenas ISO por JSON; las coordenadas ya vienen como número (decimal 10,6).
+// (`LiveTrackingEntry`, `TelemetrySummaryResult`, `DeliveryRouteResult`). The dates arrive
+// as ISO strings by JSON; The coordinates already come as a number (decimal 10.6).
 
 export const TELEMETRY_STATUSES = ['active', 'signal_lost', 'inactive'] as const;
 export type TelemetryStatus = (typeof TELEMETRY_STATUSES)[number];

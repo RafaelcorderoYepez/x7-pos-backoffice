@@ -26,7 +26,7 @@ const DINING_ANCHORS: Array<{
 ];
 
 // Reuses common quick-launch panel (same component as Accounts Payable and Suppliers).
-// El workspace activo se renderiza destacado (aria-current="page", no navegable) en vez de
+// The active workspace is rendered highlighted (aria-current="page", non-navigable) instead of
 // hidden, so user always sees where they are within the module.
 export const DiningSystemQuickLinks: React.FC<DiningSystemQuickLinksProps> = ({
   active,

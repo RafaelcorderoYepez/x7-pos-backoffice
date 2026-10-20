@@ -181,19 +181,19 @@ describe('TimeEntriesView', () => {
       );
     });
 
-    it('pinta la marca real junto a la programada', async () => {
+    it('paints the real mark next to the programmed one', async () => {
       await renderView();
 
       expect(screen.getByTestId('entry-in-101')).toHaveTextContent('08:03 AM');
-      // Otra fila tiene el mismo turno programado: hay que mirar dentro de ESTA.
+      // Another row has the same scheduled shift: you have to look inside THIS one.
       const row = screen.getByText('#TME-101').closest('tr') as HTMLElement;
       expect(within(row).getByText('sched 08:00 AM')).toBeInTheDocument();
     });
 
-    it('calcula las horas netas descontando el descanso', async () => {
+    it('calculate net hours discounting rest', async () => {
       await renderView();
 
-      // 08:03→16:00 son 7,95 h; menos 45 min de descanso = 7,20.
+      // 08:03→16:00 is 7.95 h; minus 45 min rest = 7.20.
       expect(screen.getByTestId('entry-net-101')).toHaveTextContent('7.20 hrs');
     });
 
@@ -212,7 +212,7 @@ describe('TimeEntriesView', () => {
       expect(screen.getByText('+20m Late')).toBeInTheDocument();
     });
 
-    it('un retraso dentro del margen sigue siendo puntual', async () => {
+    it('a delay within the range remains punctual', async () => {
       await renderView();
 
       // 08:03 with 08:00 shift is within 5 min grace window.
@@ -237,7 +237,7 @@ describe('TimeEntriesView', () => {
     it('starts in current week', async () => {
       await renderView();
 
-      // 30 de agosto de 2026 es domingo: la semana va del lunes 24 al domingo 30.
+      // August 30, 2026 is Sunday: the week runs from Monday the 24th to Sunday the 30th.
       expect(screen.getByLabelText('From date')).toHaveValue('2026-08-24');
       expect(screen.getByLabelText('To date')).toHaveValue('2026-08-30');
     });
@@ -252,7 +252,7 @@ describe('TimeEntriesView', () => {
       expect(screen.queryByText('#TME-101')).not.toBeInTheDocument();
     });
 
-    it('filtra por rol', async () => {
+    it('filter by role', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -272,7 +272,7 @@ describe('TimeEntriesView', () => {
       expect(screen.getByText('#TME-102')).toBeInTheDocument();
     });
 
-    it('acota por rango de fechas', async () => {
+    it('narrow by date range', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -505,7 +505,7 @@ describe('TimeEntriesView', () => {
 
       const list = await screen.findByTestId('revision-list');
       expect(list).toHaveTextContent('Forgot Badge');
-      // 09:00 con 30 min de descanso ⟹ 08:20 sin descanso.
+      // 09:00 with 30 min rest ⟹ 08:20 without rest.
       expect(list).toHaveTextContent('09:00 AM');
       expect(list).toHaveTextContent('08:20 AM');
     });
@@ -542,7 +542,7 @@ describe('TimeEntriesView', () => {
   });
 
   describe('payroll export', () => {
-    it('resume lo que va a exportar antes de descargar', async () => {
+    it('summarize what you are going to export before downloading', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -597,7 +597,7 @@ describe('TimeEntriesView', () => {
   });
 
   describe('HR navigation', () => {
-    it('marca el workspace activo y navega a los otros', async () => {
+    it('mark the active workspace and navigate to the others', async () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
       vi.stubGlobal('fetch', backend());

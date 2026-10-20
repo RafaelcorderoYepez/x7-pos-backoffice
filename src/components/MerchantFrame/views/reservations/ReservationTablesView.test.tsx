@@ -9,8 +9,8 @@ vi.mock('../../../../lib/auth-storage', () => ({
   clearAuthSession: vi.fn(),
 }));
 
-// El workspace vive siempre dentro del router de la aplicación: el panel de accesos
-// rápidos estándar usa useNavigate para caer a la URL pública cuando no hay onNavigate.
+// The workspace always lives within the application router: the access panel
+// standard quick uses useNavigate to drop to the public URL when there is no onNavigate.
 const renderIn = (ui: React.ReactElement) => render(<MemoryRouter>{ui}</MemoryRouter>);
 
 const at = (h: number, m = 0): string => new Date(2026, 3, 16, h, m, 0).toISOString();
@@ -22,14 +22,14 @@ const TABLES = [
   { id: 10, merchant_id: 3, number: 'A1', capacity: 2, status: 'available', floorZone: ZONE_MAIN, pos_x: 0, pos_y: 0 },
   { id: 11, merchant_id: 3, number: 'A2', capacity: 4, status: 'available', floorZone: ZONE_MAIN, pos_x: 100, pos_y: 0 },
   { id: 12, merchant_id: 3, number: 'T1', capacity: 6, status: 'available', floorZone: ZONE_TERRACE, pos_x: 0, pos_y: 400 },
-  // Libre toda la noche: es la que permite probar una combinación de dos mesas sin chocar.
+  // Free all night: it is the one that allows you to try a combination of two tables without crashing.
   { id: 13, merchant_id: 3, number: 'T2', capacity: 2, status: 'available', floorZone: ZONE_TERRACE, pos_x: 100, pos_y: 400 },
 ];
 
-// RES-1 sentada en A2 (4 plazas, grupo de 4) — aforo suficiente.
-// RES-2 confirmada sin mesa — es la que hay que resolver.
-// RES-3 con A1 (2 plazas) para un grupo de 5 — aforo insuficiente.
-// RES-4 anulada, conserva su fila pero ya no retiene la mesa.
+// RES-1 seated in A2 (4 seats, group of 4) — sufficient capacity.
+// RES-2 confirmed without table — is the one that must be resolved.
+// RES-3 with A1 (2 places) for a group of 5 — insufficient capacity.
+// RES-4 voided, retains its row but no longer retains the table.
 const RESERVATIONS = [
   {
     id: 1, merchant_id: 3, customer_id: null, reservation_date: at(19), duration_minutes: 90,
@@ -40,7 +40,7 @@ const RESERVATIONS = [
   {
     id: 2, merchant_id: 3, customer_id: null, reservation_date: at(20), duration_minutes: 90,
     seated_at: null, party_size: 5, status: 'confirmed', source: 'online', special_requests: null,
-    created_by: 2, guests: [{ id: 2, reservation_id: 2, name: 'Lucía Prat', is_primary: true, is_active: true }],
+    created_by: 2, guests: [{ id: 2, reservation_id: 2, name: 'Lucia Prat', is_primary: true, is_active: true }],
     tables: [],
   },
   {
@@ -109,8 +109,8 @@ const renderView = async () => {
   await waitFor(() => expect(screen.getByTestId('assignment-board')).toBeInTheDocument());
 };
 
-describe('tablero de asignación', () => {
-  it('pinta las mesas asignadas con número, aforo y zona', async () => {
+describe('assignment board', () => {
+  it('paint the assigned tables with number, capacity and area', async () => {
     await renderView();
     const chip = screen.getByTestId('assigned-table-1-11');
     expect(chip).toHaveTextContent('#A2');
@@ -118,43 +118,43 @@ describe('tablero de asignación', () => {
     expect(chip).toHaveTextContent('Main Dining');
   });
 
-  it('deja fuera del tablero las reservas que ya soltaron su mesa', async () => {
+  it('leaves the reservations that have already released their table off the board', async () => {
     await renderView();
-    // La anulada conserva su fila en la base, pero no ocupa sitio en la sala.
+    // The canceled one retains its row at the base, but does not take up space in the room.
     expect(screen.queryByTestId('assignment-card-4')).not.toBeInTheDocument();
   });
 
-  it('marca en verde el aforo que cubre al grupo', async () => {
+  it('mark in green the capacity that covers the group', async () => {
     await renderView();
     expect(screen.getByTestId('capacity-badge-1')).toHaveTextContent('Seats 4 ≥ 4');
   });
 
-  it('avisa en ámbar cuando el aforo se queda corto', async () => {
+  it('warns in amber when the capacity falls short', async () => {
     await renderView();
-    // Grupo de 5 en una mesa de 2.
+    // Group of 5 at a table of 2.
     expect(screen.getByTestId('capacity-badge-3')).toHaveTextContent('3 seat(s) short');
   });
 
-  it('marca las reservas sin mesa', async () => {
+  it('mark reservations without a table', async () => {
     await renderView();
     expect(screen.getByTestId('capacity-badge-2')).toHaveTextContent('No table assigned');
   });
 });
 
-describe('KPIs de ocupación', () => {
-  it('cuenta las mesas asignadas de las reservas vivas', async () => {
+describe('Occupancy KPIs', () => {
+  it('counts assigned tables from live reservations', async () => {
     await renderView();
     expect(within(screen.getByTestId('kpi-tables-assigned')).getByText('2')).toBeInTheDocument();
   });
 
-  it('suma el aforo asignado sobre el total del salón', async () => {
+  it('Add the assigned capacity to the total of the room', async () => {
     await renderView();
     const kpi = screen.getByTestId('kpi-assigned-seats');
     expect(within(kpi).getByText('6')).toBeInTheDocument();
     expect(within(kpi).getByText(/of 14 seats in the room/)).toBeInTheDocument();
   });
 
-  it('cuenta las reservas que siguen sin mesa', async () => {
+  it('count the reservations that are still without a table', async () => {
     await renderView();
     const kpi = screen.getByTestId('kpi-unassigned');
     expect(within(kpi).getByText('1')).toBeInTheDocument();
@@ -162,15 +162,15 @@ describe('KPIs de ocupación', () => {
   });
 });
 
-describe('alerta de reservas sin mesa', () => {
-  it('avisa de las reservas próximas que no tienen dónde sentarse', async () => {
+describe('reservation alert without table', () => {
+  it('notifies upcoming reservations that have nowhere to sit', async () => {
     await renderView();
     const alert = screen.getByTestId('unassigned-alert');
     expect(alert).toHaveTextContent('1 upcoming booking');
     expect(alert).toHaveTextContent('5 guests');
   });
 
-  it('el atajo de la alerta aísla las reservas sin mesa', async () => {
+  it('alert shortcut isolates reservations without a table', async () => {
     const user = userEvent.setup();
     await renderView();
 
@@ -180,7 +180,7 @@ describe('alerta de reservas sin mesa', () => {
     expect(screen.getByTestId('assignment-card-2')).toBeInTheDocument();
   });
 
-  it('no aparece cuando todo está sentado', async () => {
+  it('does not appear when everything is seated', async () => {
     reservationRows = [RESERVATIONS[0]];
     renderIn(<ReservationTablesView merchantId={3} />);
     await waitFor(() => expect(screen.getByTestId('assignment-board')).toBeInTheDocument());
@@ -188,21 +188,21 @@ describe('alerta de reservas sin mesa', () => {
   });
 });
 
-describe('filtro por zona', () => {
-  it('ofrece las zonas del inventario con su recuento', async () => {
+describe('filter by zone', () => {
+  it('offers the inventory areas with their count', async () => {
     await renderView();
     expect(screen.getByRole('button', { name: /Main Dining \(2\)/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Terrace \(2\)/ })).toBeInTheDocument();
   });
 
-  it('filtra el tablero por sección de sala', async () => {
+  it('filter the board by room section', async () => {
     const user = userEvent.setup();
     await renderView();
 
     await user.click(screen.getByRole('button', { name: /Main Dining/ }));
 
     await waitFor(() => expect(screen.queryByTestId('assignment-card-2')).not.toBeInTheDocument());
-    // RES-1 (A2) y RES-3 (A1) están en Main Dining.
+    // RES-1 (A2) and RES-3 (A1) are in Main Dining.
     expect(screen.getByTestId('assignment-card-1')).toBeInTheDocument();
     expect(screen.getByTestId('assignment-card-3')).toBeInTheDocument();
   });
@@ -218,7 +218,7 @@ describe('filtro por zona', () => {
     await waitFor(() => expect(screen.getByTestId('assignment-card-1')).toBeInTheDocument());
   });
 
-  it('el filtro no vuelve a pedir datos al servidor', async () => {
+  it('the filter does not request data from the server again', async () => {
     const user = userEvent.setup();
     await renderView();
     const before = calls.filter((c) => c.url.includes('/reservation?')).length;
@@ -230,7 +230,7 @@ describe('filtro por zona', () => {
   });
 });
 
-describe('selector de mesas', () => {
+describe('table selector', () => {
   const openPicker = async (user: ReturnType<typeof userEvent.setup>, cardId: number) => {
     await user.click(
       within(screen.getByTestId(`assignment-card-${cardId}`)).getByRole('button', {
@@ -240,35 +240,35 @@ describe('selector de mesas', () => {
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
   };
 
-  it('sugiere la combinación óptima para el grupo', async () => {
+  it('suggests the optimal combination for the group', async () => {
     const user = userEvent.setup();
     await renderView();
-    await openPicker(user, 2); // grupo de 5
+    await openPicker(user, 2); // group of 5
 
     const suggestions = within(screen.getByRole('dialog')).getByTestId('table-suggestions');
-    // T1 (6 plazas) es la menor libre que se pasa de 5 en la franja de RES-2.
+    // T1 (6 seats) is the smallest free space that exceeds 5 in the RES-2 strip.
     expect(within(suggestions).getByText(/#T1 · 6 seats · 1 seat spare/)).toBeInTheDocument();
   });
 
-  it('no deja marcar una mesa ocupada en la misma franja', async () => {
+  it('It does not allow marking an occupied table in the same slot', async () => {
     const user = userEvent.setup();
     await renderView();
     await openPicker(user, 2);
 
     const dialog = screen.getByRole('dialog');
-    // A2 la retiene RES-1 de 19:00 a 20:30, que solapa con RES-2 (20:00-21:30).
+    // A2 is held by RES-1 from 19:00 to 20:30, which overlaps with RES-2 (20:00-21:30).
     const busyBefore = within(dialog).getByTestId('table-option-11');
     expect(busyBefore).toBeDisabled();
     expect(busyBefore).toHaveTextContent('#RES-1');
 
-    // A1 la retiene RES-3 de 21:00 a 22:30, que también solapa.
+    // A1 is held by RES-3 from 9:00 p.m. to 10:30 p.m., which also overlaps.
     expect(within(dialog).getByTestId('table-option-10')).toBeDisabled();
 
-    // T1 la tenía una reserva ANULADA, que ya no retiene nada: queda libre.
+    // T1 had a CANCELED reservation, which no longer retains anything: it is free.
     expect(within(dialog).getByTestId('table-option-12')).toBeEnabled();
   });
 
-  it('guarda la combinación elegida en una sola llamada transaccional', async () => {
+  it('saves the chosen combination in a single transactional call', async () => {
     const user = userEvent.setup();
     await renderView();
     await openPicker(user, 2);
@@ -281,13 +281,13 @@ describe('selector de mesas', () => {
     await waitFor(() => {
       const bulk = calls.find((c) => c.url.includes('/reservation-table/bulk'));
       expect(bulk?.method).toBe('POST');
-      // Las dos mesas viajan en UNA sola petición: el backend las inserta en transacción.
+      // The two tables travel in ONE request: the backend inserts them in a transaction.
       expect(bulk?.body).toEqual({ reservation_id: 2, table_ids: [12, 13] });
     });
     expect(calls.filter((c) => c.url.includes('/bulk'))).toHaveLength(1);
   });
 
-  it('enseña el 409 del servidor tal cual, con mesa y reserva en conflicto', async () => {
+  it('shows the 409 of the server as is, with table and reservation in conflict', async () => {
     const user = userEvent.setup();
     bulkStatus = 409;
     await renderView();
@@ -302,7 +302,7 @@ describe('selector de mesas', () => {
     ).toBeInTheDocument();
   });
 
-  it('suelta las mesas quitadas antes de ocupar las nuevas', async () => {
+  it('release removed tables before occupying new ones', async () => {
     const user = userEvent.setup();
     await renderView();
     await openPicker(user, 1); // ya tiene A2
@@ -315,18 +315,18 @@ describe('selector de mesas', () => {
     await waitFor(() => expect(calls.some((c) => c.url.includes('/bulk'))).toBe(true));
     const deleteIdx = calls.findIndex((c) => c.method === 'DELETE');
     const bulkIdx = calls.findIndex((c) => c.url.includes('/bulk'));
-    // Liberar antes de ocupar evita que la reserva choque consigo misma en la guarda.
+    // Releasing before occupying prevents the reserve from colliding with itself in the guard.
     expect(deleteIdx).toBeGreaterThanOrEqual(0);
     expect(deleteIdx).toBeLessThan(bulkIdx);
   });
 
-  it('resume el aforo de lo seleccionado frente al grupo', async () => {
+  it('summarizes the capacity of what is selected in front of the group', async () => {
     const user = userEvent.setup();
     await renderView();
     await openPicker(user, 2);
 
     const dialog = screen.getByRole('dialog');
-    await user.click(within(dialog).getByTestId('table-option-13')); // 2 plazas para 5
+    await user.click(within(dialog).getByTestId('table-option-13')); // 2 places for 5
     expect(within(dialog).getByTestId('picker-summary')).toHaveTextContent('3 seat(s) short');
 
     await user.click(within(dialog).getByTestId('table-option-12')); // + 6 plazas
@@ -334,8 +334,8 @@ describe('selector de mesas', () => {
   });
 });
 
-describe('soltar una mesa', () => {
-  it('libera la mesa desde la propia píldora', async () => {
+describe('drop a table', () => {
+  it('free the table from the pill itself', async () => {
     const user = userEvent.setup();
     await renderView();
 

@@ -183,7 +183,7 @@ describe('CollaboratorsView', () => {
       );
     });
 
-    it('pinta avatar con iniciales, referencia y cuenta enlazada', async () => {
+    it('paints avatar with initials, reference and linked account', async () => {
       await renderView();
 
       expect(screen.getByTestId('collaborator-avatar-12')).toHaveTextContent('JP');
@@ -192,7 +192,7 @@ describe('CollaboratorsView', () => {
       expect(screen.getByText('juan@store.com')).toBeInTheDocument();
     });
 
-    it('pinta el rol y la fecha de alta', async () => {
+    it('paint the role and discharge date', async () => {
       await renderView();
       const grid = within(screen.getByRole('table'));
 
@@ -232,7 +232,7 @@ describe('CollaboratorsView', () => {
       expect(screen.queryByText('Ana Rivas')).not.toBeInTheDocument();
     });
 
-    it('filtra por rol', async () => {
+    it('filter by role', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -243,7 +243,7 @@ describe('CollaboratorsView', () => {
       expect(screen.queryByText('Juan Perez')).not.toBeInTheDocument();
     });
 
-    it('busca por referencia de cuenta de plataforma', async () => {
+    it('search by platform account reference', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -252,7 +252,7 @@ describe('CollaboratorsView', () => {
       expect(screen.getByText('Juan Perez')).toBeInTheDocument();
     });
 
-    it('busca por correo', async () => {
+    it('search by mail', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -261,7 +261,7 @@ describe('CollaboratorsView', () => {
       await waitFor(() => expect(screen.queryByText('Juan Perez')).not.toBeInTheDocument());
     });
 
-    it('filtra por turno', async () => {
+    it('filter in turn', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -286,7 +286,7 @@ describe('CollaboratorsView', () => {
       expect(within(select).getByRole('option', { name: /#USR-11/ })).toBeInTheDocument();
     });
 
-    it('si las cuentas no cargan, el formulario explica el fallo real', async () => {
+    it('If accounts do not charge, the form explains the actual failure', async () => {
       const user = userEvent.setup();
       await renderView({ usersStatus: 403 });
 
@@ -376,7 +376,7 @@ describe('CollaboratorsView', () => {
   });
 
   describe('editing', () => {
-    it('no deja reasignar la cuenta de plataforma', async () => {
+    it('does not allow the platform account to be reassigned', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -386,7 +386,7 @@ describe('CollaboratorsView', () => {
       expect(within(dialog).getByLabelText(/platform account/i)).toHaveAttribute('readonly');
     });
 
-    it('guarda con PUT sin mandar user_id ni merchant_id', async () => {
+    it('save with PUT without sending user_id or merchant_id', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -423,7 +423,7 @@ describe('CollaboratorsView', () => {
       expect(within(tabs).getByRole('tab', { name: /orders/i })).toHaveTextContent('143');
     });
 
-    it('muestra la cabecera con rol, estado y turno', async () => {
+    it('shows header with role, status and shift', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -476,7 +476,7 @@ describe('CollaboratorsView', () => {
   });
 
   describe('HR navigation', () => {
-    it('marca el workspace activo y navega a los otros', async () => {
+    it('mark the active workspace and navigate to the others', async () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
       vi.stubGlobal('fetch', backend());

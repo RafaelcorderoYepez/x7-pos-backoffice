@@ -1,20 +1,20 @@
-// Reglas de las asignaciones de mesa: quién cubre qué mesa en qué turno, cuándo entra de
-// servicio y cuándo se le libera.
+// Rules for table assignments: who covers which table in which turn, when comes on
+// service and when he is released.
 //
-// La verdad operativa NO es la columna `status` sino `releasedAt`: mientras sea null el
-// camarero sigue de servicio, aunque alguien haya tocado el status a mano. Todo lo que
-// decide "está de servicio" pasa por isActiveDuty() para que la parrilla, el filtro y la
-// guarda de conflicto no puedan discrepar entre sí.
+// The operating truth is NOT the `status` column but `releasedAt`: as long as it is null the
+// waiter is still on duty, even if someone has touched the status by hand. Everything that
+// decides "is on duty" goes through isActiveDuty() so that the grill, filter and
+// conflict guard cannot disagree with each other.
 
 import type { DiningTable } from '../types/dining-system';
 
-// ================= Formas del contrato =================
+// ================= Contract forms =================
 
 export interface ShiftRef {
   id: number;
   merchantId?: number;
   name?: string;
-  // `null` explícito: así los devuelve /api/collaborators para un turno sin cierre.
+  // Explicit `null`: This is how /api/collaborators returns them for a non-closing turn.
   startTime?: string | null;
   endTime?: string | null;
   role?: string | null;
@@ -38,16 +38,16 @@ export interface TableAssignment {
   assignedAt?: string;
   releasedAt?: string | null;
   status: string;
-  // El backend carga estas relaciones en eager, así que suelen venir hidratadas.
+  // The backend loads these relations into eager, so they usually come pre-hydrated.
   shift?: ShiftRef | null;
   table?: Partial<DiningTable> | null;
   collaborator?: CollaboratorRef | null;
 }
 
-// ================= Servicio activo =================
+// ================= Active duty =================
 
-// releasedAt === null es la definición de la historia: mientras no haya sello de salida,
-// la mesa sigue cubierta.
+// releasedAt === null is the definition of history: as long as there is no exit stamp,
+// the table is still covered.
 export const isActiveDuty = (a: Pick<TableAssignment, 'releasedAt'>): boolean =>
   a.releasedAt == null;
 
@@ -65,14 +65,14 @@ export const matchesDutyFilter = (a: TableAssignment, filter: DutyFilter): boole
 export const dutyBadgeLabel = (a: TableAssignment): string =>
   isActiveDuty(a) ? 'On Duty' : 'Released';
 
-// Verde de servicio vivo, azul apagado de turno cerrado.
+// Green for live duty, dull blue for closed shift.
 export const dutyBadgeStyle = (a: TableAssignment): string =>
   isActiveDuty(a) ? 'bg-green-500/10 text-green-700' : 'bg-blue-500/10 text-blue-700';
 
 // ================= Etiquetas =================
 
-// Sin la feature COLLABORATORS el backend devuelve 403 y sólo queda el id; la fila tiene
-// que seguir siendo legible en ese caso.
+// Without the COLLABORATORS feature the backend returns 403 and only the id remains; the row has
+// it should still be readable in that case.
 export const collaboratorLabel = (a: TableAssignment): string => {
   const c = a.collaborator;
   if (!c) return `Collaborator #${a.collaboratorId}`;
@@ -85,9 +85,9 @@ export const collaboratorBadge = (a: TableAssignment): string => {
   return [c?.role, c?.code].filter(Boolean).join(' · ');
 };
 
-// Formato de 12 h construido a mano y no con toLocaleTimeString: el separador que mete ICU
-// antes del AM/PM cambia entre versiones de Node (espacio fino U+202F), y esta cadena se
-// compara en los tests y se lee en la parrilla.
+// 12 h format built by hand and not with toLocaleTimeString: the separator that ICU puts
+// before AM/PM switches between versions of Node (thin space U+202F), and this string is
+// It compares in the tests and is read on the grid.
 const clockTime = (value?: string | null): string => {
   if (!value) return '';
   const d = new Date(value);
@@ -105,7 +105,7 @@ const shortDate = (value?: string | null): string => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
-// "Lunch Shift - Jul 28", o el rol y la fecha cuando el turno no tiene nombre propio.
+// "Lunch Shift - Jul 28", or the role and date when the shift does not have its own name.
 export const shiftLabel = (shift?: ShiftRef | null): string => {
   if (!shift) return '—';
   const date = shortDate(shift.startTime);
@@ -132,10 +132,10 @@ export const formatDutyWindow = (a: TableAssignment): string => {
     : `Assigned: ${assigned} | Released: ${clockTime(a.releasedAt) || '—'}`;
 };
 
-// ================= Contexto de turno =================
+// ================= Turn context =================
 
-// El turno abierto del comercio: activo y sin hora de cierre. Si hay varios (el backend no
-// lo impide) gana el que arrancó más tarde, que es el que el operador tiene delante.
+// The open trading shift: active and without closing time. If there are several (the backend does not
+// prevents it) the one who started later wins, which is the one in front of the operator.
 export const resolveActiveShiftId = (shifts: ShiftRef[]): string => {
   const open = shifts
     .filter((s) => (s.status ?? 'active') === 'active' && !s.endTime)
@@ -146,10 +146,10 @@ export const resolveActiveShiftId = (shifts: ShiftRef[]): string => {
 export const isHistoricalShift = (shift?: ShiftRef | null): boolean =>
   !!shift && (Boolean(shift.endTime) || (shift.status ?? 'active') !== 'active');
 
-// ================= Exclusividad mesa/turno =================
+// ================= Table/shift exclusivity =================
 
-// El índice [tableId, shiftId] del backend NO es único, así que la exclusividad de la mesa
-// dentro del turno se sostiene aquí: si ya hay alguien cubriéndola sin liberar, hay conflicto.
+// Backend index [tableId, shiftId] is NOT unique, so table uniqueness
+// within the turn it is held here: if there is already someone covering it without releasing, there is conflict.
 export const conflictingAssignment = (
   assignments: TableAssignment[],
   tableId: number,
@@ -161,19 +161,19 @@ export const conflictingAssignment = (
 export const reassignConflictPrompt = (tableNumber: string, holder: string): string =>
   `Table ${tableNumber} is currently assigned to ${holder}. Reassigning will automatically release ${holder}'s duty. Proceed?`;
 
-// Liberar a un camarero de una mesa con comandas abiertas no se bloquea — el turno se acaba
-// igual — pero sí se avisa: alguien tiene que hacerse cargo de esas cuentas.
+// Releasing a waiter from a table with open orders does not block — the shift ends
+// the same — but be warned: someone has to take care of those accounts.
 export const openOrdersReleaseWarning = (tableNumber: string): string =>
   `Table ${tableNumber} has active guest orders. Ensure open checks are transferred to another collaborator before releasing.`;
 
-// La mesa ocupada es la señal de comanda viva que expone /api/tables hoy.
+// The busy table is the live command signal that /api/tables exposes today.
 export const hasOpenChecks = (table?: Pick<DiningTable, 'status'> | null): boolean =>
   table?.status === 'occupied';
 
-// ================= Búsqueda =================
+// ================= Search =================
 
-// Nombre del colaborador, número de mesa y etiqueta de zona: los tres ejes por los que un
-// supervisor busca una fila.
+// Collaborator's name, table number and zone label: the three axes by which a
+// supervisor looks for a row.
 export const assignmentHaystack = (
   a: TableAssignment,
   table?: Partial<DiningTable> | null,

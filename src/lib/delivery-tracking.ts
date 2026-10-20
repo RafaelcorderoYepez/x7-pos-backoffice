@@ -1,9 +1,9 @@
-// Lógica pura del radar en vivo: estado efectivo de la telemetría (detección de señal
-// perdida en el cliente), tiempo relativo, formato de coordenadas, estilo de los marcadores
-// y fusión de las posiciones que llegan por tiempo real.
+// Pure live radar logic: effective state of telemetry (signal detection
+// lost on client), relative time, coordinate format, marker style
+// and fusion of positions arriving in real time.
 //
-// El umbral es el mismo que el backend (SIGNAL_LOST_AFTER_MS = 3 min en
-// delivery-tracking.constants.ts): si divergen, la tarjeta y el KPI dirían cosas distintas.
+// The threshold is the same as the backend (SIGNAL_LOST_AFTER_MS = 3 min in
+// delivery-tracking.constants.ts): If they diverge, the card and the KPI would say different things.
 
 import type {
   LiveTrackingEntry,
@@ -13,7 +13,7 @@ import type {
 import type { LocationUpdatedPayload } from './delivery-realtime';
 
 export const SIGNAL_LOST_AFTER_SECONDS = 180;
-/** Doble del umbral: el marcador ámbar pasa a rojo. */
+/** Double the threshold: the amber marker turns red. */
 export const CRITICAL_STALE_SECONDS = SIGNAL_LOST_AFTER_SECONDS * 2;
 export const ON_TIME_THRESHOLD_MINUTES = 45;
 export const LIVE_POLL_MS = 15_000;
@@ -74,9 +74,9 @@ export const formatCoord = (value: number | null | undefined): string =>
 // ================= Tiempo =================
 
 /**
- * Entrada del radar + `anchorMs`: el instante (reloj del navegador) del último ping. Se
- * ancla con `seconds_since_update`, que calcula el servidor, para que un reloj local
- * desfasado no marque todo como señal perdida.
+ * Radar input + `anchorMs`: the time (navigator clock) of the last ping. If
+ * anchor with `seconds_since_update`, which is calculated by the server, so that a local clock
+ * out of phase do not mark everything as lost signal.
  */
 export interface TrackedEntry extends LiveTrackingEntry {
   anchorMs: number | null;
@@ -100,7 +100,7 @@ export const anchorEntries = (entries: LiveTrackingEntry[], fetchedAt: number): 
 export const secondsSinceUpdate = (entry: TrackedEntry, now: number): number | null =>
   entry.anchorMs == null ? null : Math.max(0, Math.floor((now - entry.anchorMs) / 1000));
 
-/** Estado que se pinta: `inactive` manda; sin ping o con ping > 180 s → `signal_lost`. */
+/** State to be painted: `inactive` commands; no ping or ping > 180 s → `signal_lost`. */
 export const effectiveStatus = (entry: TrackedEntry, now: number): TelemetryStatus => {
   if (entry.telemetry_status === 'inactive') return 'inactive';
   const seconds = secondsSinceUpdate(entry, now);
@@ -116,7 +116,7 @@ export const formatRelativeTime = (seconds: number | null): string => {
   return `Updated ${Math.floor(seconds / 86_400)}d ago`;
 };
 
-/** Color del marcador: ámbar al perder señal, rojo pasado el doble del umbral. */
+/** Marker color: amber when signal is lost, red after double the threshold. */
 export const markerColor = (status: TelemetryStatus, seconds: number | null): string => {
   if (status === 'active') return TRACKING_COLORS.active;
   if (status === 'inactive') return TRACKING_COLORS.inactive;
@@ -134,7 +134,7 @@ export interface MarkerStyle {
   focused: boolean;
 }
 
-/** HTML del `L.divIcon`: vehículo en Material Symbols, halo `ping` sólo si está en vivo. */
+/** `L.divIcon` HTML: vehicle in Material Symbols, halo `ping` only if live. */
 export const markerHtml = ({ status, color, icon, focused }: MarkerStyle): string => {
   const ping =
     status === 'active'
@@ -161,7 +161,7 @@ export const sortRoutePoints = (points: RoutePoint[]): RoutePoint[] =>
 
 const toRad = (deg: number) => (deg * Math.PI) / 180;
 
-/** Distancia del recorrido (haversine), en km. */
+/** Distance of the route (haversine), in km. */
 export const routeDistanceKm = (points: RoutePoint[]): number => {
   let total = 0;
   for (let i = 1; i < points.length; i += 1) {
@@ -187,8 +187,8 @@ export const appendRoutePoint = (points: RoutePoint[], payload: LocationUpdatedP
 // ================= Tiempo real =================
 
 /**
- * Aplica una posición empujada por el socket. Devuelve `null` si la asignación no está en
- * la lista (reparto nuevo): la vista debe volver a pedir `/live`.
+ * Applies a position pushed by the socket. Returns `null` if the assignment is not in
+ * the list (new cast): the view should ask for `/live` again.
  */
 export const applyLocationUpdate = (
   entries: TrackedEntry[],
@@ -236,7 +236,7 @@ export const matchesFocus = (entry: LiveTrackingEntry, focus: FocusSelection): b
     : entry.driver?.id === focus.id;
 };
 
-/** Lee (sin borrar) el foco que otra vista dejó en sessionStorage. */
+/** Reads (without clearing) the focus that another view left in sessionStorage. */
 export const peekStoredFocus = (): number | null => {
   try {
     const raw = window.sessionStorage.getItem(FOCUS_STORAGE_KEY);
@@ -251,6 +251,6 @@ export const clearStoredFocus = (): void => {
   try {
     window.sessionStorage.removeItem(FOCUS_STORAGE_KEY);
   } catch {
-    // Almacenamiento bloqueado: no hay nada que limpiar.
+    // Locked storage - nothing to clean.
   }
 };

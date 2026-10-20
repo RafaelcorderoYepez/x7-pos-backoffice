@@ -94,7 +94,7 @@ const PaymentFormDrawer: React.FC<PaymentFormDrawerProps> = ({
   // Pending supplier invoices (balance_due > 0) to allocate payment.
   const [outstanding, setOutstanding] = useState<SupplierInvoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
-  // invoice_id → monto a asignar (string del input).
+  // invoice_id → amount to assign (input string).
   const [alloc, setAlloc] = useState<Record<number, string>>({});
   const [paymentNumber, setPaymentNumber] = useState(initial?.payment_number ?? '');
   const [paymentDate, setPaymentDate] = useState(initial?.payment_date?.slice(0, 10) ?? '');
@@ -694,7 +694,7 @@ interface SupplierPaymentsViewProps {
   companyId?: number;
   // Jumps to payment line items workspace filtered by this voucher.
   onViewItems?: (payment: SupplierPayment) => void;
-  // Salta a la matriz de asignaciones ya filtrada por este voucher.
+  // Jump to the allocation matrix already filtered by this voucher.
   onViewAllocations?: (payment: SupplierPayment) => void;
 }
 

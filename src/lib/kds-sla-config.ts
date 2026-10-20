@@ -4,8 +4,8 @@ export const KDS_CRITICAL_SLA_STORAGE_KEY = 'x7_kds_critical_sla_mins';
 export const DEFAULT_CRITICAL_SLA_MINUTES = 15;
 
 /**
- * Lee el tiempo límite de SLA de cocina configurado en localStorage (en minutos).
- * Si no está configurado o es inválido, retorna el valor por defecto (15 min).
+ * Reads the kitchen SLA timeout configured in localStorage (in minutes).
+ * If not configured or invalid, returns the default value (15 min).
  */
 export function getKdsCriticalSlaMinutes(): number {
   if (typeof window === 'undefined' || !window.localStorage) {
@@ -22,8 +22,8 @@ export function getKdsCriticalSlaMinutes(): number {
 }
 
 /**
- * Guarda el tiempo límite de SLA de cocina en localStorage y notifica
- * a todas las vistas abiertas mediante eventos de ventana.
+ * Save cooking SLA timeout to localStorage and notify
+ * to all views opened via window events.
  */
 export function setKdsCriticalSlaMinutes(minutes: number): void {
   const safeValue = Math.max(1, Math.min(120, Math.round(minutes)));
@@ -42,8 +42,8 @@ export function setKdsCriticalSlaMinutes(minutes: number): void {
 }
 
 /**
- * Hook de React para consumir y actualizar reactivamente el tiempo de SLA
- * de cocina en cualquier vista del Backoffice.
+ * React hook to reactively consume and update SLA time
+ * kitchen in any view of the Backoffice.
  */
 export function useKdsCriticalSla(): [number, (mins: number) => void] {
   const [slaMinutes, setSlaMinutes] = useState<number>(getKdsCriticalSlaMinutes);

@@ -40,9 +40,9 @@ describe('delivery-assignments helpers', () => {
 
   it('offers only the actions the backend accepts', () => {
     expect(statusActions({ ...base, delivery_status: 'assigned' }).map((a) => a.to)).toEqual(['picked_up', 'failed', 'cancelled']);
-    // pending IN_HOUSE: "assigned" se hace con un repartidor, no con un botón de estado.
+    // pending IN_HOUSE: "assigned" is done with a dealer, not a status button.
     expect(statusActions(base).map((a) => a.to)).toEqual(['failed', 'cancelled']);
-    // pending DSP: sólo con external_delivery_id.
+    // pending DSP: only with external_delivery_id.
     expect(statusActions({ ...base, assignment_type: 'uber_direct' }).map((a) => a.to)).toEqual(['failed', 'cancelled']);
     expect(
       statusActions({ ...base, assignment_type: 'uber_direct', external_delivery_id: 'u-1' }).map((a) => a.to),

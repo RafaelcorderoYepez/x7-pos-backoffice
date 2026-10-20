@@ -27,7 +27,7 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
   });
 
   useEffect(() => {
-    // Atajo de teclado secreto: Ctrl + Shift + D para alternar visibilidad
+    // Secret keyboard shortcut: Ctrl + Shift + D to toggle visibility
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();

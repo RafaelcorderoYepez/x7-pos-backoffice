@@ -62,9 +62,9 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
     return () => observer.disconnect();
   }, [propIsSidebarCollapsed]);
 
-  // Mismo desplazamiento que el <main> de MerchantFrame (`left-64` sin prefijo): las
-  // variantes responsive (`md:`) no generan CSS en esta app, así que `md:left-64` dejaba la
-  // barra siempre en left-0, metida bajo el menú lateral.
+  // Same offset as MerchantFrame's <main> (`left-64` without prefix): responsive
+  // variants (`md:`) do not generate CSS in this app, so `md:left-64` kept the
+  // bar always at left-0, underneath the sidebar.
   const leftOffsetClass = collapsed ? 'left-0' : 'left-64';
 
   const scrollToPageTop = () => {

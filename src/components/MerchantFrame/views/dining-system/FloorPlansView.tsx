@@ -56,7 +56,7 @@ const num = (v: number | string | null | undefined): number => {
 
 // Backend saves width/height in canvas pixels, but a floor manager measures
 // dining room in meters (or feet): pixel is implementation detail and hidden from
-// pantalla. `num` sigue delante porque el backend puede devolver el int como string.
+// screen. `num` comes first because the backend can return the int as a string.
 const formatResolution = (width: number, height: number, system: UnitSystem): string =>
   formatDimensions(num(width), num(height), system);
 
@@ -136,8 +136,8 @@ interface FloorPlanFormDrawerProps {
   submitting: boolean;
   formError: string;
   onCancel: () => void;
-  // El drawer nunca conoce el merchant: solo emite los campos editables y la vista
-  // completa `merchant` al construir el POST.
+  // The drawer never knows the merchant: it only emits the editable fields and the view
+  // completes `merchant` when constructing the POST.
   onSubmit: (dto: UpdateFloorPlanDto) => void;
 }
 
@@ -472,7 +472,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     window.location.href = '/login';
   };
 
-  // /api/floor-plan NUNCA embebe tables ni floorZones (findAll solo hace join con merchant),
+  // /api/floor-plan NEVER embeds tables or floorZones (findAll only joins with merchant),
   // neither /api/tables nor /api/floor-zone accept floor plan filter: only way
   // computing counts requires fetching both collections once and grouping by floorPlan.id.
   const fetchFloorPlans = async () => {
@@ -502,7 +502,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
       );
 
       // Grid remains usable with 0, but table counter also feeds
-      // guard de borrado/archivado: marcamos el censo como no fiable para bloquearlo.
+      // delete/archive guard: we mark the census as untrusted to block it.
       setCountsStale(!zonesRes.ok || !tablesRes.ok);
       const zonesJson = zonesRes.ok ? await zonesRes.json() : { data: [] };
       const tablesJson = tablesRes.ok ? await tablesRes.json() : { data: [] };
@@ -552,9 +552,9 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
   const filteredPlans = useMemo(() => {
     const term = searchQuery.trim().toLowerCase();
     return plans.filter((p) => {
-      // Aislamiento multi-tenant: GET /api/floor-plan NO filtra por comercio (devuelve los
+      // Multi-tenant isolation: GET /api/floor-plan does NOT filter by trade (returns
       // all plans), but embeds `merchant`, so we filter here. Plans without
-      // merchant resuelto se muestran para no ocultar datos por un join incompleto.
+      // resolved merchant are shown to not hide data due to an incomplete join.
       if (p.merchant?.id != null && p.merchant.id !== activeMerchantId) return false;
       if (term && !(p.name ?? '').toLowerCase().includes(term)) return false;
       if (statusFilter && p.status !== statusFilter) return false;
@@ -882,7 +882,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
                     const zoneCount = zoneCountByPlan.get(p.id) ?? 0;
                     const tableCount = tablesOf(p.id).length;
                     // parseOutline never throws: falls back to rectangle on corrupt JSON, so
-                    // que una fila con datos rotos sigue pintando una miniatura coherente.
+                    // that a row with broken data still paints a coherent thumbnail.
                     const outline = parseOutline(p.outline, p.width, p.height);
                     return (
                       <tr

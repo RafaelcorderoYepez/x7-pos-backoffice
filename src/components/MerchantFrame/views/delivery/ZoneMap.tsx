@@ -1,11 +1,11 @@
-// Mapa Leaflet (teselas de OpenStreetMap) de las zonas de reparto.
+// Leaflet Map (OpenStreetMap tiles) for delivery zones.
 //
-// Un solo componente para los dos usos: la vista general (polígonos de solo lectura,
-// coloreados por estado, clic = seleccionar) y el editor del drawer (vértices arrastrables:
-// clic en el mapa añade, arrastrar mueve, clic en un vértice lo borra).
+// Single component for two use cases: general overview (read-only polygons,
+// colored by status, click = select) and drawer editor (draggable vertices:
+// click on map adds, drag moves, click on vertex deletes).
 //
-// El mapa se crea UNA vez y las capas se rehacen cuando cambian las props: filtrar la tabla
-// no recarga el mapa ni pierde el encuadre del usuario.
+// The map is created ONCE and layers are recreated when props change: filtering
+// the table does not reload the map or lose user framing.
 
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
@@ -28,14 +28,14 @@ interface ZoneMapProps {
   zones: DeliveryZone[];
   selectedZoneId?: number | null;
   onSelectZone?: (zoneId: number) => void;
-  /** Perímetro en edición; null/undefined = no hay editor. */
+  /** Perimeter being edited; null/undefined = editor inactive. */
   editVertices?: LatLng[] | null;
   onVerticesChange?: (vertices: LatLng[]) => void;
-  /** Clic en el mapa (añadir vértice, fijar centro del radio…). */
+  /** Click on map (add vertex, set radius center...). */
   onMapClick?: (point: LatLng) => void;
-  /** Punto consultado en la geocerca. */
+  /** Queried point for geofence check. */
   marker?: { point: LatLng; inside: boolean } | null;
-  /** Cambia este valor para volver a encuadrar todas las zonas. */
+  /** Change this value to re-fit all zones. */
   fitKey?: string | number;
   height?: number;
   ariaLabel: string;
@@ -48,7 +48,7 @@ const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">Op
 
 const vertexIcon = L.divIcon({
   className: '',
-  // Fondo en clases (no inline) para que el hover pueda rellenar el nodo de rojo corporativo.
+  // Background styling via classes so hover can fill node with brand color.
   html: `<span class="zone-vertex block rounded-full bg-white text-[#5f5e5e] hover:bg-[#ae001a] hover:text-primary! transition-colors duration-200" style="width:14px;height:14px;border:3px solid ${PRIMARY};box-shadow:0 1px 3px rgba(0,0,0,.35);cursor:grab"></span>`,
   iconSize: [14, 14],
   iconAnchor: [7, 7],
@@ -73,13 +73,13 @@ export const ZoneMap: React.FC<ZoneMapProps> = ({
   const editLayerRef = useRef<L.LayerGroup | null>(null);
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
 
-  // Los manejadores cambian en cada render; los eventos de Leaflet leen siempre el último.
+  // Handlers change on each render; Leaflet events always read latest reference.
   const handlersRef = useRef({ onSelectZone, onVerticesChange, onMapClick, editVertices });
   useEffect(() => {
     handlersRef.current = { onSelectZone, onVerticesChange, onMapClick, editVertices };
   });
 
-  // ---------- Montaje único ----------
+  // ---------- Initial mount ----------
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, {
@@ -103,7 +103,7 @@ export const ZoneMap: React.FC<ZoneMapProps> = ({
       focus: (point, zoom = 14) => map.setView([point.lat, point.lng], zoom),
     });
 
-    // El contenedor puede montarse dentro de un drawer que todavía está animando.
+    // Container may mount inside an animating drawer.
     const resize = window.setTimeout(() => map.invalidateSize(), 250);
     return () => {
       window.clearTimeout(resize);
@@ -113,7 +113,7 @@ export const ZoneMap: React.FC<ZoneMapProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------- Zonas de solo lectura ----------
+  // ---------- Read-only zones ----------
   useEffect(() => {
     const layer = zonesLayerRef.current;
     if (!layer) return;
@@ -140,7 +140,7 @@ export const ZoneMap: React.FC<ZoneMapProps> = ({
     });
   }, [zones, selectedZoneId]);
 
-  // ---------- Encuadre ----------
+  // ---------- Framing ----------
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -151,11 +151,11 @@ export const ZoneMap: React.FC<ZoneMapProps> = ({
     });
     (editVertices ?? []).forEach((v) => bounds.extend([v.lat, v.lng]));
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [24, 24], maxZoom: 15 });
-    // Sólo al cambiar fitKey: re-encuadrar en cada vértice arrastrado marearía.
+    // Only re-fit on fitKey change: re-framing on every dragged vertex would cause jarring motion.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitKey]);
 
-  // ---------- Editor de vértices ----------
+  // ---------- Vertex editor ----------
   useEffect(() => {
     const layer = editLayerRef.current;
     if (!layer) return;
@@ -192,7 +192,7 @@ export const ZoneMap: React.FC<ZoneMapProps> = ({
     });
   }, [editVertices]);
 
-  // ---------- Punto de la geocerca ----------
+  // ---------- Geofence marker point ----------
   useEffect(() => {
     const layer = markerLayerRef.current;
     if (!layer) return;
@@ -214,8 +214,8 @@ export const ZoneMap: React.FC<ZoneMapProps> = ({
       role="application"
       aria-label={ariaLabel}
       data-testid="zone-map"
-      // `isolate`: los paneles de Leaflet usan z-index 400-1000 y, sin un contexto de
-      // apilamiento propio, se pintan por encima de la cabecera y de la NavHubBar fijas.
+      // `isolate`: Leaflet panes use z-index 400-1000 and without stacking context
+      // would render above fixed headers and NavHubBar.
       className="w-full rounded border border-[#e8e2d8] isolate z-0 bg-[#ece8e0]"
       style={{ height }}
     />

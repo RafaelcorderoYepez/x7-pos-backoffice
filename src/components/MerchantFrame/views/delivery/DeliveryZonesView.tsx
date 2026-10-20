@@ -1,8 +1,8 @@
-// Workspace de zonas de reparto: KPIs de cobertura, tabla + mapa, comprobador de geocerca
-// y conmutador de estado en línea.
+// Delivery zone workspace: coverage KPIs, table + map, geofence checker
+// and online status switch.
 //
-// Rutas reales: `/api/delivery-zone` (singular, PATCH), acotado al comercio del JWT. El
-// filtrado es en cliente: buscar o marcar estados no vuelve a pedir nada ni recarga el mapa.
+// Actual routes: `/api/delivery-zone` (singular, PATCH), limited to JWT trading. The
+// Filtering is in the client: searching or marking states does not ask for anything again or reload the map.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
@@ -50,7 +50,7 @@ interface DeliveryZonesViewProps {
 const chipButton =
   'px-2.5 py-1 rounded text-[11px] font-bold uppercase tracking-wider text-[#5f5e5e] hover:text-primary! transition-colors duration-200 disabled:opacity-40 cursor-pointer';
 
-// La NavHubBar la monta MerchantFrame; `onNavigate` se mantiene por contrato de las vistas.
+// The NavHubBar is mounted by MerchantFrame; `onNavigate` is contractually maintained from views.
 export const DeliveryZonesView: React.FC<DeliveryZonesViewProps> = () => {
   const [zones, setZones] = useState<DeliveryZone[]>([]);
   const [coverage, setCoverage] = useState<ZoneCoverage | null>(null);
@@ -95,7 +95,7 @@ export const DeliveryZonesView: React.FC<DeliveryZonesViewProps> = () => {
     } finally {
       setLoading(false);
     }
-    // El KPI de cobertura no debe tumbar el workspace si falla.
+    // The coverage KPI should not take down the workspace if it fails.
     try {
       setCoverage(await getDeliveryCoverage());
     } catch {
@@ -137,8 +137,8 @@ export const DeliveryZonesView: React.FC<DeliveryZonesViewProps> = () => {
     }
   };
 
-  // Conmutador en línea: surte efecto al instante (el backend rechaza pedidos nuevos a una
-  // zona que no esté `active`), por eso se actualiza la fila sin esperar a recargar todo.
+  // Online switch: takes effect instantly (the backend rejects new orders at a
+  // area that is not `active`), that is why the row is updated without waiting to reload everything.
   const handleStatusChange = async (zone: DeliveryZone, status: DeliveryZoneStatus) => {
     if (status === zone.status) return;
     setBusyId(zone.id);
@@ -301,9 +301,8 @@ export const DeliveryZonesView: React.FC<DeliveryZonesViewProps> = () => {
         </button>
       </div>
 
-      {/* ---------- KPIs de cobertura (anclados arriba al hacer scroll) ----------
-          -top-8/pt-8: el <main> tiene p-8 y el banner se ancla contra ese borde; el fondo del
-          lienzo tapa las filas que pasan por detrás. */}
+      {/* ---------- Coverage KPIs (sticky top on scroll) ----------
+          -top-8/pt-8: <main> has p-8 and banner docks against that edge; canvas background covers rows underneath. */}
       <section
         aria-label="Delivery coverage metrics"
         data-testid="zone-kpis"
@@ -495,7 +494,7 @@ export const DeliveryZonesView: React.FC<DeliveryZonesViewProps> = () => {
                       </span>
                     </div>
                     <div className="flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      {/* Interruptor de un clic: active ⇄ inactive. El backend deja de aceptar
+                      {/* One-click switch: active ⇄ inactive. The backend stops accepting
                           pedidos para la zona en el mismo instante en que deja de estar activa. */}
                       <button
                         type="button"
@@ -591,7 +590,7 @@ export const DeliveryZonesView: React.FC<DeliveryZonesViewProps> = () => {
             </div>
           </div>
 
-          {/* ---------- Comprobador de geocerca ---------- */}
+          {/* ---------- Geofence checker ---------- */}
           <form
             onSubmit={(e) => void runLookup(e)}
             aria-label="Address geofencing check"

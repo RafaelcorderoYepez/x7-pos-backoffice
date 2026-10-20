@@ -31,14 +31,7 @@ import {
   extractCleanKitchenInstruction,
 } from './kdsLocalization';
 
-const getLocalizedStationName = (name: string, lang: 'en' | 'es'): string => {
-  if (lang !== 'es') return name;
-  const n = name.trim().toLowerCase();
-  if (n.includes('hot line')) return 'Línea Caliente y Parrilla';
-  if (n.includes('cold prep')) return 'Preparación Fría y Ensaladas';
-  if (n.includes('main bar')) return 'Bar Principal y Bebidas';
-  if (n.includes('desserts') || n.includes('bakery')) return 'Postres y Panadería';
-  if (n.includes('expo')) return 'Expo y Control de Calidad';
+const getLocalizedStationName = (name: string, _lang?: 'en' | 'es'): string => {
   return name;
 };
 
@@ -204,13 +197,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
   // Staff Multi-Language Display Toggle & Allergy Alerts (Historia X7P-4212)
   const [deviceLanguageStation, setDeviceLanguageStation] = useState<string>(selectedStationFilter);
-  const [deviceLanguage, setDeviceLanguageState] = useState<KDSLanguage>(() => {
-    return getDeviceLanguage(selectedStationFilter);
-  });
+  const [deviceLanguage, setDeviceLanguageState] = useState<KDSLanguage>('en');
 
   if (deviceLanguageStation !== selectedStationFilter) {
     setDeviceLanguageStation(selectedStationFilter);
-    setDeviceLanguageState(getDeviceLanguage(selectedStationFilter));
+    setDeviceLanguageState('en');
   }
 
   const toggleDeviceLanguage = useCallback(() => {
@@ -1215,7 +1206,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       const orderedTicketIds = filteredTickets.map((t) => t.id);
       const ticketMap = new Map(prev.map((t) => [t.id, { ...t, items: [...t.items] }]));
 
-      // 1. Asignar primero a los tickets visibles en su orden exacto de prioridad (filteredTickets)
+      // 1. Assign visible tickets first in their exact priority order (filteredTickets)
       for (const tid of orderedTicketIds) {
         if (remaining <= 0) break;
         const t = ticketMap.get(tid);
@@ -1262,7 +1253,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         }
       }
 
-      // 2. Si todavía queda cantidad por asignar, distribuir en los demás tickets no visibles
+      // 2. If remaining quantity to allocate, distribute across other non-visible tickets
       if (remaining > 0) {
         for (const [tid, t] of ticketMap.entries()) {
           if (remaining <= 0) break;
@@ -1658,8 +1649,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   }, [isOffline, sendStationHeartbeat, fetchRerouteStatuses]);
 
   // Historia X7P-4211: Effective Station Reroute Statuses
-  // Si la terminal local lleva >= 60 segundos desconectada (offlineSeconds >= 60),
-  // activa autónomamente la contingencia por falla de terminales / red (isDevicesOffline = true).
+  // If the local terminal has been offline >= 60 seconds (offlineSeconds >= 60),
+  // autonomously activates offline contingency on terminal / network failure (isDevicesOffline = true).
   const effectiveStationRerouteStatuses = useMemo<StationRerouteStatus[]>(() => {
     const baseStatuses: StationRerouteStatus[] =
       stationRerouteStatuses.length > 0
@@ -1735,7 +1726,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const handleTriggerReroute = async (stationId: number, overflowOnly = false) => {
     if (isOffline) {
       triggerAlert(
-        'Modo Offline activo: Rebalanceo buffered. Utilice los Tickets Térmicos de contingencia en papel hasta restablecer la red.',
+        'Offline mode active: Buffered rebalance. Contingency thermal paper tickets should be used until network reconnects.',
         'pacing',
       );
       return;
@@ -1750,7 +1741,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       };
 
       if (overflowOnly) {
-        // En balanceo de carga, solo reenviamos las órdenes que superan la capacidad
+        // In load balancing, only re-route orders exceeding capacity
         const stationTickets = tickets.filter(
           (t) => t.stationId === stationId || t.stationName === activeStationStatus?.stationName,
         );
@@ -2159,7 +2150,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         <div className={`${isCompact ? 'p-2' : 'p-2.5'} border-b border-zinc-800 bg-[#212228] rounded-t-lg flex justify-between items-start shrink-0`}>
           <div className="min-w-0 flex-1 pr-2">
             <h2 className={`font-black ${isCompact ? 'text-xs' : 'text-sm'} text-white tracking-tight truncate whitespace-nowrap`} style={{ color: '#ffffff' }}>
-              {deviceLanguage === 'es' ? ticket.table.replace(/^Table\s+/i, 'Mesa ') : ticket.table}
+              {ticket.table}
             </h2>
             <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
               <span className={`text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider ${pColors.badge}`}>
@@ -2173,7 +2164,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                     setSelectedAllergyDetail({
                       ticketId: ticket.id,
                       table: ticket.table,
-                      itemName: `${ticket.items.length} ${deviceLanguage === 'es' ? 'platos en la orden' : 'items in order'}`,
+                      itemName: `${ticket.items.length} items in order`,
                       alertBannerText: ticketAllergy.alertBannerText,
                       allergyTags: ticketAllergy.allergyTags,
                       rawNotes: cleanOrderNotes || undefined,
@@ -2181,10 +2172,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                     });
                   }}
                   className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-red-600 hover:bg-red-500 text-white border border-red-400 flex items-center gap-0.5 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.7)] cursor-pointer active:scale-95 transition-all"
-                  title={deviceLanguage === 'es' ? 'Clic para ver detalles de alergia' : 'Click to view allergy details'}
+                  title="Click to view allergy details"
                 >
                   <span className="material-symbols-outlined text-[10px]">emergency</span>
-                  {deviceLanguage === 'es' ? 'ALERTA DE ALERGIA' : 'ALLERGY ALERT'}
+                  'ALLERGY ALERT'
                 </button>
               )}
               {activeDisplayMode === 'AUTO' && (
@@ -2204,7 +2195,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   cleanOrderNotes.includes('[Rerouted')) && (
                   <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-purple-600/30 text-purple-300 border border-purple-500/50 flex items-center gap-0.5">
                     <span className="material-symbols-outlined text-[9px]">alt_route</span>
-                    {deviceLanguage === 'es' ? 'RE-ENRUTADO' : 'REROUTED'}
+                    'REROUTED'
                   </span>
                 )}
               {effectiveStationRerouteStatuses.find(
@@ -2214,7 +2205,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               )?.isCapacityOverflow && (
                 <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-amber-600/30 text-amber-300 border border-amber-500/50 flex items-center gap-0.5 animate-pulse">
                   <span className="material-symbols-outlined text-[9px]">warning</span>
-                  {deviceLanguage === 'es' ? 'SOBRECUPO' : 'OVERFLOW'}
+                  'OVERFLOW'
                 </span>
               )}
             </div>
@@ -2250,7 +2241,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               {ticket.timeElapsed}m
             </p>
             <p className="text-[8px] uppercase font-black tracking-wider text-zinc-500">
-              {deviceLanguage === 'es' ? 'TRANSCURRIDO' : 'ELAPSED'}
+              'ELAPSED'
             </p>
           </div>
         </div>
@@ -2312,7 +2303,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                         className={`px-1.5 py-0.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-black ${isCompact ? 'text-[8px]' : 'text-[9px]'} uppercase tracking-wider rounded transition-all flex items-center gap-0.5 cursor-pointer shadow-xs active:scale-95`}
                       >
                         <span className="material-symbols-outlined text-[10px]">local_fire_department</span>
-                        <span>{deviceLanguage === 'es' ? 'A FUEGO' : theme.fireLabel}</span>
+                        <span>{theme.fireLabel}</span>
                       </button>
                     )}
                   </div>
@@ -2389,7 +2380,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                 <div className="flex items-center gap-1">
                                   <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded text-[8px] font-black uppercase tracking-wider">
                                     <span className="material-symbols-outlined text-[9px]">lock</span>
-                                    {deviceLanguage === 'es' ? 'RETENIDO' : 'HELD'}
+                                    'HELD'
                                   </span>
                                   <button
                                     onClick={() => handleFireSingleItem(ticket.id, item.id, item.name)}
@@ -2397,7 +2388,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="px-2 py-0.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-0.5 cursor-pointer shadow-xs active:scale-95"
                                   >
                                     <span className="material-symbols-outlined text-[9px]">local_fire_department</span>
-                                    {deviceLanguage === 'es' ? 'A FUEGO' : 'FIRE'}
+                                    'FIRE'
                                   </button>
                                 </div>
                               ) : isPending ? (
@@ -2408,7 +2399,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-blue-600 hover:bg-blue-500 text-white border border-blue-400/50"
                                   >
                                     <span className="material-symbols-outlined text-[10px]">{theme.prepIcon}</span>
-                                    <span>{deviceLanguage === 'es' ? 'INICIAR' : theme.prepVerb}</span>
+                                    <span>{theme.prepVerb}</span>
                                   </button>
                                 </div>
                               ) : isInPrep ? (
@@ -2419,7 +2410,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
                                   >
                                     <span className="material-symbols-outlined text-[10px]">check_circle</span>
-                                    <span>{deviceLanguage === 'es' ? 'LISTO' : 'READY'}</span>
+                                    <span>'READY'</span>
                                   </button>
                                   <button
                                     onClick={() => handleRevertItemToPending(ticket.id, item.id, item.name, item.course)}
@@ -2437,7 +2428,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="h-6 px-2 rounded text-[8.5px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-700/50 hover:bg-emerald-600 text-emerald-200 border border-emerald-500/40"
                                   >
                                     <span className="material-symbols-outlined text-[10px]">check_circle</span>
-                                    <span>{deviceLanguage === 'es' ? 'LISTO' : 'DONE'}</span>
+                                    <span>'DONE'</span>
                                   </button>
                                 </div>
                               )}
@@ -2468,7 +2459,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                       });
                                     }}
                                     className="w-full text-left mt-1 px-2 py-1 bg-red-950/90 hover:bg-red-900/90 border-2 border-red-500 rounded text-red-100 text-[9px] font-black flex items-center justify-between gap-1 shadow-[0_0_10px_rgba(239,68,68,0.5)] animate-pulse transition-all cursor-pointer active:scale-95 group/allergy"
-                                    title={deviceLanguage === 'es' ? 'Clic para ver protocolo completo de alergia' : 'Click to view full allergy protocol'}
+                                    title="Click to view full allergy protocol"
                                   >
                                     <div className="flex items-center gap-1.5 min-w-0">
                                       <span className="material-symbols-outlined text-[13px] text-red-400 shrink-0">warning</span>
@@ -2484,12 +2475,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
                                 {/* Color-coded Prep Modifiers: Sorted by Removals (-) then Additions (+) */}
                                 {(() => {
-                                  // Si ya existe el banner rojo superior de alergias, no duplicar las alergias como badges inferiores
+                                  // If the top red allergy banner already exists, do not duplicate the allergies as bottom badges
                                   const prepModifiers = itemAllergy.hasAllergy
                                     ? itemModifiers.filter((m) => m.category !== 'allergy')
                                     : itemModifiers;
 
-                                  // Orden prioritario de cocina: 1. Remociones (-), 2. Adiciones (+), 3. Instrucciones
+                                  // Cooking priority order: 1. Removals (-), 2. Additions (+), 3. Instructions
                                   const sortedPrepModifiers = [...prepModifiers].sort((a, b) => {
                                     const priority: Record<string, number> = {
                                       removal: 1,
@@ -2532,11 +2523,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                             <div className={`${isCompact ? 'mt-1 pt-1 text-[9px]' : 'mt-1.5 pt-1 text-[9.5px]'} border-t border-amber-500/20 flex items-center justify-between`}>
                               <span className="text-zinc-400 font-medium flex items-center gap-1">
                                 <span className="material-symbols-outlined text-[11px] text-amber-400">schedule</span>
-                                {deviceLanguage === 'es' ? 'Ritmo de Cocina:' : 'Pacing Window:'}
+                                'Pacing Window:'
                               </span>
                               <span className="font-mono font-bold text-amber-300 text-[9px] flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-                                {deviceLanguage === 'es' ? 'Disparo:' : 'Auto-Fire:'} {formatCountdown(item.holdRemainingSeconds)}
+                                'Auto-Fire:' {formatCountdown(item.holdRemainingSeconds)}
                               </span>
                             </div>
                           )}
@@ -2557,7 +2548,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             className={`w-full ${isCompact ? 'py-1 text-[10px]' : 'py-1.5 text-[11px]'} bg-zinc-800 hover:bg-emerald-600 text-white font-black uppercase tracking-wider rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-inner`}
           >
             <span className="material-symbols-outlined text-xs">done_all</span>
-            <span>{deviceLanguage === 'es' ? 'DESPACHAR TICKET' : 'BUMP & SERVE TICKET'}</span>
+            <span>'BUMP & SERVE TICKET'</span>
           </button>
         </div>
       </div>
@@ -2581,18 +2572,18 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             <h1 className="font-sans text-xs sm:text-sm lg:text-base font-black tracking-wider flex items-center gap-2 text-white truncate" style={{ color: '#ffffff' }}>
               <span className="text-white font-black text-xs sm:text-sm lg:text-base truncate" style={{ color: '#ffffff' }}>
                 {activeKdsView === 'EXPO'
-                  ? (deviceLanguage === 'es' ? 'MONITOR KDS EXPEDITER' : 'EXPEDITER KDS DISPLAY')
+                  ? 'EXPEDITER KDS DISPLAY'
                   : activeDisplayMode === 'SUMMARY'
-                  ? (deviceLanguage === 'es' ? 'RESUMEN DE PRODUCCIÓN KDS' : 'KDS PRODUCTION SUMMARY')
+                  ? 'KDS PRODUCTION SUMMARY'
                   : activeDisplayMode === 'MANUAL'
-                  ? (deviceLanguage === 'es' ? 'COLA MANUAL KDS' : 'KDS MANUAL QUEUE')
+                  ? 'KDS MANUAL QUEUE'
                   : activeDisplayMode === 'AUTO'
-                  ? (deviceLanguage === 'es' ? 'LÍNEA AUTO-DESPACHO KDS' : 'KDS AUTO-DISPATCH LINE')
-                  : (deviceLanguage === 'es' ? 'MATRIZ CUADRÍCULA KDS' : 'KDS GRID MATRIX')}
+                  ? 'KDS AUTO-DISPATCH LINE'
+                  : 'KDS GRID MATRIX'}
               </span>
             </h1>
             <p className="text-[10px] text-zinc-300 font-bold hidden 2xl:block truncate max-w-[220px]" style={{ color: '#d4d4d8' }}>
-              {deviceLanguage === 'es' ? 'Vista:' : 'View:'} <strong className="text-amber-400">{activeKdsView}</strong> • {deviceLanguage === 'es' ? 'Modo:' : 'Mode:'} <strong className="text-emerald-400">{activeDisplayMode}</strong> • {deviceLanguage === 'es' ? 'Ritmo/Disparo' : 'Hold/Fire Engine'}
+              'View:' <strong className="text-amber-400">{activeKdsView}</strong> • 'Mode:' <strong className="text-emerald-400">{activeDisplayMode}</strong> • 'Hold/Fire Engine'
             </p>
           </div>
         </div>
@@ -2655,7 +2646,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs max-w-[85px] sm:max-w-[110px] md:max-w-[130px] lg:max-w-[150px] truncate"
             >
               <option value="ALL" className="bg-zinc-900 text-white">
-                {deviceLanguage === 'es' ? 'Todas las Estaciones (Expo)' : 'All Stations (Expo)'}
+                'All Stations (Expo)'
               </option>
               {visibleStations.map((st) => {
                 const matched = kitchenStations.find((s) => s.name.trim().toLowerCase() === st.trim().toLowerCase());
@@ -2873,7 +2864,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             type="button"
             onClick={toggleDeviceLanguage}
             className="h-8 px-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 border cursor-pointer shadow-xs bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700 shrink-0 font-bold text-xs"
-            title={deviceLanguage === 'en' ? 'Device Language: English (Click for Spanish)' : 'Idioma del Dispositivo: Español (Clic para Inglés)'}
+            title="Device Language: English"
           >
             <span className="material-symbols-outlined text-sm text-cyan-400">translate</span>
             <span className="font-mono text-[11px] font-black uppercase tracking-wider">
@@ -2898,7 +2889,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       <div className="bg-[#18191e] border-b border-zinc-800 px-6 py-2 flex items-center justify-between gap-4 shrink-0 overflow-x-auto">
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mr-1">
-            {deviceLanguage === 'es' ? 'ETAPA DE CURSO:' : 'COURSE STAGE:'}
+            'COURSE STAGE:'
           </span>
           {(['ALL', 'APPETIZER', 'MAIN_COURSE', 'DESSERT', 'BEVERAGE'] as const).map((course) => {
             const isActive = activeCourseFilter === course;
@@ -2913,7 +2904,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 }`}
               >
                 {course === 'ALL'
-                  ? (deviceLanguage === 'es' ? 'TODOS' : 'ALL COURSES')
+                  ? 'ALL COURSES'
                   : getLocalizedCourse(course, deviceLanguage)}
               </button>
             );
@@ -2924,17 +2915,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         <div className="flex items-center gap-4 text-xs font-bold text-zinc-400 shrink-0">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>{deviceLanguage === 'es' ? 'ACTIVAS:' : 'ACTIVE:'} <strong className="text-white">{tickets.length}</strong></span>
+            <span>'ACTIVE:' <strong className="text-white">{tickets.length}</strong></span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-            <span>{deviceLanguage === 'es' ? 'RETENIDOS:' : 'HELD ITEMS:'} <strong className="text-amber-400">
+            <span>'HELD ITEMS:' <strong className="text-amber-400">
               {tickets.reduce((sum, t) => sum + t.items.filter((i) => i.preparationStatus === 'HELD').length, 0)}
             </strong></span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-blue-400"></span>
-            <span>{deviceLanguage === 'es' ? 'AUTO-DISPARO:' : 'AUTO-FIRE PACING:'} <strong className="text-blue-300">{autoFireEnabled ? 'ON' : 'OFF'}</strong></span>
+            <span>'AUTO-FIRE PACING:' <strong className="text-blue-300">{autoFireEnabled ? 'ON' : 'OFF'}</strong></span>
           </div>
         </div>
       </div>
@@ -2963,25 +2954,25 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
-                <span className="shrink-0">{deviceLanguage === 'es' ? '🚨 FALLA DE HARDWARE:' : '🚨 HARDWARE FAILURE:'}</span>
+                <span className="shrink-0">'🚨 HARDWARE FAILURE:'</span>
                 <span className="text-red-400 underline decoration-red-500 truncate max-w-[180px] sm:max-w-[280px]">
                   {isMultipleFailuresInAll
-                    ? (deviceLanguage === 'es' ? `${failingStations.length} ESTACIONES SIN CONEXIÓN` : `${failingStations.length} STATIONS OFFLINE`)
+                    ? `${failingStations.length} STATIONS OFFLINE`
                     : activeStationStatus?.stationName}
                 </span>
                 <span className="text-[10px] px-2 py-0.2 rounded-full bg-red-500/30 text-red-200 border border-red-500/50 font-bold shrink-0">
-                  {deviceLanguage === 'es' ? 'TERMINALES SIN CONEXIÓN >60s' : 'ALL TERMINALS OFFLINE >60s'}
+                  ALL TERMINALS OFFLINE &gt;60s
                 </span>
               </div>
               <p className="text-[11px] text-zinc-300 mt-0.5 truncate">
                 {isMultipleFailuresInAll ? (
                   <span>
-                    {deviceLanguage === 'es' ? 'Estaciones afectadas: ' : 'Affected stations: '}
-                    <strong className="text-amber-300">{failingStations.map((s) => s.stationName).join(', ')}</strong>. {deviceLanguage === 'es' ? 'Los pedidos se derivan a estaciones de respaldo o impresoras térmicas.' : 'Orders route to backup stations or thermal printers.'}
+                    Affected stations:{' '}
+                    <strong className="text-amber-300">{failingStations.map((s) => s.stationName).join(', ')}</strong>. Orders route to backup stations or thermal printers.
                   </span>
                 ) : (
                   <span>
-                    {deviceLanguage === 'es' ? 'Los pedidos se derivan a la estación secundaria ' : 'Orders route to secondary station '}
+                    Orders route to secondary station{' '}
                     <strong className="text-amber-300">
                       {activeStationStatus?.backupStationName ||
                         (activeStationStatus?.backupStationId
@@ -2989,7 +2980,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                           : 'Expo & Final Quality Check')}
                     </strong>
                     {activeStationStatus?.printerName ? (
-                      <span> {deviceLanguage === 'es' ? 'o se imprimen en ' : 'or print on '}<strong className="text-amber-300">{activeStationStatus.printerName}</strong></span>
+                      <span> or print on <strong className="text-amber-300">{activeStationStatus.printerName}</strong></span>
                     ) : ''}.
                   </span>
                 )}
@@ -3010,7 +3001,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               className="h-8 px-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm">forward_to_inbox</span>
-              <span>{deviceLanguage === 'es' ? (isMultipleFailuresInAll ? 'Re-enrutar Todas' : 'Re-enrutar Pedidos') : (isMultipleFailuresInAll ? 'Reroute All' : 'Reroute Orders')}</span>
+              <span>{isMultipleFailuresInAll ? 'Reroute All' : 'Reroute Orders'}</span>
             </button>
             <button
               type="button"
@@ -3018,14 +3009,14 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               className="h-8 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm text-amber-400">print</span>
-              <span>{deviceLanguage === 'es' ? 'Ticket Térmico' : 'Thermal Ticket'}</span>
+              <span>'Thermal Ticket'</span>
             </button>
             <button
               type="button"
               onClick={() => setIsRerouteModalOpen(true)}
               className="h-8 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center active:scale-95 shrink-0"
             >
-              <span>{deviceLanguage === 'es' ? 'Configurar' : 'Configure'}</span>
+              <span>'Configure'</span>
             </button>
           </div>
         </div>
@@ -3040,18 +3031,16 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
-                <span className="shrink-0">{deviceLanguage === 'es' ? '⚠️ SOBRECUPO DE CAPACIDAD:' : '⚠️ CAPACITY OVERFLOW:'}</span>
+                <span className="shrink-0">'⚠️ CAPACITY OVERFLOW:'</span>
                 <span className="text-amber-400 underline decoration-amber-500 truncate max-w-[180px] sm:max-w-[280px]">
                   {getLocalizedStationName(activeStationStatus.stationName, deviceLanguage)}
                 </span>
                 <span className="text-[10px] px-2 py-0.2 rounded-full bg-amber-500/30 text-amber-200 border border-amber-500/50 font-bold shrink-0">
-                  {activeStationStatus.activeTicketsCount} / {activeStationStatus.maxActiveTicketsCapacity} {deviceLanguage === 'es' ? 'ACTIVAS' : 'ACTIVE'}
+                  {activeStationStatus.activeTicketsCount} / {activeStationStatus.maxActiveTicketsCapacity} ACTIVE
                 </span>
               </div>
               <p className="text-[11px] text-zinc-300 mt-0.5 truncate">
-                {deviceLanguage === 'es'
-                  ? `Límite de comandas activas superado (>${activeStationStatus.maxActiveTicketsCapacity} comandas). El balanceo dinámico de carga deriva pedidos nuevos a estaciones secundarias.`
-                  : `Active queue limit breached (>${activeStationStatus.maxActiveTicketsCapacity} tickets). Dynamic load balancing routes incoming orders to secondary prep station.`}
+                Active queue limit breached (&gt;{activeStationStatus.maxActiveTicketsCapacity} tickets). Dynamic load balancing routes incoming orders to secondary prep station.
               </p>
             </div>
           </div>
@@ -3063,54 +3052,44 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               className="h-8 px-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm">balance</span>
-              <span>{deviceLanguage === 'es' ? 'Balancear Carga' : 'Balance Load'}</span>
+              <span>Balance Load</span>
             </button>
             <button
               type="button"
               onClick={() => setIsRerouteModalOpen(true)}
               className="h-8 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center active:scale-95 shrink-0"
             >
-              <span>{deviceLanguage === 'es' ? 'Configurar' : 'Configure'}</span>
+              <span>Configure</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* 3. All-Day Consolidated Batch Prep Summary Bar (Historia X7P-4208) */}
+      {/* 3. All-Day Consolidated Batch Prep Summary Bar (Story X7P-4208) */}
       {activeDisplayMode !== 'SUMMARY' && (
         <div className="bg-[#15161b] border-b border-amber-500/30 px-4 py-1.5 shrink-0 transition-all">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-amber-400 text-base">skillet</span>
               <span className="text-[11px] font-black tracking-wider text-white uppercase flex items-center gap-1.5">
-                {deviceLanguage === 'es' ? 'CONSOLIDADOR DEL TURNO' : 'ALL-DAY PREP CONSOLIDATOR'}
+                ALL-DAY PREP CONSOLIDATOR
                 <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
                   {allDaySummary.totalNeededCount}{' '}
-                  {deviceLanguage === 'es'
-                    ? allDaySummary.totalNeededCount === 1
-                      ? 'unidad requerida'
-                      : 'unidades requeridas'
-                    : allDaySummary.totalNeededCount === 1
-                    ? 'unit required'
-                    : 'units required'}
+                  {allDaySummary.totalNeededCount === 1 ? 'unit required' : 'units required'}
                 </span>
               </span>
             </div>
 
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-zinc-400 font-medium hidden md:inline">
-                {deviceLanguage === 'es' ? (
-                  <>Pulsa <strong className="text-amber-300">+1 / +2 / +4 / TODOS</strong> para despachar FIFO</>
-                ) : (
-                  <>Tap <strong className="text-amber-300">+1 / +2 / +4 / ALL</strong> to bump FIFO</>
-                )}
+                Tap <strong className="text-amber-300">+1 / +2 / +4 / ALL</strong> to bump FIFO
               </span>
               <button
                 onClick={() => setIsAllDayBarExpanded(!isAllDayBarExpanded)}
                 className="text-zinc-400 hover:text-white flex items-center gap-0.5 text-[10px] font-bold cursor-pointer transition-colors"
-                title={isAllDayBarExpanded ? (deviceLanguage === 'es' ? 'Colapsar barra' : 'Collapse All-Day Bar') : (deviceLanguage === 'es' ? 'Expandir barra' : 'Expand All-Day Bar')}
+                title={isAllDayBarExpanded ? 'Collapse All-Day Bar' : 'Expand All-Day Bar'}
               >
-                <span>{isAllDayBarExpanded ? (deviceLanguage === 'es' ? 'Ocultar' : 'Hide') : (deviceLanguage === 'es' ? 'Mostrar' : 'Show')}</span>
+                <span>{isAllDayBarExpanded ? 'Hide' : 'Show'}</span>
                 <span className="material-symbols-outlined text-xs">
                   {isAllDayBarExpanded ? 'expand_less' : 'expand_more'}
                 </span>
@@ -3124,9 +3103,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 <div className="py-1.5 px-3 rounded-md bg-zinc-900/60 border border-dashed border-zinc-800 text-center text-[11px] text-zinc-400 font-medium flex items-center justify-center gap-1.5">
                   <span className="material-symbols-outlined text-emerald-400 text-sm">check_circle</span>
                   <span>
-                    {deviceLanguage === 'es'
-                      ? 'No hay platos pendientes para esta etapa en esta estación.'
-                      : 'No pending items for this course on this station.'}
+                    No pending items for this course on this station.
                   </span>
                 </div>
               ) : (
@@ -3387,19 +3364,19 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                         <div className="p-1 border-l border-zinc-800">
                           <p className="text-xl font-black font-mono text-blue-400">{batch.inPrepQty}</p>
                           <p className="text-[7.5px] font-bold text-blue-300 uppercase tracking-wider mt-0.5">
-                            {deviceLanguage === 'es' ? 'EN COCCIÓN' : courseTheme.prepVerb}
+                            {courseTheme.prepVerb}
                           </p>
                         </div>
                         <div className="p-1 border-l border-zinc-800">
                           <p className="text-xl font-black font-mono text-amber-400">{batch.heldQty}</p>
                           <p className="text-[7.5px] font-bold text-amber-300 uppercase tracking-wider mt-0.5">
-                            {deviceLanguage === 'es' ? 'RETENIDO' : 'HELD'}
+                            'HELD'
                           </p>
                         </div>
                         <div className="p-1 border-l border-zinc-800">
                           <p className="text-xl font-black font-mono text-emerald-400">{batch.readyQty}</p>
                           <p className="text-[7.5px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">
-                            {deviceLanguage === 'es' ? 'LISTO' : 'READY'}
+                            'READY'
                           </p>
                         </div>
                         <div className="p-1 border-l border-zinc-800">
@@ -3540,7 +3517,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                         <div className="flex items-center gap-2">
                           <div className="flex-1 py-2.5 bg-emerald-950/40 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-inner">
                             <span className="material-symbols-outlined text-sm">task_alt</span>
-                            <span>{deviceLanguage === 'es' ? `LOS ${batch.totalQty} ESTÁN LISTOS` : `ALL ${batch.totalQty} READY`}</span>
+                            <span>`ALL ${batch.totalQty} READY`</span>
                           </div>
                           <button
                             onClick={() => handleRevertBatch(batch.name, batch.variantName)}
@@ -3623,7 +3600,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   </h3>
                 </div>
                 <span className="text-[10px] font-bold text-zinc-400 uppercase">
-                  {deviceLanguage === 'es' ? 'LÍNEA FIFO' : 'FIFO PIPELINE'}
+                  'FIFO PIPELINE'
                 </span>
               </div>
 
@@ -3655,7 +3632,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                             </span>
                           </div>
                           <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                            Ticket #{t.id} • {t.items.length} {deviceLanguage === 'es' ? 'ítems' : 'items'}{t.server && t.server !== 'Kitchen Staff' ? ` • ${t.server}` : ''}
+                            Ticket #{t.id} • {t.items.length} 'items'{t.server && t.server !== 'Kitchen Staff' ? ` • ${t.server}` : ''}
                           </p>
                         </div>
                       </div>
@@ -3689,16 +3666,14 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-sm text-emerald-400">bolt</span>
                   <span className="text-[10px] font-black text-emerald-300 uppercase">
-                    {deviceLanguage === 'es' ? 'LÍNEA AUTO-DESPACHO 1-TOQUE:' : '1-TOUCH AUTO-DISPATCH LINE:'}
+                    1-TOUCH AUTO-DISPATCH LINE:
                   </span>
                   <span className="text-[10px] text-zinc-300 hidden md:inline">
-                    {deviceLanguage === 'es'
-                      ? 'Cuando el último plato se marca como LISTO, la comanda se despacha y archiva automáticamente.'
-                      : 'When the final dish is marked READY, the ticket will automatically bump and archive.'}
+                    When the final dish is marked READY, the ticket will automatically bump and archive.
                   </span>
                 </div>
                 <span className="text-[8px] font-mono font-black px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
-                  {deviceLanguage === 'es' ? 'AUTO-DESPACHO' : 'AUTO-BUMP'}
+                  AUTO-BUMP
                 </span>
               </div>
             )}
@@ -4134,7 +4109,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 </span>
                 <div>
                   <div className="text-sm font-black uppercase tracking-wider text-red-100 flex items-center gap-1.5">
-                    {deviceLanguage === 'es' ? 'PROTOCOLO DE ALERGIA CRÍTICA' : 'CRITICAL ALLERGY PROTOCOL'}
+                    'CRITICAL ALLERGY PROTOCOL'
                   </div>
                   <p className="text-[10px] text-red-300/80 font-medium">
                     {deviceLanguage === 'es' ? selectedAllergyDetail.table.replace(/^Table\s+/i, 'Mesa ') : selectedAllergyDetail.table} • #{selectedAllergyDetail.ticketId}
@@ -4156,7 +4131,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               <div className="bg-zinc-900/90 border border-zinc-800 p-3 rounded-xl flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400" style={{ color: '#a1a1aa' }}>
-                    {deviceLanguage === 'es' ? 'PLATO / ÍTEM AFECTADO:' : 'TARGET DISH / ITEM:'}
+                    'TARGET DISH / ITEM:'
                   </span>
                   <div
                     className="text-base sm:text-lg font-black text-white !text-white mt-0.5 tracking-tight"
@@ -4174,7 +4149,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               <div>
                 <span className="text-[10px] font-black uppercase tracking-wider text-red-400 flex items-center gap-1 mb-1.5">
                   <span className="material-symbols-outlined text-xs">warning</span>
-                  {deviceLanguage === 'es' ? 'ALÉRGENOS DETECTADOS:' : 'DETECTED ALLERGENS:'}
+                  'DETECTED ALLERGENS:'
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {selectedAllergyDetail.allergyTags.map((tag, idx) => (
@@ -4189,7 +4164,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 </div>
               </div>
 
-              {/* Full Notes & Special Instructions (descartando si solo coincide con la referencia de ticket o mesa) */}
+              {/* Full Notes & Special Instructions (discarding if it only matches the ticket or table reference) */}
               {Boolean(
                 selectedAllergyDetail.rawNotes &&
                 selectedAllergyDetail.rawNotes.trim().toLowerCase() !== selectedAllergyDetail.table.trim().toLowerCase() &&
@@ -4198,7 +4173,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 <div className="bg-zinc-900/80 border border-amber-500/30 p-3 rounded-xl">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1 mb-1">
                     <span className="material-symbols-outlined text-xs">edit_note</span>
-                    {deviceLanguage === 'es' ? 'INSTRUCCIÓN COMPLETA DE COCINA:' : 'FULL KITCHEN INSTRUCTION:'}
+                    'FULL KITCHEN INSTRUCTION:'
                   </span>
                   <p className="text-xs text-zinc-200 font-medium whitespace-pre-wrap break-words leading-relaxed pl-2 border-l-2 border-amber-500/70">
                     {deviceLanguage === 'es'

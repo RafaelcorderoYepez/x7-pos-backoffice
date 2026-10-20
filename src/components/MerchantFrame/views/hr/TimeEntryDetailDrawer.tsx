@@ -106,7 +106,7 @@ export const TimeEntryDetailDrawer: React.FC<TimeEntryDetailDrawerProps> = ({
             data-testid="entry-timeline"
             className="relative h-12 bg-[#f2ede5] rounded overflow-hidden"
           >
-            {/* Turno programado, de fondo. */}
+            {/* Scheduled shift, background. */}
             {schedIn != null && schedOut != null && (
               <div
                 data-testid="timeline-scheduled"
@@ -140,7 +140,7 @@ export const TimeEntryDetailDrawer: React.FC<TimeEntryDetailDrawerProps> = ({
           </div>
         </div>
 
-        {/* ---------------- Desglose de horas ---------------- */}
+        {/* ---------------- Breakdown of hours ---------------- */}
         <div className="p-6 border-b border-[#e8e2d8] grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
             { label: 'Raw interval', value: formatHours(rawHours(entry)) },

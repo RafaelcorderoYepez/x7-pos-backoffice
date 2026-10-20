@@ -1,17 +1,17 @@
-// Tipos del dominio de Cuentas por Pagar (Accounts Payable).
-// Las propiedades usan snake_case para coincidir con el contrato de la API REST
-// (GET /api/v1/accounts-payable/...) y con el resto de vistas de inventario/proveedores.
+// Types of the Accounts Payable domain.
+// Properties use snake_case to match REST API contract
+// (GET /api/v1/accounts-payable/...) and with the rest of the inventory/supplier views.
 
-// Valores en minúsculas para coincidir con el enum del backend
+// Lowercase values ​​to match backend enum
 // (SupplierInvoiceStatus: pending | partially_paid | paid | cancelled).
-// "Overdue" no es un estado persistido: se deriva en el front vía isPastDue().
+// "Overdue" is not a persisted state: it is derived in the front via isPastDue().
 export type SupplierInvoiceStatus =
   | 'pending'
   | 'partially_paid'
   | 'paid'
   | 'cancelled';
 
-// Lista ordenada de estados para poblar selects y validaciones sin recorrer un enum.
+// Ordered list of states to populate selects and validations without looping through an enum.
 export const SUPPLIER_INVOICE_STATUSES: SupplierInvoiceStatus[] = [
   'pending',
   'partially_paid',
@@ -19,7 +19,7 @@ export const SUPPLIER_INVOICE_STATUSES: SupplierInvoiceStatus[] = [
   'cancelled',
 ];
 
-// Etiquetas legibles para badges y selectores.
+// Legible labels for badges and selectors.
 export const SUPPLIER_INVOICE_STATUS_LABELS: Record<SupplierInvoiceStatus, string> = {
   pending: 'Pending',
   partially_paid: 'Partially Paid',
@@ -27,10 +27,10 @@ export const SUPPLIER_INVOICE_STATUS_LABELS: Record<SupplierInvoiceStatus, strin
   cancelled: 'Cancelled',
 };
 
-// ================= Tipos de documento (compartidos AP) =================
+// ================= Document Types (AP Shared) =================
 
-// document_type es varchar(50) libre en el backend; el front ofrece este catálogo
-// cerrado tanto en las líneas de pago como en las asignaciones.
+// document_type is free varchar(50) on the backend; the front offers this catalog
+// closed on both paylines and assignments.
 export type ApDocumentType = 'invoice' | 'debit_note' | 'adjustment' | 'advance';
 
 export const AP_DOCUMENT_TYPES: ApDocumentType[] = [
@@ -40,7 +40,7 @@ export const AP_DOCUMENT_TYPES: ApDocumentType[] = [
   'advance',
 ];
 
-// Las asignaciones apuntan a documentos de deuda: 'advance' no aplica como destino.
+// Assignments point to debt documents: 'advance' does not apply as a destination.
 export const AP_ALLOCATION_DOCUMENT_TYPES: ApDocumentType[] = [
   'invoice',
   'debit_note',
@@ -61,8 +61,8 @@ export const AP_DOCUMENT_TYPE_BADGE_STYLES: Record<ApDocumentType, string> = {
   advance: 'bg-purple-500/10 text-purple-700',
 };
 
-// El backend no valida el catálogo, así que un valor desconocido cae a un badge
-// neutro y a una etiqueta legible derivada del propio string.
+// The backend does not validate the catalog, so an unknown value drops to a badge
+// neutral and to a readable label derived from the string itself.
 export const documentTypeLabel = (type: string): string =>
   AP_DOCUMENT_TYPE_LABELS[type as ApDocumentType] ??
   type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -71,7 +71,7 @@ export const documentTypeBadgeStyle = (type: string): string =>
   AP_DOCUMENT_TYPE_BADGE_STYLES[type as ApDocumentType] ??
   'bg-[#ece8e0] text-[#1d1c17]';
 
-// Vínculo relacional mínimo hacia el proveedor (supplier) embebido en la factura.
+// Minimum relational link to the supplier embedded in the invoice.
 export interface InvoiceSupplierRef {
   id: number;
   name: string;
@@ -81,9 +81,9 @@ export interface InvoiceSupplierRef {
   address?: string | null;
 }
 
-// Vínculo relacional mínimo hacia el producto del catálogo de inventario.
-// Variante de inventario de un producto. El backend exige product_id + variant_id
-// juntos al vincular una línea a inventario (para el recibo de stock).
+// Minimum relational link to the inventory catalog product.
+// Inventory variant of a product. Backend requires product_id + variant_id
+// together by linking a line to inventory (for stock receipt).
 export interface InvoiceVariantRef {
   id: number;
   name: string;
@@ -99,7 +99,7 @@ export interface InvoiceProductRef {
   variants?: InvoiceVariantRef[];
 }
 
-// Vínculo relacional mínimo hacia la factura padre desde una línea.
+// Minimum relational link to the parent invoice from a line.
 export interface ItemInvoiceRef {
   id: number;
   invoice_number: string;
@@ -144,7 +144,7 @@ export interface SupplierInvoice {
   deleted_at?: string | null;
 }
 
-// ---- DTOs de escritura ----
+// ---- Write DTOs ----
 
 export interface CreateSupplierInvoiceDto {
   supplier_id: number;
@@ -153,9 +153,9 @@ export interface CreateSupplierInvoiceDto {
   due_date: string;
   subtotal: number;
   tax_total: number;
-  total_amount: number; // El backend lo exige explícitamente (= subtotal + tax_total).
+  total_amount: number; // Backend requires explicitly (= subtotal + tax_total).
   notes?: string | null;
-  // company_id lo inyecta la vista en el body al enviar (se deriva de la sesión/JWT).
+  // company_id is injected into request body on submit (derived from session/JWT).
 }
 
 export type UpdateSupplierInvoiceDto = Partial<CreateSupplierInvoiceDto>;
@@ -167,14 +167,14 @@ export interface CreateSupplierInvoiceItemDto {
   description: string;
   quantity: number;
   unit_price: number;
-  line_subtotal: number; // Requerido por el backend.
+  line_subtotal: number; // Required by the backend.
   tax_amount: number;
-  line_total: number; // Requerido por el backend.
+  line_total: number; // Required by the backend.
 }
 
 // ================= Supplier Credit Notes =================
 
-// Valores en minúsculas para coincidir con el enum del backend
+// Lowercase values ​​to match backend enum
 // (SupplierCreditNoteStatus: draft | issued | partially_applied | fully_applied | cancelled).
 export type SupplierCreditNoteStatus =
   | 'draft'
@@ -203,7 +203,7 @@ export interface SupplierCreditNote {
   id: number;
   company_id: number;
   supplier_id: number;
-  supplier?: InvoiceSupplierRef | null; // Resuelto en el front (el backend no lo embebe).
+  supplier?: InvoiceSupplierRef | null; // Resolved on the front end (the backend does not embed it).
   credit_note_number: string;
   issue_date: string;
   total_amount: number | string;
@@ -212,31 +212,31 @@ export interface SupplierCreditNote {
   created_at?: string;
   updated_at?: string;
   deleted_at?: string | null;
-  allocations?: SupplierPaymentAllocation[]; // Cargadas aparte para el drawer de detalle.
+  allocations?: SupplierPaymentAllocation[]; // Loaded separately for the detail drawer.
 }
 
-// Vínculo relacional mínimo hacia el pago padre desde una línea o asignación.
-// El backend no lo embebe: se resuelve en el front contra /api/supplier-payments.
+// Minimum relational link to the parent payment from a line or assignment.
+// The backend does not embed it: it is resolved on the front end against /api/supplier-payments.
 export interface ItemPaymentRef {
   id: number;
   payment_number: string;
 }
 
-// Vínculo relacional mínimo hacia la nota de crédito que financia una asignación.
+// Minimum relational link to the credit note that finances an assignment.
 export interface AllocationCreditNoteRef {
   id: number;
   credit_note_number: string;
 }
 
-// Aplicación de un pago/nota de crédito contra un documento (factura).
+// Application of a payment/credit note against a document (invoice).
 // payment_id y credit_note_id son mutuamente excluyentes (XOR): exactamente uno
-// está presente — el backend rechaza ambos o ninguno.
+// is present — the backend rejects both or neither.
 export interface SupplierPaymentAllocation {
   id: number;
   payment_id: number | null;
-  payment?: ItemPaymentRef | null; // Resuelto en el front.
+  payment?: ItemPaymentRef | null; // Resolved on the front.
   credit_note_id: number | null;
-  credit_note?: AllocationCreditNoteRef | null; // Resuelto en el front.
+  credit_note?: AllocationCreditNoteRef | null; // Resolved on the front.
   supplier_id: number;
   document_number: string;
   document_type: string;
@@ -245,15 +245,15 @@ export interface SupplierPaymentAllocation {
   deleted_at?: string | null;
 }
 
-// Origen de fondeo de una asignación, derivado de qué id viene informado.
+// Funding origin of an assignment, derived from which id is reported.
 export type AllocationSourceType = 'payment' | 'credit_note';
 
 export const allocationSourceType = (
   a: Pick<SupplierPaymentAllocation, 'payment_id' | 'credit_note_id'>,
 ): AllocationSourceType => (a.credit_note_id != null ? 'credit_note' : 'payment');
 
-// Cuerpo para crear una asignación de pago→documento (invoice) contra un proveedor.
-// Enviar SOLO uno de payment_id / credit_note_id (el otro va null u omitido).
+// Body to create a payment→document assignment (invoice) against a supplier.
+// Send ONLY one of payment_id / credit_note_id (the other goes null or omitted).
 export interface CreateSupplierPaymentAllocationDto {
   payment_id?: number | null;
   credit_note_id?: number | null;
@@ -271,7 +271,7 @@ export interface CreateSupplierCreditNoteDto {
   credit_note_number: string;
   issue_date: string;
   total_amount: number;
-  // company_id lo inyecta la vista al enviar (se deriva de la sesión/JWT).
+  // company_id is injected by the view on submit (derived from the session/JWT).
 }
 
 export type UpdateSupplierCreditNoteDto = Partial<CreateSupplierCreditNoteDto> & {
@@ -280,7 +280,7 @@ export type UpdateSupplierCreditNoteDto = Partial<CreateSupplierCreditNoteDto> &
 
 // ================= Supplier Payments (Disbursements) =================
 
-// Valores en minúsculas para coincidir con el enum del backend
+// Lowercase values ​​to match backend enum
 // (SupplierPaymentStatus: draft | posted | partially_allocated | fully_allocated | cancelled).
 export type SupplierPaymentStatus =
   | 'draft'
@@ -302,10 +302,10 @@ export const SUPPLIER_PAYMENT_STATUS_LABELS: Record<SupplierPaymentStatus, strin
   posted: 'Posted',
   partially_allocated: 'Partially Allocated',
   fully_allocated: 'Fully Allocated',
-  cancelled: 'Voided', // El backend usa 'cancelled'; la UI lo muestra como "Voided" (spec).
+  cancelled: 'Voided', // The backend uses 'cancelled'; the UI shows it as "Voided" (spec).
 };
 
-// Métodos ofrecidos en el filtro (subconjunto del spec: Bank Transfer, Check, Credit Card, Cash).
+// Methods offered in the filter (subset of the spec: Bank Transfer, Check, Credit Card, Cash).
 export const SUPPLIER_PAYMENT_METHOD_FILTERS: Array<{ value: string; label: string }> = [
   { value: 'bank_transfer', label: 'Bank Transfer' },
   { value: 'check', label: 'Check' },
@@ -313,12 +313,12 @@ export const SUPPLIER_PAYMENT_METHOD_FILTERS: Array<{ value: string; label: stri
   { value: 'cash', label: 'Cash' },
 ];
 
-// Línea de desglose de un pago (breakdown items): qué documento externo cubre
-// cada porción del voucher de desembolso.
+// Payment breakdown line (breakdown items): what external document does it cover?
+// each portion of the disbursement voucher.
 export interface SupplierPaymentItem {
   id: number;
   payment_id: number;
-  payment?: ItemPaymentRef | null; // Resuelto en el front (el backend no lo embebe).
+  payment?: ItemPaymentRef | null; // Resolved on the front end (the backend does not embed it).
   document_number: string;
   document_type: string;
   amount: number | string;
@@ -334,16 +334,16 @@ export interface CreateSupplierPaymentItemDto {
 
 export type UpdateSupplierPaymentItemDto = Partial<CreateSupplierPaymentItemDto>;
 
-// Estados del pago padre que congelan sus líneas de desglose (Posted Payment
-// Immobility Lock). 'cancelled' se muestra como "Voided" en la UI.
+// Statuses of the parent payment that freeze its breakdown lines (Posted Payment
+// Immobility Lock). 'cancelled' is displayed as "Voided" in the UI.
 const FROZEN_PAYMENT_STATUSES: SupplierPaymentStatus[] = [
   'posted',
   'fully_allocated',
   'cancelled',
 ];
 
-// Un pago está inmovilizado si ya se contabilizó/anuló o si tiene monto asignado
-// (esto último cubre además 'partially_allocated').
+// A payment is frozen if it has already been posted/voided or if it has an assigned amount
+// (the latter also covers 'partially_allocated').
 export const isPaymentFrozen = (
   p: Pick<SupplierPayment, 'status' | 'allocated_amount'>,
 ): boolean => {
@@ -357,7 +357,7 @@ export const isPaymentFrozen = (
   );
 };
 
-// payment_method es texto libre en el backend; ofrecemos opciones comunes en el form.
+// payment_method is free text on the backend; We offer common options in the form.
 export const SUPPLIER_PAYMENT_METHODS: Array<{ value: string; label: string }> = [
   { value: 'bank_transfer', label: 'Bank Transfer' },
   { value: 'cash', label: 'Cash' },
@@ -371,7 +371,7 @@ export interface SupplierPayment {
   id: number;
   company_id: number;
   supplier_id: number;
-  supplier?: InvoiceSupplierRef | null; // Resuelto en el front.
+  supplier?: InvoiceSupplierRef | null; // Resolved on the front.
   payment_number: string;
   payment_date: string;
   payment_method: string;
@@ -392,7 +392,7 @@ export interface CreateSupplierPaymentDto {
   payment_method: string;
   reference?: string | null;
   total_amount: number;
-  // company_id lo inyecta la vista al enviar (se deriva de la sesión/JWT).
+  // company_id is injected by the view on submit (derived from the session/JWT).
 }
 
 export type UpdateSupplierPaymentDto = Partial<CreateSupplierPaymentDto> & {

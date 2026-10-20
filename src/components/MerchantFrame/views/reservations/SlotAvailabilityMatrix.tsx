@@ -1,8 +1,8 @@
-// Selector de hora con semáforo de aforo: cada franja de 15/30 min de cada turno, pintada
-// verde (< 70 %), ámbar (70–99 %) o rojo (lleno para ESTE grupo o sin hueco de llegada).
+// Time selector with capacity traffic light: each 15/30 min slot of each shift, painted
+// green (< 70%), amber (70–99%), or red (full for THIS group or no arrival gap).
 //
-// Una franja roja se puede elegir igualmente: es como la anfitriona llega al override del
-// encargado. Lo que el matriz NO hace es decidir — el veredicto es el del servidor.
+// A red stripe can also be chosen: it is how the hostess reaches the override of the
+// manager. What the matrix does NOT do is decide — the verdict is that of the server.
 
 import React from 'react';
 import {

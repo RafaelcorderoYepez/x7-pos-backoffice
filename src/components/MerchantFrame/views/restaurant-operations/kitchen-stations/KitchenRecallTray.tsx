@@ -57,7 +57,7 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [viewScope, setViewScope] = useState<'STATION' | 'ALL'>('STATION');
 
-  // Timer para refrescar timestamps de forma pura
+  // Timer to refresh timestamps in a pure way
   useEffect(() => {
     const timer = setInterval(() => {
       setNowMs(Date.now());
@@ -248,7 +248,7 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
         onOrderRecalled(orderId, targetOrder);
       }
 
-      // Remover de la lista de recientes completadas
+      // Remove from recent completed list
       setTimeout(() => {
         setCompletedOrders((prev) => prev.filter((o) => o.id !== orderId));
         setFeedback(null);
@@ -302,7 +302,7 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
         onOrderRecalled(orderId, targetOrder);
       }
 
-      // Remover de la lista de recientes completadas
+      // Remove from recent completed list
       setTimeout(() => {
         setCompletedOrders((prev) => prev.filter((o) => o.id !== orderId));
         setFeedback(null);

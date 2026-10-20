@@ -1,16 +1,16 @@
-// Tipos del dominio de Reservas (/api/reservation y sus sub-recursos).
+// Types of the Reservations domain (/api/reservation and its sub-resources).
 //
-// El contrato real del backend NO es el que dicen las historias: el controlador es
-// `@Controller('reservation')` (SINGULAR, sin /v1), así que la ruta es `/api/reservation`,
-// y la actualización viaja por **PATCH**, no por PUT como el resto de módulos. Los escalares
-// llegan en snake_case tal cual salen de la entidad; no los normalizamos para no romper los
-// payloads de escritura.
+// The actual backend contract is NOT what the stories say: the controller is
+// `@Controller('reservation')` (SINGULAR, without /v1), so the path is `/api/reservation`,
+// and the update travels through **PATCH**, not through PUT like the rest of the modules. The scalars
+// they arrive in snake_case as they leave the entity; We do not normalize them so as not to break the
+// write payloads.
 
-// ================= Ciclo de vida =================
+// ================= Life cycle =================
 
-// Espejo del enum ReservationStatus del backend. Ojo con `white_list`: la constante se llama
-// WAIT_LIST pero el valor persistido está mal escrito en la columna enum de Postgres, así que
-// éste es el literal que hay que mandar y esperar. Cambiarlo aquí a 'wait_list' rompería la
+// Mirror the backend ReservationStatus enum. Be careful with `white_list`: the constant is called
+// WAIT_LIST but the persisted value is misspelled in the Postgres enum column, so
+// This is the literal one that must be sent and waited. Changing it here to 'wait_list' would break the
 // escritura (22P02: invalid input value for enum).
 export type ReservationStatus =
   | 'pending'
@@ -41,9 +41,9 @@ export const RESERVATION_STATUS_LABELS: Record<ReservationStatus, string> = {
   no_show: 'No Show',
 };
 
-// Paleta exacta de la historia: ámbar aviso, azul info, verde éxito, pizarra apagada, rojo
-// peligro, morado ausencia. `white_list` no está en la historia (es un estado que sólo existe
-// en el enum del backend); se le da cian para que no se confunda con ninguno de los seis.
+// Exact story palette: warning amber, info blue, success green, blackboard off, red
+// danger, purple absence. `white_list` is not in history (it is a state that only exists
+// in the backend enum); It is given cyan so that it is not confused with any of the six.
 export const RESERVATION_STATUS_COLORS: Record<ReservationStatus, string> = {
   pending: '#f59e0b',
   confirmed: '#3b82f6',
@@ -57,10 +57,10 @@ export const RESERVATION_STATUS_COLORS: Record<ReservationStatus, string> = {
 export const isReservationStatus = (raw?: string | null): raw is ReservationStatus =>
   RESERVATION_STATUSES.includes((raw ?? '') as ReservationStatus);
 
-// Píldora sobre fondo claro. Las clases están escritas ENTERAS y a mano, una por estado: el
-// JIT de Tailwind extrae los nombres de clase leyendo el fichero como texto plano, así que un
-// `bg-[${color}]/15` compuesto en tiempo de ejecución nunca llega a generar CSS y la píldora
-// saldría transparente. Los literales repiten los valores de RESERVATION_STATUS_COLORS.
+// Pill on light background. The classes are written WHOLE and by hand, one per state: the
+// Tailwind JIT extracts the class names by reading the file as plain text, so a
+// `bg-[${color}]/15` composed at runtime never generates CSS and pill
+// it would come out transparent. The literals repeat the values ​​of RESERVATION_STATUS_COLORS.
 export const RESERVATION_STATUS_PILL_STYLES: Record<ReservationStatus, string> = {
   pending: 'bg-[#f59e0b]/15 text-[#b45309] border border-[#f59e0b]/40',
   confirmed: 'bg-[#3b82f6]/15 text-[#1d4ed8] border border-[#3b82f6]/40',
@@ -71,25 +71,25 @@ export const RESERVATION_STATUS_PILL_STYLES: Record<ReservationStatus, string> =
   no_show: 'bg-[#8b5cf6]/15 text-[#6d28d9] border border-[#8b5cf6]/40',
 };
 
-// El texto de la píldora usa un tono más oscuro que el color nominal del estado para que el
-// contraste sobre el relleno al 15% pase AA; el color de la historia se conserva en el borde,
-// en el relleno y en la barra lateral de la tarjeta (RESERVATION_STATUS_COLORS).
+// The pill text uses a darker shade than the state's nominal color so that the
+// contrast on fill at 15% pass AA; the color of history is preserved at the edge,
+// in the padding and in the sidebar of the card (RESERVATION_STATUS_COLORS).
 export const reservationStatusPillStyle = (raw?: string | null): string =>
   isReservationStatus(raw ?? '')
     ? RESERVATION_STATUS_PILL_STYLES[raw as ReservationStatus]
     : 'bg-[#ece8e0] text-[#1d1c17] border border-[#e8e2d8]';
 
-// Una reserva con un estado heredado fuera del enum sigue siendo legible en la parrilla en vez
-// de tumbar la píldora.
+// A reservation with an inherited state outside the enum is still readable in the grid instead
+// to knock down the pill.
 export const reservationStatusLabel = (raw?: string | null): string => {
   const value = (raw ?? '').trim();
   if (isReservationStatus(value)) return RESERVATION_STATUS_LABELS[value];
   return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || '—';
 };
 
-// ================= Canal de origen =================
+// ================= Source Channel =================
 
-// La columna es varchar(20) libre; éstos son los cuatro canales que el POS sabe pintar.
+// The column is free varchar(20); These are the four channels that the POS knows how to paint.
 export type ReservationSource = 'phone' | 'online' | 'qr' | 'walk_in';
 
 export const RESERVATION_SOURCES: ReservationSource[] = ['phone', 'online', 'qr', 'walk_in'];
@@ -120,10 +120,10 @@ export const reservationSourceLabel = (raw?: string | null): string => {
 export const reservationSourceIcon = (raw?: string | null): string =>
   isReservationSource(raw ?? '') ? RESERVATION_SOURCE_ICONS[raw as ReservationSource] : 'help';
 
-// ================= Formas del contrato =================
+// ================= Contract forms =================
 
-// Roster de acompañantes. `is_primary` marca el contacto principal de la mesa; el backend NO
-// impone que haya exactamente uno, esa garantía la sostiene el workspace de Guests.
+// Companion roster. `is_primary` marks the primary contact of the table; the backend is NOT
+// requires that there be exactly one, that guarantee is supported by the Guests workspace.
 export interface ReservationGuest {
   id: number;
   reservation_id: number;
@@ -134,15 +134,15 @@ export interface ReservationGuest {
   is_active: boolean;
 }
 
-// Enlace reserva ↔ mesa física. OJO con las DOS formas en que llega:
-//  - embebido en la reserva (`GET /api/reservation`), donde el servicio sólo mapea los tres
-//    escalares y NO hay ni `id` ni datos de la mesa;
-//  - desde `GET /api/reservation-table`, que sí hidrata número, aforo y zona vía la relación
+// Reservation link ↔ physical table. BE CAREFUL with the TWO ways it arrives:
+//  - embedded in the reservation (`GET /api/reservation`), where the service only maps the three
+//    scalars and there is NO `id` nor table data;
+//  - from `GET /api/reservation-table`, which does hydrate number, capacity and area via the relationship
 //    `eager` a Table.
-// Por eso todo lo que no sean los tres escalares es opcional: pintar el tablero a partir de la
-// reserva embebida exige resolver la mesa contra el inventario de /api/tables.
+// That's why everything other than the three scalars is optional: paint the board from the
+// embedded fallback requires resolving the table against the inventory of /api/tables.
 export interface ReservationTableLink {
-  /** Sólo viene de /api/reservation-table; hace falta para desasignar por fila. */
+  /** It only comes from /api/reservation-table; it is needed to deallocate by row. */
   id?: number;
   reservation_id: number;
   table_id: number;
@@ -172,7 +172,7 @@ export interface ReservationStatusHistoryEntry {
   is_active: boolean;
 }
 
-// Contexto de la reserva madre que `/api/reservation-status-history` embebe en cada entrada.
+// Context of the parent reservation that `/api/reservation-status-history` embeds in each entry.
 export interface StatusHistoryReservationSummary {
   id: number;
   reservation_date: string;
@@ -183,18 +183,18 @@ export interface StatusHistoryReservationSummary {
   guest_name: string | null;
 }
 
-// Forma del feed `/api/reservation-status-history` (NO la embebida en la reserva): cada
-// entrada trae la anterior de su reserva, resuelta por el servidor contra el ciclo de vida
-// completo, así que el Δt es exacto aunque el filtro de día deje fuera el alta.
+// Form of the feed `/api/reservation-status-history` (NOT the one embedded in the reservation): each
+// entry brings the previous one from your reservation, resolved by the server against the lifecycle
+// complete, so the Δt is exact even if the day filter leaves out the discharge.
 export interface StatusHistoryFeedEntry extends ReservationStatusHistoryEntry {
   previous_status: ReservationStatus | null;
   previous_changed_at: string | null;
   reservation?: StatusHistoryReservationSummary;
 }
 
-// Tal cual lo devuelve ReservationResponseDto. `guests`/`tables`/`notes`/`status_history` sólo
-// vienen hidratados cuando el servicio los ha unido (findAll y findOne los traen; el POST
-// devuelve findOne, así que también).
+// As returned by ReservationResponseDto. `guests`/`tables`/`notes`/`status_history` only
+// they come hydrated when the service has joined them (findAll and findOne bring them; the POST
+// returns findOne, so too).
 export interface Reservation {
   id: number;
   merchant_id: number;
@@ -207,7 +207,7 @@ export interface Reservation {
   source: string | null;
   special_requests: string | null;
   created_by: number | null;
-  /** Encargado que autorizó reservar por encima del aforo o del ritmo de llegadas. */
+  /** Manager who authorized bookings above capacity or arrival rate. */
   capacity_override_by?: number | null;
   capacity_override_at?: string | null;
   created_at?: string;
@@ -217,8 +217,8 @@ export interface Reservation {
   status_history?: ReservationStatusHistoryEntry[];
 }
 
-// Cuerpo del POST /api/reservation. `created_by` lo sella el servidor desde el JWT: mandarlo
-// desde el cliente permitiría firmar la reserva con el id de otro compañero.
+// POST body /api/reservation. `created_by` is stamped by the server from the JWT: send it
+// from the client it would allow signing the reservation with the ID of another colleague.
 export interface ReservationDraft {
   customer_id?: number;
   reservation_date: string;
@@ -229,14 +229,14 @@ export interface ReservationDraft {
   special_requests?: string;
   table_ids?: number[];
   /**
-   * Credenciales del encargado para forzar una franja llena (sólo tras un 409
-   * CAPACITY_OVERRIDE_REQUIRED). El servidor las verifica y NO las guarda: guarda quién
-   * autorizó en `capacity_override_by`.
+   * Manager credentials to force a full slot (only after a 409
+   * CAPACITY_OVERRIDE_REQUIRED). The server verifies them and does NOT save them: save who
+   * authorized in `capacity_override_by`.
    */
   manager_override?: { email: string; password: string };
 }
 
-// El CRM sólo tiene `name` (un único campo), no first_name/last_name como dice la historia.
+// The CRM only has `name` (a single field), not first_name/last_name as the story says.
 export interface CustomerRef {
   id: number;
   name: string;
@@ -247,5 +247,5 @@ export interface CustomerRef {
 
 export const DEFAULT_DURATION_MINUTES = 90;
 
-// Minutos de cortesía antes de que una reserva confirmada sea candidata a no-show.
+// Courtesy minutes before a confirmed reservation is a candidate for no-show.
 export const NO_SHOW_GRACE_MINUTES = 15;

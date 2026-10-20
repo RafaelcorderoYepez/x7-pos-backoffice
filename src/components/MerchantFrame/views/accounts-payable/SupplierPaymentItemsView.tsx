@@ -493,7 +493,7 @@ const ConfirmDeleteItemDialog: React.FC<ConfirmDeleteItemDialogProps> = ({
 interface SupplierPaymentItemsViewProps {
   onNavigate?: (view: string) => void;
   companyId?: number;
-  // Contexto padre: al llegar desde un voucher concreto la grid arranca filtrada.
+  // Parent context: when arriving from a specific voucher the grid starts filtered.
   payment?: SupplierPayment | null;
   onClearPayment?: () => void;
 }
@@ -549,7 +549,7 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
     setError(null);
     try {
       // Multi-tenant scoping enforced by backend with JWT; parent context
-      // se traduce a un filtro payment_id server-side.
+      // translates to a server-side payment_id filter.
       const url = payment
         ? `${API_BASE}/supplier-payment-items?payment_id=${payment.id}&limit=100`
         : `${API_BASE}/supplier-payment-items?limit=100`;
@@ -693,7 +693,7 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
   };
 
   // Posted Payment Immobility Lock: assumed mutable if no parent loaded
-  // (el backend vuelve a validar de todos modos).
+  // (the backend re-validates anyway).
   const isItemLocked = (i: SupplierPaymentItem): boolean => {
     const parent = paymentById.get(i.payment_id);
     return parent ? isPaymentFrozen(parent) : false;

@@ -1,11 +1,11 @@
-// Drawer de alta de asignación (y de reasignación de repartidor).
+// Drawer assignment registration (and dealer reassignment).
 //
-// Alta: pedido de reparto listo en cocina SIN asignación abierta + tipo de flota.
-//  - IN_HOUSE: desplegable sólo con repartidores `active` (GET /delivery-driver?status=active).
-//  - DSP: "Request quote" / "Dispatch via provider" contra external-quote / external-dispatch
-//    (hoy 503 → aviso claro) y una sección manual (id externo, URL https, coste DSP) que crea
-//    la asignación con POST /delivery-assignment.
-// Reasignación: sólo el desplegable de repartidores activos.
+// Registration: delivery order ready in kitchen WITHOUT open assignment + fleet type.
+//  - IN_HOUSE: dropdown only with `active` delivery drivers (GET /delivery-driver?status=active).
+//  - DSP: "Request quote" / "Dispatch via provider" vs external-quote / external-dispatch
+//    (today 503 → clear notice) and a manual section (external id, https URL, DSP cost) that creates
+//    the assignment with POST /delivery-assignment.
+// Reassignment: only the active delivery dropdown.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import type {
@@ -38,14 +38,14 @@ import { SideDrawer } from '../../shared/SideDrawer';
 export const PROVIDER_NOT_CONNECTED = 'Provider not connected yet — enter the dispatch details manually.';
 
 interface AssignmentFormDrawerProps {
-  /** Con asignación: modo "reasignar repartidor". */
+  /** With assignment: "reassign dealer" mode. */
   reassign?: DeliveryAssignment | null;
   submitting: boolean;
   formError: string;
   onCancel: () => void;
   onCreate: (draft: AssignmentCreateDraft) => void;
   onReassign: (assignment: DeliveryAssignment, driverId: number) => void;
-  /** El proveedor creó la asignación por su cuenta (external-dispatch OK). */
+  /** The vendor created the assignment on its own (external-dispatch OK). */
   onDispatched: (assignment: DeliveryAssignment) => void;
 }
 

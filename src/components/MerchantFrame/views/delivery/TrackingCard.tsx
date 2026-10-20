@@ -1,5 +1,5 @@
-// Tarjeta de seguimiento activo: #TRK, repartidor, #ASN, coordenada en vivo con su "hace X s"
-// y el semáforo de puntualidad. Clic = enfocar el reparto en el mapa.
+// Active tracking card: #TRK, delivery man, #ASN, live coordinate with its "X s ago"
+// and the punctuality traffic light. Click = focus the distribution on the map.
 
 import React from 'react';
 import type { TelemetryStatus } from '../../../../types/delivery-tracking';

@@ -64,26 +64,18 @@ const getItemPrepAction = (course?: string, productName?: string) => {
     c.includes('bev') ||
     n.includes('latte') ||
     n.includes('coffee') ||
-    n.includes('café') ||
     n.includes('cafe') ||
     n.includes('soda') ||
     n.includes('juice') ||
-    n.includes('jugo') ||
     n.includes('tea') ||
-    n.includes('té') ||
     n.includes('cocktail') ||
-    n.includes('coctel') ||
-    n.includes('cerveza') ||
     n.includes('beer') ||
     n.includes('drink') ||
     n.includes('frappe') ||
     n.includes('smoothie') ||
-    n.includes('refresco') ||
-    n.includes('agua') ||
     n.includes('water') ||
     n.includes('wine') ||
-    n.includes('vino') ||
-    n.includes('licor') ||
+    n.includes('liquor') ||
     n.includes('mojito') ||
     n.includes('margarita');
 
@@ -240,7 +232,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     return () => clearInterval(interval);
   }, [refreshInterval, loadItems]);
 
-  // Escuchar evento global de reinicio KDS
+  // Listen to global KDS reset event
   useEffect(() => {
     const handleReset = () => {
       loadItems(true);
@@ -361,7 +353,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     try {
       const token = getAccessToken();
       const newPrepared = Math.max(0, item.preparedQuantity - 1);
-      // Mantener en preparación activa (in_preparation); solo vuelve a pending al presionar Undo
+      // Keep in active preparation (in_preparation); it only returns to pending when you press Undo
       const newStatus: KitchenItemPrepStatus = 'in_preparation';
 
       const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
@@ -1381,7 +1373,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
               return (
                 <div key={group.kitchenOrderId} className="space-y-3">
-                  {/* Visual Order Separator & Header Banner (Opción C) */}
+                  {/* Visual Order Separator & Header Banner (Option C) */}
                   <div
                     onClick={() => toggleGroup(group.kitchenOrderId)}
                     className="flex items-center justify-between gap-3 px-4 py-2.5 bg-[#f6f2e9] border border-[#e2dcce] rounded-xl shadow-xs cursor-pointer select-none hover:border-[#d5cfc4] transition-colors"
@@ -1729,7 +1721,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                       </button>
                     </div>
                   ) : isReady ? (
-                    /* Cuando está READY, a la derecha solo va el botón Undo (el badge READY ya está a la izquierda) */
+                    /* When it is READY, only the Undo button is on the right (the READY badge is already on the left) */
                     <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                       <button
                         onClick={e => handleRevertItemToPending(item, e)}
@@ -1741,7 +1733,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                       </button>
                     </div>
                   ) : (
-                    /* En preparación (IN PREP) */
+                    /* IN PREP */
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                       {/* Decrement (-1) */}
                       {item.preparedQuantity > 0 && (
@@ -2170,7 +2162,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
                                 </button>
                               </div>
                             ) : (
-                              /* En preparación (IN PREP) */
+                              /* IN PREP */
                               <div className="inline-flex items-center gap-1.5">
                                 {item.preparedQuantity > 0 && (
                                   <button

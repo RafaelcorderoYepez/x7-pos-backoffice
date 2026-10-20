@@ -17,11 +17,11 @@ import {
 import type { UnitSystem } from './measurement-units';
 
 describe('constantes', () => {
-  it('asume la escala del editor: 100px = 1m', () => {
+  it('assumes editor scale: 100px = 1m', () => {
     expect(PX_PER_METER).toBe(100);
   });
 
-  it('expone los dos sistemas con sus etiquetas', () => {
+  it('exposes the two systems with their labels', () => {
     expect(UNIT_SYSTEMS).toEqual(['metric', 'imperial']);
     expect(UNIT_SYSTEM_LABELS.metric).toBe('Meters');
     expect(UNIT_SYSTEM_LABELS.imperial).toBe('Feet & inches');
@@ -31,18 +31,18 @@ describe('constantes', () => {
 });
 
 describe('formatLength · metric', () => {
-  it('formatea metros con un decimal', () => {
+  it('format meters with a decimal', () => {
     expect(formatLength(850, 'metric')).toBe('8.5 m');
     expect(formatLength(1234, 'metric')).toBe('12.3 m');
   });
 
-  it('omite el decimal cuando es cero', () => {
+  it('omits decimal when zero', () => {
     expect(formatLength(1000, 'metric')).toBe('10 m');
     expect(formatLength(300, 'metric')).toBe('3 m');
     expect(formatLength(4000, 'metric')).toBe('40 m');
   });
 
-  it('usa centímetros enteros por debajo de un metro', () => {
+  it('use whole centimeters below a meter', () => {
     expect(formatLength(40, 'metric')).toBe('40 cm');
     expect(formatLength(99, 'metric')).toBe('99 cm');
     expect(formatLength(0, 'metric')).toBe('0 cm');
@@ -64,16 +64,16 @@ describe('formatLength · imperial', () => {
     expect(formatLength(0, 'imperial')).toBe('0\' 0"');
   });
 
-  it('usa el pie exacto de 0.3048 m', () => {
+  it('use the exact foot of 0.3048 m', () => {
     // 30.48px es un pie clavado; 304.8px son diez.
     expect(formatLength(30.48, 'imperial')).toBe('1\' 0"');
     expect(formatLength(304.8, 'imperial')).toBe('10\' 0"');
   });
 
-  it('acarrea cuando las pulgadas redondean a 12 (jamás muestra 5\' 12")', () => {
-    // 182.8px = 5' 11.97": la pulgada redondea a 12 y debe subir a 6' 0".
+  it('carries over when inches round to 12 (never shows 5\' 12")', () => {
+    // 182.8px = 5' 11.97": Inch rounds to 12 and should go up to 6' 0".
     expect(formatLength(182.8, 'imperial')).toBe('6\' 0"');
-    // 700px = 22' 11.59": mismo acarreo, un pie más y cero pulgadas.
+    // 700px = 22' 11.59": same carry, one more foot and zero inches.
     expect(formatLength(700, 'imperial')).toBe('23\' 0"');
 
     for (const px of [182.8, 700, 30.47, 152.39]) {
@@ -83,33 +83,33 @@ describe('formatLength · imperial', () => {
 });
 
 describe('lengthValue', () => {
-  it('devuelve metros con dos decimales', () => {
+  it('returns meters with two decimal places', () => {
     expect(lengthValue(850, 'metric')).toBe(8.5);
     expect(lengthValue(1234, 'metric')).toBe(12.34);
     expect(lengthValue(4000, 'metric')).toBe(40);
   });
 
-  it('devuelve pies con dos decimales', () => {
+  it('returns feet to two decimal places', () => {
     expect(lengthValue(1000, 'imperial')).toBe(32.81);
     expect(lengthValue(300, 'imperial')).toBe(9.84);
     expect(lengthValue(4000, 'imperial')).toBe(131.23);
   });
 
-  it('no lleva símbolo: es un number listo para un <input>', () => {
+  it('It does not have a symbol: it is a number ready for a <input>', () => {
     expect(typeof lengthValue(800, 'metric')).toBe('number');
     expect(typeof lengthValue(800, 'imperial')).toBe('number');
   });
 });
 
 describe('lengthToPx', () => {
-  it('convierte lo tecleado por el usuario a px enteros', () => {
+  it('converts what is typed by the user to integer px', () => {
     expect(lengthToPx(10, 'metric')).toBe(1000);
     expect(lengthToPx(8.5, 'metric')).toBe(850);
     expect(lengthToPx(1, 'imperial')).toBe(30);
     expect(lengthToPx(10, 'imperial')).toBe(305);
   });
 
-  it('siempre devuelve enteros: el backend guarda px como int', () => {
+  it('always returns integers - backend saves px as int', () => {
     for (const value of [3.33, 9.84, 26.25, 131.23]) {
       expect(Number.isInteger(lengthToPx(value, 'metric'))).toBe(true);
       expect(Number.isInteger(lengthToPx(value, 'imperial'))).toBe(true);
@@ -120,13 +120,13 @@ describe('lengthToPx', () => {
 describe('ida y vuelta px -> valor -> px', () => {
   const TYPICAL = [300, 800, 1000, 4000];
 
-  it.each(UNIT_SYSTEMS)('conserva los tamaños típicos de lienzo en %s', (system) => {
+  it.each(UNIT_SYSTEMS)('preserves typical canvas dimensions in %s', (system) => {
     for (const px of TYPICAL) {
       expect(lengthToPx(lengthValue(px, system), system)).toBe(px);
     }
   });
 
-  it('no se desvía más de 1px en todo el rango válido del lienzo', () => {
+  it('does not deviate more than 1px in the entire valid range of the canvas', () => {
     for (let px = 300; px <= 4000; px += 7) {
       for (const system of UNIT_SYSTEMS) {
         const back = lengthToPx(lengthValue(px, system), system);
@@ -137,20 +137,20 @@ describe('ida y vuelta px -> valor -> px', () => {
 });
 
 describe('lengthSuffix', () => {
-  it('da el sufijo de las etiquetas de formulario', () => {
+  it('gives the suffix of the form tags', () => {
     expect(lengthSuffix('metric')).toBe('(m)');
     expect(lengthSuffix('imperial')).toBe('(ft)');
   });
 });
 
 describe('formatArea', () => {
-  it('formatea m² con un decimal', () => {
+  it('format m² with a decimal', () => {
     expect(formatArea(469000, 'metric')).toBe('46.9 m²');
     expect(formatArea(700000, 'metric')).toBe('70.0 m²');
     expect(formatArea(0, 'metric')).toBe('0.0 m²');
   });
 
-  it('formatea ft² como entero', () => {
+  it('format ft² as integer', () => {
     expect(formatArea(469000, 'imperial')).toBe('505 ft²');
     expect(formatArea(700000, 'imperial')).toBe('753 ft²');
     expect(formatArea(0, 'imperial')).toBe('0 ft²');
@@ -163,17 +163,17 @@ describe('formatArea', () => {
 });
 
 describe('formatDimensions', () => {
-  it('combina ambos ejes con el signo × (U+00D7)', () => {
+  it('combine both axes with the × sign (U+00D7)', () => {
     expect(formatDimensions(1000, 700, 'metric')).toBe('10 m × 7 m');
     expect(formatDimensions(1000, 700, 'metric')).toContain('×');
   });
 
-  it('aplica el acarreo de pulgadas en cada eje por separado', () => {
+  it('applies inch carry on each axis separately', () => {
     // 700px redondea a 12" y sube: "23' 0"", nunca "22' 12"".
     expect(formatDimensions(1000, 700, 'imperial')).toBe('32\' 10" × 23\' 0"');
   });
 
-  it('delega en formatLength, así que hereda la regla de los centímetros', () => {
+  it('delegates to formatLength, so it inherits the centimeter rule', () => {
     expect(formatDimensions(80, 80, 'metric')).toBe('80 cm × 80 cm');
     expect(formatDimensions(120, 70, 'metric')).toBe('1.2 m × 70 cm');
   });
@@ -185,15 +185,15 @@ describe('preferencia persistida', () => {
     localStorage.clear();
   });
 
-  it('usa la clave acordada', () => {
+  it('use the agreed key', () => {
     expect(UNIT_STORAGE_KEY).toBe('x7_unit_system');
   });
 
-  it('cae en metric cuando no hay nada guardado', () => {
+  it('falls into metric when nothing is saved', () => {
     expect(loadUnitSystem()).toBe('metric');
   });
 
-  it('lee lo que se guardó', () => {
+  it('read what was saved', () => {
     saveUnitSystem('imperial');
     expect(localStorage.getItem(UNIT_STORAGE_KEY)).toBe('imperial');
     expect(loadUnitSystem()).toBe('imperial');
@@ -202,14 +202,14 @@ describe('preferencia persistida', () => {
     expect(loadUnitSystem()).toBe('metric');
   });
 
-  it('cae en metric cuando lo guardado es basura', () => {
+  it('drops in metric when the saved is garbage', () => {
     for (const junk of ['', 'METRIC', 'furlongs', '{"a":1}', 'null', 'undefined']) {
       localStorage.setItem(UNIT_STORAGE_KEY, junk);
       expect(loadUnitSystem()).toBe('metric');
     }
   });
 
-  it('no lanza si el almacenamiento está bloqueado (SecurityError)', () => {
+  it('does not throw if storage is locked (SecurityError)', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new DOMException('blocked', 'SecurityError');
     });
@@ -218,7 +218,7 @@ describe('preferencia persistida', () => {
     expect(loadUnitSystem()).toBe('metric');
   });
 
-  it('guardar tampoco lanza con el almacenamiento bloqueado', () => {
+  it('save also doesn't launch with storage locked', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('quota', 'QuotaExceededError');
     });
@@ -226,7 +226,7 @@ describe('preferencia persistida', () => {
     expect(() => saveUnitSystem('imperial')).not.toThrow();
   });
 
-  it('acepta cualquier UnitSystem del catálogo', () => {
+  it('accepts any UnitSystem from the catalog', () => {
     for (const system of UNIT_SYSTEMS) {
       saveUnitSystem(system);
       expect(loadUnitSystem()).toBe(system);
@@ -234,8 +234,8 @@ describe('preferencia persistida', () => {
   });
 });
 
-describe('cobertura de tipos en tiempo de ejecución', () => {
-  it('formatea sin romperse en ambos sistemas', () => {
+describe('runtime type coverage', () => {
+  it('formats without breaking on both systems', () => {
     const systems: UnitSystem[] = UNIT_SYSTEMS;
     for (const system of systems) {
       expect(formatLength(1000, system)).toMatch(/\d/);

@@ -468,7 +468,7 @@ describe('SupplierInvoicesView — detail drawer', () => {
     const dialog = await screen.findByRole('dialog', { name: /invoice details/i });
     // Supplier contact resolved from suppliers list.
     expect(within(dialog).getByText('sales@femsa.com')).toBeInTheDocument();
-    // Items cargados por separado.
+    // Items charged separately.
     expect(await within(dialog).findByText('Sparkling water crate')).toBeInTheDocument();
   });
 });

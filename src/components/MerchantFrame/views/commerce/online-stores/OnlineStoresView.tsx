@@ -492,86 +492,86 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = ({ onNavigate }
         </div>
       </div>
 
-      {/* 2. Hero KPIs Strip (4 Cards strictly in 1 single horizontal row) */}
-      <div className="grid grid-cols-4 gap-3 w-full">
+      {/* 2. Hero KPIs Strip (KDS KitchenDisplayDevices layout: flex items-center justify-between) */}
+      <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Online Stores */}
-        <div className="bg-[#222222] hover:bg-[#2c2b25] text-white p-3.5 rounded-lg border-t-4 border-t-blue-500 shadow-xs flex flex-col justify-between h-28 group transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors font-poppins">
-              Total Online Stores
-            </span>
-            <div className="w-7 h-7 rounded bg-blue-500/20 text-blue-400 flex items-center justify-center">
-              <span className="material-symbols-outlined text-base">storefront</span>
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
+              <span className="material-symbols-outlined text-xl">storefront</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
+                Total Stores
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {isLoading ? '...' : totalProvisioned}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-black text-white leading-none font-poppins">
-              {isLoading ? '...' : totalProvisioned}
-            </p>
-            <p className="text-[10px] text-zinc-400 mt-1 font-medium truncate font-poppins">
-              Provisioned storefront tenants
-            </p>
-          </div>
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-200 shrink-0">
+            PROVISIONED
+          </span>
         </div>
 
         {/* KPI 2: Published Stores */}
-        <div className="bg-[#222222] hover:bg-[#2c2b25] text-white p-3.5 rounded-lg border-t-4 border-t-emerald-500 shadow-xs flex flex-col justify-between h-28 group transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors font-poppins">
-              Published Stores
-            </span>
-            <div className="w-7 h-7 rounded bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <span className="material-symbols-outlined text-base">check_circle</span>
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
+              <span className="material-symbols-outlined text-xl">check_circle</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
+                Published Stores
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {isLoading ? '...' : publishedCount}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-black text-emerald-400 leading-none font-poppins">
-              {isLoading ? '...' : publishedCount}
-            </p>
-            <p className="text-[10px] text-zinc-400 mt-1 font-medium truncate font-poppins">
-              Live & accepting orders
-            </p>
-          </div>
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+            LIVE
+          </span>
         </div>
 
         {/* KPI 3: In-Maintenance Stores */}
-        <div className="bg-[#222222] hover:bg-[#2c2b25] text-white p-3.5 rounded-lg border-t-4 border-t-amber-500 shadow-xs flex flex-col justify-between h-28 group transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors font-poppins">
-              In-Maintenance Stores
-            </span>
-            <div className="w-7 h-7 rounded bg-amber-500/20 text-amber-400 flex items-center justify-center">
-              <span className="material-symbols-outlined text-base">construction</span>
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shrink-0">
+              <span className="material-symbols-outlined text-xl">construction</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
+                In-Maintenance
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {isLoading ? '...' : maintenanceCount}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-black text-amber-400 leading-none font-poppins">
-              {isLoading ? '...' : maintenanceCount}
-            </p>
-            <p className="text-[10px] text-zinc-400 mt-1 font-medium truncate font-poppins">
-              Temporarily offline
-            </p>
-          </div>
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-200 shrink-0">
+            MAINTENANCE
+          </span>
         </div>
 
         {/* KPI 4: Supported Currencies */}
-        <div className="bg-[#222222] hover:bg-[#2c2b25] text-white p-3.5 rounded-lg border-t-4 border-t-purple-500 shadow-xs flex flex-col justify-between h-28 group transition-all">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors font-poppins">
-              Supported Currencies
-            </span>
-            <div className="w-7 h-7 rounded bg-purple-500/20 text-purple-400 flex items-center justify-center">
-              <span className="material-symbols-outlined text-base">payments</span>
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center border border-purple-200 shrink-0">
+              <span className="material-symbols-outlined text-xl">payments</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[10px] sm:text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate">
+                Currencies
+              </div>
+              <div className="text-2xl font-extrabold text-[#1d1c17]">
+                {isLoading ? '...' : supportedCurrenciesCount}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-2xl sm:text-3xl font-black text-white leading-none font-poppins">
-              {isLoading ? '...' : supportedCurrenciesCount}
-            </p>
-            <p className="text-[10px] text-zinc-400 mt-1 font-medium truncate font-poppins" title={distinctCurrencies.join(', ')}>
-              {distinctCurrencies.length > 0 ? distinctCurrencies.join(', ') : 'None active'}
-            </p>
-          </div>
+          <span className="px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
+            CURRENCIES
+          </span>
         </div>
       </div>
 
@@ -783,7 +783,7 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = ({ onNavigate }
 
           </div>
 
-          {/* Primary Action Button: Provision Storefront (al nivel de status, exact ProductsView design) */}
+          {/* Primary Action Button: Provision Storefront (at status level, exact ProductsView design) */}
           <button
             type="button"
             onClick={() => {

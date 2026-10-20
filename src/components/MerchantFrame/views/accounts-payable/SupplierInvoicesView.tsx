@@ -136,7 +136,7 @@ const InvoiceFormDrawer: React.FC<InvoiceFormDrawerProps> = ({
         due_date: dueDate,
         subtotal: num(subtotal),
         tax_total: num(taxTotal),
-        total_amount: totalAmount, // El backend lo exige (= subtotal + tax_total).
+        total_amount: totalAmount, // The backend requires it (= subtotal + tax_total).
         notes: notes.trim() || null,
       });
       return;
@@ -615,7 +615,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Vista: directorio activo vs. archivadas (soft-deleted).
+  // View: active directory vs. archived (soft-deleted).
   const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
 
   // Filtros
@@ -658,7 +658,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
     setError(null);
     try {
       // Tenant scoping resolved by backend via JWT; requesting high limit.
-      // En modo "archived" pedimos las soft-deleted con only_deleted=true.
+      // In "archived" mode we ask for soft-deleted ones with only_deleted=true.
       const query = viewMode === 'archived' ? 'only_deleted=true&limit=100' : 'limit=100';
       const res = await fetch(
         `${API_BASE}/supplier-invoices?${query}`,
@@ -832,7 +832,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
         const json = await res.json().catch(() => ({}));
         throw new Error(json.message || 'Failed to restore invoice');
       }
-      // Restaurada: sale del listado de archivadas.
+      // Restored: leaves the archived list.
       setInvoices((prev) => prev.filter((inv) => inv.id !== restoringInvoice.id));
       setRestoringInvoice(null);
       setToast({ message: 'Invoice restored successfully', type: 'success' });
@@ -911,7 +911,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
             outstanding balances against total amounts.
           </p>
         </div>
-        {/* Directorio activo vs. archivadas */}
+        {/* Active Directory vs. archived */}
         <div
           role="tablist"
           aria-label="Invoice directory view"

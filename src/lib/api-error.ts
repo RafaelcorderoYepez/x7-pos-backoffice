@@ -1,6 +1,6 @@
 export class ApiError extends Error {
   readonly status: number;
-  /** Código máquina del cuerpo del error (`code`), cuando el backend lo manda. */
+  /** Machine code of the error body (`code`), when the backend sends it. */
   readonly code?: string;
 
   constructor(message: string, status: number, code?: string) {
@@ -19,9 +19,9 @@ export async function getApiErrorMessage(
 }
 
 /**
- * Mensaje y código del cuerpo de error en UNA sola lectura (el cuerpo de un Response sólo se
- * puede consumir una vez). El código distingue errores con el mismo status: un 409 de aforo
- * que admite override del encargado no es un 409 de mesa ocupada.
+ * Message and error body code in ONE read (the body of a Response can only be
+ * can consume once). The code distinguishes errors with the same status: a 409 capacity
+ * that supports manager override is not a 409 busy table.
  */
 export async function getApiErrorDetails(
   response: Response,

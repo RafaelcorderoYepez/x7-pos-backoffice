@@ -1,14 +1,14 @@
-// Canal de tiempo real de Delivery Management: posiciones de los repartidores y cambios de
-// asignaciones y de estado de la flota, empujados por el backend.
+// Delivery Management real-time channel: positions of delivery people and changes of
+// assignments and fleet status, pushed by the backend.
 //
-// Mismo gateway que el dining system (namespace /realtime, sala del comercio al autenticar):
-// basta conectar con el token y escuchar. Si el gateway está apagado o la red se cae, esto
-// queda inerte y las vistas siguen con su sondeo periódico.
+// Same gateway as the dining system (namespace /realtime, retail room when authenticating):
+// Just connect with the token and listen. If the gateway is turned off or the network goes down, this
+// It remains inert and the views continue with their periodic survey.
 
 import { io, type Socket } from 'socket.io-client';
 import { realtimeUrl } from './dining-realtime';
 
-// ================= Vocabulario de eventos =================
+// ================= Event Vocabulary =================
 
 export const DELIVERY_EVENTS = {
   locationUpdated: 'delivery:location_updated',
@@ -49,8 +49,8 @@ export interface DeliveryRealtimeHandlers {
   onLocationUpdated?: (p: LocationUpdatedPayload) => void;
   onAssignmentChanged?: (p: DeliveryAssignmentChangedPayload) => void;
   onDriverStatusChanged?: (p: DriverStatusChangedPayload) => void;
-  // Al RE-conectar (nunca en la primera conexión): pudo perderse algún evento, así que la
-  // vista debe volver a pedir su estado.
+  // When RE-connecting (never on the first connection): some event could have been missed, so the
+  // view must ask for its status again.
   onReconnect?: () => void;
   onConnectionChange?: (connected: boolean) => void;
 }
@@ -59,7 +59,7 @@ export interface DeliveryRealtimeConnection {
   close: () => void;
 }
 
-// Nunca lanza: un fallo de transporte degrada a "sin tiempo real" (sondeo normal).
+// Never launches: A transport failure degrades to "non-realtime" (normal polling).
 export const connectDeliveryRealtime = (
   token: string,
   handlers: DeliveryRealtimeHandlers,
@@ -103,7 +103,7 @@ export const connectDeliveryRealtime = (
         socket?.removeAllListeners();
         socket?.disconnect();
       } catch {
-        // Cerrar un socket ya muerto no debe escalar a la vista.
+        // Closing an already dead socket should not escalate into view.
       }
     },
   };

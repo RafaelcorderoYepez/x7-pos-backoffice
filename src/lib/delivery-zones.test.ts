@@ -86,7 +86,7 @@ describe('point-in-polygon', () => {
   it('finds points inside and outside', () => {
     expect(pointInZone(18.46, -69.93, SQUARE)).toBe(true);
     expect(pointInZone(18.5, -69.93, SQUARE)).toBe(false);
-    // lat/lng al revés no debe "caer dentro" por casualidad.
+    // lat/lng backwards should not "fall in" by chance.
     expect(pointInZone(-69.93, 18.46, SQUARE)).toBe(false);
   });
 
@@ -184,7 +184,7 @@ describe('form rules', () => {
 
 describe('filters and KPIs', () => {
   it('searches name, description and code, accent-insensitive', () => {
-    const z = zone({ name: 'Zona Pétalo' });
+    const z = zone({ name: 'Petal Zone' });
     expect(matchesZoneFilters(z, { search: 'petalo', statuses: [] })).toBe(true);
     expect(matchesZoneFilters(z, { search: 'downtown', statuses: [] })).toBe(true);
     expect(matchesZoneFilters(z, { search: zoneCode(1), statuses: [] })).toBe(true);

@@ -37,7 +37,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 const DUTY_FILTERS: DutyFilter[] = ['all', 'active', 'released'];
 
-// Lo que el drawer entrega al enviar. `assignedAt` no viaja: lo sella el servidor, y
+// What the drawer delivers when sending. `assignedAt` does not travel: it is stamped by the server, and
 // sending from client would only risk clock desync across tablets.
 interface AssignmentDraft {
   shiftId: number;
@@ -424,8 +424,8 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [dutyFilter, setDutyFilter] = useState<DutyFilter>('all');
   // null = operator has not touched selector yet, so open shift takes precedence.
-  // '' = ha elegido "All Shifts" a conciencia. Distinguirlos evita que una recarga de datos
-  // le devuelva al turno de hoy justo cuando acaba de irse a revisar el de ayer.
+  // '' = you have chosen "All Shifts" consciously. Distinguishing them prevents a data reload
+  // I return him to today's shift just as he has just left to check on yesterday's.
   const [shiftFilter, setShiftFilter] = useState<string | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -516,7 +516,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
 
   const activeShiftId = useMemo(() => resolveActiveShiftId(shifts), [shifts]);
 
-  // El turno que de verdad filtra la parrilla: el elegido, o el abierto mientras nadie elija.
+  // The turn that really filters the grid: the chosen one, or the open one as long as no one chooses.
   const effectiveShift = shiftFilter ?? activeShiftId;
 
   const tableById = useMemo(() => {
@@ -569,7 +569,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     if (!res.ok) throw new Error(json.message || 'Failed to assign the table');
   };
 
-  // Cierra una cobertura: sella releasedAt y la desactiva. No borra, para no perder la
+  // Closes a coverage: seals releasedAt and deactivates it. It does not erase, so as not to lose the
   // trace of who covered what during shift.
   const releaseAssignment = async (id: number) => {
     const res = await fetch(`${API_BASE}/table-assignments/${id}`, {
@@ -586,7 +586,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
 
   const handleCreateSubmit = async (draft: AssignmentDraft) => {
     // Table/shift exclusivity: if someone is covering it, confirmation is requested instead
-    // de duplicar la cobertura en silencio.
+    // to quietly double coverage.
     const holder = conflictingAssignment(liveAssignments, draft.tableId, draft.shiftId);
     if (holder) {
       setPendingDraft({ draft, holder });
@@ -647,7 +647,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
   };
 
   // Coverages mutate via floor tablets; supervisor monitors this grid in
-  // una pantalla fija y tiene que ver lo mismo que ellos.
+  // a fixed screen and has to see the same thing as them.
   const { connected: liveConnected } = useDiningRealtime({
     onAssignmentChanged: (p) => {
       if (p.merchantId === activeMerchantId) fetchAssignments();

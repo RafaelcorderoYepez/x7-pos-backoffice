@@ -120,6 +120,7 @@ import { RawMaterialsHubView } from './views/products-inventory/RawMaterialsHubV
 import { OnlineOrderingHubView } from './views/commerce/OnlineOrderingHubView';
 import { OnlineStoresView } from './views/commerce/online-stores/OnlineStoresView';
 import { OnlineMenusView } from './views/commerce/online-menus/OnlineMenusView';
+import { OnlineMenuCategoriesView } from './views/commerce/online-menu-categories/OnlineMenuCategoriesView';
 import { KitchenDisplayDevicesView } from './views/restaurant-operations/kitchen-stations/KitchenDisplayDevicesView';
 import { KitchenOrdersView } from './views/restaurant-operations/kitchen-stations/KitchenOrdersView';
 import { KitchenOrderItemsView } from './views/restaurant-operations/kitchen-stations/KitchenOrderItemsView';
@@ -1388,6 +1389,10 @@ export const MerchantFrame: React.FC = () => {
 
     if (activeTab === 'online-menus') {
       return <OnlineMenusView onNavigate={handleViewChange} />;
+    }
+
+    if (activeTab === 'online-menu-categories') {
+      return <OnlineMenuCategoriesView onNavigate={handleViewChange} />;
     }
 
     if (activeTab === 'kitchen-stations') {

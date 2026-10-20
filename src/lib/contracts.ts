@@ -1,10 +1,10 @@
-// Reglas del directorio de contratos: vigencia, aviso de caducidad, retribución legible y
-// las dos guardas que el formulario tiene que demostrar (orden de fechas y solape de
+// Contract directory rules: validity, expiration notice, legible remuneration and
+// the two guards that the form has to demonstrate (date order and overlap of
 // contratos activos).
 //
-// Vive fuera de la vista para poder probarse sin montar React, y toma `now` por parámetro
-// en todo lo que depende de la fecha: un test que dependa del reloj de la máquina falla
-// solo el día que cruza un umbral.
+// Lives out of view so it can be tested without mounting React, and takes `now` as a parameter
+// in everything that depends on the date: a test that depends on the machine clock fails
+// only the day you cross a threshold.
 
 import type {
   CollaboratorContract,
@@ -31,21 +31,21 @@ export const contractCollaboratorRef = (collaboratorId: number): string =>
 
 // ================= Fechas =================
 
-// Umbral de la alerta ámbar: por debajo de esto el contrato entra en renovación.
+// Amber alert threshold: below this the contract is renewed.
 export const EXPIRY_WARNING_DAYS = 30;
 
-// Ventanas que ofrece el selector de caducidad.
+// Windows that offer the expiration selector.
 export const EXPIRY_WINDOWS = [30, 60, 90] as const;
 
-/** Recorta un ISO a su parte de día. La API sirve `date`, pero un timestamp no rompe nada. */
+/** Clips an ISO to its day part. The API serves `date`, but a timestamp doesn't break anything. */
 export const toDateOnly = (value?: string | null): string =>
   (value ?? '').slice(0, 10);
 
 /**
- * Hoy en el calendario del usuario.
+ * Today on the user's calendar.
  *
- * Se compone de las partes locales en lugar de `toISOString()`: en husos negativos ese
- * atajo devuelve el día siguiente a partir de media tarde y adelantaría las caducidades.
+ * It is made up of the local parts instead of `toISOString()`: in negative spindles that
+ * shortcut returns the next day from mid-afternoon and would bring forward the expiration dates.
  */
 export const todayIso = (now: Date = new Date()): string => {
   const y = now.getFullYear();
@@ -60,7 +60,7 @@ const parseDay = (iso: string): number => {
   return Date.UTC(y, m - 1, d);
 };
 
-/** Días de calendario entre dos días ISO. Negativo si el segundo ya pasó. */
+/** Calendar days between two ISO days. Negative if the second has already passed. */
 export const daysBetween = (fromIso: string, toIso: string): number => {
   const from = parseDay(fromIso);
   const to = parseDay(toIso);
@@ -68,7 +68,7 @@ export const daysBetween = (fromIso: string, toIso: string): number => {
   return Math.round((to - from) / 86_400_000);
 };
 
-/** Días que le quedan al contrato. `null` cuando es indefinido. */
+/** Days left on the contract. `null` when undefined. */
 export const daysUntilExpiry = (
   contract: Pick<CollaboratorContract, 'end_date'>,
   now: Date = new Date(),
@@ -79,14 +79,14 @@ export const daysUntilExpiry = (
   return Number.isNaN(days) ? null : days;
 };
 
-// ================= Estado de cumplimiento =================
+// ================= Compliance Status =================
 
 /**
- * Estado real del acuerdo.
+ * Actual status of the agreement.
  *
- * `active` en la base sólo dice que nadie lo ha rescindido; la caducidad la marca la fecha.
- * Por eso un contrato marcado como activo cuya fecha de fin ya pasó sale como `expired` y
- * no como vigente: es justo la fila sobre la que Legal tiene que actuar.
+ * `active` in the base just says that no one has terminated it; The expiration date is marked by the date.
+ * That's why a contract marked as active whose end date has already passed comes out as 'expired' and
+ * not as current: it is just the line on which Legal has to act.
  */
 export const contractStatus = (
   contract: Pick<CollaboratorContract, 'active' | 'end_date'>,
@@ -110,7 +110,7 @@ export const contractStatusBadgeStyle = (
   now: Date = new Date(),
 ): string => CONTRACT_STATUS_BADGE_STYLES[contractStatus(contract, now)];
 
-/** Texto del aviso bajo la píldora: cuánto queda o cuánto hace que venció. */
+/** Text of the notice under the pill: how much is left or how long ago it expired. */
 export const expiryNotice = (
   contract: Pick<CollaboratorContract, 'active' | 'end_date'>,
   now: Date = new Date(),
@@ -126,7 +126,7 @@ export const expiryNotice = (
   return `Expires in ${days} ${days === 1 ? 'day' : 'days'}`;
 };
 
-// ================= Presentación =================
+// ================= Presentation =================
 
 const currency = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -138,7 +138,7 @@ const currency = new Intl.NumberFormat('en-US', {
 export const formatMoney = (amount: number): string =>
   currency.format(Number.isFinite(amount) ? amount : 0);
 
-/** La retribución tal y como se lee en la parrilla: "$22.50 / hr", "$3,500.00 / month". */
+/** The remuneration as it reads on the grid: "$22.50 / hr", "$3,500.00 / month". */
 export const formatCompensation = (
   contract: Pick<CollaboratorContract, 'wage_rate' | 'pay_frequency'>,
 ): string =>
@@ -149,7 +149,7 @@ export const formatCompensation = (
 export const formatWeeklyHours = (hours: number): string =>
   `${Number(hours ?? 0).toFixed(hours % 1 === 0 ? 0 : 1)} hrs / week`;
 
-/** Un día ISO en formato legible. Los contratos abiertos se anuncian como indefinidos. */
+/** One ISO day in readable format. Open contracts are advertised as indefinite. */
 export const formatContractDate = (value?: string | null): string => {
   const iso = toDateOnly(value);
   if (!iso) return 'Indefinite';
@@ -172,10 +172,10 @@ export const contractCollaboratorName = (contract: CollaboratorContract): string
   contract.collaborator?.name?.trim() ||
   `Collaborator ${contractCollaboratorRef(contract.collaborator_id)}`;
 
-// ================= Búsqueda y filtros =================
+// ================= Search and filters =================
 
-// Los tres ejes que pide la historia: nombre, #CTR-id y #CLB-collaborator_id. Se indexan
-// también los ids pelados para que teclear "12" encuentre a #CTR-12 sin el prefijo.
+// The three axes that the story asks for: name, #CTR-id and #CLB-collaborator_id. They are indexed
+// also stripped ids so that typing "12" finds #CTR-12 without the prefix.
 export const contractHaystack = (contract: CollaboratorContract): string =>
   [
     contract.collaborator?.name ?? '',
@@ -204,8 +204,8 @@ export interface ContractFilters {
   expiringWithin: string;
 }
 
-// El estado arranca en ACTIVE, como pide la historia: el directorio se abre sobre los
-// acuerdos en vigor y el resto se pide a propósito.
+// The state starts at ACTIVE, as the story demands: the directory opens on the
+// agreements in force and the rest is requested on purpose.
 export const DEFAULT_CONTRACT_FILTERS: ContractFilters = {
   search: '',
   employmentType: '',
@@ -214,10 +214,10 @@ export const DEFAULT_CONTRACT_FILTERS: ContractFilters = {
 };
 
 /**
- * "Active" agrupa todo lo que sigue en vigor, próximo a vencer incluido.
+ * "Active" groups everything that is still in force, including soon to expire.
  *
- * Si excluyera a los que caducan pronto, el filtro por defecto escondería justamente las
- * filas que hay que renovar. La píldora ámbar los distingue dentro de la lista, y quien
+ * If you excluded those that expire soon, the default filter would hide precisely the
+ * rows that must be renewed. The amber pill distinguishes them within the list, and who
  * quiera verlos solos elige "Expiring Soon".
  */
 export const matchesStatusFilter = (
@@ -260,20 +260,20 @@ export const filterContracts = (
     return true;
   });
 
-// El estado por defecto no cuenta como filtro activo: el botón de limpiar sólo aparece
-// cuando el usuario ha estrechado la vista a mano.
+// The default state does not count as an active filter: the clear button only appears
+// when the user has narrowed the view at hand.
 export const hasActiveFilters = (filters: ContractFilters): boolean =>
   filters.search.trim().length > 0 ||
   filters.employmentType.length > 0 ||
   filters.expiringWithin.length > 0 ||
   filters.status !== DEFAULT_CONTRACT_FILTERS.status;
 
-// ================= Guardas del formulario =================
+// ================= Form guards =================
 
 export const DATE_SEQUENCE_ERROR =
   'Contract End Date must be later than Start Date.';
 
-/** El fin tiene que ser posterior al inicio; iguales tampoco valen (contrato de cero días). */
+/** The end has to be after the beginning; The same ones are not valid either (zero-day contract). */
 export const dateRangeError = (
   startDate: string,
   endDate?: string | null,
@@ -287,10 +287,10 @@ export const dateRangeError = (
 };
 
 /**
- * Contrato que impediría abrir otro para el mismo colaborador.
+ * Contract that would prevent opening another for the same collaborator.
  *
- * Sólo estorba el que sigue en vigor. Uno rescindido o ya caducado no bloquea: la
- * renovación es precisamente el caso en el que RR. HH. necesita registrar el siguiente.
+ * Only the one that is still in force gets in the way. A terminated or expired one does not block: the
+ * renewal is precisely the case in which HR. HH. you need to register the following.
  */
 export const blockingActiveContract = (
   contracts: CollaboratorContract[],
@@ -310,7 +310,7 @@ export const overlapWarning = (contract: CollaboratorContract): string =>
     contract.id,
   )}, valid until ${formatContractDate(contract.end_date)}). Terminate it or wait for it to expire before registering a new one.`;
 
-/** Traduce el 409 del backend al aviso que nombra el contrato concreto. */
+/** Translates the 409 from the backend to the notice that names the specific contract. */
 export const conflictMessageFor = (
   contracts: CollaboratorContract[],
   collaboratorId: number,
@@ -357,7 +357,7 @@ export const ALLOWED_DOCUMENT_MIME_TYPES = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
 
-/** Valida el adjunto antes de gastar una subida que el backend rechazaría igual. */
+/** Validate the attachment before spending an upload that the backend would still reject. */
 export const documentError = (
   file: Pick<File, 'name' | 'size' | 'type'>,
 ): string => {
@@ -380,11 +380,11 @@ export const formatFileSize = (bytes: number): string => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-/** Sólo un PDF se puede incrustar; un .docx se ofrece para descargar. */
+/** Only one PDF can be embedded; a .docx is offered for download. */
 export const isPreviewableDocument = (url?: string | null): boolean =>
   (url ?? '').toLowerCase().split('?')[0].endsWith('.pdf');
 
-// ================= Bitácora de enmiendas =================
+// ================= Log of amendments =================
 
 const REVISION_FIELD_LABELS: Record<string, string> = {
   employment_type: 'Contract type',
@@ -406,7 +406,7 @@ export const revisionFieldLabel = (field: string): string =>
   REVISION_FIELD_LABELS[field] ??
   field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-/** Pinta el valor guardado con el vocabulario de su campo, no como cadena cruda. */
+/** Paints the saved value with the vocabulary of its field, not as a raw string. */
 export const formatRevisionValue = (
   field: string,
   value: string | null,
@@ -447,16 +447,16 @@ export const formatRevisionTimestamp = (value?: string | null): string => {
   });
 };
 
-/** Resume una enmienda en una línea: "Hourly rate · $22.50 → $25.00". */
+/** Summarize an amendment in one line: "Hourly rate · $22.50 → $25.00." */
 export const describeRevision = (revision: ContractRevision): string =>
   `${revisionFieldLabel(revision.field)} · ${formatRevisionValue(
     revision.field,
     revision.previous_value,
   )} → ${formatRevisionValue(revision.field, revision.new_value)}`;
 
-// ================= Composición del alta =================
+// ================= Discharge composition =================
 
-/** Opciones del selector de colaborador, marcando quién ya tiene un acuerdo en vigor. */
+/** Collaborator selector options, marking who already has an agreement in force. */
 export interface CollaboratorOption {
   id: number;
   name: string;

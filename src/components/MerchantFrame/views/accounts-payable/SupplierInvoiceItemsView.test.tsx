@@ -197,7 +197,7 @@ describe('SupplierInvoiceItemsView — grid & precision', () => {
     render(<SupplierInvoiceItemsView />);
     const row = (await screen.findByText('Premium coffee beans')).closest('tr')!;
     expect(row).toHaveTextContent('10 @ $50.00'); // qty trimmed, unit price money (2 dec)
-    expect(row).not.toHaveTextContent('$50.0000'); // ya no 4 decimales en dinero
+    expect(row).not.toHaveTextContent('$50.0000'); // no longer 4 decimals in money
     expect(row).toHaveTextContent('$595.00'); // line_total
     expect(row).toHaveTextContent('$500.00'); // line_subtotal
   });
@@ -303,7 +303,7 @@ describe('SupplierInvoiceItemsView — line arithmetic', () => {
     await user.selectOptions(screen.getByLabelText(/Inventory Product/), '55');
     expect(screen.getByLabelText(/Description/)).toHaveValue('Coffee Beans');
     expect(screen.getByLabelText(/Unit Price/)).toHaveValue(48);
-    // El producto tiene una sola variante activa → se auto-selecciona.
+    // The product has only one active variant → it is auto-selected.
     expect(screen.getByLabelText(/Variant/)).toHaveValue('561');
   });
 

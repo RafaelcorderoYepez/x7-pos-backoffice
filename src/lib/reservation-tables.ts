@@ -1,25 +1,25 @@
-// Reglas del tablero de asignación de mesas: qué mesa está libre en una franja, qué
-// combinación conviene para un grupo, y si el aforo asignado cubre al grupo.
+// Table assignment board rules: which table is free in a strip, which
+// combination is suitable for a group, and if the assigned capacity covers the group.
 //
-// El módulo es puro (sin fetch ni React) porque es donde vive la parte que de verdad hay que
-// testear: el motor de sugerencias y la detección de solapes. La guarda DEFINITIVA contra la
-// doble reserva vive en el backend (409); lo de aquí es para no ofrecer siquiera una mesa que
-// el servidor vaya a rechazar.
+// The module is pure (without fetch or React) because it is where the part that really needs to live lives.
+// test: the suggestion engine and overlap detection. The DEFINITIVE guard against
+// double fallback lives in the backend (409); here is to not even offer a table that
+// the server is going to reject.
 
 import type { DiningTable } from '../types/dining-system';
 import type { Reservation, ReservationTableLink } from '../types/reservation';
 import { reservationEnd, reservationStart, windowsOverlap } from './reservations';
 
-// Estados en los que la reserva YA NO retiene su mesa. Espejo exacto de
-// TABLE_RELEASING_STATUSES en el backend: si las dos listas divergen, el tablero enseña como
-// libre una mesa que el servidor considera ocupada (o al revés).
+// States in which the reservation is NO LONGER holding your table. exact mirror of
+// TABLE_RELEASING_STATUSES in the backend: if the two lists diverge, the dashboard shows how
+// free a table that the server considers occupied (or vice versa).
 export const TABLE_RELEASING_STATUSES = new Set(['cancelled', 'no_show', 'completed']);
 
 export const holdsItsTable = (reservation: Pick<Reservation, 'status'>): boolean =>
   !TABLE_RELEASING_STATUSES.has(reservation.status);
 
-// Mesas que pueden recibir un grupo. Una mesa borrada o fuera de servicio no se ofrece por
-// mucho que esté "libre": nadie puede sentarse en ella.
+// Tables that can receive a group. A cleared or out of service table is not offered for
+// much that is "free": no one can sit on it.
 const ASSIGNABLE_TABLE_STATUSES = new Set([
   'available',
   'occupied',
@@ -41,20 +41,20 @@ export const assignedTableIds = (reservation: Reservation): number[] =>
 export const isUnassigned = (reservation: Reservation): boolean =>
   activeLinks(reservation).length === 0;
 
-// Un booking que la sala todavía tiene que resolver: sigue vivo, va a llegar, y no tiene
-// dónde sentarse. Es lo que alimenta la alerta del cabecero.
+// A booking that the room has yet to resolve: it's still alive, it's going to arrive, and it doesn't have
+// where to sit It is what feeds the header alert.
 export const needsTable = (reservation: Reservation): boolean =>
   (reservation.status === 'pending' || reservation.status === 'confirmed') &&
   isUnassigned(reservation);
 
-// ================= Ocupación de una mesa en una franja =================
+// ================= Occupation of a table in a strip =================
 
 /**
- * Reservas que ocupan `tableId` durante la ventana de `target`, excluyendo la propia.
+ * Reservations that occupy `tableId` during the `target` window, excluding its own.
  *
- * Reproduce la guarda del backend para poder avisar ANTES de enviar: mismas exclusiones de
- * estado y mismo solape semiabierto, así que una mesa marcada como libre aquí no va a devolver
- * un 409 al guardar.
+ * Play the backend save so you can warn BEFORE sending: same exclusions from
+ * status and same semi-open overlap, so a table marked as free here is not going to return
+ * a 409 when saving.
  */
 export const conflictsForTable = (
   tableId: number,
@@ -85,9 +85,9 @@ export const conflictMessage = (tableLabel: string, holder: Reservation): string
 export interface AssignedCapacity {
   seats: number;
   tableCount: number;
-  /** El aforo asignado cubre al grupo. */
+  /** The assigned capacity covers the group. */
   sufficient: boolean;
-  /** Plazas que faltan para cubrirlo (0 si sobra). */
+  /** Spaces left to cover it (0 if there is excess). */
   shortfall: number;
 }
 
@@ -97,9 +97,9 @@ export const assignedCapacity = (
 ): AssignedCapacity => {
   const links = activeLinks(reservation);
   const seats = links.reduce((sum, link) => {
-    // El enlace embebido en la reserva NO trae aforo; el de /api/reservation-table sí. Se
-    // prefiere el inventario, que es la fuente viva, y se cae al enlace cuando la mesa ya no
-    // está en el catálogo cargado.
+    // The link embedded in the reservation does NOT include capacity; the one in /api/reservation-table does. If
+    // prefers the inventory, which is the live source, and drops to the link when the table is no longer
+    // is in the loaded catalog.
     const fromInventory = tableById.get(link.table_id)?.capacity;
     return sum + (Number(fromInventory ?? link.capacity ?? 0) || 0);
   }, 0);
@@ -108,8 +108,8 @@ export const assignedCapacity = (
   return {
     seats,
     tableCount: links.length,
-    // Una reserva sin mesa no es "suficiente": está sin resolver, y pintarla en verde la
-    // escondería justo de quien tiene que sentarla.
+    // A reservation without a table is not "sufficient": it is unresolved, and painting it green
+    // It would hide just from whoever has to seat it.
     sufficient: links.length > 0 && seats >= party,
     shortfall: Math.max(0, party - seats),
   };
@@ -133,14 +133,14 @@ export const assignmentLabel = (
     : `Tables ${numbers.join(' + ')} (Total Cap: ${seats})`;
 };
 
-// ================= Motor de sugerencias =================
+// ================= Suggestion Engine =================
 
 export type SuggestionKind = 'exact' | 'oversize' | 'combination';
 
 export interface TableSuggestion {
   tables: DiningTable[];
   totalCapacity: number;
-  /** Plazas de más que se inmovilizan al aceptar esta sugerencia. */
+  /** Extra seats that become immobilized when accepting this suggestion. */
   wastedSeats: number;
   kind: SuggestionKind;
   zoneName: string | null;
@@ -151,8 +151,8 @@ const zoneOf = (table: DiningTable): number | null => table.floorZone?.id ?? nul
 const distanceBetween = (a: DiningTable, b: DiningTable): number =>
   Math.hypot((a.pos_x ?? 0) - (b.pos_x ?? 0), (a.pos_y ?? 0) - (b.pos_y ?? 0));
 
-// Dispersión de un grupo de mesas: la distancia máxima entre dos cualesquiera. Sirve para
-// preferir dos mesas pegadas frente a dos en extremos opuestos del comedor.
+// Dispersion of a group of tables: the maximum distance between any two. Serves for
+// prefer two tables pushed together in front of two at opposite ends of the dining room.
 const spread = (tables: DiningTable[]): number => {
   let max = 0;
   for (let i = 0; i < tables.length; i += 1) {
@@ -164,22 +164,22 @@ const spread = (tables: DiningTable[]): number => {
 };
 
 /**
- * Mesas que se pueden juntar entre sí.
+ * Tables that can be joined together.
  *
- * "Adyacente" se resuelve por ZONA, no por geometría fina: juntar una mesa de la terraza con
- * una del bar no es una combinación, es un grupo partido en dos salas. Dentro de la zona, la
- * distancia entre mesas desempata (ver `spread`).
+ * "Adjacent" is resolved by ZONE, not by fine geometry: join a terrace table with
+ * one at the bar is not a combination, it is a group divided into two rooms. Within the area, the
+ * distance between tables breaks ties (see `spread`).
  */
 const sameZone = (a: DiningTable, b: DiningTable): boolean => zoneOf(a) === zoneOf(b);
 
 export const MAX_TABLES_PER_COMBINATION = 3;
 
 /**
- * Sugerencias de mesa ordenadas por conveniencia para un grupo de `partySize`.
+ * Table suggestions sorted by convenience for a `partySize` group.
  *
- * El orden es el de la historia: primero la coincidencia exacta, después la mesa más pequeña
- * que se pase, y sólo si ninguna suelta sirve, combinaciones. Dentro de cada familia manda el
- * desperdicio: sentar a 2 personas en una mesa de 8 inutiliza 6 sitios el resto del servicio.
+ * The order is that of the story: first the exact match, then the smallest table
+ * let it pass, and only if no loose ones work, combinations. Within each family the
+ * waste: seating 2 people at a table of 8 makes 6 seats unusable for the rest of the service.
  */
 export const suggestTables = (
   freeTables: DiningTable[],
@@ -204,18 +204,18 @@ export const suggestTables = (
     };
   };
 
-  // 1. Coincidencia exacta: la mesa cabe justa y no inmoviliza ni un sitio.
+  // 1. Exact match: the table fits just right and does not immobilize a single place.
   singles
     .filter((t) => t.capacity === partySize)
     .forEach((t) => suggestions.push(toSuggestion([t], 'exact')));
 
-  // 2. La menor de las que se pasan.
+  // 2. The least of those that are passed.
   singles
     .filter((t) => t.capacity > partySize)
     .forEach((t) => suggestions.push(toSuggestion([t], 'oversize')));
 
-  // 3. Combinaciones, sólo si ninguna mesa suelta llega. Se limitan a MAX_TABLES_PER_COMBINATION
-  //    porque juntar cuatro mesas ya no es una mesa, es un banquete que se monta a mano.
+  // 3. Combinations, only if no loose table arrives. They are limited to MAX_TABLES_PER_COMBINATION
+  //    because putting together four tables is no longer a table, it is a banquet that is set up by hand.
   const anySingleFits = singles.some((t) => t.capacity >= partySize);
   if (!anySingleFits) {
     const combos: DiningTable[][] = [];
@@ -223,7 +223,7 @@ export const suggestTables = (
     const build = (start: number, picked: DiningTable[], capacity: number) => {
       if (picked.length > 0 && capacity >= partySize) {
         combos.push([...picked]);
-        return; // Añadir otra mesa a algo que ya cubre sólo añade desperdicio.
+        return; // Adding another table to one that already covers party size only adds waste.
       }
       if (picked.length >= MAX_TABLES_PER_COMBINATION) return;
 
@@ -239,7 +239,7 @@ export const suggestTables = (
       .sort((a, b) => {
         const capA = a.reduce((s, t) => s + t.capacity, 0);
         const capB = b.reduce((s, t) => s + t.capacity, 0);
-        // Menos desperdicio, luego menos mesas, luego más juntas.
+        // Less waste, then fewer tables, then more gatherings.
         return capA - capB || a.length - b.length || spread(a) - spread(b);
       })
       .forEach((combo) => suggestions.push(toSuggestion(combo, 'combination')));
@@ -283,8 +283,8 @@ export interface ZoneOption {
 
 export const UNZONED_LABEL = 'Unzoned';
 
-// Zonas derivadas del INVENTARIO, no de un /api/floor-zone aparte: ofrecer en el filtro una
-// zona sin mesas sólo lleva a un tablero vacío sin explicación.
+// Zones derived from INVENTORY, not from a separate /api/floor-zone: offer in the filter a
+// area without tables just leads to an empty board with no explanation.
 export const zoneOptions = (tables: DiningTable[]): ZoneOption[] => {
   const byId = new Map<number | null, ZoneOption>();
 
@@ -309,9 +309,9 @@ export const zoneOptions = (tables: DiningTable[]): ZoneOption[] => {
     return a.name.localeCompare(b.name) || (a.id ?? 0) - (b.id ?? 0);
   });
 
-  // Dos zonas DISTINTAS pueden compartir nombre (el catálogo real tiene siete "General"), y
-  // siete chips idénticos no son un filtro. Se agrupa por id porque la pertenencia se decide
-  // por id, así que lo que se desambigua es la etiqueta.
+  // Two DIFFERENT zones can share a name (the actual catalog has seven "General"), and
+  // seven identical chips are not a filter. It is grouped by id because membership is decided
+  // by id, so what is disambiguated is the label.
   const timesSeen = new Map<string, number>();
   zones.forEach((z) => timesSeen.set(z.name, (timesSeen.get(z.name) ?? 0) + 1));
 
@@ -322,9 +322,9 @@ export const zoneOptions = (tables: DiningTable[]): ZoneOption[] => {
   );
 };
 
-// Una reserva pertenece a una zona si CUALQUIERA de sus mesas está allí: una combinación a
-// caballo entre dos zonas tiene que aparecer al filtrar por las dos, o desaparecería del
-// tablero justo cuando más falta hace verla.
+// A reservation belongs to a zone if ANY of its tables are there: a combination to
+// horse between two zones has to appear when filtering for both, or it would disappear from the
+// board just when you need to see it most.
 export const reservationInZone = (
   reservation: Reservation,
   zoneId: number | null,
@@ -334,18 +334,18 @@ export const reservationInZone = (
     (link) => zoneOf(tableById.get(link.table_id) ?? ({} as DiningTable)) === zoneId,
   );
 
-// ================= KPIs de ocupación =================
+// ================= Occupancy KPIs =================
 
 export interface SeatingMetrics {
-  /** Filas ReservationTable activas de las reservas del día. */
+  /** Active ReservationTable rows for the day's reservations. */
   totalTablesAssigned: number;
-  /** Suma del aforo de todas las mesas asignadas. */
+  /** Sum of the capacity of all assigned tables. */
   assignedSeatCapacity: number;
-  /** Reservas vivas (pending/confirmed) todavía sin mesa. */
+  /** Live reservations (pending/confirmed) still without a table. */
   unassignedBookings: number;
-  /** Comensales esperados por esas reservas sin mesa. */
+  /** Diners expected for those reservations without a table. */
   unassignedGuests: number;
-  /** Aforo total del salón, para leer la ocupación en contexto. */
+  /** Total capacity of the room, to read the occupancy in context. */
   floorSeatCapacity: number;
 }
 
@@ -361,7 +361,7 @@ export const computeSeatingMetrics = (
   let unassignedGuests = 0;
 
   for (const reservation of reservations) {
-    // Una reserva anulada o ausente ya no retiene mesa: contarla inflaría la ocupación.
+    // A canceled or absent reservation no longer retains a table: counting it would inflate the occupancy.
     if (holdsItsTable(reservation)) {
       const links = activeLinks(reservation);
       totalTablesAssigned += links.length;

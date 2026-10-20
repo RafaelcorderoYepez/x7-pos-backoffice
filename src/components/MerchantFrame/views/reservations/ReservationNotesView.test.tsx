@@ -44,7 +44,7 @@ const RESERVATIONS = [
     id: 2, merchant_id: 3, customer_id: null, reservation_date: at(20), duration_minutes: 120,
     seated_at: null, party_size: 2, status: 'pending', source: 'online',
     special_requests: null, created_by: 2,
-    guests: [{ id: 2, reservation_id: 2, name: 'Lucía Prat', is_primary: true, is_active: true }],
+    guests: [{ id: 2, reservation_id: 2, name: 'Lucia Prat', is_primary: true, is_active: true }],
     notes: [
       note(3, 2, '[OCCASION] Celebrating 10th Anniversary', 18),
       // Inactive: should not appear in the feed.
@@ -197,7 +197,7 @@ describe('search and filters', () => {
     const user = userEvent.setup();
     await renderView();
 
-    await user.type(screen.getByRole('searchbox', { name: /search notes/i }), 'lucía');
+    await user.type(screen.getByRole('searchbox', { name: /search notes/i }), 'lucia');
 
     await waitFor(() => expect(screen.queryByTestId('note-card-1')).not.toBeInTheDocument());
     expect(screen.getByTestId('note-card-3')).toBeInTheDocument();
@@ -225,7 +225,7 @@ describe('search and filters', () => {
   });
 });
 
-describe('drawer de alta', () => {
+describe('high drawer', () => {
   const openDrawer = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getByRole('button', { name: /add note/i }));
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());

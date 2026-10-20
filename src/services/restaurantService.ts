@@ -48,7 +48,7 @@ export interface SystemNotification {
   time: string;
 }
 
-// Banderas de control de demo
+// Demo control flags
 let simulate401 = false;
 let isUserAuthenticated = true;
 let currentSimulationPlanId = 2;

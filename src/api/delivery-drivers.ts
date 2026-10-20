@@ -1,7 +1,7 @@
-// Cliente HTTP del roster de repartidores.
+// HTTP client for the delivery list.
 //
-// Rutas reales: `/api/delivery-driver` (SINGULAR, sin `/v1`). El comercio sale del JWT y el
-// backend usa `forbidNonWhitelisted`, así que los cuerpos se construyen campo a campo.
+// Actual routes: `/api/delivery-driver` (SINGULAR, without `/v1`). The trade exits the JWT and the
+// backend uses `forbidNonWhitelisted`, so bodies are built field by field.
 
 import { MAX_PAGE_LIMIT, request, type Envelope } from './delivery';
 import { buildDriverQuery } from '../lib/delivery-drivers';
@@ -68,7 +68,7 @@ export async function updateDeliveryDriver(
   return json.data;
 }
 
-/** on_shift=true → active, false → off_duty. 409 si está en reparto o suspendido. */
+/** on_shift=true → active, false → off_duty. 409 if it is in distribution or suspended. */
 export async function setDriverShift(id: number, onShift: boolean): Promise<DeliveryDriver> {
   const json = await request<Envelope<DeliveryDriver>>(
     `/delivery-driver/${id}/shift`,

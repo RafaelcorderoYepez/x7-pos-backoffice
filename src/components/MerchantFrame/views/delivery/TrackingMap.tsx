@@ -1,8 +1,8 @@
-// Radar Leaflet (teselas de OpenStreetMap) de la flota en reparto.
+// Leaflet Radar (OpenStreetMap tiles) for live delivery fleet.
 //
-// Igual que ZoneMap: el mapa se crea UNA vez y las capas se actualizan con las props. Los
-// marcadores se reutilizan por asignación (`setLatLng` al llegar una posición nueva) y el
-// icono sólo se rehace cuando cambia su estilo: el reloj de 1 s no repinta nada.
+// Like ZoneMap: the map is created ONCE and layers update with props.
+// Markers are reused per assignment (`setLatLng` on new coordinates) and the
+// icon is only recreated when its style changes: the 1s tick does not repaint anything.
 
 import React, { useEffect, useRef } from 'react';
 import L from 'leaflet';
@@ -24,7 +24,7 @@ interface TrackingMapProps {
   markers: TrackingMarker[];
   route: RoutePoint[] | null;
   zones: DeliveryZone[];
-  /** Puntos a encuadrar cuando cambia `fitKey`. */
+  /** Points to frame when `fitKey` changes. */
   fitPoints: Array<[number, number]>;
   fitKey: string;
   onSelect?: (assignmentId: number) => void;
@@ -60,7 +60,7 @@ export const TrackingMap: React.FC<TrackingMapProps> = ({
     handlersRef.current = { onSelect, fitPoints };
   });
 
-  // ---------- Montaje único ----------
+  // ---------- Initial mount ----------
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, { center: [20, 0], zoom: 2, worldCopyJump: true });
@@ -80,12 +80,12 @@ export const TrackingMap: React.FC<TrackingMapProps> = ({
     };
   }, []);
 
-  // El contenedor cambia de tamaño al pasar a pantalla completa.
+  // Container resizes on entering full screen.
   useEffect(() => {
     mapRef.current?.invalidateSize();
   }, [height]);
 
-  // ---------- Zonas (capa tenue) ----------
+  // ---------- Zones (faint layer) ----------
   useEffect(() => {
     const layer = zonesLayerRef.current;
     if (!layer) return;
@@ -105,7 +105,7 @@ export const TrackingMap: React.FC<TrackingMapProps> = ({
       });
   }, [zones]);
 
-  // ---------- Marcadores de vehículo ----------
+  // ---------- Vehicle markers ----------
   useEffect(() => {
     const layer = markersLayerRef.current;
     if (!layer) return;
@@ -147,7 +147,7 @@ export const TrackingMap: React.FC<TrackingMapProps> = ({
     });
   }, [markers]);
 
-  // ---------- Rastro de la ruta enfocada ----------
+  // ---------- Focused route trail ----------
   useEffect(() => {
     const layer = routeLayerRef.current;
     if (!layer) return;
@@ -168,7 +168,7 @@ export const TrackingMap: React.FC<TrackingMapProps> = ({
       .addTo(layer);
   }, [route]);
 
-  // ---------- Encuadre ----------
+  // ---------- Map framing ----------
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;

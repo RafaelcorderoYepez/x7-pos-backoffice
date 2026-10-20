@@ -1,10 +1,10 @@
-// Mapa de los 5 sub-módulos del épico de Reservas.
+// Map of the 5 sub-modules of the Epic of Reservations.
 //
-// Vive fuera del componente de la barra porque lo consumen dos sitios: la propia barra (que
-// pinta los anclajes) y MerchantFrame (que traduce la URL pública a un featureId). Tenerlo por
-// duplicado era la vía rápida a que una ruta nueva funcionase en un sitio y en el otro no.
+// It lives outside of the bar component because it is consumed by two places: the bar itself (which
+// paints the anchors) and MerchantFrame (which translates the public URL to a featureId). have it for
+// Duplication was the quick way for a new route to work in one place and not in the other.
 
-// El `key` es el featureId real de Features.txt, que es lo que MerchantFrame resuelve.
+// The `key` is the actual featureId from Features.txt, which is what MerchantFrame resolves to.
 export type ReservationsAnchorKey =
   | 'reservations'
   | 'reservation-guests'
@@ -15,9 +15,9 @@ export type ReservationsAnchorKey =
 export interface ReservationAnchor {
   key: ReservationsAnchorKey;
   label: string;
-  /** Símbolo de Material Symbols Outlined que la historia asigna al sub-módulo. */
+  /** Material Symbols Outlined symbol that the story assigns to the sub-module. */
   icon: string;
-  /** URL pública del sub-módulo. */
+  /** Public URL of the sub-module. */
   path: string;
 }
 
@@ -49,7 +49,7 @@ export const RESERVATION_ANCHORS: ReservationAnchor[] = [
   },
 ];
 
-// Una URL desconocida bajo /reservations cae en el libro de reservas, que es la portada del
-// épico, en vez de dejar el workspace en blanco.
+// An unknown URL under /reservations falls into the reservations book, which is the front page of the
+// epic, instead of leaving the workspace blank.
 export const featureIdForReservationPath = (path: string): ReservationsAnchorKey =>
   RESERVATION_ANCHORS.find((anchor) => anchor.path === path)?.key ?? 'reservations';

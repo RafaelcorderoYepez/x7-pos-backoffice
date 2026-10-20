@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
 
-// Comportamiento estándar de accesibilidad para drawers/modales:
-// - Cierra con la tecla Escape.
-// - Bloquea el scroll del body mientras está abierto.
-// El componente que use el hook debe montarse sólo cuando el modal está abierto
-// (renderizado condicional), de modo que mount/unmount coincida con open/close.
+// Standard accessibility behavior for drawers/modals:
+// - Close with the Escape key.
+// - Blocks the scrolling of the bodysuit while it is open.
+// The component that uses the hook must be mounted only when the modal is open
+// (conditional rendering), so that mount/unmount matches open/close.
 export function useModalDismiss(onDismiss: () => void): void {
   const dismissRef = useRef(onDismiss);
   useEffect(() => {

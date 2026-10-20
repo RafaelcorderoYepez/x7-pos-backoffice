@@ -1,9 +1,9 @@
-// Alta y edición de una tarifa de reparto.
+// Registration and editing of a distribution rate.
 //
-// Sólo toca la tarifa: la zona (y su perímetro) no cambia desde aquí. Los importes se
-// normalizan a 2 decimales al salir del campo y se rechaza un tercer decimal en vez de
-// redondearlo en silencio. Las dos reglas de consistencia (free_above > pedido mínimo, una
-// sola tarifa activa por zona) las vuelve a aplicar el servidor con 400/409.
+// Just touch the rate: the zone (and its perimeter) does not change from here. The amounts are
+// normalized to 2 decimal places when leaving the field and a third decimal is rejected instead of
+// round it off in silence. The two consistency rules (free_above > minimum order, one
+// single active rate per zone) are reapplied by the server with 400/409.
 
 import React, { useMemo, useState } from 'react';
 import type { DeliveryFee, DeliveryFeeDraft, DeliveryFeeStatus, DeliveryZone } from '../../../../types/delivery';
@@ -38,7 +38,7 @@ const fieldClass =
   'bg-white text-[#1d1c17] px-3 py-2 border border-[#e8e2d8] rounded text-body-md outline-none w-full font-poppins focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] hover:border-[#ae001a] hover:text-primary! transition-colors duration-200';
 const labelClass = 'text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider flex items-center gap-1.5';
 
-// Ejemplo fijo de la vista previa: un pedido de 25 a 3 km.
+// Fixed preview example: an order from 25 to 3 km.
 const PREVIEW_SUBTOTAL = 25;
 const PREVIEW_DISTANCE_KM = 3;
 
@@ -65,8 +65,8 @@ export const FeeFormDrawer: React.FC<FeeFormDrawerProps> = ({
 
   useModalDismiss(onCancel);
 
-  // La historia pide listar las zonas ACTIVAS; al editar se conserva la zona actual aunque
-  // ya no lo esté, o el select se quedaría sin su valor.
+  // The story asks to list the ACTIVE areas; When editing, the current area is preserved although
+  // it is no longer, or the select would be left without its value.
   const zoneOptions = useMemo(
     () =>
       zones.filter(
@@ -203,7 +203,7 @@ export const FeeFormDrawer: React.FC<FeeFormDrawerProps> = ({
           )}
         </div>
 
-        {/* ---------- Vista previa del cálculo ---------- */}
+        {/* ---------- Calculation preview ---------- */}
         <div
           data-testid="fee-preview"
           className="p-3 rounded border border-[#e8e2d8] bg-[#fef9f1] text-body-sm text-[#1d1c17] flex items-start gap-2"

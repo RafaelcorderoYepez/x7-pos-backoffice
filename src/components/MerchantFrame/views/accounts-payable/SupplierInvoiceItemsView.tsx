@@ -25,7 +25,7 @@ const num = (v: number | string | null | undefined): number => {
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-// Cantidad y precio unitario se muestran con hasta 4 decimales; el dinero con 2.
+// Quantity and unit price are shown with up to 4 decimal places; the money with 2.
 // Quantity: up to 4 decimal places but WITHOUT trailing zeroes (10.0000 -> 10, 10.25 -> 10.25).
 const formatQty = (v: number | string | null | undefined): string => String(parseFloat(num(v).toFixed(4)));
 // Dinero: SIEMPRE 2 decimales.
@@ -71,7 +71,7 @@ const ItemFormDrawer: React.FC<ItemFormDrawerProps> = ({
   const [unitPrice, setUnitPrice] = useState(initial ? String(num(initial.unit_price)) : '');
   const [taxAmount, setTaxAmount] = useState(initial ? String(num(initial.tax_amount)) : '0');
 
-  // Producto seleccionado y sus variantes activas. El backend exige variant_id
+  // Selected product and its active variants. Backend requires variant_id
   // when a product is linked, so variant selection is enforced.
   const selectedProduct = productId ? products.find((p) => String(p.id) === productId) ?? null : null;
   const productVariants = (selectedProduct?.variants ?? []).filter((v) => v.isActive !== false);
@@ -93,7 +93,7 @@ const ItemFormDrawer: React.FC<ItemFormDrawerProps> = ({
     num(quantity) > 0 &&
     unitPrice.trim().length > 0 &&
     num(unitPrice) >= 0 &&
-    // Si se elige un producto de inventario, es obligatorio elegir una variante
+    // If an inventory product is chosen, it is mandatory to choose a variant
     // (product_id y variant_id deben ir juntos, o ninguno).
     (!productId || variantId.trim().length > 0);
 
@@ -123,7 +123,7 @@ const ItemFormDrawer: React.FC<ItemFormDrawerProps> = ({
       if (product.last_cost !== null && product.last_cost !== undefined) {
         setUnitPrice(String(num(product.last_cost)));
       }
-      // Auto-selecciona la variante si el producto tiene exactamente una activa.
+      // Auto-selects the variant if the product has exactly one active.
       const active = (product.variants ?? []).filter((v) => v.isActive !== false);
       setVariantId(active.length === 1 ? String(active[0].id) : '');
     } else {
@@ -135,7 +135,7 @@ const ItemFormDrawer: React.FC<ItemFormDrawerProps> = ({
     e.preventDefault();
     if (!canSubmit || submitting || locked) return;
 
-    // El backend exige product_id y variant_id juntos (o ninguno). Solo se vincula
+    // The backend requires product_id and variant_id together (or neither). It only links
     // inventory when both are present.
     const linkingInventory = !!productId && !!variantId;
     const base = {

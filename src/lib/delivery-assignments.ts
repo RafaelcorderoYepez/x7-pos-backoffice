@@ -1,6 +1,6 @@
-// Helpers puros del tablero de despacho: transiciones (espejo de
-// DELIVERY_STATUS_TRANSITIONS del backend), píldoras, columnas Kanban, tiempos relativos,
-// iconos de vehículo y construcción de la query del listado.
+// Pure dispatch board helpers: transitions (mirror of
+// DELIVERY_STATUS_TRANSITIONS from the backend), pills, Kanban columns, relative times,
+// vehicle and construction icons from the listing query.
 
 import type {
   AssignmentFilters,
@@ -31,7 +31,7 @@ export const isDspType = (type: AssignmentType): type is DspAssignmentType => ty
 export const isTerminalStatus = (status: DeliveryStatus): boolean =>
   status === 'delivered' || status === 'failed' || status === 'cancelled';
 
-// Mismo contenido que constants/delivery-assignment.constants.ts del backend.
+// Same content as backend constants/delivery-assignment.constants.ts.
 export const DELIVERY_STATUS_TRANSITIONS: Record<DeliveryStatus, readonly DeliveryStatus[]> = {
   pending: ['assigned', 'failed', 'cancelled'],
   assigned: ['picked_up', 'failed', 'cancelled'],
@@ -77,9 +77,9 @@ export const isDestructiveStatus = (status: DeliveryStatus): boolean =>
   status === 'failed' || status === 'cancelled';
 
 /**
- * Acciones de estado para una asignación. `pending → assigned` necesita un repartidor
- * (IN_HOUSE: se hace con "Assign driver", no con un botón de estado) o un
- * external_delivery_id (DSP): sin ellos el backend respondería 400, así que no se ofrece.
+ * Status actions for an assignment. `pending → assigned` needs a dealer
+ * (IN_HOUSE: this is done with "Assign driver", not with a status button) or a
+ * external_delivery_id (DSP): without them the backend would respond 400, so it is not offered.
  */
 export function statusActions(assignment: Pick<DeliveryAssignment, 'delivery_status' | 'assignment_type' | 'deliveryDriver' | 'external_delivery_id'>): TransitionAction[] {
   return DELIVERY_STATUS_TRANSITIONS[assignment.delivery_status]
@@ -91,7 +91,7 @@ export function statusActions(assignment: Pick<DeliveryAssignment, 'delivery_sta
     .map((to) => ({ to, label: ACTION_LABELS[to], destructive: isDestructiveStatus(to) }));
 }
 
-/** Cambiar de repartidor: sólo IN_HOUSE y sólo antes de la recogida. */
+/** Change delivery driver: IN_HOUSE only and only before collection. */
 export const canReassignDriver = (assignment: Pick<DeliveryAssignment, 'delivery_status' | 'assignment_type'>): boolean =>
   assignment.assignment_type === 'in_house' &&
   (assignment.delivery_status === 'pending' || assignment.delivery_status === 'assigned');
@@ -135,7 +135,7 @@ const VEHICLE_ICONS: Record<string, string> = {
   on_foot: 'directions_walk',
 };
 
-/** Icono del vehículo; sin dato (el listado no trae vehicleType) cae en `two_wheeler`. */
+/** Vehicle icon; without data (the list does not include vehicleType) it falls into `two_wheeler`. */
 export const vehicleIcon = (vehicleType: string | null | undefined): string =>
   (vehicleType && VEHICLE_ICONS[vehicleType]) || 'two_wheeler';
 
@@ -190,7 +190,7 @@ export function buildAssignmentQuery(f: AssignmentFilters, page = 1, limit = 100
   return params.toString();
 }
 
-// ================= Validación DSP manual =================
+// ================= Manual DSP Validation =================
 
 export function isHttpsUrl(raw: string): boolean {
   const text = raw.trim();

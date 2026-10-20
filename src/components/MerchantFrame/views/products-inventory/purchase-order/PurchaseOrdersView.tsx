@@ -78,7 +78,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filtros de listado
+  // Listing filters
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [supplierFilter, setSupplierFilter] = useState<string>('All');
@@ -115,7 +115,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   // Soporte
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
 
-  // Estados para modal de soft-delete
+  // States for soft-delete modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
   const [selectedOrderForDelete, setSelectedOrderForDelete] = useState<PurchaseOrder | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
@@ -124,7 +124,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   const topRef = useRef<HTMLDivElement | null>(null);
   const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
-  // Auto-scroll al inicio
+  // Auto-scroll at start
   useEffect(() => {
     if (topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'instant' });
@@ -182,7 +182,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       };
 
-      // Soft-delete: PATCH para marcar como inactiva
+      // Soft-delete: PATCH to mark as inactive
       const res = await fetch(`${API_BASE}/v1/purchase-orders/${selectedOrderForDelete.id}`, {
         method: 'PATCH',
         headers,
@@ -490,7 +490,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
         setSelectedOrderForInspect(orderData);
         setInspectorStatus(orderData.status);
 
-        // Inicializar cantidades recibidas de cada item
+        // Initialize quantities received for each item
         const initialQtys: Record<number, number> = {};
         if (orderData.purchaseOrderItems) {
           orderData.purchaseOrderItems.forEach((item: { id: number; receivedQuantity?: number }) => {
@@ -657,7 +657,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     });
   }
 
-  // Filtrado y ordenamiento de listado (de más nuevo a más viejo por actualización de estado/fecha)
+  // List filtering and sorting (from newest to oldest by status/date update)
   const filteredOrders = purchaseOrders
     .filter(po => {
       const supplierName = po.supplier?.name || '';
@@ -997,7 +997,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
               />
             </div>
 
-            {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
+            {/* Row 2: Filters on the left, Buttons on the right */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-3">
                 {/* Filter by Supplier */}
@@ -1015,7 +1015,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                   ))}
                 </select>
 
-                {/* Filtro por Estado */}
+                {/* Filter by State */}
                 <select
                   value={statusFilter}
                   onChange={(e) => {
@@ -1635,7 +1635,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
             onClick={() => setIsDeleteModalOpen(false)}
           />
 
-          {/* Caja del Modal */}
+          {/* Modal Box */}
           <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-zinc-200 animate-scale-in">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center text-[#ae001a] shrink-0">

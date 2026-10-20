@@ -1,10 +1,10 @@
-// Lógica pura del workspace de tarifas de reparto.
+// Pure logic of the distribution rates workspace.
 //
-// `computeDeliveryFee` es el espejo de
+// `computeDeliveryFee` is the mirror of
 // x7-pos-back-end/src/commerce/delivery-system/delivery-fee/utils/delivery-fee-calculator.util.ts
-// (se usa para la vista previa del drawer; el cálculo que vale es el de `POST /delivery-fee/quote`).
-// Las reglas de consistencia (free_above > min_order_amount, una sola tarifa activa por zona)
-// también las aplica el servidor: aquí sólo evitan un viaje que va a acabar en 400/409.
+// (used for the drawer preview; the calculation that counts is `POST /delivery-fee/quote`).
+// Consistency rules (free_above > min_order_amount, only one active rate per zone)
+// They are also applied by the server: here they only avoid a trip that will end in 400/409.
 
 import type {
   DeliveryFee,
@@ -20,7 +20,7 @@ export const FEE_STATUS_META: Record<DeliveryFeeStatus, { label: string; color: 
   inactive: { label: 'Inactive', color: '#64748b', pill: 'bg-[#64748b] text-white' },
 };
 
-/** decimal(12, 2) en la base. */
+/** decimal(12, 2) in the base. */
 export const FEE_MAX_AMOUNT = 9999999999.99;
 
 export const feeCode = (id: number): string => `#FEE-${id}`;
@@ -35,7 +35,7 @@ export function formatMoney(value: number | null | undefined): string {
   return `${n < 0 ? '-' : ''}$${abs}`;
 }
 
-/** Postgres manda los decimal como texto; aquí se normalizan una sola vez al hidratar. */
+/** Postgres sends decimals as text; here they are normalized only once when hydrating. */
 export function normalizeFee(raw: DeliveryFee): DeliveryFee {
   const num = (v: unknown): number | null =>
     v === null || v === undefined || v === '' ? null : Number(v);
@@ -94,14 +94,14 @@ export function computeDeliveryFee(
   };
 }
 
-// ================= Entradas de importe =================
+// ================= Amount entries =================
 
 export type MoneyParse = { ok: true; value: number | null } | { ok: false; error: string };
 
 /**
- * Importe escrito a mano. Vacío = null (campo opcional sin valor). Más de 2 decimales se
- * RECHAZA en vez de redondear: el DTO usa `maxDecimalPlaces: 2` y redondear en silencio
- * cambiaría la tarifa que el usuario cree haber puesto.
+ * Handwritten amount. Empty = null (optional field with no value). More than 2 decimal places
+ * REJECT instead of rounding: DTO uses `maxDecimalPlaces: 2` and rounding silently
+ * would change the rate that the user believes they have set.
  */
 export function parseMoneyInput(raw: string, label: string): MoneyParse {
   const text = raw.trim().replace(/^\$/, '');
@@ -114,7 +114,7 @@ export function parseMoneyInput(raw: string, label: string): MoneyParse {
   return { ok: true, value };
 }
 
-/** Normaliza al salir del campo: "5.9" → "5.90". Deja intacto lo que no es un importe. */
+/** Normalizes when leaving the field: "5.9" → "5.90". Leave intact what is not an amount. */
 export function formatMoneyInput(raw: string): string {
   const parsed = parseMoneyInput(raw, 'value');
   return parsed.ok && parsed.value !== null ? parsed.value.toFixed(2) : raw;
@@ -123,7 +123,7 @@ export function formatMoneyInput(raw: string): string {
 export const moneyInputValue = (value: number | null | undefined): string =>
   value === null || value === undefined ? '' : Number(value).toFixed(2);
 
-// ================= Validación del formulario =================
+// ================= Form validation =================
 
 export interface FeeFormValues {
   zoneId: string;
@@ -233,11 +233,11 @@ export function matchesFeeFilters(fee: DeliveryFee, filters: FeeFilters): boolea
 }
 
 export interface FeeMetrics {
-  /** Media de base_fee de las tarifas activas de zonas activas; null si no hay ninguna. */
+  /** Base_fee average of active zone active rates; null if there are none. */
   averageBaseFee: number | null;
-  /** Zonas activas con una tarifa activa que ofrece envío gratis (free_above > 0). */
+  /** Active zones with an active rate that offers free shipping (free_above > 0). */
   freeShippingZones: number;
-  /** Zonas activas sin tarifa activa: ahí nadie puede cobrar un reparto. */
+  /** Active zones without active rate: there no one can collect a distribution. */
   zonesLackingFees: Array<Pick<DeliveryZone, 'id' | 'name'>>;
 }
 
@@ -253,7 +253,7 @@ export function computeFeeMetrics(fees: DeliveryFee[], zones: DeliveryZone[]): F
       ) / 100
     : null;
 
-  // Igual que `GET /delivery-fee/summary`: sólo zonas ACTIVAS con un free_above válido (> 0).
+  // Same as `GET /delivery-fee/summary`: only ACTIVE zones with a valid free_above (> 0).
   const freeShippingZones = new Set(
     pricedActive
       .filter((fee) => fee.free_above !== null && Number(fee.free_above) > 0)
@@ -269,8 +269,8 @@ export function computeFeeMetrics(fees: DeliveryFee[], zones: DeliveryZone[]): F
 }
 
 /**
- * KPIs del banner: los del servidor (`GET /delivery-fee/summary`) cuando llegan bien
- * formados; si no (backend antiguo, fallo de red), los calculados en cliente.
+ * Banner KPIs: those of the server (`GET /delivery-fee/summary`) when they arrive correctly
+ * formed; if not (old backend, network failure), those calculated on the client.
  */
 export function resolveFeeMetrics(
   local: FeeMetrics,

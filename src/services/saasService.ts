@@ -33,7 +33,7 @@ export interface SaaSMetrics {
   totalMerchants: {
     value: number;
     growth: number;
-    trend: number[]; // para el mini-chart
+    trend: number[]; // for the mini-chart
   };
   quickService: MerchantMetric;
   fullRestaurant: MerchantMetric;
@@ -57,7 +57,7 @@ export interface RecentMerchant {
 
 export interface ServiceHealth {
   status: 'operational' | 'degraded' | 'downtime';
-  latency: number; // en ms
+  latency: number; // in more
   authUptime: string; // ej "99.998%"
   paymentBridge: 'Stable' | 'Degraded' | 'Down';
   cloudNodes: {
@@ -72,7 +72,7 @@ export interface ServiceHealth {
   };
 }
 
-// Bandera global para simular fallos en las pruebas
+// Global flag to simulate test failures
 let simulateApiFailure = false;
 
 export const setSimulateApiFailure = (fail: boolean) => {
@@ -85,7 +85,7 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const saasService = {
   async getMetrics(): Promise<SaaSMetrics> {
-    await delay(600); // simular retraso de red
+    await delay(600); // simulate network delay
     if (simulateApiFailure) {
       throw new Error('Failed to fetch SaaS metrics');
     }
@@ -116,7 +116,7 @@ export const saasService = {
       throw new Error('Failed to fetch revenue data');
     }
 
-    // Retornar datos dinámicos según el período
+    // Return dynamic data according to period
     switch (period) {
       case '1M':
         return {
@@ -166,7 +166,7 @@ export const saasService = {
         name: 'Global Dining Group',
         joinedText: 'Joined: Yesterday',
         type: 'Enterprise',
-        // Imagen real de restaurant para reemplazar placeholders de googleusercontent
+        // Real restaurant image to replace googleusercontent placeholders
         logoUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=80&h=80&fit=crop&crop=faces&q=80',
       },
       {
@@ -202,8 +202,8 @@ export const saasService = {
       };
     }
 
-    // Simular degradación aleatoria muy esporádica o controlada para visualizar el punto amarillo/rojo
-    // Para propósitos prácticos de demo, dejemos que esté operacional a menos que se fuerce el fallo.
+    // Simulate very sporadic or controlled random degradation to display the yellow/red dot
+    // For practical demo purposes, let it be operational unless forced to fail.
     return {
       status: 'operational',
       latency: 24,

@@ -143,7 +143,7 @@ describe('TableAssignmentsView', () => {
     vi.clearAllMocks();
   });
 
-  describe('contexto de turno', () => {
+  describe('shift context', () => {
     it('starts filtering by open shift', async () => {
       await renderView();
 
@@ -202,7 +202,7 @@ describe('TableAssignmentsView', () => {
       expect(screen.getByText('VIP Lounge')).toBeInTheDocument();
     });
 
-    it('resume el turno con su nombre y horas', async () => {
+    it('summarize the shift with your name and hours', async () => {
       await renderView();
       const grid = within(screen.getByRole('table'));
 
@@ -210,7 +210,7 @@ describe('TableAssignmentsView', () => {
       expect(grid.getByText('11:00 AM – open')).toBeInTheDocument();
     });
 
-    it('marca la cobertura viva como servicio activo', async () => {
+    it('marks live coverage as active duty', async () => {
       await renderView();
 
       expect(screen.getByTestId('assignment-duty-window-1')).toHaveTextContent(
@@ -420,7 +420,7 @@ describe('TableAssignmentsView', () => {
       expect(callsTo('PATCH', '/table-assignments/1')[0].body.releasedAt).toBeTruthy();
     });
 
-    it('no ofrece liberar una cobertura ya cerrada', async () => {
+    it('does not offer to release already closed coverage', async () => {
       const user = userEvent.setup();
       await renderView();
       await user.selectOptions(screen.getByLabelText('Filter by shift'), '6');
@@ -456,7 +456,7 @@ describe('TableAssignmentsView', () => {
       );
     });
 
-    it('ignora eventos de otro comercio', async () => {
+    it('ignore events from another trade', async () => {
       await renderView();
       const before = fetchMock().mock.calls.length;
 

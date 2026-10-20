@@ -9,7 +9,7 @@ vi.mock('../../../../lib/auth-storage', () => ({
   clearAuthSession: vi.fn(),
 }));
 
-// El editor monta un lienzo con drag & drop y su propio ciclo de fetch: lo sustituimos
+// The editor sets up a canvas with drag & drop and its own fetch cycle: we replace it
 // so these tests measure ONLY the floor plans grid.
 vi.mock('./FloorPlanEditor', () => ({
   FloorPlanEditor: ({ plan, onClose }: { plan: { name: string }; onClose: () => void }) => (
@@ -57,7 +57,7 @@ const TABLES: DiningTable[] = [
     location: 'Near window',
     rotation: 0,
     shape: 'Square',
-    // Justo dentro de 800x600 (huella 80x80): encoger el lienzo la deja fuera.
+    // Just inside 800x600 (80x80 footprint): shrinking the canvas leaves it out.
     pos_x: 700,
     pos_y: 500,
     floorPlan: { id: 1 },
@@ -96,11 +96,11 @@ function jsonRes(body: unknown, status = 200) {
   } as Response);
 }
 
-/** Backend por defecto: los tres GET del hidratado inicial. */
+/** Default backend: the three GETs of the initial hydrate. */
 function defaultFetch(plans: RawFloorPlan[] = PLANS) {
   return vi.fn((url: string | URL | Request) => {
     const u = String(url);
-    // El envelope de floor-plan/floor-zone usa `pagination`; el de tables `paginationMeta`.
+    // The floor-plan/floor-zone envelope uses `pagination`; the tables `paginationMeta`.
     if (u.includes('/floor-zone')) {
       return jsonRes({ data: ZONES, pagination: { total: ZONES.length } });
     }
@@ -190,7 +190,7 @@ describe('FloorPlansView', () => {
       // Only table in floor plan 2 is soft-deleted.
       expect(terraceRow.getByText('0 Tables')).toBeInTheDocument();
 
-      // Los badges: 'inactive' del backend se muestra como Draft.
+      // The badges: 'inactive' from the backend are displayed as Draft.
       expect(mainRow.getByText('Active')).toBeInTheDocument();
       expect(terraceRow.getByText('Draft')).toBeInTheDocument();
       // Count metric resides in the dark bar, outside the <table>.

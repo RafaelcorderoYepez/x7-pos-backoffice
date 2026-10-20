@@ -113,7 +113,7 @@ const DEFAULT_MENU_PRODUCTS = [
   'Double Smash Burger',
   'Caesar Salad with Grilled Chicken',
   'Pizza Margherita',
-  'Al Pastor Tacos (3 pcs)',
+  'Tacos al Pastor (3 pcs)',
   'California Sushi Roll',
   'Italian Cappuccino 12oz',
   'Iced Latte',
@@ -136,6 +136,11 @@ const DEFAULT_PRODUCT_VARIANTS: Record<string, string[]> = {
     'Medium 12"',
     'Large 16"',
     'Extra Cheese',
+  ],
+  'Tacos al Pastor (3 pcs)': [
+    'Traditional',
+    'With Cheese (Gringas)',
+    'No Pineapple',
   ],
   'Al Pastor Tacos (3 pcs)': [
     'Traditional',
@@ -167,8 +172,15 @@ const DEFAULT_PRODUCT_VARIANTS: Record<string, string[]> = {
 const suggestCourseForProduct = (productName: string): 'beverage' | 'appetizer' | 'main_course' | 'dessert' => {
   const p = (productName || '').toLowerCase().trim();
   if (
+    p.includes('taco') || p.includes('pastor') || p.includes('burger') ||
+    p.includes('pizza') || p.includes('steak') || p.includes('ribeye') ||
+    p.includes('sandwich') || p.includes('pasta')
+  ) {
+    return 'main_course';
+  }
+  if (
     p.includes('cappuccino') || p.includes('latte') || p.includes('cafe') || p.includes('coffee') ||
-    p.includes('espresso') || p.includes('tea') || p.includes('tea') || p.includes('beer') ||
+    p.includes('espresso') || p.includes('tea') || p.includes('beer') ||
     p.includes('cerveza') || p.includes('vino') || p.includes('wine') || p.includes('soda') ||
     p.includes('juice') || p.includes('jugo') || p.includes('water') || p.includes('agua') ||
     p.includes('cocktail') || p.includes('drink') || p.includes('beverage') || p.includes('limonada')
@@ -186,7 +198,7 @@ const suggestCourseForProduct = (productName: string): 'beverage' | 'appetizer' 
     p.includes('salad') || p.includes('ensalada') || p.includes('bruschetta') || p.includes('nacho') ||
     p.includes('soup') || p.includes('sopa') || p.includes('wings') || p.includes('alitas') ||
     p.includes('calamari') || p.includes('fries') || p.includes('papas') || p.includes('carpaccio') ||
-    p.includes('taco') || p.includes('sushi') || p.includes('roll')
+    p.includes('sushi') || p.includes('roll')
   ) {
     return 'appetizer';
   }
@@ -252,26 +264,28 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     setDatePreset(preset);
     setCurrentPage(1);
     const now = new Date();
-    const toISOStringWithTZ = (d: Date) => {
-      const offset = d.getTimezoneOffset() * 60000;
-      return new Date(d.getTime() - offset).toISOString().slice(0, 16);
+    const toDateInputString = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     };
 
     if (preset === 'all') {
       setStartTime('');
       setEndTime('');
     } else if (preset === 'today') {
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-      setStartTime(toISOStringWithTZ(start));
-      setEndTime(toISOStringWithTZ(now));
+      const todayStr = toDateInputString(now);
+      setStartTime(todayStr);
+      setEndTime(todayStr);
     } else if (preset === 'last24h') {
-      const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      setStartTime(toISOStringWithTZ(start));
-      setEndTime(toISOStringWithTZ(now));
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      setStartTime(toDateInputString(yesterday));
+      setEndTime(toDateInputString(now));
     } else if (preset === 'last7d') {
-      const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      setStartTime(toISOStringWithTZ(start));
-      setEndTime(toISOStringWithTZ(now));
+      const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      setStartTime(toDateInputString(last7Days));
+      setEndTime(toDateInputString(now));
     }
   };
   const [cancellationFilter, setCancellationFilter] = useState<'ALL' | KitchenCancellationReason>('ALL');
@@ -529,7 +543,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     return () => clearInterval(timer);
   }, [autoRefreshInterval, loadOrders]);
 
-  // Escuchar evento global de reinicio KDS
+  // Listen to global KDS reset event
   useEffect(() => {
     const handleReset = () => {
       loadOrders(true);
@@ -695,12 +709,20 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
     // 3. Date Range Filter
     if (startTime) {
-      const s = new Date(startTime).getTime();
-      result = result.filter(o => new Date(o.createdAt).getTime() >= s);
+      const s = startTime.includes('T')
+        ? new Date(startTime).getTime()
+        : new Date(`${startTime}T00:00:00`).getTime();
+      if (!isNaN(s)) {
+        result = result.filter(o => new Date(o.createdAt).getTime() >= s);
+      }
     }
     if (endTime) {
-      const e = new Date(endTime).getTime();
-      result = result.filter(o => new Date(o.createdAt).getTime() <= e);
+      const e = endTime.includes('T')
+        ? new Date(endTime).getTime()
+        : new Date(`${endTime}T23:59:59.999`).getTime();
+      if (!isNaN(e)) {
+        result = result.filter(o => new Date(o.createdAt).getTime() <= e);
+      }
     }
 
     // 4. Universal Search Input
@@ -770,8 +792,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       const isPreparingItem = item.items.some((it) => it.preparationStatus === 'in_preparation');
       const itemScore = (item.priority ?? 0) * 10 + (isPreparingItem ? 1 : 0);
 
-      // Determinar la barrera mínima permitida: debe ser posterior a cualquier orden que YA tenía SLA
-      // (espera >= criticalSlaMinutes) al momento en que esta nueva orden fue creada.
+      // Determine the minimum barrier allowed: must be after any order that ALREADY had SLA
+      // (wait >= criticalSlaMinutes) at the time this new order was created.
       let minInsertIndex = 0;
       for (let i = 0; i < activeQueue.length; i++) {
         const qTime = new Date(activeQueue[i].createdAt).getTime();
@@ -781,8 +803,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         }
       }
 
-      // Dentro del rango permitido (>= minInsertIndex), si la orden entrante tiene MAYOR prioridad
-      // que la orden en esa posición, se adelanta a ella. Si tiene igual o menor prioridad, se ubica detrás (FIFO).
+      // Within the allowed range (>= minInsertIndex), if the incoming order has HIGHER priority
+      // that the order in that position, precedes it. If it has equal or lower priority, it is placed behind (FIFO).
       let insertIndex = activeQueue.length;
       for (let i = minInsertIndex; i < activeQueue.length; i++) {
         const q = activeQueue[i];
@@ -1509,7 +1531,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
       )}
 
-      {/* 1. Header Card Workspace (Title only) */}
+      {/* 1. Header Card Workspace */}
       <div className="bg-white border border-[#e8e2d8] rounded-xl p-6 shadow-sm">
         <div>
           <div className="flex items-center gap-2.5">
@@ -1736,12 +1758,17 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           </div>
         </div>
 
-        {/* ROW 2: Date & Time Range Controls + Presets */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#f0ede6]">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-1">
+        {/* ROW 2: Date & Time Range Controls + Presets (Single Row Layout) */}
+        <div className="flex items-center gap-3 pt-3 border-t border-[#f0ede6] overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="material-symbols-outlined text-sm text-[#5f5e5e]">calendar_today</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#5f5e5e]">
               Date Range:
             </span>
+          </div>
+
+          {/* Compact Segmented Switcher for Date Presets */}
+          <div className="inline-flex items-center bg-[#f2ede5] p-0.5 rounded-lg border border-[#e8e2d8] shrink-0">
             {([
               { id: 'all', label: 'All Time' },
               { id: 'today', label: 'Today' },
@@ -1755,10 +1782,10 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   key={p.id}
                   type="button"
                   onClick={() => handlePresetChange(p.id)}
-                  className={`h-[34px] px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer border flex items-center justify-center ${
+                  className={`h-[28px] px-2.5 rounded-md text-xs font-bold transition-all cursor-pointer font-sans ${
                     isActive
-                      ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
-                      : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
+                      ? 'bg-white text-[#1d1c17] shadow-xs border border-[#e8e2d8]'
+                      : 'text-[#5f5e5e] hover:text-[#ae001a]'
                   }`}
                 >
                   {p.label}
@@ -1767,32 +1794,39 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             })}
           </div>
 
-          {/* Custom Date & Time Inputs */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Divider */}
+          <div className="h-4 w-px bg-[#e8e2d8] shrink-0" />
+
+          {/* Inline Custom Date Inputs (Date only) */}
+          <div className="flex items-center gap-2 shrink-0">
             <div className="flex items-center gap-1.5 text-xs text-[#5f5e5e]">
-              <span className="text-[11px] font-medium">From:</span>
+              <span className="text-[11px] font-semibold text-[#5f5e5e]">From:</span>
               <input
-                type="datetime-local"
+                type="date"
                 value={startTime}
                 onChange={(e) => {
                   setStartTime(e.target.value);
                   setDatePreset('custom');
                   setCurrentPage(1);
                 }}
-                className="h-[34px] px-2.5 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#1d1c17] text-xs focus:outline-none focus:border-[#ae001a] cursor-pointer"
+                className={`h-[30px] px-2 rounded-lg border bg-[#fcfcfb] text-[#1d1c17] text-xs focus:outline-none focus:border-[#ae001a] cursor-pointer font-sans transition-colors ${
+                  datePreset === 'custom' || startTime ? 'border-[#ae001a]' : 'border-[#d5cfc4]'
+                }`}
               />
             </div>
             <div className="flex items-center gap-1.5 text-xs text-[#5f5e5e]">
-              <span className="text-[11px] font-medium">To:</span>
+              <span className="text-[11px] font-semibold text-[#5f5e5e]">To:</span>
               <input
-                type="datetime-local"
+                type="date"
                 value={endTime}
                 onChange={(e) => {
                   setEndTime(e.target.value);
                   setDatePreset('custom');
                   setCurrentPage(1);
                 }}
-                className="h-[34px] px-2.5 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#1d1c17] text-xs focus:outline-none focus:border-[#ae001a] cursor-pointer"
+                className={`h-[30px] px-2 rounded-lg border bg-[#fcfcfb] text-[#1d1c17] text-xs focus:outline-none focus:border-[#ae001a] cursor-pointer font-sans transition-colors ${
+                  datePreset === 'custom' || endTime ? 'border-[#ae001a]' : 'border-[#d5cfc4]'
+                }`}
               />
             </div>
             {(startTime || endTime) && (
@@ -1804,19 +1838,20 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   setDatePreset('all');
                   setCurrentPage(1);
                 }}
-                className="h-[34px] text-[11px] text-[#ae001a] hover:underline font-semibold cursor-pointer ml-1 flex items-center"
+                className="h-[30px] px-2 text-[11px] text-[#ae001a] hover:bg-red-50 rounded-lg font-bold cursor-pointer flex items-center gap-0.5 transition-colors"
                 title="Clear date filter"
               >
+                <span className="material-symbols-outlined text-[14px]">close</span>
                 Clear
               </button>
             )}
           </div>
         </div>
 
-        {/* ROW 3: Status Multi-Select Pills (Event Log Pattern) & Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#f0ede6]">
+        {/* ROW 3: Status Multi-Select Pills (Left) & Action Buttons (Right) */}
+        <div className="flex items-center justify-between gap-4 pt-3 border-t border-[#f0ede6] overflow-x-auto scrollbar-none py-0.5">
           {/* Left: Status Filter Pills */}
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-0.5">
               Status:
             </span>
@@ -1826,6 +1861,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
               type="button"
               onClick={() => {
                 setStatusFilter('ALL');
+                setCancellationFilter('ALL');
                 setCurrentPage(1);
               }}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
@@ -1849,6 +1885,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
               type="button"
               onClick={() => {
                 setStatusFilter('pending');
+                setCancellationFilter('ALL');
                 setCurrentPage(1);
               }}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
@@ -1873,6 +1910,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
               type="button"
               onClick={() => {
                 setStatusFilter('started');
+                setCancellationFilter('ALL');
                 setCurrentPage(1);
               }}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
@@ -1897,6 +1935,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
               type="button"
               onClick={() => {
                 setStatusFilter('completed');
+                setCancellationFilter('ALL');
                 setCurrentPage(1);
               }}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
@@ -1940,34 +1979,44 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
               </span>
             </button>
 
-            {/* Cancellation Reasons Filter when Cancelled or Audit */}
-            {(statusFilter === 'cancelled' || workspaceMode === 'audit') && (
-              <div className="flex items-center gap-1.5 ml-1 text-xs text-[#5f5e5e]">
-                <span className="material-symbols-outlined text-sm text-amber-600">warning</span>
-                <select
-                  value={cancellationFilter}
-                  onChange={e => setCancellationFilter(e.target.value as KitchenCancellationReason | 'ALL')}
-                  className="h-[28px] px-2 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#1d1c17] focus:outline-none focus:border-[#ae001a] text-xs cursor-pointer"
-                  aria-label="Filter by cancellation reason"
-                >
-                  <option value="ALL">All Reasons</option>
-                  {CANCELLATION_REASONS.map(r => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Cancellation Reasons Filter ONLY when Cancelled filter is active */}
+            {statusFilter === 'cancelled' && (
+              <select
+                value={cancellationFilter}
+                onChange={e => setCancellationFilter(e.target.value as KitchenCancellationReason | 'ALL')}
+                className="h-[28px] px-2 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#1d1c17] focus:outline-none focus:border-[#ae001a] text-xs cursor-pointer font-medium max-w-[170px] shrink-0 ml-1"
+                aria-label="Filter by cancellation reason"
+              >
+                <option value="ALL">All Reasons</option>
+                {CANCELLATION_REASONS.map(r => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
 
-          {/* Right: Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Right: Action Buttons (Always pinned right on the same line) */}
+          <div className="flex items-center gap-2 shrink-0 ml-auto pl-4">
+            {/* Recall Button */}
+            {lastBumpedOrder && (
+              <button
+                type="button"
+                onClick={handleRecallOrder}
+                className="h-[32px] px-3 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#5f5e5e] text-xs font-bold uppercase tracking-wider hover:bg-[#f2ede5] hover:text-[#1d1c17] transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                title="Undo last bumped ticket"
+              >
+                <span className="material-symbols-outlined text-sm text-amber-700">undo</span>
+                RECALL #KO-{lastBumpedOrder.id}
+              </button>
+            )}
+
             {/* SLA Configuration Button */}
             <button
               type="button"
               onClick={() => setIsSlaModalOpen(true)}
-              className="h-[34px] px-3 bg-[#fcfcfb] border border-[#d5cfc4] hover:border-[#ae001a] text-[#1d1c17] rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs group"
+              className="h-[32px] px-2.5 bg-[#fcfcfb] border border-[#d5cfc4] hover:border-[#ae001a] text-[#1d1c17] rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs group"
               title="Configure Kitchen SLA Threshold"
             >
               <span className="material-symbols-outlined text-[16px] text-red-600 group-hover:scale-110 transition-transform">
@@ -1991,25 +2040,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                 setCreateError(null);
                 setIsCreateModalOpen(true);
               }}
-              className="h-[34px] px-4 rounded-lg bg-[#ae001a] text-white font-bold text-xs hover:bg-[#d2272f] transition-colors flex items-center gap-1.5 font-sans cursor-pointer shadow-xs"
+              className="h-[32px] px-4 rounded-lg bg-[#ae001a] text-white font-bold text-xs hover:bg-[#d2272f] transition-colors flex items-center gap-1.5 font-sans cursor-pointer shadow-xs"
               title="Create new kitchen ticket"
             >
               <span className="material-symbols-outlined text-[18px]">add</span>
               CREATE ORDER
             </button>
-
-            {/* Recall Button */}
-            {lastBumpedOrder && (
-              <button
-                type="button"
-                onClick={handleRecallOrder}
-                className="h-[34px] px-3 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#5f5e5e] text-xs font-bold uppercase tracking-wider hover:bg-[#f2ede5] hover:text-[#1d1c17] transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
-                title="Undo last bumped ticket"
-              >
-                <span className="material-symbols-outlined text-sm text-amber-700">undo</span>
-                RECALL #KO-{lastBumpedOrder.id}
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -2587,7 +2623,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
                           {/* Status badge & Item actions */}
                           <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
-                            {/* Botón POUR / PREP (o FIRE) individual en el artículo si hay más de 1 artículo */}
+                            {/* Individual POUR / PREP (or FIRE) button on item if more than 1 item */}
                             {order.items.length > 1 && !isCompleted && !isCancelled && (
                               <>
                                 {it.preparationStatus === 'held' && (
@@ -2620,7 +2656,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               </>
                             )}
 
-                            {/* Botón READY individual para marcar listo si está en preparación */}
+                            {/* Individual READY button to mark item ready if in preparation */}
                             {!isCompleted && !isCancelled && it.preparationStatus === 'in_preparation' && (
                               <button
                                 onClick={(e) => {
@@ -2635,7 +2671,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               </button>
                             )}
 
-                            {/* Botón UNDO en el artículo (después de haber iniciado: in_preparation o ready) */}
+                            {/* Item UNDO button (after started: in_preparation or ready) */}
                             {!isCompleted && !isCancelled && (it.preparationStatus === 'in_preparation' || it.preparationStatus === 'ready') && (
                               <button
                                 onClick={(e) => {
@@ -2770,7 +2806,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       })()
                     )}
 
-                    {/* Botón Undo general en la comanda (después de haber dado Start) */}
+                    {/* General Undo button on order (after giving Start) */}
                     {(isStarted || hasActivePrep) && !isCompleted && !isCancelled && (
                       <button
                         onClick={() => handleUndoOrder(order)}
@@ -3184,7 +3220,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider mb-1">
-                        Table / Ticket Reference (Name or #)
+                        Table / Ticket (Name or #)
                       </label>
                       <input
                         type="text"
@@ -3268,11 +3304,15 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                   value={
                                     item.isCustomProduct
                                       ? '__custom__'
-                                      : catalogProducts.includes(item.productName)
-                                      ? item.productName
-                                      : item.productName === ''
-                                      ? ''
-                                      : '__custom__'
+                                      : (() => {
+                                          const norm = (item.productName === 'Al Pastor Tacos (3 pcs)' || item.productName === 'Al Pastor Tacos')
+                                            ? 'Tacos al Pastor (3 pcs)'
+                                            : item.productName;
+                                          const catalog = Array.from(new Set(catalogProducts.map(p => 
+                                            (p === 'Al Pastor Tacos (3 pcs)' || p === 'Al Pastor Tacos') ? 'Tacos al Pastor (3 pcs)' : p
+                                          )));
+                                          return catalog.includes(norm) ? norm : norm === '' ? '' : '__custom__';
+                                        })()
                                   }
                                   onChange={e => {
                                     const val = e.target.value;
@@ -3291,7 +3331,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                         )
                                       );
                                     } else {
-                                      const available = productVariantsMap[val] || [];
+                                      const available = productVariantsMap[val] || productVariantsMap['Tacos al Pastor (3 pcs)'] || [];
                                       const suggested = suggestCourseForProduct(val);
                                       setFormItems(prev =>
                                         prev.map((it, i) => {
@@ -3313,7 +3353,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                 >
                                   <option value="">-- Select Dish / Product --</option>
                                   <optgroup label="Store Catalog / Menu">
-                                    {catalogProducts.map(p => (
+                                    {Array.from(new Set(catalogProducts.map(p => 
+                                      (p === 'Al Pastor Tacos (3 pcs)' || p === 'Al Pastor Tacos') ? 'Tacos al Pastor (3 pcs)' : p
+                                    ))).map(p => (
                                       <option key={p} value={p}>{p}</option>
                                     ))}
                                   </optgroup>

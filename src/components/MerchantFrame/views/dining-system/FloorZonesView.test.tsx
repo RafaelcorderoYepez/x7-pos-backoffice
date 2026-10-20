@@ -8,7 +8,7 @@ vi.mock('../../../../lib/auth-storage', () => ({
   clearAuthSession: vi.fn(),
 }));
 
-// El editor real monta un lienzo a pantalla completa: lo sustituimos por un testigo para
+// The real editor mounts a full screen canvas: we replace it with a witness to
 // assert that zone jumps to editor without dragging all machinery.
 vi.mock('./FloorPlanEditor', () => ({
   FloorPlanEditor: ({ plan, onClose }: { plan: { name: string }; onClose: () => void }) => (
@@ -41,7 +41,7 @@ const ZONES = [
     id: 11,
     name: 'VIP Lounge',
     color: '#D97706',
-    status: 'inactive', // legacy -> se normaliza a Draft
+    status: 'inactive', // legacy -> normalizes to Draft
     merchant: MERCHANT,
     floorPlan: { id: 1, name: 'Main Floor Plan' },
   },
@@ -144,7 +144,7 @@ describe('FloorZonesView', () => {
 
       await screen.findByText('VIP Lounge');
       // Scoped to grid: status dropdown uses the same labels.
-      // 'inactive' del backend se muestra como Draft.
+      // 'inactive' from the backend is displayed as Draft.
       expect(within(screen.getByRole('table')).getByText('Draft')).toBeInTheDocument();
     });
 
@@ -344,7 +344,7 @@ describe('FloorZonesView', () => {
   });
 
   describe('editing and assigned tables guard', () => {
-    it('edita con PATCH y sin reasignar el comercio', async () => {
+    it('edit with PATCH and without reassigning the trade', async () => {
       const user = userEvent.setup();
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
@@ -462,7 +462,7 @@ describe('FloorZonesView', () => {
     });
   });
 
-  describe('eje del editor en vivo y hub', () => {
+  describe('live editor axis and hub', () => {
     it('opens parent floor plan editor from zone', async () => {
       const user = userEvent.setup();
       render(<FloorZonesView merchantId={3} />);
@@ -485,7 +485,7 @@ describe('FloorZonesView', () => {
       expect(await screen.findByTestId('floor-plan-editor-stub')).toBeInTheDocument();
     });
 
-    it('renderiza el hub con FLOOR ZONES activo', async () => {
+    it('render the hub with FLOOR ZONES active', async () => {
       render(<FloorZonesView merchantId={3} />);
 
       await screen.findByText('Main Dining');

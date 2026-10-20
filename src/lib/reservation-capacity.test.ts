@@ -91,7 +91,7 @@ describe('manager override', () => {
 
   it('recognizes only the capacity 409 as an override opportunity', () => {
     expect(isCapacityOverrideError(new ApiError('full', 409, CAPACITY_OVERRIDE_REQUIRED))).toBe(true);
-    // Un 409 de mesa ocupada no se arregla con un override.
+    // A busy table 409 cannot be fixed with an override.
     expect(isCapacityOverrideError(new ApiError('table taken', 409))).toBe(false);
     expect(isCapacityOverrideError(new Error('x'))).toBe(false);
   });

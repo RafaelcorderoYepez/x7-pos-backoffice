@@ -1,22 +1,22 @@
-// Tipos del roster de repartidores (`/api/delivery-driver`).
+// Types of the delivery driver roster (`/api/delivery-driver`).
 //
-// Espejo de x7-pos-back-end/src/commerce/delivery-system/delivery-driver: el comercio sale del
-// JWT y `on_delivery` lo gestiona sólo el flujo de asignaciones (no es editable a mano).
+// Mirror of x7-pos-back-end/src/commerce/delivery-system/delivery-driver: commerce exits
+// JWT and `on_delivery` is managed only by the assignment flow (not editable by hand).
 
 export type VehicleType = 'car' | 'motorcycle' | 'bicycle' | 'e_scooter' | 'on_foot';
 
-/** Estados vivos (los que lista el roster). `deleted` es el borrado suave. */
+/** Living states (those listed on the roster). `deleted` is soft delete. */
 export type DriverStatus = 'active' | 'on_delivery' | 'off_duty' | 'inactive';
 
-/** Lo que un administrador puede fijar desde el drawer. */
+/** What an administrator can set from the drawer. */
 export type EditableDriverStatus = 'active' | 'inactive' | 'off_duty';
 
 export interface DeliveryDriver {
   id: number;
   name: string;
-  /** Normalizado por el backend para `tel:` (dígitos con `+` opcional). */
+  /** Normalized by the backend to `tel:` (digits with optional `+`). */
   phone: string;
-  /** Las filas antiguas pueden traer texto libre no reconocido. */
+  /** Old rows may contain unrecognized free text. */
   vehicleType: VehicleType | string;
   status: DriverStatus | string;
   created_at: string;
@@ -27,7 +27,7 @@ export interface DeliveryDriverDraft {
   name: string;
   phone: string;
   vehicleType: VehicleType;
-  /** Se omite al editar un repartidor en reparto (el backend respondería 409). */
+  /** Ignored when editing a delivery driver in delivery (the backend would respond 409). */
   status?: EditableDriverStatus;
 }
 
@@ -40,7 +40,7 @@ export interface DriverSummary {
 
 export interface DriverQuery {
   statuses: DriverStatus[];
-  /** '' = todos los vehículos. */
+  /** '' = all vehicles. */
   vehicleType: VehicleType | '';
   search: string;
   page: number;

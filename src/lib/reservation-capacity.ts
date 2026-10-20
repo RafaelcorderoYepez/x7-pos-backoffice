@@ -1,9 +1,9 @@
-// Aforo y ritmo de reservas en el cliente: tipos del contrato `/api/reservation-capacity`,
-// semáforo de franjas, validación del override del encargado y del formulario de ajustes.
+// Capacity and rate of reservations in the client: contract types `/api/reservation-capacity`,
+// strip traffic light, validation of the manager's override and the adjustment form.
 //
-// El cálculo de ocupación NO se repite aquí: lo hace el servidor (pico de comensales
-// simultáneos de las reservas CONFIRMED/SEATED) y es el único que decide, dentro de una
-// transacción con cerrojo. El cliente pinta su veredicto y lo respeta.
+// The occupancy calculation is NOT repeated here: it is done by the server (peak diners
+// simultaneous CONFIRMED/SEATED reservations) and is the only one who decides, within a
+// lock transaction. The client paints his verdict and respects it.
 
 import { ApiError } from './api-error';
 
@@ -11,7 +11,7 @@ export type OccupancyLevel = 'available' | 'limited' | 'sold_out';
 
 export interface ServiceShift {
   name: string;
-  /** "HH:mm", hora local del local. */
+  /** "HH:mm", local local time. */
   start: string;
   end: string;
 }
@@ -61,13 +61,13 @@ export interface ManagerOverride {
   password: string;
 }
 
-/** Código del 409 que admite override del encargado (lo emite el backend). */
+/** 409 code that supports override of the manager (issued by the backend). */
 export const CAPACITY_OVERRIDE_REQUIRED = 'CAPACITY_OVERRIDE_REQUIRED';
 
 export const isCapacityOverrideError = (err: unknown): err is ApiError =>
   err instanceof ApiError && err.status === 409 && err.code === CAPACITY_OVERRIDE_REQUIRED;
 
-// ================= Semáforo =================
+// ================= Traffic light =================
 
 export const LEVEL_LABELS: Record<OccupancyLevel, string> = {
   available: 'High availability',
@@ -75,15 +75,15 @@ export const LEVEL_LABELS: Record<OccupancyLevel, string> = {
   sold_out: 'Sold out',
 };
 
-// Material Symbols de la historia: aforo `group`, lleno `event_busy`/`block`.
+// Material Symbols of the story: capacity `group`, full `event_busy`/`block`.
 export const LEVEL_ICONS: Record<OccupancyLevel, string> = {
   available: 'event_available',
   limited: 'group',
   sold_out: 'event_busy',
 };
 
-// Clases escritas ENTERAS: el JIT de Tailwind lee el fichero como texto plano, así que una
-// clase compuesta en tiempo de ejecución no genera CSS. Verde < 70 %, ámbar 70–99 %, rojo.
+// ENTIRE written classes: Tailwind's JIT reads the file as plain text, so a
+// Composite class at runtime does not generate CSS. Green < 70%, amber 70–99%, red.
 export const LEVEL_CHIP_STYLES: Record<OccupancyLevel, string> = {
   available: 'bg-[#10b981]/10 text-[#047857] border-[#10b981]/40',
   limited: 'bg-[#f59e0b]/15 text-[#92400e] border-[#f59e0b]/50',
@@ -97,8 +97,8 @@ export const LEVEL_DOT_COLORS: Record<OccupancyLevel, string> = {
 };
 
 /**
- * Franja que corresponde a una hora elegida. Una hora fuera de la rejilla (19:10) se evalúa
- * con la franja que la contiene; fuera de todo turno → null (el servidor la comprueba igual).
+ * Strip that corresponds to a chosen time. One hour off the grid (19:10) is evaluated
+ * with the strip that contains it; out of turn → null (the server checks it anyway).
  */
 export const findSlot = (
   availability: DayAvailability | null,
@@ -117,7 +117,7 @@ export const findSlot = (
   return null;
 };
 
-/** Frase de estado de la franja para el lector de pantalla y el aviso del drawer. */
+/** Strip status phrase for screen reader and drawer prompt. */
 export const slotSummary = (
   slot: SlotAvailability,
   seatCapacity: number,
@@ -161,10 +161,10 @@ export const hasOverrideErrors = (draft: ManagerOverride): boolean => {
 // ================= Ajustes =================
 
 export interface SettingsDraft {
-  /** '' = usar la suma de las mesas. */
+  /** '' = use the sum of the tables. */
   seatCapacity: string;
   slotInterval: '15' | '30';
-  /** '' = sin límite de llegadas. */
+  /** '' = no limit on arrivals. */
   maxCoversPerSlot: string;
   shifts: ServiceShift[];
 }
@@ -215,7 +215,7 @@ export const settingsErrors = (draft: SettingsDraft): SettingsErrors => ({
 export const hasSettingsErrors = (e: SettingsErrors): boolean =>
   Boolean(e.seatCapacity || e.maxCoversPerSlot || e.form || e.shifts.some(Boolean));
 
-/** Cuerpo del PUT: vacío = null (vuelve al valor por defecto), nunca cadena vacía. */
+/** PUT body: empty = null (returns to default value), never empty string. */
 export const draftToSettingsPayload = (draft: SettingsDraft) => ({
   seat_capacity: draft.seatCapacity.trim() ? Number(draft.seatCapacity) : null,
   slot_interval_minutes: Number(draft.slotInterval),

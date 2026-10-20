@@ -94,7 +94,7 @@ export const ContractDetailDrawer: React.FC<ContractDetailDrawerProps> = ({
   const previewable = isPreviewableDocument(contract.document_url);
 
   /**
-   * Imprime el documento incrustado.
+   * Print the embedded document.
    *
    * Attempts print via iframe first to keep auditor in workspace; if
    * browser blocks by origin, falls back to new tab.

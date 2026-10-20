@@ -237,7 +237,7 @@ export const MODULE_NAV_HUBS: ModuleNavHub[] = [
     description: 'Receipts issued, their line items and the taxes they carry.',
     items: [
       { featureId: 'receipt-items', label: 'RECEIPT ITEMS', icon: 'list', live: false, description: 'Line items printed on each receipt.' },
-      // El featureId de "Receipts" es `receipt-orders` en Features.txt.
+      // The featureId of "Receipts" is `receipt-orders` in features.txt.
       { featureId: 'receipt-orders', label: 'RECEIPTS', icon: 'receipt_long', live: false, description: 'Receipts issued for paid orders.' },
       { featureId: 'receipt-taxes', label: 'RECEIPTS TAXES', icon: 'percent', live: false, description: 'Tax lines allocated to each receipt.' },
     ],
@@ -298,7 +298,7 @@ export const MODULE_NAV_HUBS: ModuleNavHub[] = [
       { featureId: 'online-stores', label: 'STORES', icon: 'storefront', live: true, description: 'Manage digital storefronts, subdomains, themes, currency and operational status.' },
       { featureId: 'online-payments', label: 'PAYMENTS', icon: 'payments', live: false, description: 'Payment gateways, Stripe/PayPal accounts and digital checkout configurations.' },
       { featureId: 'online-menus', label: 'MENUS', icon: 'restaurant_menu', live: true, description: 'Curated digital menus, seasonal offerings and time-based availability.' },
-      { featureId: 'online-menu-categories', label: 'CATEGORIES', icon: 'category', live: false, description: 'Menu taxonomy, sections, families and dish categorization.' },
+      { featureId: 'online-menu-categories', label: 'CATEGORIES', icon: 'category', live: true, description: 'Menu taxonomy, sections, families and dish categorization.' },
       { featureId: 'online-menu-items', label: 'ITEMS', icon: 'lunch_dining', live: false, description: 'Online dish catalog, pricing, modifier linkages and stock availability.' },
       { featureId: 'online-orders', label: 'ORDERS', icon: 'shopping_bag', live: false, description: 'Live incoming web orders, customer tracking and dispatch statuses.' },
       { featureId: 'online-order-items', label: 'ORDER ITEMS', icon: 'receipt_long', live: false, description: 'Detailed cart item breakdown, custom modifiers and customer instructions.' },
@@ -312,10 +312,10 @@ for (const hub of MODULE_NAV_HUBS) {
   for (const item of hub.items) HUB_BY_FEATURE.set(item.featureId, hub);
 }
 
-/** Módulo al que pertenece un featureId (para montar su barra), o null. */
+/** Module to which a featureId belongs (to mount its bar), or null. */
 export const navHubForFeature = (featureId: string): ModuleNavHub | null =>
   HUB_BY_FEATURE.get(featureId) ?? null;
 
-/** Módulo cuyo Command Hub es este featureId sintético (`<appId>-hub`), o null. */
+/** Module whose Command Hub is this synthetic featureId (`<appId>-hub`), or null. */
 export const navHubById = (hubId: string): ModuleNavHub | null =>
   MODULE_NAV_HUBS.find((hub) => hub.hubId === hubId) ?? null;

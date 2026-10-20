@@ -26,7 +26,7 @@ import {
   timeInPreviousMs,
 } from './reservation-status-history';
 
-// Hora local, como la pinta el navegador del local.
+// Local time, as displayed by the local browser.
 const at = (h: number, m = 0, s = 0): string => new Date(2026, 3, 16, h, m, s).toISOString();
 
 const entry = (
@@ -53,7 +53,7 @@ const SUMMARY = {
   guest_name: 'Carlos Mendoza',
 };
 
-// Entrada del feed tal como la sirve el backend: con la anterior de su reserva resuelta.
+// Feed input as served by the backend: with the previous one of your reservation resolved.
 const feed = (
   id: number,
   status: ReservationStatus,
@@ -200,7 +200,7 @@ describe('computeShiftMetrics', () => {
     expect(metrics.seatedParties).toBe(1);
     expect(metrics.cancellationsAndNoShows).toBe(3);
     expect(metrics.automatedActions).toBe(1);
-    expect(metrics.lateChanges).toBe(2); // la de las 9:00 se hizo con margen
+    expect(metrics.lateChanges).toBe(2); // the one at 9:00 was done with margin
     expect(metrics.avgConfirmationLeadMs).toBe(20 * 60_000);
     expect(metrics.avgReceptionWaitMs).toBe(7 * 60_000);
     expect(metrics.avgDiningMs).toBe(105 * 60_000);

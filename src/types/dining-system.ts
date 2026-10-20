@@ -1,20 +1,20 @@
-// Tipos del dominio de Dining System (floor plans, zonas y mesas).
-// Las propiedades mezclan snake_case y camelCase a propósito: reflejan tal cual el
-// contrato real del backend (/api/floor-plan, /api/floor-zone, /api/tables), donde las
-// columnas escalares viajan en snake_case (merchant_id, pos_x) y las relaciones en
-// camelCase (floorPlan, floorZone). No normalizamos para no romper los payloads.
+// Dining System domain types (floor plans, zones and tables).
+// The properties mix snake_case and camelCase on purpose: they reflect as is the
+// actual backend contract (/api/floor-plan, /api/floor-zone, /api/tables), where the
+// scalar columns travel in snake_case (merchant_id, pos_x) and relations in
+// camelCase (floorPlan, floorZone). We do not normalize so as not to break payloads.
 
 import type { UnitSystem } from '../lib/measurement-units';
 import { formatDimensions, formatLength } from '../lib/measurement-units';
 
 // ================= Floor Plan: estados =================
 
-// Tríada de estados que expone la UI. El backend persiste varchar libre y solo valida
-// ['active','inactive'] al escribir (más 'deleted' al borrar en soft), así que la UI
+// Triad of states exposed by the UI. The backend persists free varchar and only validates
+// ['active','inactive'] on writing (plus 'deleted' on soft), so the UI
 // traduce: inactive -> draft, deleted -> archived (ver normalizeFloorPlanStatus).
 export type FloorPlanStatus = 'active' | 'draft' | 'archived';
 
-// Lista ordenada para poblar selects y filtros sin recorrer un enum.
+// Ordered list to populate selects and filters without looping through an enum.
 export const FLOOR_PLAN_STATUSES: FloorPlanStatus[] = ['active', 'draft', 'archived'];
 
 export const FLOOR_PLAN_STATUS_LABELS: Record<FloorPlanStatus, string> = {
@@ -29,8 +29,8 @@ export const FLOOR_PLAN_STATUS_BADGE_STYLES: Record<FloorPlanStatus, string> = {
   archived: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
 };
 
-// El backend puede devolver valores legacy fuera de la tríada; caemos a 'active' para
-// que la fila siga siendo visible y editable en vez de romper el badge.
+// The backend can return legacy values outside of the triad; we go to 'active' to
+// keep the row visible and editable instead of breaking the badge.
 export const normalizeFloorPlanStatus = (raw: string): FloorPlanStatus => {
   const value = (raw ?? '').toLowerCase();
   if (value === 'draft' || value === 'inactive') return 'draft';
@@ -38,10 +38,10 @@ export const normalizeFloorPlanStatus = (raw: string): FloorPlanStatus => {
   return 'active';
 };
 
-// ================= Mesas: formas =================
+// ================= Tables: shapes =================
 
-// Casing exacto del backend: el DTO valida @IsIn(['Circle','Square','Rectangle']),
-// así que enviar minúsculas devuelve 400.
+// Exact backend casing: DTO validates @IsIn(['Circle','Square','Rectangle']),
+// so sending lowercase returns 400.
 export type TableShape =
   | 'Circle'
   | 'Square'
@@ -59,11 +59,11 @@ export const TABLE_SHAPES: TableShape[] = [
   'Counter',
 ];
 
-// ================= Mesas: estado operativo =================
+// ================= Tables: operational status =================
 
-// Espejo del enum TableStatus del backend. La columna es varchar libre, pero éstos son los
-// únicos valores que el POS sabe pintar; 'deleted' es el borrado lógico y jamás un estado
-// operativo, por eso no está en la lista.
+// Mirror the backend TableStatus enum. The column is free varchar, but these are the
+// only values that the POS knows how to paint; 'deleted' is the logical deletion and never a state
+// operational, that's why it's not on the list.
 export type TableStatus =
   | 'available'
   | 'occupied'
@@ -87,8 +87,8 @@ export const TABLE_STATUS_LABELS: Record<TableStatus, string> = {
   out_of_service: 'Out of Service',
 };
 
-// Código de color operativo del POS, idéntico en la parrilla y en el lienzo: verde libre,
-// coral ocupada, ámbar reservada, azul en limpieza, gris apagado fuera de servicio.
+// POS operating color code, identical on the grid and on the canvas: free green,
+// coral busy, amber reserved, blue in cleaning, dull gray out of order.
 export const TABLE_STATUS_BADGE_STYLES: Record<TableStatus, string> = {
   available: 'bg-green-500/10 text-green-700',
   occupied: 'bg-[#ff6b5a]/20 text-[#c2352a]',
@@ -100,8 +100,8 @@ export const TABLE_STATUS_BADGE_STYLES: Record<TableStatus, string> = {
 export const isTableStatus = (raw?: string | null): raw is TableStatus =>
   TABLE_STATUSES.includes((raw ?? '') as TableStatus);
 
-// El backend puede devolver un status heredado fuera de la quíntuple; en vez de esconder
-// la fila la etiquetamos legible ('needs_bussing' -> 'Needs Bussing') con badge neutro.
+// The backend may return an inherited status outside of the quintuple; instead of hiding
+// We label the row legibly ('needs_bussing' -> 'Needs Bussing') with a neutral badge.
 export const tableStatusLabel = (raw?: string | null): string => {
   const value = (raw ?? '').trim();
   if (isTableStatus(value)) return TABLE_STATUS_LABELS[value];
@@ -113,20 +113,20 @@ export const tableStatusBadgeStyle = (raw?: string | null): string =>
     ? TABLE_STATUS_BADGE_STYLES[raw as TableStatus]
     : 'bg-[#ece8e0] text-[#1d1c17]';
 
-// El rango que acepta la columna `rotation` (int 0-360). Un decimal se truncaría en silencio.
+// The range that the `rotation` column accepts (int 0-360). A decimal would be truncated silently.
 export const TABLE_MIN_ROTATION = 0;
 export const TABLE_MAX_ROTATION = 360;
 
-// Límites del tamaño propio de una mesa, en píxeles de lienzo (100px = 1m). Replican los
-// del backend: por debajo de 20cm la mesa es invisible y por encima de 6m desborda
+// Limits on the actual size of a table, in canvas pixels (100px = 1m). They replicate the
+// of the backend: below 20cm the table is invisible and above 6m it overflows
 // cualquier sala razonable.
 export const TABLE_MIN_SIZE_PX = 20;
 export const TABLE_MAX_SIZE_PX = 600;
 
-// ================= Vínculos relacionales =================
+// ================= Relational ties =================
 
-// El backend embebe merchant/floorPlan con hidratación variable según el endpoint
-// (a veces {id,name}, a veces la entidad completa), por eso solo `id` es garantizado.
+// The backend embeds merchant/floorPlan with variable hydration depending on the endpoint
+// (sometimes {id,name}, sometimes the entire entity), so only `id` is guaranteed.
 export interface MerchantRef {
   id: number;
   name?: string;
@@ -143,33 +143,33 @@ export interface FloorZone {
   id: number;
   name: string;
   color?: string | null;
-  // Región de la zona sobre el lienzo (JSON de puntos en px). null = la zona es sólo una
-  // etiqueta de color, sin área dibujada: así nacieron todas antes de existir esta columna.
+  // Region of the area on the canvas (JSON of points in px). null = the zone is just one
+  // color label, without drawn area: this is how they were all born before this column existed.
   area?: string | null;
-  // varchar libre en el backend; la UI lo normaliza a la tríada con normalizeFloorZoneStatus.
+  // free varchar in backend; the UI normalizes it to the triad with normalizeFloorZoneStatus.
   status: string;
-  // El findAll de /api/floor-zone SÍ embebe {id,name} del plano padre (a diferencia de
-  // /api/floor-plan con sus colecciones), así que la parrilla no necesita resolverlo aparte.
+  // The /api/floor-zone findAll DOES embed {id,name} from the parent floor (unlike
+  // /api/floor-plan with its collections), so the grid doesn't need to resolve it separately.
   floorPlan?: FloorPlanRef | null;
   merchant?: MerchantRef | null;
   created_at?: string;
   updated_at?: string;
 }
 
-// La zona comparte la tríada de estados del plano: mismo vocabulario, mismos badges.
+// The zone shares the triad of states of the map: same vocabulary, same badges.
 export type FloorZoneStatus = FloorPlanStatus;
 export const FLOOR_ZONE_STATUSES = FLOOR_PLAN_STATUSES;
 export const FLOOR_ZONE_STATUS_LABELS = FLOOR_PLAN_STATUS_LABELS;
 export const FLOOR_ZONE_STATUS_BADGE_STYLES = FLOOR_PLAN_STATUS_BADGE_STYLES;
 export const normalizeFloorZoneStatus = normalizeFloorPlanStatus;
 
-// Color por defecto de una zona nueva: el rojo corporativo, para que el swatch nunca
-// quede vacío si el usuario no elige nada.
+// Default color of a new zone: corporate red, so that the swatch never
+// remains empty if the user does not choose anything.
 export const DEFAULT_ZONE_COLOR = '#ae001a';
 
-// El backend guarda `color` como varchar libre: puede llegar un hex, un nombre CSS o basura.
-// Sólo dejamos pasar a un style inline lo que el navegador sabe interpretar sin romper el
-// swatch, y para todo lo demás caemos al color por defecto.
+// The backend saves `color` as a free varchar: it may come in a hex, a CSS name, or garbage.
+// We only let an inline style pass what the browser knows how to interpret without breaking the
+// swatch, and for everything else we fall to the default color.
 const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 const CSS_NAME = /^[a-z]{3,20}$/i;
 
@@ -188,18 +188,18 @@ export interface CreateFloorZoneDto {
   status: string;
 }
 
-// El backend expone UpdateFloorZoneDto = PartialType(CreateFloorZoneDto); `merchant` se
-// omite a propósito al editar para no reasignar la zona de comercio por accidente.
+// The backend exposes UpdateFloorZoneDto = PartialType(CreateFloorZoneDto); `merchant`
+// purposely omitted when editing so as not to reassign the trade zone by accident.
 export type UpdateFloorZoneDto = Partial<Omit<CreateFloorZoneDto, 'merchant'>>;
 
-// Nombre único por plano: el backend NO lo valida, así que el guard vive en el formulario.
+// Unique name per plane: the backend does NOT validate it, so the guard lives in the form.
 export const duplicateZoneNameError = (
   name: string,
   planName: string,
 ): string => `A zone named '${name}' already exists on '${planName}'.`;
 
-// Una zona con mesas asignadas no puede borrarse ni archivarse: las mesas quedarían
-// huérfanas de zona y el POS no sabría dónde pintarlas.
+// An area with assigned tables cannot be deleted or archived: the tables would remain
+// orphans in the area and the POS would not know where to paint them.
 export const floorZoneMutationGuard = (tableCount: number): string =>
   tableCount > 0
     ? 'Cannot delete or archive a zone with assigned tables. Reassign tables to another zone or remove them first.'
@@ -210,24 +210,24 @@ export interface DiningTable {
   merchant_id: number;
   number: string;
   capacity: number;
-  status: string; // varchar libre: no lo tipamos como unión para no perder valores del POS.
+  status: string; // free varchar: not typed as union to prevent losing values from POS.
   location: string;
-  rotation: number; // Grados 0-360.
+  rotation: number; // Degrees 0-360.
   shape: TableShape;
-  // Tamaño propio en píxeles de lienzo. null/ausente = usar el de su forma, que es como
-  // se comportaban todas las mesas antes de existir estas columnas.
+  // Custom canvas pixel dimensions. null/undefined = use default shape dimensions, which
+  // is how all tables behaved prior to these columns existing.
   width?: number | null;
   height?: number | null;
   pos_x: number;
   pos_y: number;
-  // No existe un escalar floor_plan_id en la respuesta: la única forma de saber a qué
-  // plano pertenece la mesa es este objeto anidado (puede venir null si el FK es null).
+  // There is no scalar floor_plan_id in the response - the only way to know which
+  // plane belongs the table is this nested object (can come null if the FK is null).
   floorPlan?: FloorPlanRef | null;
   floorZone?: { id: number; name?: string; color?: string | null } | null;
-  // Mesa madre de una unión. Asimetría real del contrato: la respuesta de /api/tables
-  // embebe `parent_table: {id, number} | null`, mientras que los DTO de escritura sólo
-  // aceptan el escalar `parent_table_id`. Ambos conviven aquí para no perder ninguno;
-  // parentTableId() en lib/dining-tables.ts es quien los unifica al leer.
+  // Mother table of a union. Real contract asymmetry: /api/tables answer
+  // embed `parent_table: {id, number} | null`, while write-only DTOs
+  // accept the `parent_table_id` scalar. Both coexist here so as not to lose either;
+  // parentTableId() in lib/dining-tables.ts is what unifies them when reading.
   parent_table?: { id: number; number?: string } | null;
   parent_table_id?: number | null;
   created_at?: string;
@@ -240,43 +240,43 @@ export interface FloorPlan {
   width: number;
   height: number;
   status: FloorPlanStatus;
-  // Contorno de la sala (polígono en px del lienzo) tal y como lo persiste el backend:
-  // columna `text` nullable con el JSON serializado, NO un array. `null` (o ausente en planos
-  // anteriores a la columna) significa "rectángulo completo width × height". La geometría vive
-  // en src/lib/floor-geometry.ts: parseOutline() es quien traduce este string a puntos.
+  // Room outline (polygon in canvas px) as persisted by the backend:
+  // Nullable `text` column with serialized JSON, NOT an array. `null` (or absent in plans
+  // before the column) means "full rectangle width × height". geometry lives
+  // in src/lib/floor-geometry.ts: parseOutline() is what translates this string into points.
   outline?: string | null;
   merchant?: MerchantRef | null;
-  // El backend NUNCA embebe tables/floorZones en /api/floor-plan: se agregan en el
-  // front cruzando /api/tables y /api/floor-zone por floorPlan.id.
+  // The backend NEVER embeds tables/floorZones in /api/floor-plan: they are added in the
+  // front crossing /api/tables and /api/floor-zone by floorPlan.id.
   tables?: DiningTable[];
   floorZones?: FloorZone[];
   created_at?: string;
   updated_at?: string;
 }
 
-// ================= DTOs de escritura =================
+// ================= Write DTOs =================
 
-// El campo del comercio es `merchant` (número), no merchant_id: el backend no lo deriva
-// del JWT en floor-plan, hay que enviarlo explícito.
+// The merchant field is `merchant` (number), not merchant_id - the backend does not derive it
+// of the JWT in floor-plan, it must be sent explicitly.
 export interface CreateFloorPlanDto {
   merchant: number;
   name: string;
   width: number;
   height: number;
-  // Opcional en el DTO del backend (@IsOptional + @MaxLength(20000)): omitirlo equivale a
-  // mandar null, es decir, a un plano rectangular.
+  // Optional in the backend DTO (@IsOptional + @MaxLength(20000)): omitting this is equivalent to
+  // send null, that is, to a rectangular plane.
   outline?: string | null;
   status: string;
 }
 
-// PATCH /api/floor-plan/:id usa whitelist estricta; omitimos `merchant` porque
-// Object.assign sobreescribiría la relación con un número crudo y la corrompería.
-// `outline` sí viaja aquí (hereda de CreateFloorPlanDto): al ser PATCH parcial, omitirlo
-// preserva el contorno guardado y enviar null explícito lo devuelve a rectángulo.
+// PATCH /api/floor-plan/:id uses strict whitelist; we omit `merchant` because
+// Object.assign would overwrite the relationship with a raw number and corrupt it.
+// `outline` does travel here (inherits from CreateFloorPlanDto): being partial PATCH, skip it
+// preserves the saved outline and sending explicit null returns it to rectangle.
 export type UpdateFloorPlanDto = Partial<Omit<CreateFloorPlanDto, 'merchant'>>;
 
-// Todos los campos son @IsNotEmpty en el backend salvo parent_table_id; floorZone es
-// obligatorio al crear (a diferencia del update).
+// All fields are @IsNotEmpty in the backend except parent_table_id; floorZone is
+// required when creating (unlike updating).
 export interface CreateDiningTableDto {
   merchant_id: number;
   number: string;
@@ -294,20 +294,20 @@ export interface CreateDiningTableDto {
   parent_table_id?: number | null;
 }
 
-// PUT /api/tables/:id rechaza merchant_id con 400 (forbidNonWhitelisted).
+// PUT /api/tables/:id rejects merchant_id with 400 (forbidNonWhitelisted).
 export type UpdateDiningTableDto = Partial<Omit<CreateDiningTableDto, 'merchant_id'>>;
 
-// ================= Reglas espaciales del canvas =================
+// ================= Canvas spatial rules =================
 
 export const FLOOR_PLAN_MIN_DIMENSION = 300;
 export const FLOOR_PLAN_MAX_DIMENSION = 4000;
 
-// width/height son int en Postgres: un decimal se truncaría en silencio, así que lo
-// bloqueamos en el form en vez de dejar que el backend lo redondee.
-// `v` SIEMPRE llega en píxeles (es lo que persiste el backend); `system` solo redacta el
-// mensaje en la unidad que el usuario tiene delante, porque exigirle "entre 300px y 4000px"
-// mientras teclea metros es pedirle que haga la conversión de cabeza. Omitirlo conserva el
-// texto en píxeles para cualquier llamador que siga hablando en esa unidad.
+// width/height are int in Postgres - a decimal would be silently truncated, so I
+// we block on the form instead of letting the backend round it.
+// `v` ALWAYS arrives in pixels (it's what the backend persists); `system` only writes the
+// message on the unit in front of the user, why require "between 300px and 4000px"
+// while typing meters is to ask you to do the conversion upside down. Omitting it preserves the
+// text in pixels for any caller still speaking on that unit.
 export const validateCanvasDimension = (v: number, system?: UnitSystem): string => {
   if (
     Number.isInteger(v) &&
@@ -325,8 +325,8 @@ export const validateCanvasDimension = (v: number, system?: UnitSystem): string 
   return `Canvas dimensions must be between ${min} and ${max}.`;
 };
 
-// Huella renderizada por defecto de cada forma, en px de canvas. La comparten el editor
-// y el chequeo de recorte para que "lo que se ve" y "lo que se valida" no diverjan.
+// Default rendered footprint of each shape, in canvas px. It is shared by the editor
+// and the clipping check so that "what is seen" and "what is validated" do not diverge.
 export const TABLE_FOOTPRINT: Record<TableShape, { w: number; h: number }> = {
   Circle: { w: 80, h: 80 },
   Square: { w: 80, h: 80 },
@@ -336,10 +336,10 @@ export const TABLE_FOOTPRINT: Record<TableShape, { w: number; h: number }> = {
   Counter: { w: 200, h: 60 },
 };
 
-// Huella REAL de una mesa: su tamaño propio si lo tiene, y si no el de su forma.
-// Todo el editor (arrastre, clamp, colisiones, contención en el polígono) debe pasar por
-// aquí: si alguien usa TABLE_FOOTPRINT directamente, las mesas redimensionadas se
-// comportarían como si midieran lo que dicta su forma.
+// REAL footprint of a table: its own size if it has one, and if not its shape.
+// All the editor (drag, clamp, collisions, containment in the polygon) must go through
+// here: if someone uses TABLE_FOOTPRINT directly, the resized tables are
+// They would behave as if they measured what their shape dictates.
 export const tableFootprint = (
   t: Pick<DiningTable, 'shape'> & { width?: number | null; height?: number | null },
 ): { w: number; h: number } => {
@@ -350,8 +350,8 @@ export const tableFootprint = (
   };
 };
 
-// pos_x/pos_y son la esquina superior izquierda de la huella (mismo origen que el
-// posicionamiento absoluto del editor), por eso el borde derecho/inferior suma w/h.
+// pos_x/pos_y are the upper left corner of the footprint (same origin as the
+// editor's absolute positioning), so the right/bottom border adds w/h.
 export const isTableClipped = (
   t: Pick<DiningTable, 'pos_x' | 'pos_y' | 'shape'> & {
     width?: number | null;
@@ -369,10 +369,10 @@ export const isTableClipped = (
   );
 };
 
-// Aviso previo a guardar un redimensionado: si alguna mesa quedaría fuera del lienzo,
-// el usuario debe recolocarla antes (el backend no reubica nada por su cuenta).
-// `width`/`height` viajan en píxeles igual que las coordenadas de las mesas: `system` solo
-// decide cómo se leen esas dimensiones en el aviso.
+// Notice before saving a resize: if any table would be outside the canvas,
+// the user must relocate it first (the backend does not relocate anything on its own).
+// `width`/`height` travel in pixels the same as table coordinates: `system` only
+// decide how those dimensions read in the notice.
 export const clippingWarning = (
   tables: DiningTable[],
   width: number,
@@ -387,8 +387,8 @@ export const clippingWarning = (
   return `New canvas dimensions (${size}) will clip ${n} existing tables placed outside these bounds. Please adjust table coordinates first.`;
 };
 
-// Borrar/archivar un plano no cascadea en el backend: las mesas quedarían huérfanas
-// apuntando a un plano invisible, así que la UI lo bloquea antes de llamar a la API.
+// Delete/archive a plan does not crash in the backend: the tables would be orphaned
+// pointing to an invisible plane, so the UI blocks it before calling the API.
 export const floorPlanMutationGuard = (tableCount: number): string =>
   tableCount > 0
     ? 'Cannot delete or archive a floor plan with active table layouts or open orders. Reassign or clear tables first.'
