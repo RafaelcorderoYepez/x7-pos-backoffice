@@ -6,7 +6,11 @@ import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmpt
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
-import { KitchenDevResetButton } from './KitchenDevResetButton';
+
+const devToolModules = import.meta.glob<{
+  KitchenDevResetButton?: React.ComponentType<{ onResetComplete?: () => void }>;
+}>('./KitchenDevResetButton.tsx', { eager: true });
+const KitchenDevResetButton = devToolModules['./KitchenDevResetButton.tsx']?.KitchenDevResetButton;
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -2277,7 +2281,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
           },
         ]}
       />
-      <KitchenDevResetButton onResetComplete={() => loadItems(true)} />
+      {KitchenDevResetButton && <KitchenDevResetButton onResetComplete={() => loadItems(true)} />}
     </div>
   );
 };

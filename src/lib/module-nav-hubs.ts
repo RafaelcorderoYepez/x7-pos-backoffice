@@ -300,7 +300,7 @@ export const MODULE_NAV_HUBS: ModuleNavHub[] = [
       { featureId: 'online-menus', label: 'MENUS', icon: 'restaurant_menu', live: true, description: 'Curated digital menus, seasonal offerings and time-based availability.' },
       { featureId: 'online-menu-categories', label: 'CATEGORIES', icon: 'category', live: true, description: 'Menu taxonomy, sections, families and dish categorization.' },
       { featureId: 'online-menu-items', label: 'MENU ITEMS', icon: 'restaurant', live: true, description: 'Online dish catalog, pricing, modifier linkages and stock availability.' },
-      { featureId: 'online-orders', label: 'ONLINE ORDERS', icon: 'shopping_bag', live: false, description: 'Live incoming web orders, customer tracking and dispatch statuses.' },
+      { featureId: 'online-orders', label: 'ONLINE ORDERS', icon: 'shopping_bag', live: true, description: 'Live incoming web orders, customer tracking and dispatch statuses.' },
       { featureId: 'online-order-items', label: 'ORDER ITEMS', icon: 'receipt_long', live: false, description: 'Detailed cart item breakdown, custom modifiers and customer instructions.' },
     ],
   },

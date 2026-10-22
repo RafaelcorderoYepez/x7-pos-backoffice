@@ -458,13 +458,6 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
     return groups;
   }, [filteredItems]);
 
-  // Auto-expand first menu if none is expanded yet
-  useEffect(() => {
-    if (expandedMenuId === null && menuGroups.length > 0) {
-      setExpandedMenuId(menuGroups[0].menuId);
-    }
-  }, [menuGroups, expandedMenuId]);
-
   // Paginated Menu Groups
   const totalPages = Math.max(1, Math.ceil(menuGroups.length / pageSize));
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
@@ -643,6 +636,132 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
       console.error('Error updating order:', err);
       fetchMenuItems(true);
     }
+  };
+
+  // Drag and Drop State for Sequence Reordering
+  const [draggedItem, setDraggedItem] = useState<OnlineMenuItem | null>(null);
+  const [dragOverItemId, setDragOverItemId] = useState<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, item: OnlineMenuItem) => {
+    if (item.status !== 'active') return;
+    setDraggedItem(item);
+    e.dataTransfer.setData('text/plain', String(item.id));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetItem: OnlineMenuItem) => {
+    if (!draggedItem || draggedItem.id === targetItem.id) return;
+    if (draggedItem.menuId !== targetItem.menuId) return;
+    if (targetItem.status !== 'active') return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverItemId !== targetItem.id) {
+      setDragOverItemId(targetItem.id);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverItemId(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetItem: OnlineMenuItem) => {
+    e.preventDefault();
+    setDragOverItemId(null);
+
+    if (!draggedItem || draggedItem.id === targetItem.id) {
+      setDraggedItem(null);
+      return;
+    }
+
+    if (draggedItem.menuId !== targetItem.menuId || targetItem.status !== 'active') {
+      setDraggedItem(null);
+      return;
+    }
+
+    const sameMenuItems = menuItems
+      .filter((i) => i.menuId === draggedItem.menuId && i.status === 'active')
+      .sort((a, b) => {
+        if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+        return a.id - b.id;
+      });
+
+    const sourceIndex = sameMenuItems.findIndex((i) => i.id === draggedItem.id);
+    const targetIndex = sameMenuItems.findIndex((i) => i.id === targetItem.id);
+
+    if (sourceIndex === -1 || targetIndex === -1) {
+      setDraggedItem(null);
+      return;
+    }
+
+    // Reorder array by moving draggedItem to targetIndex
+    const reordered = [...sameMenuItems];
+    const [moved] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    // Build map of new strict 1-based display orders
+    const orderMap = new Map<number, number>();
+    reordered.forEach((c, idx) => {
+      orderMap.set(c.id, idx + 1);
+    });
+
+    // Optimistic Update
+    setMenuItems((prev) =>
+      prev
+        .map((c) => {
+          if (orderMap.has(c.id)) {
+            return { ...c, displayOrder: orderMap.get(c.id)! };
+          }
+          return c;
+        })
+        .sort((a, b) => a.displayOrder - b.displayOrder || a.id - b.id)
+    );
+
+    const movedItemName = draggedItem.product?.name || 'Item';
+    setDraggedItem(null);
+
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      // Collect all items whose displayOrder changed and persist them
+      const itemsToUpdate = reordered.filter((c) => {
+        const newOrder = orderMap.get(c.id);
+        const originalItem = sameMenuItems.find((orig) => orig.id === c.id);
+        return newOrder !== undefined && originalItem?.displayOrder !== newOrder;
+      });
+
+      await Promise.all(
+        itemsToUpdate.map(async (c) => {
+          const newOrder = orderMap.get(c.id)!;
+          const res = await fetch(`${API_BASE}/online-menu-items/${c.id}`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({ displayOrder: newOrder }),
+          });
+          if (!res.ok) {
+            await fetch(`${API_BASE}/online-menu-items/${c.id}`, {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify({ displayOrder: newOrder }),
+            });
+          }
+        })
+      );
+
+      showToast(`Reordered "${movedItemName}" to sequence #${targetIndex + 1}`);
+      fetchMenuItems(true);
+    } catch (err) {
+      console.error('Error reordering via drag-and-drop:', err);
+      fetchMenuItems(true);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverItemId(null);
   };
 
   // Soft-Delete / Archive Handler
@@ -1431,14 +1550,32 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
                             return (
                               <tr
                                 key={item.id}
-                                className={`transition-all duration-200 group border-l-4 border-l-purple-500/20 hover:bg-[#f8f3eb] ${
-                                  isArchived ? 'bg-zinc-50/70 text-zinc-400' : ''
-                                }`}
+                                draggable={item.status === 'active'}
+                                onDragStart={(e) => handleDragStart(e, item)}
+                                onDragOver={(e) => handleDragOver(e, item)}
+                                onDragLeave={handleDragLeave}
+                                onDrop={(e) => handleDrop(e, item)}
+                                onDragEnd={handleDragEnd}
+                                className={`transition-all duration-200 group border-l-4 border-l-purple-500/20 ${
+                                  dragOverItemId === item.id
+                                    ? 'bg-amber-100/80 ring-2 ring-[#ae001a]/70'
+                                    : isArchived
+                                    ? 'bg-zinc-50/70 text-zinc-400'
+                                    : 'hover:bg-[#f8f3eb]'
+                                } ${draggedItem?.id === item.id ? 'opacity-30' : ''}`}
                               >
                                 {/* Column 1: Item & Product */}
                                 {visibleColumns.item && (
                                   <td className={`${densityPadding} font-sans pl-8`}>
                                     <div className="flex items-center gap-2">
+                                      {item.status === 'active' && (
+                                        <span
+                                          className="material-symbols-outlined text-[16px] text-zinc-300 group-hover:text-[#ae001a] cursor-grab active:cursor-grabbing select-none shrink-0 transition-colors duration-200"
+                                          title="Drag to reorder sequence"
+                                        >
+                                          drag_indicator
+                                        </span>
+                                      )}
                                       <span className="material-symbols-outlined text-[14px] text-[#8c857b] shrink-0">
                                         subdirectory_arrow_right
                                       </span>
@@ -1730,18 +1867,34 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
                           return (
                             <div
                               key={item.id}
-                              className={`bg-white border rounded-xl p-4 shadow-xs flex flex-col justify-between transition-all duration-200 hover:shadow-md ${
-                                isArchived
+                              draggable={item.status === 'active'}
+                              onDragStart={(e) => handleDragStart(e, item)}
+                              onDragOver={(e) => handleDragOver(e, item)}
+                              onDragLeave={handleDragLeave}
+                              onDrop={(e) => handleDrop(e, item)}
+                              onDragEnd={handleDragEnd}
+                              className={`bg-white border rounded-xl p-4 shadow-xs flex flex-col justify-between transition-all duration-200 group ${
+                                dragOverItemId === item.id
+                                  ? 'border-2 border-[#ae001a] bg-amber-50/50 scale-[1.01]'
+                                  : isArchived
                                   ? 'border-red-200 bg-red-50/20'
                                   : item.isAvailable
-                                  ? 'border-[#e8e2d8]'
-                                  : 'border-amber-200 bg-amber-50/20'
-                              }`}
+                                  ? 'border-[#e8e2d8] hover:border-[#ae001a]'
+                                  : 'border-amber-200 bg-amber-50/20 hover:border-[#ae001a]'
+                              } ${draggedItem?.id === item.id ? 'opacity-30' : ''}`}
                             >
                               {/* Card Top */}
                               <div>
                                 <div className="flex items-center justify-between gap-2 mb-2">
                                   <div className="flex items-center gap-1.5">
+                                    {item.status === 'active' && (
+                                      <span
+                                        className="material-symbols-outlined text-[18px] text-zinc-300 group-hover:text-[#ae001a] cursor-grab active:cursor-grabbing select-none shrink-0 transition-colors duration-200"
+                                        title="Drag to reorder sequence"
+                                      >
+                                        drag_indicator
+                                      </span>
+                                    )}
                                     <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#ae001a]/10 text-[#ae001a] border border-[#ae001a]/20">
                                       #{itemSequenceMap.get(item.id) ?? item.displayOrder}
                                     </span>

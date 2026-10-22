@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
-import { KitchenDevResetButton } from './KitchenDevResetButton';
 import { KitchenRecallTray, type BumpedOrderRecord } from './KitchenRecallTray';
+
+const devToolModules = import.meta.glob<{
+  KitchenDevResetButton?: React.ComponentType<{ onResetComplete?: () => void }>;
+}>('./KitchenDevResetButton.tsx', { eager: true });
+const KitchenDevResetButton = devToolModules['./KitchenDevResetButton.tsx']?.KitchenDevResetButton;
 import {
   enqueueOfflineAction,
   getQueuedActions,
@@ -4221,7 +4225,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         payload={thermalTicketPayload}
       />
 
-      <KitchenDevResetButton onResetComplete={() => fetchBackendOrders(true)} />
+      {KitchenDevResetButton && <KitchenDevResetButton onResetComplete={() => fetchBackendOrders(true)} />}
     </div>
   );
 };

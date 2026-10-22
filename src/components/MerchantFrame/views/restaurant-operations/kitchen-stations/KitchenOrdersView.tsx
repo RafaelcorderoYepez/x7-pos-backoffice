@@ -9,8 +9,12 @@ import { AppModal } from '../../../shared/AppModal';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
 import { KitchenSlaConfigModal } from './KitchenSlaConfigModal';
-import { KitchenDevResetButton } from './KitchenDevResetButton';
 import { KitchenAllergyModifierPicker } from './KitchenAllergyModifierPicker';
+
+const devToolModules = import.meta.glob<{
+  KitchenDevResetButton?: React.ComponentType<{ onResetComplete?: () => void }>;
+}>('./KitchenDevResetButton.tsx', { eager: true });
+const KitchenDevResetButton = devToolModules['./KitchenDevResetButton.tsx']?.KitchenDevResetButton;
 import {
   enqueueOfflineAction,
   flushOfflineQueue,
@@ -3533,7 +3537,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         onClose={() => setIsSlaModalOpen(false)}
         onSavedToast={(msg) => showToast(msg, 'success')}
       />
-      <KitchenDevResetButton onResetComplete={() => loadOrders(true)} />
+      {KitchenDevResetButton && <KitchenDevResetButton onResetComplete={() => loadOrders(true)} />}
     </div>
   );
 };
