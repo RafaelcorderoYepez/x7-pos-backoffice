@@ -1404,6 +1404,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       if (res.ok) {
         applyOptimisticRecall();
         showToast(`Order #KO-${idToRecall} recalled`, 'info');
+        window.dispatchEvent(
+          new CustomEvent('x7_kds_data_reset', {
+            detail: { action: 'recall', orderId: idToRecall },
+          }),
+        );
+        window.dispatchEvent(new CustomEvent('online_orders_refresh'));
         loadOrders(true);
       } else {
         throw new Error('Failed to recall order');

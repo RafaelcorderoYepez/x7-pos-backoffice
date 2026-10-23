@@ -676,6 +676,12 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       }
 
       showToast(`↺ RECALLED #KO-${kitchenOrderId} back to Active Preparation!`, 'info');
+      window.dispatchEvent(
+        new CustomEvent('x7_kds_data_reset', {
+          detail: { action: 'recall', orderId: kitchenOrderId },
+        }),
+      );
+      window.dispatchEvent(new CustomEvent('online_orders_refresh'));
       await loadItems();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error recalling order';

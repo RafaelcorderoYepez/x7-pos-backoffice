@@ -407,13 +407,30 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
     void fetchOrders(false);
   }, [fetchStores, fetchCustomers, fetchProductsAndMenus, fetchKitchenStations, fetchOrders]);
 
-  // Auto-refresh timer
+  // Auto-refresh timer & KDS event listener for instant reactive sync
   useEffect(() => {
-    if (autoRefreshInterval <= 0) return;
+    const handleKdsEvent = () => {
+      void fetchOrders(true);
+    };
+    window.addEventListener('x7_kds_data_reset', handleKdsEvent);
+    window.addEventListener('online_orders_refresh', handleKdsEvent);
+
+    if (autoRefreshInterval <= 0) {
+      return () => {
+        window.removeEventListener('x7_kds_data_reset', handleKdsEvent);
+        window.removeEventListener('online_orders_refresh', handleKdsEvent);
+      };
+    }
+
     const timer = setInterval(() => {
       void fetchOrders(true);
     }, autoRefreshInterval * 1000);
-    return () => clearInterval(timer);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('x7_kds_data_reset', handleKdsEvent);
+      window.removeEventListener('online_orders_refresh', handleKdsEvent);
+    };
   }, [autoRefreshInterval, fetchOrders]);
 
   // 3. Operational Actions: Accept & Inject POS
@@ -529,6 +546,46 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
 
     showToast(`Order #ONL-${orderId} transitioned to ${nextStatus.replace(/_/g, ' ').toUpperCase()}`);
     await fetchOrders(true);
+    if (selectedOrder && selectedOrder.id === orderId) {
+      const refreshed = await fetch(`${API_BASE}/online-orders/${orderId}`, { headers });
+      if (refreshed.ok) {
+        const json = await refreshed.json();
+        if (json.data) setSelectedOrder(json.data);
+      }
+    }
+  };
+
+  // 5a. Operational Actions: Update Payment Status
+  const handleUpdatePaymentStatus = async (
+    orderId: number,
+    nextPaymentStatus: 'pending' | 'paid' | 'failed' | 'refunded'
+  ) => {
+    const token = getAccessToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    const res = await fetch(`${API_BASE}/online-orders/${orderId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ paymentStatus: nextPaymentStatus }),
+    });
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.message || 'Failed to update payment status');
+    }
+
+    showToast(`Order #ONL-${orderId} payment marked as ${nextPaymentStatus.toUpperCase()}`);
+    await fetchOrders(true);
+    if (selectedOrder && selectedOrder.id === orderId) {
+      const refreshed = await fetch(`${API_BASE}/online-orders/${orderId}`, { headers });
+      if (refreshed.ok) {
+        const json = await refreshed.json();
+        if (json.data) setSelectedOrder(json.data);
+      }
+    }
   };
 
   // 5b. Operational Actions: Setup Drawer (Create / Edit)
@@ -2197,6 +2254,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
         onAcceptOrder={handleAcceptOrder}
         onCancelOrder={handleCancelOrder}
         onTransitionStatus={handleTransitionStatus}
+        onUpdatePaymentStatus={handleUpdatePaymentStatus}
         onEditOrder={(order) => {
           setIsDrawerOpen(false);
           handleOpenEditOrder(order);
@@ -2424,9 +2482,19 @@ const KanbanOrderCard: React.FC<KanbanOrderCardProps> = ({
             onTransition && (
               <button
                 type="button"
-                onClick={() => onTransition('ready')}
+                onClick={() =>
+                  onTransition(
+                    order.type === 'delivery'
+                      ? 'out_for_delivery'
+                      : 'ready_for_pickup'
+                  )
+                }
                 className="w-7 h-7 rounded flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-xs cursor-pointer shrink-0"
-                title="Mark Ready"
+                title={
+                  order.type === 'delivery'
+                    ? 'Mark Out for Delivery (syncs KDS)'
+                    : 'Mark Ready for Pickup (syncs KDS)'
+                }
               >
                 <span className="material-symbols-outlined text-[18px] leading-none">notifications_active</span>
               </button>

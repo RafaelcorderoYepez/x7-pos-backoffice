@@ -110,6 +110,10 @@ interface OnlineOrderDetailsDrawerProps {
     orderId: number,
     nextStatus: OnlineOrderDetailData['fulfillmentStatus']
   ) => Promise<void>;
+  onUpdatePaymentStatus?: (
+    orderId: number,
+    nextPaymentStatus: 'pending' | 'paid' | 'failed' | 'refunded'
+  ) => Promise<void>;
   onEditOrder?: (order: OnlineOrderDetailData) => void;
 }
 
@@ -128,6 +132,7 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
   onAcceptOrder,
   onCancelOrder,
   onTransitionStatus,
+  onUpdatePaymentStatus,
   onEditOrder,
 }) => {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -235,16 +240,30 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
               Payment:
             </span>
             {order.paymentStatus === 'paid' && (
-              <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+              <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1" title="Payment registered and synchronized with POS">
                 <span className="material-symbols-outlined text-[14px]">check_circle</span>
                 PAID
               </span>
             )}
             {order.paymentStatus === 'pending' && (
-              <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[14px]">schedule</span>
-                UNPAID
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px]">schedule</span>
+                  UNPAID
+                </span>
+                {onUpdatePaymentStatus && (
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => handleAction(() => onUpdatePaymentStatus(order.id, 'paid'))}
+                    className="px-2 py-0.5 rounded text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer inline-flex items-center gap-0.5 shadow-2xs"
+                    title="Mark payment as PAID (syncs with POS)"
+                  >
+                    <span className="material-symbols-outlined text-[13px]">check</span>
+                    Mark as Paid
+                  </button>
+                )}
+              </div>
             )}
             {(order.paymentStatus === 'failed' || order.paymentStatus === 'refunded') && (
               <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-red-50 text-red-800 border border-red-200 flex items-center gap-1">
@@ -295,6 +314,52 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
               </span>
               {order.fulfillmentStatus.replace(/_/g, ' ').toUpperCase()}
             </span>
+          </div>
+
+          {/* Kitchen / KDS Synchronization State */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-[#8c857b] font-bold uppercase tracking-wider">
+              KDS Kitchen:
+            </span>
+            {order.fulfillmentStatus === 'received' && (
+              <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-gray-50 text-gray-600 border border-gray-200 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px]">hourglass_empty</span>
+                Not in Kitchen
+              </span>
+            )}
+            {order.fulfillmentStatus === 'accepted' && (
+              <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px]">soup_kitchen</span>
+                Queued in KDS
+              </span>
+            )}
+            {(order.fulfillmentStatus === 'in_preparation' ||
+              order.fulfillmentStatus === 'in_kitchen') && (
+              <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px] animate-spin">skillet</span>
+                Cooking on Line
+              </span>
+            )}
+            {(order.fulfillmentStatus === 'ready' ||
+              order.fulfillmentStatus === 'ready_for_pickup' ||
+              order.fulfillmentStatus === 'out_for_delivery') && (
+              <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                Kitchen Ready
+              </span>
+            )}
+            {order.fulfillmentStatus === 'completed' && (
+              <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-green-50 text-green-800 border border-green-300 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px]">verified</span>
+                Dispatched
+              </span>
+            )}
+            {order.fulfillmentStatus === 'cancelled' && (
+              <span className="px-2.5 py-1 rounded text-xs font-bold uppercase bg-red-50 text-red-700 border border-red-200 flex items-center gap-1">
+                <span className="material-symbols-outlined text-[14px]">cancel</span>
+                Cancelled
+              </span>
+            )}
           </div>
         </div>
 
@@ -616,6 +681,21 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
             </button>
           )}
 
+          {order.fulfillmentStatus === 'received' && onTransitionStatus && (
+            <button
+              type="button"
+              disabled={isProcessing}
+              onClick={() =>
+                handleAction(() => onTransitionStatus(order.id, 'in_preparation'))
+              }
+              className="h-10 px-4 rounded text-white text-xs font-bold uppercase tracking-wider bg-amber-600 hover:bg-amber-700 transition-all inline-flex items-center justify-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+              title="Accept and start preparation in kitchen immediately"
+            >
+              <span className="material-symbols-outlined text-base">skillet</span>
+              {isProcessing ? 'Updating...' : 'START PREPARATION'}
+            </button>
+          )}
+
           {order.fulfillmentStatus === 'accepted' && onTransitionStatus && (
             <button
               type="button"
@@ -636,11 +716,25 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
               <button
                 type="button"
                 disabled={isProcessing}
-                onClick={() => handleAction(() => onTransitionStatus(order.id, 'ready'))}
+                onClick={() =>
+                  handleAction(() =>
+                    onTransitionStatus(
+                      order.id,
+                      order.type === 'delivery'
+                        ? 'out_for_delivery'
+                        : 'ready_for_pickup'
+                    )
+                  )
+                }
                 className="h-10 px-5 rounded text-white text-xs font-bold uppercase tracking-wider bg-emerald-600 hover:bg-emerald-700 transition-all inline-flex items-center justify-center gap-1.5 shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                title="Mark order ready for pickup or delivery (syncs KDS as completed)"
               >
                 <span className="material-symbols-outlined text-base">notifications_active</span>
-                {isProcessing ? 'Updating...' : 'MARK READY FOR DISPATCH'}
+                {isProcessing
+                  ? 'Updating...'
+                  : order.type === 'delivery'
+                  ? 'MARK READY FOR DELIVERY'
+                  : 'MARK READY FOR PICKUP'}
               </button>
             )}
 
