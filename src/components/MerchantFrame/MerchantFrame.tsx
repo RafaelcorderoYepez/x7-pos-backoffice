@@ -647,22 +647,8 @@ export const MerchantFrame: React.FC = () => {
     };
   }, [activeTab, activeCategory, profile?.role]);
 
+  // Latido keepalive continuo de estaciones de cocina en Backoffice mientras el usuario tenga sesión activa
   useEffect(() => {
-    const isKitchenArea =
-      activeCategory === 'kitchen' ||
-      [
-        'kds-dashboard',
-        'kitchen-kds-hub',
-        'kitchen-stations',
-        'kitchen-display-devices',
-        'kitchen-orders',
-        'kitchen-order-items',
-        'kitchen-event-log',
-        'kitchen-analytics',
-      ].includes(activeTab);
-
-    if (!isKitchenArea) return;
-
     void sendStationKeepaliveHeartbeat('ALL');
 
     const keepaliveTimer = setInterval(() => {
@@ -670,7 +656,7 @@ export const MerchantFrame: React.FC = () => {
     }, 15000);
 
     return () => clearInterval(keepaliveTimer);
-  }, [activeTab, activeCategory]);
+  }, []);
 
   const handleToggleApiFailure = () => {
     const newState = !apiFailedToggle;

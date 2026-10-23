@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
+import { getAccessToken, clearAuthSession, getStoredUser } from '../../../../../lib/auth-storage';
 import {
   TableOptionsMenu,
   TablePaginationFooter,
@@ -10,8 +10,17 @@ import {
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import {
   OnlineOrderDetailsDrawer,
+  isOnlineOrderEditable,
   type OnlineOrderDetailData,
+  type KitchenStationOption,
 } from './OnlineOrderDetailsDrawer';
+export type { OnlineOrderDetailData };
+import {
+  OnlineOrderSetupDrawer,
+  type OnlineOrderFormData,
+  type CustomerOption,
+} from './OnlineOrderSetupDrawer';
+import { CancelledOrdersModal } from './CancelledOrdersModal';
 
 const devToolModules = import.meta.glob<{
   OnlineOrdersDevSimulator?: React.ComponentType<{
@@ -27,6 +36,54 @@ export interface OnlineStoreOption {
   id: number;
   subdomain: string;
   name?: string;
+  isActive?: boolean;
+  is_active?: boolean;
+  status?: string;
+}
+
+export interface ProductOption {
+  id: number;
+  name: string;
+  price: number;
+  basePrice?: number;
+  description?: string;
+  category?: { id: number; name: string };
+  variants?: Array<{ id: number; name: string; price?: number }>;
+}
+
+export interface OnlineMenuOption {
+  id: number;
+  storeId: number;
+  name: string;
+  isActive: boolean;
+}
+
+export interface OnlineMenuItemOption {
+  id: number;
+  menuId: number;
+  productId: number;
+  variantId: number | null;
+  isAvailable: boolean;
+  priceOverride: number | null;
+  displayOrder?: number;
+  status?: string;
+  product?: {
+    id: number;
+    name: string;
+    sku?: string;
+    basePrice: number;
+  };
+  variant?: {
+    id: number;
+    name: string;
+    price: number;
+    sku?: string;
+  } | null;
+  menu?: {
+    id: number;
+    name: string;
+    storeId?: number;
+  };
 }
 
 interface OnlineOrdersViewProps {
@@ -55,7 +112,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
   const [selectedStoreFilter, setSelectedStoreFilter] = useState<string>('all');
   const [orderTypeFilter, setOrderTypeFilter] = useState<OrderTypeFilter>('all');
   const [paymentFilter, setPaymentFilter] = useState<PaymentStatusFilter>('all');
-  const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentFilter>('ALL');
+  const [selectedFulfillmentStatuses, setSelectedFulfillmentStatuses] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'split' | 'table'>('split');
 
   // Table options & pagination
@@ -77,6 +134,19 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
   // Drawer (Inspection & Details)
   const [selectedOrder, setSelectedOrder] = useState<OnlineOrderDetailData | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
+
+  // Cancelled Orders Archive Modal
+  const [isCancelledModalOpen, setIsCancelledModalOpen] = useState<boolean>(false);
+
+  // Drawer (Add / Edit Setup)
+  const [isSetupDrawerOpen, setIsSetupDrawerOpen] = useState<boolean>(false);
+  const [setupDrawerMode, setSetupDrawerMode] = useState<'create' | 'edit'>('create');
+  const [orderToEdit, setOrderToEdit] = useState<OnlineOrderDetailData | null>(null);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
+  const [onlineMenus, setOnlineMenus] = useState<OnlineMenuOption[]>([]);
+  const [onlineMenuItems, setOnlineMenuItems] = useState<OnlineMenuItemOption[]>([]);
+  const [kitchenStations, setKitchenStations] = useState<KitchenStationOption[]>([]);
 
   // Feedback Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -111,6 +181,169 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
       }
     } catch (err) {
       console.warn('Could not load stores filter options:', err);
+    }
+  }, []);
+
+  // 1b. Fetch Customers (for setup drawer dropdown)
+  const fetchCustomers = useCallback(async () => {
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch(`${API_BASE}/customers?limit=100`, { headers });
+      if (res.ok) {
+        const json = await res.json();
+        const list: CustomerOption[] = Array.isArray(json)
+          ? json
+          : json.data || [];
+
+        // Scope to active merchant as defense-in-depth
+        const storedUser = getStoredUser();
+        const activeMerchantId = storedUser?.merchant?.id;
+        const scopedList = activeMerchantId
+          ? list.filter((c: CustomerOption) => !c.merchantId || c.merchantId === activeMerchantId)
+          : list;
+
+        setCustomers(scopedList);
+      }
+    } catch (err) {
+      console.warn('Could not load customers filter options:', err);
+    }
+  }, []);
+
+  // 1c. Fetch Catalog Products, Online Menus & Menu Items (for setup drawer item builder)
+  const fetchProductsAndMenus = useCallback(async () => {
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const [prodRes, menuRes, itemRes] = await Promise.all([
+        fetch(`${API_BASE}/products?limit=250`, { headers }),
+        fetch(`${API_BASE}/online-menus?limit=100`, { headers }).catch(() => null),
+        fetch(`${API_BASE}/online-menu-items?limit=100&status=all`, { headers }).catch(() => null),
+      ]);
+
+      if (prodRes && prodRes.ok) {
+        const json = await prodRes.json();
+        const rawList = Array.isArray(json) ? json : json.data || json.items || [];
+        const list: ProductOption[] = rawList.map(
+          (p: {
+            id: number;
+            name: string;
+            basePrice?: number | string;
+            price?: number | string;
+            description?: string;
+            category?: { id: number; name: string };
+            variants?: Array<{ id: number; name: string; price?: number | string }>;
+          }) => {
+            const rawPrice = p.basePrice ?? p.price ?? 0;
+            return {
+              id: p.id,
+              name: p.name,
+              price: Number(rawPrice),
+              basePrice: Number(rawPrice),
+              description: p.description,
+              category: p.category,
+              variants: Array.isArray(p.variants)
+                ? p.variants.map((v) => ({
+                    id: v.id,
+                    name: v.name,
+                    price: Number(v.price ?? 0),
+                  }))
+                : [],
+            };
+          }
+        );
+        setProducts(list);
+      }
+
+      if (menuRes && menuRes.ok) {
+        const json = await menuRes.json();
+        const rawMenus = Array.isArray(json) ? json : json.data || [];
+        setOnlineMenus(
+          rawMenus.map(
+            (m: {
+              id: number;
+              storeId?: number;
+              store_id?: number;
+              store?: { id: number };
+              name: string;
+              isActive?: boolean;
+              is_active?: boolean;
+            }) => ({
+              id: Number(m.id),
+              storeId: Number(m.storeId ?? m.store_id ?? m.store?.id ?? 0),
+              name: m.name,
+              isActive: m.isActive ?? m.is_active ?? true,
+            })
+          )
+        );
+      }
+
+      if (itemRes && itemRes.ok) {
+        const json = await itemRes.json();
+        const rawItems = Array.isArray(json) ? json : json.data || [];
+        setOnlineMenuItems(
+          rawItems.map((item: any) => ({
+            id: Number(item.id),
+            menuId: Number(item.menuId ?? item.menu_id ?? item.menu?.id ?? 0),
+            productId: Number(item.productId ?? item.product_id ?? item.product?.id ?? 0),
+            variantId: item.variantId ? Number(item.variantId) : item.variant_id ? Number(item.variant_id) : null,
+            isAvailable: item.isAvailable ?? item.is_available ?? true,
+            priceOverride: item.priceOverride ?? item.price_override ?? null,
+            displayOrder: Number(item.displayOrder ?? item.display_order ?? 0),
+            status: item.status || 'active',
+            product: item.product,
+            variant: item.variant,
+            menu: item.menu,
+          }))
+        );
+      }
+    } catch (err) {
+      console.warn('Could not load products and digital menus:', err);
+    }
+  }, []);
+
+  // 1d. Fetch Kitchen Stations for KDS routing
+  const fetchKitchenStations = useCallback(async () => {
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+      const res = await fetch(`${API_BASE}/kitchen-station?status=active&sortBy=displayOrder&sortOrder=ASC`, { headers });
+      if (res.ok) {
+        const json = await res.json();
+        const rawList = Array.isArray(json) ? json : json.data || [];
+        setKitchenStations(
+          rawList.map(
+            (st: {
+              id: number;
+              name: string;
+              stationType?: string;
+              displayOrder?: number;
+              display_order?: number;
+              stationNumber?: number;
+              station_number?: number;
+            }) => ({
+              id: Number(st.id),
+              name: String(st.name),
+              stationType: st.stationType,
+              displayOrder: Number(st.displayOrder ?? st.display_order ?? 1),
+              stationNumber: Number(st.stationNumber ?? st.station_number ?? 1),
+            })
+          )
+        );
+      }
+    } catch (err) {
+      console.warn('Failed to load kitchen stations:', err);
     }
   }, []);
 
@@ -168,8 +401,11 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
 
   useEffect(() => {
     void fetchStores();
+    void fetchCustomers();
+    void fetchProductsAndMenus();
+    void fetchKitchenStations();
     void fetchOrders(false);
-  }, [fetchStores, fetchOrders]);
+  }, [fetchStores, fetchCustomers, fetchProductsAndMenus, fetchKitchenStations, fetchOrders]);
 
   // Auto-refresh timer
   useEffect(() => {
@@ -181,49 +417,92 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
   }, [autoRefreshInterval, fetchOrders]);
 
   // 3. Operational Actions: Accept & Inject POS
-  const handleAcceptOrder = async (orderId: number) => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
+  const handleAcceptOrder = async (orderId: number, stationId?: number) => {
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
 
-    const res = await fetch(`${API_BASE}/online-orders/${orderId}/accept`, {
-      method: 'POST',
-      headers,
-    });
+      const res = await fetch(`${API_BASE}/online-orders/${orderId}/accept`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ stationId: stationId ? Number(stationId) : undefined }),
+      });
 
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.message || 'Failed to accept order and inject into POS');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Failed to accept order and inject into POS');
+      }
+
+      const updated = await res.json();
+      showToast(`Order #ONL-${orderId} successfully ACCEPTED and dispatched to kitchen!`);
+      await fetchOrders(true);
+      if (updated.data) setSelectedOrder(updated.data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to accept order';
+      showToast(msg);
     }
+  };
 
-    const updated = await res.json();
-    showToast(`Order #ONL-${orderId} successfully ACCEPTED and injected into POS Core!`);
-    await fetchOrders(true);
-    if (updated.data) setSelectedOrder(updated.data);
+  // 3b. Operational Actions: Reassign Kitchen Station
+  const handleReassignStation = async (orderId: number, stationId: number) => {
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      const res = await fetch(`${API_BASE}/online-orders/${orderId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ stationId: Number(stationId) }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Failed to reassign kitchen station');
+      }
+
+      const updated = await res.json();
+      showToast(`Order #ONL-${orderId} kitchen station reallocated successfully!`);
+      await fetchOrders(true);
+      if (updated.data) setSelectedOrder(updated.data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to reassign station';
+      showToast(msg);
+    }
   };
 
   // 4. Operational Actions: Cancel Order
   const handleCancelOrder = async (orderId: number) => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
+    try {
+      const token = getAccessToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
 
-    const res = await fetch(`${API_BASE}/online-orders/${orderId}/cancel`, {
-      method: 'POST',
-      headers,
-    });
+      const res = await fetch(`${API_BASE}/online-orders/${orderId}/cancel`, {
+        method: 'POST',
+        headers,
+      });
 
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.message || 'Failed to cancel online order');
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Failed to cancel online order');
+      }
+
+      const updated = await res.json().catch(() => null);
+      showToast(`Order #ONL-${orderId} has been CANCELLED.`);
+      await fetchOrders(true);
+      if (updated?.data) setSelectedOrder(updated.data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to cancel online order';
+      showToast(msg);
     }
-
-    showToast(`Order #ONL-${orderId} has been CANCELLED.`);
-    await fetchOrders(true);
   };
 
   // 5. Operational Actions: Transition Fulfillment Status
@@ -252,6 +531,209 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
     await fetchOrders(true);
   };
 
+  // 5b. Operational Actions: Setup Drawer (Create / Edit)
+  const handleOpenCreateOrder = () => {
+    setSetupDrawerMode('create');
+    setOrderToEdit(null);
+    void fetchProductsAndMenus();
+    setIsSetupDrawerOpen(true);
+  };
+
+  const handleOpenEditOrder = (order: OnlineOrderDetailData) => {
+    if (!isOnlineOrderEditable(order)) {
+      showToast(
+        `Orders in '${order.fulfillmentStatus?.replace(/_/g, ' ')}' stage cannot be edited.`,
+        'warning'
+      );
+      return;
+    }
+    setSetupDrawerMode('edit');
+    setOrderToEdit(order);
+    void fetchProductsAndMenus();
+    setIsSetupDrawerOpen(true);
+  };
+
+  const handleSubmitOrderSetup = async (
+    formData: OnlineOrderFormData,
+    mode: 'create' | 'edit'
+  ) => {
+    const token = getAccessToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    if (mode === 'create') {
+      const payload: Record<string, unknown> = {
+        storeId: formData.storeId,
+        customerId: formData.customerId,
+        type: formData.type,
+        paymentStatus: formData.paymentStatus,
+        notes: formData.notes || null,
+        scheduledAt: formData.scheduledAt || null,
+        stationId: formData.stationId ? Number(formData.stationId) : null,
+      };
+
+      const res = await fetch(`${API_BASE}/online-orders`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Failed to create online order');
+      }
+
+      const created = await res.json();
+      const newOrderId = created.data?.id;
+
+      // Attach line items if provided
+      if (newOrderId && formData.items && formData.items.length > 0) {
+        for (const it of formData.items) {
+          try {
+            const itemBody: Record<string, unknown> = {
+              onlineOrderId: Number(newOrderId),
+              productId: Number(it.productId),
+              quantity: Number(it.quantity) || 1,
+            };
+            if (it.variantId) {
+              itemBody.variantId = Number(it.variantId);
+            }
+            if (it.notes && it.notes.trim()) {
+              itemBody.notes = it.notes.trim();
+            }
+
+            const itemRes = await fetch(`${API_BASE}/online-order-items`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(itemBody),
+            });
+
+            if (!itemRes.ok) {
+              const errData = await itemRes.json().catch(() => ({}));
+              console.error('Failed to attach item to online order:', errData);
+            }
+          } catch (itemErr) {
+            console.warn('Failed to attach item to online order:', itemErr);
+          }
+        }
+      }
+
+      // Transition fulfillment status if customized (e.g. accepted, in_preparation)
+      if (newOrderId && formData.fulfillmentStatus && formData.fulfillmentStatus !== 'received') {
+        try {
+          await fetch(`${API_BASE}/online-orders/${newOrderId}/fulfillment-status`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({
+              fulfillmentStatus: formData.fulfillmentStatus,
+              stationId: formData.stationId ? Number(formData.stationId) : undefined,
+            }),
+          });
+        } catch (statusErr) {
+          console.warn('Failed to update initial fulfillment status:', statusErr);
+        }
+      }
+
+      showToast(
+        `Online Order #${created.data?.id || ''} created successfully with ${formData.items?.length || 0} items!`
+      );
+      setIsSetupDrawerOpen(false);
+      await fetchOrders(true);
+    } else {
+      if (!formData.id) throw new Error('Order ID is required for editing');
+
+      const payload: Record<string, unknown> = {
+        storeId: formData.storeId,
+        customerId: formData.customerId,
+        type: formData.type,
+        paymentStatus: formData.paymentStatus,
+        notes: formData.notes || null,
+        scheduledAt: formData.scheduledAt || null,
+      };
+
+      if (formData.fulfillmentStatus) {
+        payload.fulfillmentStatus = formData.fulfillmentStatus;
+      }
+      if (formData.stationId !== undefined) {
+        payload.stationId = formData.stationId ? Number(formData.stationId) : null;
+      }
+
+      const res = await fetch(`${API_BASE}/online-orders/${formData.id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || 'Failed to update online order');
+      }
+
+      // Manage line items differences when editing
+      if (formData.id && formData.items) {
+        const existingItemIds = new Set((orderToEdit?.items || []).map((it) => it.id));
+        const currentItemIds = new Set(formData.items.filter((it) => it.id).map((it) => it.id!));
+
+        // Delete removed items
+        for (const existingId of existingItemIds) {
+          if (!currentItemIds.has(existingId)) {
+            try {
+              await fetch(`${API_BASE}/online-order-items/${existingId}`, {
+                method: 'DELETE',
+                headers,
+              });
+            } catch (delErr) {
+              console.warn('Failed to delete item:', delErr);
+            }
+          }
+        }
+
+        // Add newly added items (items without id)
+        for (const it of formData.items) {
+          if (!it.id) {
+            try {
+              const itemBody: Record<string, unknown> = {
+                onlineOrderId: Number(formData.id),
+                productId: Number(it.productId),
+                quantity: Number(it.quantity) || 1,
+              };
+              if (it.variantId) {
+                itemBody.variantId = Number(it.variantId);
+              }
+              if (it.notes && it.notes.trim()) {
+                itemBody.notes = it.notes.trim();
+              }
+
+              const itemRes = await fetch(`${API_BASE}/online-order-items`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(itemBody),
+              });
+
+              if (!itemRes.ok) {
+                const errData = await itemRes.json().catch(() => ({}));
+                console.error('Failed to add item to existing order:', errData);
+              }
+            } catch (addErr) {
+              console.warn('Failed to add item to existing order:', addErr);
+            }
+          }
+        }
+      }
+
+      const updated = await res.json();
+      showToast(`Order #ONL-${formData.id} updated successfully!`);
+      setIsSetupDrawerOpen(false);
+      await fetchOrders(true);
+
+      if (selectedOrder && selectedOrder.id === formData.id) {
+        if (updated.data) setSelectedOrder(updated.data);
+      }
+    }
+  };
+
   // 6. Filtering Logic
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -270,29 +752,23 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
         return false;
       }
 
-      // Fulfillment pill filter
-      if (fulfillmentFilter !== 'ALL') {
-        const fs = order.fulfillmentStatus?.toLowerCase();
-        if (fulfillmentFilter === 'RECEIVED' && fs !== 'received') return false;
-        if (fulfillmentFilter === 'ACCEPTED' && fs !== 'accepted') return false;
-        if (
-          fulfillmentFilter === 'IN_PREPARATION' &&
-          fs !== 'in_preparation' &&
-          fs !== 'in_kitchen'
-        )
-          return false;
-        if (
-          fulfillmentFilter === 'READY' &&
-          fs !== 'ready' &&
-          fs !== 'ready_for_pickup' &&
-          fs !== 'out_for_delivery'
-        )
-          return false;
-        if (fulfillmentFilter === 'COMPLETED' && fs !== 'completed') return false;
-        if (fulfillmentFilter === 'CANCELLED' && fs !== 'cancelled') return false;
+      // Fulfillment status checklist multi-select filter
+      if (selectedFulfillmentStatuses.length > 0) {
+        const fs = (order.fulfillmentStatus || '').toLowerCase();
+        const matchesAny = selectedFulfillmentStatuses.some((st) => {
+          const s = st.toLowerCase();
+          if (s === 'received') return fs === 'received';
+          if (s === 'accepted') return fs === 'accepted';
+          if (s === 'in_preparation') return fs === 'in_preparation' || fs === 'in_kitchen';
+          if (s === 'ready') return fs === 'ready' || fs === 'ready_for_pickup' || fs === 'out_for_delivery';
+          if (s === 'completed') return fs === 'completed';
+          if (s === 'cancelled') return fs === 'cancelled';
+          return fs === s;
+        });
+        if (!matchesAny) return false;
       }
 
-      // Universal search query
+      // Universal search query across customer name, order ID (#ONL-{id}), phone, email, notes
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const onlId = `#onl-${order.id}`.toLowerCase();
@@ -301,6 +777,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
         const rawOrderId = order.orderId ? String(order.orderId) : '';
         const custName = order.customer?.name?.toLowerCase() || '';
         const custEmail = order.customer?.email?.toLowerCase() || '';
+        const custPhone = (order.customer?.phone || '').toLowerCase();
         const storeSub = order.store?.subdomain?.toLowerCase() || '';
         const notes = order.notes?.toLowerCase() || '';
 
@@ -311,6 +788,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
           rawOrderId.includes(q) ||
           custName.includes(q) ||
           custEmail.includes(q) ||
+          custPhone.includes(q) ||
           storeSub.includes(q) ||
           notes.includes(q);
 
@@ -324,32 +802,49 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
     selectedStoreFilter,
     orderTypeFilter,
     paymentFilter,
-    fulfillmentFilter,
+    selectedFulfillmentStatuses,
     searchQuery,
   ]);
 
-  // Operational KPI counters (Strict 4 for canonical top row)
+  // Operational KPI counters (Accurate tallies for live digital sales banner)
   const kpiTotal = orders.length;
-  const kpiReceived = orders.filter((o) => o.fulfillmentStatus === 'received').length;
-  const kpiAccepted = orders.filter((o) => o.fulfillmentStatus === 'accepted').length;
-  const kpiInPrep = orders.filter(
-    (o) => o.fulfillmentStatus === 'in_preparation' || o.fulfillmentStatus === 'in_kitchen'
-  ).length;
-  const kpiReady = orders.filter(
-    (o) =>
-      o.fulfillmentStatus === 'ready' ||
-      o.fulfillmentStatus === 'ready_for_pickup' ||
-      o.fulfillmentStatus === 'out_for_delivery'
-  ).length;
-  const kpiCompleted = orders.filter((o) => o.fulfillmentStatus === 'completed').length;
-  const kpiCancelled = orders.filter((o) => o.fulfillmentStatus === 'cancelled').length;
+  const kpiPending = orders.filter((o) => (o.fulfillmentStatus || '').toLowerCase() === 'received').length;
+  const kpiAccepted = orders.filter((o) => (o.fulfillmentStatus || '').toLowerCase() === 'accepted').length;
+  const kpiInPrep = orders.filter((o) => {
+    const s = (o.fulfillmentStatus || '').toLowerCase();
+    return s === 'in_preparation' || s === 'in_kitchen';
+  }).length;
+  const kpiActiveKitchen = kpiAccepted + kpiInPrep;
+  const kpiReady = orders.filter((o) => {
+    const s = (o.fulfillmentStatus || '').toLowerCase();
+    return s === 'ready' || s === 'ready_for_pickup' || s === 'out_for_delivery';
+  }).length;
+  const kpiCompleted = orders.filter((o) => (o.fulfillmentStatus || '').toLowerCase() === 'completed').length;
+  const kpiCancelled = orders.filter((o) => (o.fulfillmentStatus || '').toLowerCase() === 'cancelled').length;
+
+  const handleToggleFulfillmentStatus = (statusKey: string) => {
+    if (statusKey === 'ALL') {
+      setSelectedFulfillmentStatuses([]);
+      setCurrentPage(1);
+      return;
+    }
+    setSelectedFulfillmentStatuses((prev) => {
+      const exists = prev.includes(statusKey);
+      if (exists) {
+        return prev.filter((s) => s !== statusKey);
+      } else {
+        return [...prev, statusKey];
+      }
+    });
+    setCurrentPage(1);
+  };
 
   const hasActiveFilters = Boolean(
     searchQuery.trim() ||
     selectedStoreFilter !== 'all' ||
     orderTypeFilter !== 'all' ||
     paymentFilter !== 'all' ||
-    fulfillmentFilter !== 'ALL'
+    selectedFulfillmentStatuses.length > 0
   );
 
   const handleResetAllFilters = () => {
@@ -357,7 +852,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
     setSelectedStoreFilter('all');
     setOrderTypeFilter('all');
     setPaymentFilter('all');
-    setFulfillmentFilter('ALL');
+    setSelectedFulfillmentStatuses([]);
     setCurrentPage(1);
   };
 
@@ -523,127 +1018,127 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
         </p>
       </div>
 
-      {/* 2. Hero KPIs Strip (Strict 5-column single row for all 5 lifecycle milestones) */}
-      <div className="grid grid-cols-5 gap-2 sm:gap-3 w-full min-w-0">
+      {/* 2. Operational KPI Summary Banner (Live digital sales metrics & milestones - Single Line / 5 Columns - Informational Only) */}
+      <div className="grid grid-cols-5 gap-2 sm:gap-2.5 w-full min-w-0">
         {/* KPI 1: Total Web Orders */}
-        <div className="bg-white border border-[#e8e2d8] p-2.5 sm:p-3 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-2.5 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default font-sans">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
-              <span className="material-symbols-outlined text-base sm:text-lg">shopping_bag</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
+              <span className="material-symbols-outlined text-[18px]">shopping_cart</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[9.5px] sm:text-[10px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans">
-                Total Orders
+              <div className="text-[9.5px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans font-poppins">
+                Total Web Orders
               </div>
-              <div className="text-lg sm:text-2xl font-extrabold text-[#1d1c17] font-sans leading-tight">
+              <div className="text-lg sm:text-xl font-extrabold text-[#1d1c17] font-sans font-poppins leading-tight">
                 {isLoading ? '...' : kpiTotal}
               </div>
             </div>
           </div>
-          <span className="hidden md:inline-block px-1.5 py-0.5 rounded text-[8.5px] sm:text-[9px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-200 shrink-0 font-sans">
+          <span className="hidden xl:inline-block px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-200 shrink-0 font-sans font-poppins">
             TOTAL
           </span>
         </div>
 
-        {/* KPI 2: Awaiting POS Accept */}
-        <div className="bg-white border border-[#e8e2d8] p-2.5 sm:p-3 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        {/* KPI 2: Pending Acceptance */}
+        <div className="bg-white border border-[#e8e2d8] p-2.5 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default font-sans">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-sky-50 text-sky-700 flex items-center justify-center border border-sky-200 shrink-0">
-              <span className="material-symbols-outlined text-base sm:text-lg">inbox</span>
+            <div className="w-8 h-8 rounded-lg bg-sky-50 text-sky-700 flex items-center justify-center border border-sky-200 shrink-0">
+              <span className="material-symbols-outlined text-[18px]">pending_actions</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[9.5px] sm:text-[10px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans">
-                Awaiting Accept
+              <div className="text-[9.5px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans font-poppins">
+                Pending Acceptance
               </div>
-              <div className="text-lg sm:text-2xl font-extrabold text-[#1d1c17] font-sans leading-tight">
-                {isLoading ? '...' : kpiReceived}
+              <div className="text-lg sm:text-xl font-extrabold text-[#1d1c17] font-sans font-poppins leading-tight">
+                {isLoading ? '...' : kpiPending}
               </div>
             </div>
           </div>
-          <span className="hidden md:inline-block px-1.5 py-0.5 rounded text-[8.5px] sm:text-[9px] font-bold uppercase bg-sky-100 text-sky-800 border border-sky-200 shrink-0 font-sans">
-            RECEIVED
+          <span className="hidden xl:inline-block px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase bg-sky-100 text-sky-800 border border-sky-200 shrink-0 font-sans font-poppins">
+            PENDING
           </span>
         </div>
 
-        {/* KPI 3: In Kitchen / Preparing */}
-        <div className="bg-white border border-[#e8e2d8] p-2.5 sm:p-3 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        {/* KPI 3: Active Kitchen Orders */}
+        <div className="bg-white border border-[#e8e2d8] p-2.5 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default font-sans">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shrink-0">
-              <span className="material-symbols-outlined text-base sm:text-lg">skillet</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shrink-0">
+              <span className="material-symbols-outlined text-[18px]">soup_kitchen</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[9.5px] sm:text-[10px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans">
-                In Preparation
+              <div className="text-[9.5px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans font-poppins">
+                Active Kitchen Orders
               </div>
-              <div className="text-lg sm:text-2xl font-extrabold text-[#1d1c17] font-sans leading-tight">
-                {isLoading ? '...' : kpiAccepted + kpiInPrep}
+              <div className="text-lg sm:text-xl font-extrabold text-[#1d1c17] font-sans font-poppins leading-tight">
+                {isLoading ? '...' : kpiActiveKitchen}
               </div>
             </div>
           </div>
-          <span className="hidden md:inline-block px-1.5 py-0.5 rounded text-[8.5px] sm:text-[9px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-200 shrink-0 font-sans">
+          <span className="hidden xl:inline-block px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-200 shrink-0 font-sans font-poppins">
             KITCHEN
           </span>
         </div>
 
-        {/* KPI 4: Ready for Dispatch */}
-        <div className="bg-white border border-[#e8e2d8] p-2.5 sm:p-3 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        {/* KPI 4: Ready for Pickup/Delivery */}
+        <div className="bg-white border border-[#e8e2d8] p-2.5 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default font-sans">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
-              <span className="material-symbols-outlined text-base sm:text-lg">notifications_active</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
+              <span className="material-symbols-outlined text-[18px]">check_circle</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[9.5px] sm:text-[10px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans">
-                Ready Dispatch
+              <div className="text-[9.5px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans font-poppins">
+                Ready for Pickup/Delivery
               </div>
-              <div className="text-lg sm:text-2xl font-extrabold text-[#1d1c17] font-sans leading-tight">
+              <div className="text-lg sm:text-xl font-extrabold text-[#1d1c17] font-sans font-poppins leading-tight">
                 {isLoading ? '...' : kpiReady}
               </div>
             </div>
           </div>
-          <span className="hidden md:inline-block px-1.5 py-0.5 rounded text-[8.5px] sm:text-[9px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 font-sans">
+          <span className="hidden xl:inline-block px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 font-sans font-poppins">
             READY
           </span>
         </div>
 
-        {/* KPI 5: Fulfilled / Completed Today */}
-        <div className="bg-white border border-[#e8e2d8] p-2.5 sm:p-3 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        {/* KPI 5: Fulfilled / Completed */}
+        <div className="bg-white border border-[#e8e2d8] p-2.5 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default font-sans">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-green-50 text-green-700 flex items-center justify-center border border-green-200 shrink-0">
-              <span className="material-symbols-outlined text-base sm:text-lg">verified</span>
+            <div className="w-8 h-8 rounded-lg bg-green-50 text-green-700 flex items-center justify-center border border-green-200 shrink-0">
+              <span className="material-symbols-outlined text-[18px]">verified</span>
             </div>
             <div className="min-w-0">
-              <div className="text-[9.5px] sm:text-[10px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans">
-                Fulfilled Today
+              <div className="text-[9.5px] font-bold text-[#5f5e5e] uppercase tracking-wider truncate font-sans font-poppins">
+                Completed Orders
               </div>
-              <div className="text-lg sm:text-2xl font-extrabold text-[#1d1c17] font-sans leading-tight">
+              <div className="text-lg sm:text-xl font-extrabold text-[#1d1c17] font-sans font-poppins leading-tight">
                 {isLoading ? '...' : kpiCompleted}
               </div>
             </div>
           </div>
-          <span className="hidden md:inline-block px-1.5 py-0.5 rounded text-[8.5px] sm:text-[9px] font-bold uppercase bg-green-100 text-green-800 border border-green-200 shrink-0 font-sans">
+          <span className="hidden xl:inline-block px-1.5 py-0.5 rounded text-[8.5px] font-bold uppercase bg-green-100 text-green-800 border border-green-200 shrink-0 font-sans font-poppins">
             COMPLETED
           </span>
         </div>
       </div>
 
-      {/* 3. Canonical Unified Filter Toolbar (3 Dedicated Sections: 1. Search & View Mode, 2. Selectors, 3. Status Lifecycle) */}
+      {/* 3. Canonical Unified Filter Toolbar (Search, Selectors, Multi-Select Fulfillment Checklist) */}
       <div className="bg-white border border-[#e8e2d8] rounded-xl p-4 shadow-sm flex flex-col gap-3.5">
         {/* Apartado 1: Buscador a la izquierda | Vista ("Dispatch Board" / "Table View") y Auto-Refresco a la derecha */}
         <div className="flex items-center justify-between gap-3 w-full">
-          {/* Buscador */}
+          {/* Universal Search Input */}
           <div className="relative flex-1 max-w-md min-w-[200px]">
             <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[17px] text-[#76736a] select-none">
               search
             </span>
             <input
               type="text"
-              placeholder="Search orders by #ONL, #ORD, customer, email, notes..."
+              placeholder="Search by customer name, phone, order #ONL, #ORD..."
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="h-[36px] w-full pl-9 pr-8 text-xs rounded-lg border border-[#d5cfc4] focus:outline-none focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a]/20 bg-[#fcfcfb] text-[#1d1c17] placeholder:text-[#8c857b] transition-all font-sans"
+              className="h-[36px] w-full pl-9 pr-8 text-xs rounded-lg border border-[#d5cfc4] focus:outline-none focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a]/20 bg-[#fcfcfb] text-[#1d1c17] placeholder:text-[#8c857b] transition-all font-sans font-poppins"
               aria-label="Search orders"
             />
             {searchQuery && (
@@ -725,7 +1220,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
           </div>
         </div>
 
-        {/* Apartado 2: Fila Dedicada de Selectores (Storefront, Tipo de Pedido, Estado de Pago y Reset) */}
+        {/* Apartado 2: Fila Dedicada de Selectores (Storefront, Tipo de Pedido, Estado de Pago, Checklist de Fulfillment y Reset) */}
         <div className="pt-3 border-t border-[#f0ede6] flex flex-wrap items-center gap-2.5 w-full">
           {/* Storefront Selector */}
           <div className="flex items-center h-[34px] px-2.5 bg-[#fcfcfb] rounded-lg border border-[#d5cfc4] hover:border-[#b8b0a2] focus-within:border-[#ae001a] transition-all shrink-0">
@@ -738,7 +1233,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                 setSelectedStoreFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="bg-transparent text-xs font-medium text-[#1d1c17] outline-none cursor-pointer pr-1 font-sans"
+              className="bg-transparent text-xs font-medium text-[#1d1c17] outline-none cursor-pointer pr-1 font-sans font-poppins"
               aria-label="Filter by digital store"
             >
               <option value="all">All Stores ({stores.length})</option>
@@ -761,7 +1256,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                 setOrderTypeFilter(e.target.value as OrderTypeFilter);
                 setCurrentPage(1);
               }}
-              className="bg-transparent text-xs font-medium text-[#1d1c17] outline-none cursor-pointer pr-1 font-sans"
+              className="bg-transparent text-xs font-medium text-[#1d1c17] outline-none cursor-pointer pr-1 font-sans font-poppins"
               aria-label="Filter by order type"
             >
               <option value="all">All Order Types</option>
@@ -782,7 +1277,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                 setPaymentFilter(e.target.value as PaymentStatusFilter);
                 setCurrentPage(1);
               }}
-              className="bg-transparent text-xs font-medium text-[#1d1c17] outline-none cursor-pointer pr-1 font-sans"
+              className="bg-transparent text-xs font-medium text-[#1d1c17] outline-none cursor-pointer pr-1 font-sans font-poppins"
               aria-label="Filter by payment status"
             >
               <option value="all">All Payments</option>
@@ -798,7 +1293,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
             <button
               type="button"
               onClick={handleResetAllFilters}
-              className="h-[34px] px-2.5 rounded-lg text-xs font-semibold text-[#ae001a] hover:bg-red-50 border border-red-200 transition-colors flex items-center gap-1 cursor-pointer font-sans shrink-0"
+              className="h-[34px] px-2.5 rounded-lg text-xs font-semibold text-[#ae001a] hover:bg-red-50 border border-red-200 transition-colors flex items-center gap-1 cursor-pointer font-sans shrink-0 font-poppins"
               title="Reset all filters"
             >
               <span className="material-symbols-outlined text-[15px]">filter_alt_off</span>
@@ -807,31 +1302,29 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
           )}
         </div>
 
-        {/* Apartado 3: Los Status (Píldoras de ciclo de vida + última actualización) */}
+        {/* Apartado 3: Los Status (Checklist Multi-Select Pills Strip) */}
         <div className="pt-3 border-t border-[#f0ede6] w-full flex items-center justify-between min-w-0">
-          {/* Left: STATUS Pills Strip */}
+          {/* Left: STATUS Multi-Filter Checklist Pills Strip */}
           <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] py-0.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#76736a] shrink-0 mr-1 font-sans">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#76736a] shrink-0 mr-1 font-sans font-poppins">
               STATUS:
             </span>
 
             {/* All Pill */}
             <button
               type="button"
-              onClick={() => {
-                setFulfillmentFilter('ALL');
-                setCurrentPage(1);
-              }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                fulfillmentFilter === 'ALL'
+              onClick={() => handleToggleFulfillmentStatus('ALL')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border font-poppins ${
+                selectedFulfillmentStatuses.length === 0
                   ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
                   : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
               }`}
             >
+              <span className="material-symbols-outlined text-[14px]">done_all</span>
               <span>All</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  fulfillmentFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-[#e8e2d8] text-[#5f5e5e]'
+                  selectedFulfillmentStatuses.length === 0 ? 'bg-white/20 text-white' : 'bg-[#e8e2d8] text-[#5f5e5e]'
                 }`}
               >
                 {kpiTotal}
@@ -841,12 +1334,9 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
             {/* Received Pill */}
             <button
               type="button"
-              onClick={() => {
-                setFulfillmentFilter('RECEIVED');
-                setCurrentPage(1);
-              }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                fulfillmentFilter === 'RECEIVED'
+              onClick={() => handleToggleFulfillmentStatus('received')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border font-poppins ${
+                selectedFulfillmentStatuses.includes('received')
                   ? 'bg-sky-700 text-white border-sky-700 shadow-xs'
                   : 'bg-white text-sky-800 border-sky-200 hover:bg-sky-50'
               }`}
@@ -855,22 +1345,19 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
               <span>Received</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  fulfillmentFilter === 'RECEIVED' ? 'bg-white/20 text-white' : 'bg-sky-100 text-sky-800'
+                  selectedFulfillmentStatuses.includes('received') ? 'bg-white/20 text-white' : 'bg-sky-100 text-sky-800'
                 }`}
               >
-                {kpiReceived}
+                {kpiPending}
               </span>
             </button>
 
             {/* Accepted Pill */}
             <button
               type="button"
-              onClick={() => {
-                setFulfillmentFilter('ACCEPTED');
-                setCurrentPage(1);
-              }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                fulfillmentFilter === 'ACCEPTED'
+              onClick={() => handleToggleFulfillmentStatus('accepted')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border font-poppins ${
+                selectedFulfillmentStatuses.includes('accepted')
                   ? 'bg-indigo-700 text-white border-indigo-700 shadow-xs'
                   : 'bg-white text-indigo-800 border-indigo-200 hover:bg-indigo-50'
               }`}
@@ -879,7 +1366,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
               <span>Accepted</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  fulfillmentFilter === 'ACCEPTED' ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800'
+                  selectedFulfillmentStatuses.includes('accepted') ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800'
                 }`}
               >
                 {kpiAccepted}
@@ -889,21 +1376,18 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
             {/* In Prep Pill */}
             <button
               type="button"
-              onClick={() => {
-                setFulfillmentFilter('IN_PREPARATION');
-                setCurrentPage(1);
-              }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                fulfillmentFilter === 'IN_PREPARATION'
+              onClick={() => handleToggleFulfillmentStatus('in_preparation')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border font-poppins ${
+                selectedFulfillmentStatuses.includes('in_preparation')
                   ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
                   : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
               }`}
             >
-              <span className="material-symbols-outlined text-[13px]">skillet</span>
+              <span className="material-symbols-outlined text-[13px]">soup_kitchen</span>
               <span>In Prep</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  fulfillmentFilter === 'IN_PREPARATION' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  selectedFulfillmentStatuses.includes('in_preparation') ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 {kpiInPrep}
@@ -913,21 +1397,18 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
             {/* Ready Pill */}
             <button
               type="button"
-              onClick={() => {
-                setFulfillmentFilter('READY');
-                setCurrentPage(1);
-              }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                fulfillmentFilter === 'READY'
+              onClick={() => handleToggleFulfillmentStatus('ready')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border font-poppins ${
+                selectedFulfillmentStatuses.includes('ready')
                   ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
                   : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
               }`}
             >
-              <span className="material-symbols-outlined text-[13px]">notifications_active</span>
+              <span className="material-symbols-outlined text-[13px]">check_circle</span>
               <span>Ready</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  fulfillmentFilter === 'READY' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                  selectedFulfillmentStatuses.includes('ready') ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
                 }`}
               >
                 {kpiReady}
@@ -937,12 +1418,9 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
             {/* Completed Pill */}
             <button
               type="button"
-              onClick={() => {
-                setFulfillmentFilter('COMPLETED');
-                setCurrentPage(1);
-              }}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                fulfillmentFilter === 'COMPLETED'
+              onClick={() => handleToggleFulfillmentStatus('completed')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border font-poppins ${
+                selectedFulfillmentStatuses.includes('completed')
                   ? 'bg-green-700 text-white border-green-700 shadow-xs'
                   : 'bg-white text-green-800 border-green-200 hover:bg-green-50'
               }`}
@@ -951,45 +1429,56 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
               <span>Completed</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  fulfillmentFilter === 'COMPLETED' ? 'bg-white/20 text-white' : 'bg-green-100 text-green-800'
+                  selectedFulfillmentStatuses.includes('completed') ? 'bg-white/20 text-white' : 'bg-green-100 text-green-800'
                 }`}
               >
                 {kpiCompleted}
               </span>
             </button>
-
-            {/* Cancelled Pill */}
-            {kpiCancelled > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setFulfillmentFilter('CANCELLED');
-                  setCurrentPage(1);
-                }}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                  fulfillmentFilter === 'CANCELLED'
-                    ? 'bg-red-700 text-white border-red-700 shadow-xs'
-                    : 'bg-white text-red-800 border-red-200 hover:bg-red-50'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[13px]">cancel</span>
-                <span>Cancelled</span>
-                <span
-                  className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                    fulfillmentFilter === 'CANCELLED' ? 'bg-white/20 text-white' : 'bg-red-100 text-red-800'
-                  }`}
-                >
-                  {kpiCancelled}
-                </span>
-              </button>
-            )}
           </div>
 
-          {/* Timestamp on right of status bar */}
-          <div className="hidden lg:flex items-center gap-1 text-[11px] text-[#5f5e5e] pl-2 shrink-0 font-sans">
-            <span className="material-symbols-outlined text-sm">schedule</span>
-            <span>Updated:</span>
-            <span className="font-mono font-bold text-[#1d1c17]">{lastUpdated.toLocaleTimeString()}</span>
+          {/* Right of status bar: Timestamp + Cancelled Archive Button + New Order Button */}
+          <div className="flex items-center gap-2 pl-2 shrink-0 font-sans">
+            <div className="hidden lg:flex items-center gap-1 text-[11px] text-[#5f5e5e] font-poppins">
+              <span className="material-symbols-outlined text-sm">schedule</span>
+              <span>Updated:</span>
+              <span className="font-mono font-bold text-[#1d1c17]">{lastUpdated.toLocaleTimeString()}</span>
+            </div>
+
+            {/* Cancelled Orders Modal Button */}
+            <button
+              type="button"
+              onClick={() => setIsCancelledModalOpen(true)}
+              className={`h-[30px] px-2.5 text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0 font-sans font-poppins whitespace-nowrap border ${
+                kpiCancelled > 0
+                  ? 'bg-red-50 hover:bg-red-100 text-red-700 border-red-200'
+                  : 'bg-white hover:bg-zinc-50 text-zinc-600 border-zinc-200'
+              }`}
+              title="View archived cancelled orders"
+            >
+              <span className={`material-symbols-outlined text-[15px] ${kpiCancelled > 0 ? 'text-red-600' : 'text-zinc-400'}`}>
+                archive
+              </span>
+              <span>Cancelled</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                  kpiCancelled > 0 ? 'bg-red-200 text-red-900' : 'bg-zinc-100 text-zinc-600'
+                }`}
+              >
+                {kpiCancelled}
+              </span>
+            </button>
+
+            {/* New Online Order Button */}
+            <button
+              type="button"
+              onClick={handleOpenCreateOrder}
+              className="h-[30px] px-3 bg-[#ae001a] hover:bg-[#d2272f] text-white text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0 font-sans font-poppins whitespace-nowrap"
+              title="Create new online order"
+            >
+              <span className="material-symbols-outlined text-[15px]">add</span>
+              <span>New Order</span>
+            </button>
           </div>
         </div>
       </div>
@@ -1004,9 +1493,8 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
 
       {/* 4. Main Views: Dispatch Board (Kanban) vs Table View */}
       {viewMode === 'split' ? (
-        /* KANBAN DISPATCH BOARD VIEW */
         <div className="w-full overflow-x-auto pb-2">
-          <div className="grid grid-cols-5 gap-2.5 sm:gap-3.5 items-start min-w-[780px] lg:min-w-0 w-full">
+          <div className="grid grid-cols-5 min-w-[780px] gap-2.5 sm:gap-3.5 items-start lg:min-w-0 w-full">
             {/* Column 1: RECEIVED */}
             <div className="bg-[#f7f5f0] border border-[#e8e2d8] rounded-xl overflow-hidden flex flex-col min-w-0">
               <div className="bg-[#e8e2d8] px-2.5 sm:px-3 py-2 flex items-center justify-between border-b border-[#d5cfc4] gap-1">
@@ -1029,6 +1517,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                       onOpenInspector={openOrderInspection}
                       onAccept={() => handleAcceptOrder(order.id)}
                       onCancel={() => handleCancelOrder(order.id)}
+                      onEdit={() => handleOpenEditOrder(order)}
                       formatCurrency={formatCurrency}
                       formatTimestamp={formatTimestamp}
                     />
@@ -1063,6 +1552,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                       order={order}
                       onOpenInspector={openOrderInspection}
                       onTransition={(st) => handleTransitionStatus(order.id, st)}
+                      onEdit={() => handleOpenEditOrder(order)}
                       formatCurrency={formatCurrency}
                       formatTimestamp={formatTimestamp}
                     />
@@ -1210,6 +1700,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                 )}
               </div>
             </div>
+
           </div>
         </div>
       ) : (
@@ -1548,6 +2039,12 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                               >
                                 {order.fulfillmentStatus.replace(/_/g, ' ').toUpperCase()}
                               </span>
+                              {order.kitchenOrders?.[0]?.station?.name && (
+                                <div className="mt-1 text-[10px] text-red-800 font-medium flex items-center justify-center gap-0.5 whitespace-nowrap">
+                                  <span className="material-symbols-outlined text-[11px] text-red-600">soup_kitchen</span>
+                                  <span>{order.kitchenOrders[0].station.name}</span>
+                                </div>
+                              )}
                             </td>
                           )}
 
@@ -1573,14 +2070,28 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                             >
                               <div className="flex items-center justify-end gap-1.5">
                                 {order.fulfillmentStatus === 'received' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAcceptOrder(order.id)}
-                                    className="px-2.5 py-1 rounded bg-[#ae001a] hover:bg-[#d2272f] text-white text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
-                                    title="Accept and inject into POS"
-                                  >
-                                    Accept
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAcceptOrder(order.id)}
+                                      className="w-7 h-7 rounded flex items-center justify-center bg-[#ae001a] hover:bg-[#d2272f] text-white transition-colors cursor-pointer"
+                                      title="Accept and inject into POS"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px] leading-none">
+                                        check
+                                      </span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCancelOrder(order.id)}
+                                      className="w-7 h-7 rounded flex items-center justify-center text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+                                      title="Reject / Cancel Order"
+                                    >
+                                      <span className="material-symbols-outlined text-[18px] leading-none">
+                                        cancel
+                                      </span>
+                                    </button>
+                                  </>
                                 )}
 
                                 {order.fulfillmentStatus === 'accepted' && (
@@ -1589,9 +2100,12 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                                     onClick={() =>
                                       handleTransitionStatus(order.id, 'in_preparation')
                                     }
-                                    className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                                    className="w-7 h-7 rounded flex items-center justify-center bg-amber-600 hover:bg-amber-700 text-white transition-colors cursor-pointer"
+                                    title="Start Prep"
                                   >
-                                    Start Prep
+                                    <span className="material-symbols-outlined text-[18px] leading-none">
+                                      skillet
+                                    </span>
                                   </button>
                                 )}
 
@@ -1600,9 +2114,12 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                                   <button
                                     type="button"
                                     onClick={() => handleTransitionStatus(order.id, 'ready')}
-                                    className="px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                                    className="w-7 h-7 rounded flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer"
+                                    title="Mark Ready"
                                   >
-                                    Ready
+                                    <span className="material-symbols-outlined text-[18px] leading-none">
+                                      notifications_active
+                                    </span>
                                   </button>
                                 )}
 
@@ -1614,19 +2131,35 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
                                     onClick={() =>
                                       handleTransitionStatus(order.id, 'completed')
                                     }
-                                    className="px-2.5 py-1 rounded bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                                    className="w-7 h-7 rounded flex items-center justify-center bg-green-600 hover:bg-green-700 text-white transition-colors cursor-pointer"
+                                    title="Complete Order"
                                   >
-                                    Complete
+                                    <span className="material-symbols-outlined text-[18px] leading-none">
+                                      verified
+                                    </span>
+                                  </button>
+                                )}
+
+                                {isOnlineOrderEditable(order) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditOrder(order)}
+                                    className="w-7 h-7 rounded flex items-center justify-center text-[#8c857b] hover:text-[#ae001a] hover:bg-[#ece8e0] transition-colors cursor-pointer"
+                                    title="Edit order"
+                                  >
+                                    <span className="material-symbols-outlined text-[18px] leading-none">
+                                      edit
+                                    </span>
                                   </button>
                                 )}
 
                                 <button
                                   type="button"
                                   onClick={() => openOrderInspection(order)}
-                                  className="p-1 rounded text-[#8c857b] hover:text-[#1d1c17] hover:bg-[#ece8e0] transition-colors cursor-pointer"
+                                  className="w-7 h-7 rounded flex items-center justify-center text-[#8c857b] hover:text-[#1d1c17] hover:bg-[#ece8e0] transition-colors cursor-pointer"
                                   title="Inspect order details"
                                 >
-                                  <span className="material-symbols-outlined text-lg">
+                                  <span className="material-symbols-outlined text-[18px] leading-none">
                                     visibility
                                   </span>
                                 </button>
@@ -1660,9 +2193,39 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         order={selectedOrder}
+        kitchenStations={kitchenStations}
         onAcceptOrder={handleAcceptOrder}
         onCancelOrder={handleCancelOrder}
         onTransitionStatus={handleTransitionStatus}
+        onEditOrder={(order) => {
+          setIsDrawerOpen(false);
+          handleOpenEditOrder(order);
+        }}
+      />
+
+      {/* 6. Online Order Setup Drawer (Add / Edit) */}
+      <OnlineOrderSetupDrawer
+        isOpen={isSetupDrawerOpen}
+        mode={setupDrawerMode}
+        initialData={orderToEdit}
+        stores={stores}
+        customers={customers}
+        products={products}
+        onlineMenus={onlineMenus}
+        onlineMenuItems={onlineMenuItems}
+        kitchenStations={kitchenStations}
+        onClose={() => setIsSetupDrawerOpen(false)}
+        onSubmit={handleSubmitOrderSetup}
+      />
+
+      {/* 5c. Cancelled Orders Archive Modal */}
+      <CancelledOrdersModal
+        isOpen={isCancelledModalOpen}
+        onClose={() => setIsCancelledModalOpen(false)}
+        orders={orders}
+        onInspectOrder={openOrderInspection}
+        formatCurrency={formatCurrency}
+        formatTimestamp={formatTimestamp}
       />
 
       {/* 6. Isolated Dev Simulator: Deleting OnlineOrdersDevSimulator.tsx safely unmounts it with zero errors */}
@@ -1682,6 +2245,7 @@ interface KanbanOrderCardProps {
   onAccept?: () => void;
   onCancel?: () => void;
   onTransition?: (st: OnlineOrderDetailData['fulfillmentStatus']) => void;
+  onEdit?: (order: OnlineOrderDetailData) => void;
   formatCurrency: (val: number | string | undefined | null) => string;
   formatTimestamp: (dateStr?: string | null) => string;
 }
@@ -1692,6 +2256,7 @@ const KanbanOrderCard: React.FC<KanbanOrderCardProps> = ({
   onAccept,
   onCancel,
   onTransition,
+  onEdit,
   formatCurrency,
   formatTimestamp,
 }) => {
@@ -1785,6 +2350,14 @@ const KanbanOrderCard: React.FC<KanbanOrderCardProps> = ({
         </div>
       )}
 
+      {/* Assigned Kitchen Station */}
+      {order.kitchenOrders?.[0]?.station?.name && (
+        <div className="text-[10px] font-medium text-red-800 bg-red-50/80 px-2 py-0.5 rounded border border-red-200/60 truncate flex items-center gap-1">
+          <span className="material-symbols-outlined text-[12px] shrink-0 text-red-600">soup_kitchen</span>
+          <span className="truncate">{order.kitchenOrders[0].station.name}</span>
+        </div>
+      )}
+
       {/* Action Footer */}
       <div
         className="pt-2 border-t border-[#f2ede5] flex items-center justify-between gap-1 min-w-0 h-9"
@@ -1799,6 +2372,17 @@ const KanbanOrderCard: React.FC<KanbanOrderCardProps> = ({
           >
             <span className="material-symbols-outlined text-[18px] leading-none">visibility</span>
           </button>
+
+          {onEdit && isOnlineOrderEditable(order) && (
+            <button
+              type="button"
+              onClick={() => onEdit(order)}
+              className="w-7 h-7 rounded flex items-center justify-center text-[#8c857b] hover:text-[#ae001a] hover:bg-[#f2ede5] transition-colors cursor-pointer"
+              title="Edit Order"
+            >
+              <span className="material-symbols-outlined text-[18px] leading-none">edit</span>
+            </button>
+          )}
 
           {order.fulfillmentStatus === 'received' && onCancel && (
             <button
@@ -1817,11 +2401,10 @@ const KanbanOrderCard: React.FC<KanbanOrderCardProps> = ({
             <button
               type="button"
               onClick={onAccept}
-              className="h-7 px-2.5 rounded bg-[#ae001a] hover:bg-[#d2272f] text-white text-[10px] font-bold uppercase tracking-wider transition-colors shadow-xs flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer shrink-0"
+              className="w-7 h-7 rounded flex items-center justify-center bg-[#ae001a] hover:bg-[#d2272f] text-white transition-colors shadow-xs cursor-pointer shrink-0"
               title="Accept and inject into POS"
             >
-              <span className="material-symbols-outlined text-[14px] leading-none">check</span>
-              <span>Accept</span>
+              <span className="material-symbols-outlined text-[18px] leading-none">check</span>
             </button>
           )}
 
@@ -1829,10 +2412,10 @@ const KanbanOrderCard: React.FC<KanbanOrderCardProps> = ({
             <button
               type="button"
               onClick={() => onTransition('in_preparation')}
-              className="h-7 px-2.5 rounded bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold uppercase tracking-wider transition-colors shadow-xs flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer shrink-0"
+              className="w-7 h-7 rounded flex items-center justify-center bg-amber-600 hover:bg-amber-700 text-white transition-colors shadow-xs cursor-pointer shrink-0"
+              title="Start Prep"
             >
-              <span className="material-symbols-outlined text-[14px] leading-none">skillet</span>
-              <span>Start Prep</span>
+              <span className="material-symbols-outlined text-[18px] leading-none">skillet</span>
             </button>
           )}
 
@@ -1842,10 +2425,10 @@ const KanbanOrderCard: React.FC<KanbanOrderCardProps> = ({
               <button
                 type="button"
                 onClick={() => onTransition('ready')}
-                className="h-7 px-2.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold uppercase tracking-wider transition-colors shadow-xs flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer shrink-0"
+                className="w-7 h-7 rounded flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-xs cursor-pointer shrink-0"
+                title="Mark Ready"
               >
-                <span className="material-symbols-outlined text-[14px] leading-none">notifications_active</span>
-                <span>Mark Ready</span>
+                <span className="material-symbols-outlined text-[18px] leading-none">notifications_active</span>
               </button>
             )}
 
@@ -1856,10 +2439,10 @@ const KanbanOrderCard: React.FC<KanbanOrderCardProps> = ({
               <button
                 type="button"
                 onClick={() => onTransition('completed')}
-                className="h-7 px-2.5 rounded bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold uppercase tracking-wider transition-colors shadow-xs flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer shrink-0"
+                className="w-7 h-7 rounded flex items-center justify-center bg-green-600 hover:bg-green-700 text-white transition-colors shadow-xs cursor-pointer shrink-0"
+                title="Complete Order"
               >
-                <span className="material-symbols-outlined text-[14px] leading-none">verified</span>
-                <span>Complete</span>
+                <span className="material-symbols-outlined text-[18px] leading-none">verified</span>
               </button>
             )}
         </div>

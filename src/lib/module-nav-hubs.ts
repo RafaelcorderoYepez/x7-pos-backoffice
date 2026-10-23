@@ -292,7 +292,7 @@ export const MODULE_NAV_HUBS: ModuleNavHub[] = [
     hubLabel: 'ONLINE ORDERING COMMAND HUB',
     title: 'Online Ordering Command Hub',
     category: 'Commerce',
-    icon: 'storefront',
+    icon: 'space_dashboard',
     description: 'Centralized operational hub for digital storefronts, multi-tenant web portals, menu catalogs, digital payments, live dispatch orders, and delivery logistics.',
     items: [
       { featureId: 'online-stores', label: 'ONLINE STORES', icon: 'storefront', live: true, description: 'Manage digital storefronts, subdomains, themes, currency and operational status.' },
@@ -300,7 +300,7 @@ export const MODULE_NAV_HUBS: ModuleNavHub[] = [
       { featureId: 'online-menus', label: 'MENUS', icon: 'restaurant_menu', live: true, description: 'Curated digital menus, seasonal offerings and time-based availability.' },
       { featureId: 'online-menu-categories', label: 'CATEGORIES', icon: 'category', live: true, description: 'Menu taxonomy, sections, families and dish categorization.' },
       { featureId: 'online-menu-items', label: 'MENU ITEMS', icon: 'restaurant', live: true, description: 'Online dish catalog, pricing, modifier linkages and stock availability.' },
-      { featureId: 'online-orders', label: 'ONLINE ORDERS', icon: 'shopping_bag', live: true, description: 'Live incoming web orders, customer tracking and dispatch statuses.' },
+      { featureId: 'online-orders', label: 'ONLINE ORDERS', icon: 'shopping_cart', live: true, description: 'Live incoming web orders, customer tracking and dispatch statuses.' },
       { featureId: 'online-order-items', label: 'ORDER ITEMS', icon: 'receipt_long', live: false, description: 'Detailed cart item breakdown, custom modifiers and customer instructions.' },
     ],
   },

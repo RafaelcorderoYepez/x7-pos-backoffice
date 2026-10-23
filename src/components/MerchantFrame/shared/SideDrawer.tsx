@@ -33,7 +33,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="h-full w-full bg-white shadow-2xl flex flex-col animate-fade-in font-sans"
+        className="h-full w-full bg-white shadow-2xl flex flex-col overflow-hidden animate-fade-in font-sans"
         style={{ maxWidth }}
       >
         <div className="bg-[#222222] p-4 text-white flex justify-between items-center gap-4 shrink-0">

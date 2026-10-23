@@ -63,7 +63,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
 
   // Filters and view
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [stationTypeFilter, setStationTypeFilter] = useState<string>('All');
+  const [selectedStationTypes, setSelectedStationTypes] = useState<string[]>([]);
   const [displayModeFilter, setDisplayModeFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
@@ -97,7 +97,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
 
   const [prevFilterState, setPrevFilterState] = useState({
     searchQuery,
-    stationTypeFilter,
+    selectedStationTypes,
     displayModeFilter,
     statusFilter,
     pageSize,
@@ -105,20 +105,33 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
 
   if (
     searchQuery !== prevFilterState.searchQuery ||
-    stationTypeFilter !== prevFilterState.stationTypeFilter ||
+    selectedStationTypes !== prevFilterState.selectedStationTypes ||
     displayModeFilter !== prevFilterState.displayModeFilter ||
     statusFilter !== prevFilterState.statusFilter ||
     pageSize !== prevFilterState.pageSize
   ) {
     setPrevFilterState({
       searchQuery,
-      stationTypeFilter,
+      selectedStationTypes,
       displayModeFilter,
       statusFilter,
       pageSize,
     });
     setCurrentPage(1);
   }
+
+  const handleToggleStationType = (typeKey: string) => {
+    if (typeKey === 'All') {
+      setSelectedStationTypes([]);
+    } else {
+      setSelectedStationTypes((prev) =>
+        prev.includes(typeKey)
+          ? prev.filter((t) => t !== typeKey)
+          : [...prev, typeKey]
+      );
+    }
+    setCurrentPage(1);
+  };
 
   // Edit and Create Drawer / Modal States
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
@@ -192,6 +205,8 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
           displayMode: (st.displayMode ?? st.display_mode ?? 'AUTO') as KitchenDisplayMode,
           display_order: Number(st.displayOrder ?? st.display_order ?? 1),
           displayOrder: Number(st.displayOrder ?? st.display_order ?? 1),
+          station_number: Number(st.stationNumber ?? st.station_number ?? st.displayOrder ?? st.display_order ?? st.id),
+          stationNumber: Number(st.stationNumber ?? st.station_number ?? st.displayOrder ?? st.display_order ?? st.id),
           printer_name: (st.printerName ?? st.printer_name ?? null) as string | null,
           printerName: (st.printerName ?? st.printer_name ?? null) as string | null,
           created_at: String(st.createdAt ?? st.created_at ?? new Date().toISOString()),
@@ -252,9 +267,10 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
       `#kst-${station.id}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (station.printer_name && station.printer_name.toLowerCase().includes(searchQuery.toLowerCase()));
 
+    const currentType = (station.station_type || station.stationType)?.toUpperCase() || '';
     const matchesType =
-      stationTypeFilter === 'All' ||
-      (station.station_type || station.stationType)?.toUpperCase() === stationTypeFilter.toUpperCase();
+      selectedStationTypes.length === 0 ||
+      selectedStationTypes.some((t) => t.toUpperCase() === currentType);
     const matchesMode = displayModeFilter === 'All' || station.display_mode === displayModeFilter;
     const matchesStatus =
       statusFilter === 'Deleted'
@@ -433,28 +449,28 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     switch (type) {
       case 'HOT':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold bg-red-100 text-red-800 border border-red-200">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-red-100 text-red-800 border border-red-200">
             <span className="material-symbols-outlined text-[14px]">local_fire_department</span>
             HOT LINE
           </span>
         );
       case 'COLD':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold bg-cyan-100 text-cyan-800 border border-cyan-200">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-cyan-100 text-cyan-800 border border-cyan-200">
             <span className="material-symbols-outlined text-[14px]">ac_unit</span>
             COLD PREP
           </span>
         );
       case 'BAR':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">
             <span className="material-symbols-outlined text-[14px]">local_bar</span>
             BAR & DRINKS
           </span>
         );
       case 'DESSERT':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold bg-pink-100 text-pink-800 border border-pink-200">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-pink-100 text-pink-800 border border-pink-200">
             <span className="material-symbols-outlined text-[14px]">cake</span>
             DESSERTS
           </span>
@@ -462,7 +478,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
       case 'EXPO':
       case 'PACKING':
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 border border-purple-200">
             <span className="material-symbols-outlined text-[14px]">check_circle</span>
             EXPO / PASS
           </span>
@@ -470,7 +486,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
       case 'PREP':
       default:
         return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
             <span className="material-symbols-outlined text-[14px]">flatware</span>
             PREP KITCHEN
           </span>
@@ -483,28 +499,28 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     switch (mode) {
       case 'AUTO':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wider">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200 uppercase tracking-wider">
             <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
             AUTO DISPATCH
           </span>
         );
       case 'MANUAL':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-wider">
             <span className="w-2 h-2 rounded-full bg-amber-500" />
             MANUAL QUEUE
           </span>
         );
       case 'SUMMARY':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200 uppercase tracking-wider">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-purple-50 text-purple-700 border border-purple-200 uppercase tracking-wider">
             <span className="w-2 h-2 rounded-full bg-purple-500" />
             SUMMARY VIEW
           </span>
         );
       case 'GRID':
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
             GRID MATRIX
           </span>
@@ -549,7 +565,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
       {/* 1.5 Real-Time Station KPI Health Header Strip (3 cards aligned in 1 horizontal row) */}
       <div className="grid grid-cols-3 gap-4 w-full">
         {/* KPI 1: Active Stations */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
               <span className="material-symbols-outlined text-xl">soup_kitchen</span>
@@ -569,7 +585,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
         </div>
 
         {/* KPI 2: Printers Bound */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
               <span className="material-symbols-outlined text-xl">print</span>
@@ -589,7 +605,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
         </div>
 
         {/* KPI 3: Expo / Pass Stations */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center border border-purple-200 shrink-0">
               <span className="material-symbols-outlined text-xl">check_circle</span>
@@ -732,9 +748,9 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
             {/* All Pill */}
             <button
               type="button"
-              onClick={() => setStationTypeFilter('All')}
+              onClick={() => handleToggleStationType('All')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                stationTypeFilter === 'All'
+                selectedStationTypes.length === 0
                   ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
                   : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
               }`}
@@ -742,7 +758,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
               <span>All</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  stationTypeFilter === 'All' ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
+                  selectedStationTypes.length === 0 ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
                 }`}
               >
                 {stationTypeCounts.all}
@@ -752,18 +768,18 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
             {/* HOT LINE Pill (Icon: local_fire_department) */}
             <button
               type="button"
-              onClick={() => setStationTypeFilter('HOT')}
+              onClick={() => handleToggleStationType('HOT')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                stationTypeFilter === 'HOT'
+                selectedStationTypes.includes('HOT')
                   ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                  : 'bg-amber-50/50 text-amber-800 border-amber-200 hover:bg-amber-100/50 hover:text-amber-900'
+                  : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">local_fire_department</span>
               <span>HOT LINE</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  stationTypeFilter === 'HOT' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  selectedStationTypes.includes('HOT') ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 {stationTypeCounts.hot}
@@ -773,18 +789,18 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
             {/* COLD PREP Pill (Icon: ac_unit) */}
             <button
               type="button"
-              onClick={() => setStationTypeFilter('COLD')}
+              onClick={() => handleToggleStationType('COLD')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                stationTypeFilter === 'COLD'
+                selectedStationTypes.includes('COLD')
                   ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                  : 'bg-blue-50/50 text-blue-800 border-blue-200 hover:bg-blue-100/50 hover:text-blue-900'
+                  : 'bg-white text-blue-800 border-blue-200 hover:bg-blue-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">ac_unit</span>
               <span>COLD PREP</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  stationTypeFilter === 'COLD' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+                  selectedStationTypes.includes('COLD') ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
                 }`}
               >
                 {stationTypeCounts.cold}
@@ -794,18 +810,18 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
             {/* EXPO / PASS Pill (Icon: check_circle) */}
             <button
               type="button"
-              onClick={() => setStationTypeFilter('EXPO')}
+              onClick={() => handleToggleStationType('EXPO')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                stationTypeFilter === 'EXPO'
+                selectedStationTypes.includes('EXPO')
                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                  : 'bg-emerald-50/50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/50 hover:text-emerald-900'
+                  : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">check_circle</span>
               <span>EXPO / PASS</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  stationTypeFilter === 'EXPO' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                  selectedStationTypes.includes('EXPO') ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
                 }`}
               >
                 {stationTypeCounts.expo}
@@ -815,18 +831,18 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
             {/* BAR & DRINKS Pill (Icon: local_bar) */}
             <button
               type="button"
-              onClick={() => setStationTypeFilter('BAR')}
+              onClick={() => handleToggleStationType('BAR')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                stationTypeFilter === 'BAR'
+                selectedStationTypes.includes('BAR')
                   ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                  : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100/60 hover:text-purple-900'
+                  : 'bg-white text-purple-800 border-purple-200 hover:bg-purple-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">local_bar</span>
               <span>BAR & DRINKS</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  stationTypeFilter === 'BAR' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'
+                  selectedStationTypes.includes('BAR') ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'
                 }`}
               >
                 {stationTypeCounts.bar}
@@ -836,18 +852,18 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
             {/* DESSERTS Pill (Icon: cake) */}
             <button
               type="button"
-              onClick={() => setStationTypeFilter('DESSERT')}
+              onClick={() => handleToggleStationType('DESSERT')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                stationTypeFilter === 'DESSERT'
+                selectedStationTypes.includes('DESSERT')
                   ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
-                  : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100/60 hover:text-rose-900'
+                  : 'bg-white text-rose-800 border-rose-200 hover:bg-rose-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">cake</span>
               <span>DESSERTS</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  stationTypeFilter === 'DESSERT' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-800'
+                  selectedStationTypes.includes('DESSERT') ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-800'
                 }`}
               >
                 {stationTypeCounts.dessert}
@@ -1067,10 +1083,10 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
                 <table className="w-full table-fixed text-left border-collapse text-xs font-sans">
                   <thead>
                     <tr className="bg-[#ece8e0] text-[#5f5e5e] font-sans font-semibold text-label-caps text-xs border-b border-[#e8e2d8]">
-                      {visibleColumns.refDate && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e] w-32 min-w-[110px]`}>Station Ref & Date</th>}
+                      {visibleColumns.refDate && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e] w-26 min-w-[110px]`}>Station Ref & Date</th>}
                       {visibleColumns.nameSequence && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e] w-auto min-w-[180px]`}>Station Name & Sequence</th>}
                       {visibleColumns.stationType && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e] w-36 min-w-[110px]`}>Station Type Role</th>}
-                      {visibleColumns.displayMode && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e] w-32 min-w-[100px]`}>KDS Display Mode</th>}
+                      {visibleColumns.displayMode && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e] w-36 min-w-[100px]`}>KDS Display Mode</th>}
                       {visibleColumns.printer && <th className={`${getDensityPadding(rowDensity)} text-[#5f5e5e] w-40 min-w-[120px]`}>Hardware Printer Binding</th>}
                       {visibleColumns.activeRouting && <th className={`${getDensityPadding(rowDensity)} text-center text-[#5f5e5e] w-28 min-w-[90px]`}>Active Routing</th>}
                       {visibleColumns.status && <th className={`${getDensityPadding(rowDensity)} text-center text-[#5f5e5e] w-28 min-w-[90px]`}>Lifecycle Status</th>}

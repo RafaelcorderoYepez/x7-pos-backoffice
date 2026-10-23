@@ -1,12 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SideDrawer } from '../../../shared/SideDrawer';
 import { ModalFormError } from '../../../shared/AppModal';
+
+export interface OnlineOrderKitchenStation {
+  id: number;
+  name: string;
+}
+
+export interface OnlineOrderKitchenTicket {
+  id: number;
+  stationId?: number | null;
+  priority?: number;
+  businessStatus?: string;
+  station?: OnlineOrderKitchenStation | null;
+}
+
+export interface KitchenStationOption {
+  id: number;
+  name: string;
+  stationType?: string;
+  displayOrder?: number;
+  stationNumber?: number;
+}
 
 export interface OnlineOrderCustomer {
   id: number;
   name: string;
   email?: string;
   phone?: string;
+  address?: string;
+  city?: string;
 }
 
 export interface OnlineOrderStore {
@@ -73,30 +96,54 @@ export interface OnlineOrderDetailData {
   store?: OnlineOrderStore;
   order?: OnlineOrderMasterPos | null;
   items?: OnlineOrderItemDetail[];
+  kitchenOrders?: OnlineOrderKitchenTicket[];
 }
 
 interface OnlineOrderDetailsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   order: OnlineOrderDetailData | null;
-  onAcceptOrder?: (orderId: number) => Promise<void>;
+  kitchenStations?: KitchenStationOption[];
+  onAcceptOrder?: (orderId: number, stationId?: number) => Promise<void>;
   onCancelOrder?: (orderId: number) => Promise<void>;
   onTransitionStatus?: (
     orderId: number,
     nextStatus: OnlineOrderDetailData['fulfillmentStatus']
   ) => Promise<void>;
+  onEditOrder?: (order: OnlineOrderDetailData) => void;
 }
+
+export const isOnlineOrderEditable = (
+  order?: { fulfillmentStatus?: string } | null
+): boolean => {
+  if (!order || !order.fulfillmentStatus) return false;
+  return order.fulfillmentStatus === 'received' || order.fulfillmentStatus === 'accepted';
+};
 
 export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> = ({
   isOpen,
   onClose,
   order,
+  kitchenStations = [],
   onAcceptOrder,
   onCancelOrder,
   onTransitionStatus,
+  onEditOrder,
 }) => {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState<boolean>(false);
+
+  // Active / selected kitchen station
+  const currentKitchenStationId =
+    order?.kitchenOrders?.[0]?.stationId ??
+    order?.kitchenOrders?.[0]?.station?.id ??
+    null;
+
+  const currentKitchenStationName =
+    order?.kitchenOrders?.[0]?.station?.name ??
+    kitchenStations.find((s) => s.id === currentKitchenStationId)?.name ??
+    null;
 
   if (!isOpen || !order) return null;
 
@@ -154,7 +201,7 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
       )}
 
       {/* Content Body */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-[#faf8f5]">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-5 bg-[#faf8f5]">
         {/* 1. Status Badges Bar */}
         <div className="bg-white p-4 rounded border border-[#e8e2d8] shadow-xs flex flex-wrap items-center justify-between gap-3">
           {/* Order Type */}
@@ -265,9 +312,12 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
             <div className="text-xs text-[#5f5e5e] mt-1 font-mono">
               {order.customer?.email || 'No email provided'}
             </div>
-            {order.customer?.phone && (
+            <div className="text-xs text-[#5f5e5e] mt-0.5 font-mono">
+              Phone: {order.customer?.phone || 'No phone provided'}
+            </div>
+            {order.customer?.address && (
               <div className="text-xs text-[#5f5e5e] mt-0.5 font-mono">
-                Phone: {order.customer.phone}
+                Address: {order.customer.address}{order.customer.city ? `, ${order.customer.city}` : ''}
               </div>
             )}
           </div>
@@ -293,20 +343,26 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
           </div>
         </div>
 
-        {/* Special Instructions Notes */}
-        {order.notes && (
-          <div className="bg-amber-50/70 border border-amber-200 rounded p-3.5 flex items-start gap-3">
-            <span className="material-symbols-outlined text-amber-700 text-lg shrink-0 mt-0.5">
-              speaker_notes
-            </span>
-            <div>
-              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-900">
-                Customer Instructions / Notes:
+        {/* Special Instructions Notes - Prominently Highlighted */}
+        {order.notes ? (
+          <div className="bg-amber-100/90 border-2 border-amber-500 rounded-xl p-4 shadow-xs flex items-start gap-3.5">
+            <div className="w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <span className="material-symbols-outlined text-lg">speaker_notes</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-sm text-amber-800">priority_high</span>
+                <span>CUSTOMER INSTRUCTIONS / KITCHEN NOTES</span>
               </div>
-              <p className="text-xs text-amber-950 mt-1 italic whitespace-pre-wrap">
+              <p className="text-xs font-bold text-amber-950 mt-1.5 italic whitespace-pre-wrap bg-white/80 p-2.5 rounded-lg border border-amber-300 shadow-2xs">
                 "{order.notes}"
               </p>
             </div>
+          </div>
+        ) : (
+          <div className="bg-white p-3 rounded-lg border border-[#e8e2d8] text-xs text-[#8c857b] flex items-center gap-2 italic">
+            <span className="material-symbols-outlined text-sm text-[#8c857b]">speaker_notes_off</span>
+            <span>No customer special instructions provided for this order.</span>
           </div>
         )}
 
@@ -495,15 +551,44 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
       </div>
 
       {/* Standardized Drawer Footer */}
-      <div className="bg-white p-4 border-t border-[#e8e2d8] flex items-center justify-between gap-3 shrink-0">
-        <button
-          type="button"
-          onClick={onClose}
-          disabled={isProcessing}
-          className="h-10 px-4 border border-[#e8e2d8] rounded font-semibold text-xs text-[#1d1c17] hover:bg-[#f8f5ee] transition-colors disabled:opacity-50 cursor-pointer inline-flex items-center justify-center"
-        >
-          Close
-        </button>
+      <div className="bg-white p-4 border-t border-[#e8e2d8] flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isProcessing}
+            className="h-10 px-4 border border-[#e8e2d8] rounded font-semibold text-xs text-[#1d1c17] hover:bg-[#f8f5ee] transition-colors disabled:opacity-50 cursor-pointer inline-flex items-center justify-center"
+          >
+            Close
+          </button>
+
+          {/* Print Kitchen Receipt button */}
+          <button
+            type="button"
+            onClick={() => setIsPrintModalOpen(true)}
+            className="h-10 px-3.5 border border-[#d5cfc4] rounded font-bold text-xs text-[#1d1c17] hover:bg-[#f8f5ee] hover:border-[#ae001a] hover:text-[#ae001a] transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 shadow-2xs"
+            title="Print Kitchen Expedite Receipt"
+          >
+            <span className="material-symbols-outlined text-[17px]">print</span>
+            <span>Print Receipt</span>
+          </button>
+
+          {/* Edit Order button - only in permitted fulfillment stages */}
+          {onEditOrder && isOnlineOrderEditable(order) && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onEditOrder(order);
+              }}
+              className="h-10 px-3.5 border border-[#d5cfc4] rounded font-bold text-xs text-[#1d1c17] hover:bg-slate-50 transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 shadow-2xs"
+              title="Edit online order parameters"
+            >
+              <span className="material-symbols-outlined text-[17px]">edit</span>
+              <span>Edit Order</span>
+            </button>
+          )}
+        </div>
 
         <div className="flex items-center gap-2.5">
           {/* Cancel Button: Only allowed prior to POS injection (when RECEIVED) */}
@@ -577,6 +662,216 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
             )}
         </div>
       </div>
+
+      {/* Kitchen Receipt Thermal Slip Modal */}
+      {isPrintModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in font-sans">
+          <style>{`
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #kitchen-printable-ticket, #kitchen-printable-ticket * {
+                visibility: visible !important;
+              }
+              #kitchen-printable-ticket {
+                position: fixed !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                max-width: 80mm !important;
+                margin: 0 auto !important;
+                padding: 8px !important;
+                border: none !important;
+                box-shadow: none !important;
+                background: white !important;
+                color: black !important;
+              }
+            }
+          `}</style>
+          <div className="bg-white rounded-2xl shadow-2xl border border-[#e8e2d8] max-w-md w-full overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="bg-[#222222] text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[#ae001a]">print</span>
+                <span className="text-sm font-bold uppercase tracking-wider">
+                  Kitchen Receipt Preview
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPrintModalOpen(false)}
+                className="text-zinc-400 hover:text-white p-1 rounded transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            {/* Printable Thermal Receipt Container */}
+            <div className="p-6 overflow-y-auto flex-1 bg-[#f7f5f0]">
+              <div
+                id="kitchen-printable-ticket"
+                className="bg-white border-2 border-dashed border-zinc-400 p-6 rounded shadow-sm text-black font-mono text-xs space-y-4"
+              >
+                {/* Header */}
+                <div className="text-center border-b border-dashed border-zinc-400 pb-3 space-y-1">
+                  <div className="text-sm font-black tracking-widest uppercase text-black">
+                    *** KITCHEN EXPEDITE TICKET ***
+                  </div>
+                  <div className="text-xs font-bold text-black">
+                    {order.store?.subdomain ? `${order.store.subdomain}.x7pos.com` : 'ONLINE STORE'} (Store #{order.storeId})
+                  </div>
+                  <div className="text-sm font-black text-black">
+                    ONLINE ORDER #{order.id}
+                  </div>
+                  {order.orderId ? (
+                    <div className="text-xs font-bold text-black">
+                      POS BIND: #ORD-{order.orderId}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-zinc-600 font-bold">
+                      POS BIND: PENDING INJECTION
+                    </div>
+                  )}
+                </div>
+
+                {/* Meta Info */}
+                <div className="grid gap-x-2 gap-y-1.5 text-[11px] border-b border-dashed border-zinc-400 pb-3">
+                  <div>
+                    <span className="text-zinc-600 font-bold">PLACED:</span>{' '}
+                    <span className="font-bold text-black">{formatTimestamp(order.placedAt || order.createdAt)}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-600 font-bold">TYPE:</span>{' '}
+                    <span className="font-black uppercase border border-black px-1.5 py-0.5 rounded text-black bg-zinc-100">
+                      {order.type}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-600 font-bold">CUSTOMER:</span>{' '}
+                    <span className="font-bold text-black">{order.customer?.name || `Customer #${order.customerId}`}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-600 font-bold">PHONE:</span>{' '}
+                    <span className="font-bold text-black">{order.customer?.phone || '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-600 font-bold">PAYMENT:</span>{' '}
+                    <span className="font-bold text-black uppercase">{order.paymentStatus || 'PENDING'}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-600 font-bold">STATUS:</span>{' '}
+                    <span className="font-bold text-black uppercase">{order.fulfillmentStatus?.replace(/_/g, ' ') || 'RECEIVED'}</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-600 font-bold">KITCHEN STATION:</span>{' '}
+                    <span className="font-bold text-black uppercase">
+                      {currentKitchenStationName || 'HOT LINE (DEFAULT)'}
+                    </span>
+                  </div>
+                  {order.type === 'delivery' && (
+                    <div className="col-span-2 text-black">
+                      <span className="text-zinc-600 font-bold">DELIVERY ADDR:</span>{' '}
+                      <span className="font-bold">
+                        {order.customer?.address
+                          ? `${order.customer.address}${order.customer.city ? `, ${order.customer.city}` : ''}`
+                          : '—'}
+                      </span>
+                    </div>
+                  )}
+                  {order.scheduledAt && (
+                    <div className="col-span-2 text-black font-bold">
+                      SCHEDULED: {formatTimestamp(order.scheduledAt)}
+                    </div>
+                  )}
+                </div>
+
+                {/* PROMINENT SPECIAL NOTES DISPLAY (THERMAL MONOCHROME COMPLIANT) */}
+                {order.notes ? (
+                  <div className="border-2 border-black bg-white text-black p-2.5 my-2 space-y-1 font-mono">
+                    <div className="text-[11px] font-black uppercase tracking-wider text-black flex items-center justify-between border-b border-black pb-1">
+                      <span>*** CUSTOMER INSTRUCTIONS / NOTES ***</span>
+                      <span className="font-bold">[!]</span>
+                    </div>
+                    <div className="text-xs font-bold uppercase p-1 text-black whitespace-pre-wrap">
+                      "{order.notes}"
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-zinc-500 italic text-center py-1">
+                    (No special customer instructions)
+                  </div>
+                )}
+
+                {/* Items Table */}
+                <div className="border-t border-dashed border-zinc-400 pt-3 space-y-2">
+                  <div className="flex justify-between font-bold text-[11px] text-zinc-600 border-b border-zinc-200 pb-1">
+                    <span>QTY & ITEM</span>
+                    <span>AMOUNT</span>
+                  </div>
+                  {order.items && order.items.length > 0 ? (
+                    order.items.map((it, idx) => (
+                      <div key={it.id || idx} className="space-y-0.5">
+                        <div className="flex justify-between font-bold text-xs">
+                          <span>
+                            {it.quantity}x {it.product?.name || `Product #${it.productId}`}
+                          </span>
+                          <span>{formatCurrency((it.quantity || 1) * (it.unitPrice || 0))}</span>
+                        </div>
+                        {it.variant && (
+                          <div className="text-[10px] text-zinc-600 pl-4">
+                            Option: {it.variant.name}
+                          </div>
+                        )}
+                        {it.notes && (
+                          <div className="text-[10px] text-black font-bold pl-4">
+                            * Note: {it.notes}
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center text-zinc-400 italic py-2">
+                      No items listed on order
+                    </div>
+                  )}
+                </div>
+
+                {/* Total Amount */}
+                <div className="border-t-2 border-zinc-800 pt-3 flex justify-between items-center text-sm font-black">
+                  <span>TOTAL AMOUNT:</span>
+                  <span className="text-base">{formatCurrency(order.totalAmount)}</span>
+                </div>
+
+                {/* Footer Receipt Bar */}
+                <div className="text-center text-[10px] text-zinc-500 border-t border-dashed border-zinc-400 pt-2">
+                  <div>Printed via X7POS Commerce Kitchen Dispatch</div>
+                  <div>{new Date().toLocaleString()}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 bg-white border-t border-[#e8e2d8] flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setIsPrintModalOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-zinc-600 hover:text-zinc-900 cursor-pointer"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-5 py-2.5 rounded-lg bg-[#ae001a] hover:bg-[#d2272f] text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">print</span>
+                <span>Send to Printer</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SideDrawer>
   );
 };

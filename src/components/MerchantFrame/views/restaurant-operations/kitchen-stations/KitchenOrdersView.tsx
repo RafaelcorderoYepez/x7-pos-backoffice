@@ -251,7 +251,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
     return 'ALL';
   });
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'pending' | 'started' | 'completed' | 'cancelled'>('ALL');
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>(() => {
     const saved = sessionStorage.getItem('kds_orders_search_query');
     if (saved) {
@@ -315,6 +315,24 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [selectedReason, setSelectedReason] = useState<KitchenCancellationReason>('data_entry_error');
   const [cancellationNotes, setCancellationNotes] = useState<string>('');
   const [cancelSubmitting, setCancelSubmitting] = useState<boolean>(false);
+
+  const handleToggleStatus = (statusKey: string) => {
+    if (statusKey === 'ALL') {
+      setSelectedStatuses([]);
+      setCancellationFilter('ALL');
+    } else {
+      setSelectedStatuses(prev => {
+        const next = prev.includes(statusKey)
+          ? prev.filter(s => s !== statusKey)
+          : [...prev, statusKey];
+        if (!next.includes('cancelled')) {
+          setCancellationFilter('ALL');
+        }
+        return next;
+      });
+    }
+    setCurrentPage(1);
+  };
 
   // Detail Inspection Modal (Audit Trail & Line-Items)
   const [inspectingTicket, setInspectingTicket] = useState<KitchenOrderTicket | null>(null);
@@ -699,9 +717,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const filteredOrders = useMemo(() => {
     let result = stationOrders;
 
-    // 1. Status Filter
-    if (statusFilter !== 'ALL') {
-      result = result.filter(o => o.businessStatus === statusFilter);
+    // 1. Status Filter (Multi-select)
+    if (selectedStatuses.length > 0) {
+      result = result.filter(o => selectedStatuses.includes(o.businessStatus));
     }
 
     // 2. Cancellation Reason Filter (Audit)
@@ -805,7 +823,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     });
 
     return [...activeOrders, ...completedOrders, ...cancelledOrders];
-  }, [stationOrders, statusFilter, cancellationFilter, startTime, endTime, searchQuery]);
+  }, [stationOrders, selectedStatuses, cancellationFilter, startTime, endTime, searchQuery]);
 
   // Paginated records for table view
   const paginatedOrders = useMemo(() => {
@@ -1522,7 +1540,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       {/* 1.5 Real-Time Summary KPI Banner (4 identical cards to Kitchen Stations without text clipping) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Active Kitchen Orders */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-red-100 text-[#ae001a] border border-red-200 shrink-0 whitespace-nowrap">
             ACTIVE
           </span>
@@ -1542,7 +1560,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
 
         {/* KPI 2: Avg Preparation Time */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className={`absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase border shrink-0 whitespace-nowrap ${
             avgPreparationTime.isBottleneck ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-blue-100 text-blue-800 border-blue-200'
           }`}>
@@ -1566,7 +1584,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
 
         {/* KPI 3: Cancellation Count */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-200 shrink-0 whitespace-nowrap">
             {cancelledOrdersCount > 0 ? 'VOID/WASTE' : 'ZERO VOIDS'}
           </span>
@@ -1586,7 +1604,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
 
         {/* KPI 4: Dispatched Orders */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 whitespace-nowrap">
             DISPATCHED
           </span>
@@ -1830,13 +1848,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* All Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('ALL');
-                setCancellationFilter('ALL');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('ALL')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'ALL'
+                selectedStatuses.length === 0
                   ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
                   : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
               }`}
@@ -1844,7 +1858,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
               <span>All</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
+                  selectedStatuses.length === 0 ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
                 }`}
               >
                 {statusCounts.all}
@@ -1854,22 +1868,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* PENDING Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('pending');
-                setCancellationFilter('ALL');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('pending')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'pending'
+                selectedStatuses.includes('pending')
                   ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                  : 'bg-amber-50/50 text-amber-800 border-amber-200 hover:bg-amber-100/50 hover:text-amber-900'
+                  : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">schedule</span>
               <span>PENDING</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  selectedStatuses.includes('pending') ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 {statusCounts.pending}
@@ -1879,22 +1889,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* STARTED Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('started');
-                setCancellationFilter('ALL');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('started')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'started'
+                selectedStatuses.includes('started')
                   ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                  : 'bg-blue-50/50 text-blue-800 border-blue-200 hover:bg-blue-100/50 hover:text-blue-900'
+                  : 'bg-white text-blue-800 border-blue-200 hover:bg-blue-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">play_circle</span>
               <span>STARTED</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'started' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+                  selectedStatuses.includes('started') ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
                 }`}
               >
                 {statusCounts.started}
@@ -1904,22 +1910,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* COMPLETED Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('completed');
-                setCancellationFilter('ALL');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('completed')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'completed'
+                selectedStatuses.includes('completed')
                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                  : 'bg-emerald-50/50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/50 hover:text-emerald-900'
+                  : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">check_circle</span>
               <span>COMPLETED</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'completed' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                  selectedStatuses.includes('completed') ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
                 }`}
               >
                 {statusCounts.completed}
@@ -1929,21 +1931,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* CANCELLED Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('cancelled');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('cancelled')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'cancelled'
+                selectedStatuses.includes('cancelled')
                   ? 'bg-[#ae001a] text-white border-[#ae001a] shadow-xs'
-                  : 'bg-red-50 text-[#ae001a] border-red-200 hover:bg-red-100/60 hover:text-[#900015]'
+                  : 'bg-white text-[#ae001a] border-red-200 hover:bg-red-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">cancel</span>
               <span>CANCELLED</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'cancelled' ? 'bg-white/20 text-white' : 'bg-red-100 text-[#ae001a]'
+                  selectedStatuses.includes('cancelled') ? 'bg-white/20 text-white' : 'bg-red-100 text-[#ae001a]'
                 }`}
               >
                 {statusCounts.cancelled}
@@ -1951,7 +1950,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             </button>
 
             {/* Cancellation Reasons Filter ONLY when Cancelled filter is active */}
-            {statusFilter === 'cancelled' && (
+            {selectedStatuses.includes('cancelled') && (
               <select
                 value={cancellationFilter}
                 onChange={e => setCancellationFilter(e.target.value as KitchenCancellationReason | 'ALL')}

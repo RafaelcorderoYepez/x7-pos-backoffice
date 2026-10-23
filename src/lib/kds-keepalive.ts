@@ -13,11 +13,13 @@ export async function sendStationKeepaliveHeartbeat(
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
   try {
     const token = getAccessToken();
+    if (!token) return;
+
     await fetch(`${API_BASE}/kitchen-station/${stationId}/heartbeat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Authorization: `Bearer ${token}`,
       },
     });
   } catch (err) {

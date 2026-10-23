@@ -96,8 +96,25 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
   // Filters & Views
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedMenuFilter, setSelectedMenuFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'All' | 'available' | 'out_of_stock' | 'overrides' | 'deleted'>('All');
+  const [selectedStatusFilters, setSelectedStatusFilters] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+
+  const handleToggleStatusFilter = (statusKey: string) => {
+    if (statusKey === 'All') {
+      setSelectedStatusFilters([]);
+      setCurrentPage(1);
+      return;
+    }
+    setSelectedStatusFilters((prev) => {
+      const exists = prev.includes(statusKey);
+      if (exists) {
+        return prev.filter((s) => s !== statusKey);
+      } else {
+        return [...prev, statusKey];
+      }
+    });
+    setCurrentPage(1);
+  };
 
   // Table options & pagination
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
@@ -382,15 +399,24 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
           return false;
         }
 
-        // Status pill filter
-        if (statusFilter === 'available') {
-          if (item.status !== 'active' || !item.isAvailable) return false;
-        } else if (statusFilter === 'out_of_stock') {
-          if (item.status !== 'active' || item.isAvailable) return false;
-        } else if (statusFilter === 'overrides') {
-          if (item.status !== 'active' || item.priceOverride === null || item.priceOverride === undefined) return false;
-        } else if (statusFilter === 'deleted') {
-          if (item.status !== 'deleted') return false;
+        // Status pill multi-select filter
+        if (selectedStatusFilters.length > 0) {
+          const matchesAny = selectedStatusFilters.some((statusKey) => {
+            if (statusKey === 'available') {
+              return item.status === 'active' && item.isAvailable;
+            }
+            if (statusKey === 'out_of_stock') {
+              return item.status === 'active' && !item.isAvailable;
+            }
+            if (statusKey === 'overrides') {
+              return item.status === 'active' && item.priceOverride !== null && item.priceOverride !== undefined;
+            }
+            if (statusKey === 'deleted') {
+              return item.status === 'deleted';
+            }
+            return false;
+          });
+          if (!matchesAny) return false;
         }
 
         // Search Query filter
@@ -428,7 +454,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
         // 3. Sequential display order
         return a.displayOrder - b.displayOrder || a.id - b.id;
       });
-  }, [menuItems, selectedMenuFilter, statusFilter, searchQuery]);
+  }, [menuItems, selectedMenuFilter, selectedStatusFilters, searchQuery]);
 
   // Group filtered items by digital menu
   const menuGroups = useMemo<DigitalMenuGroup[]>(() => {
@@ -996,7 +1022,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
       {/* 2. Hero KPIs Strip (Strict 4 columns layout: grid grid-cols-4 gap-4 w-full) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Digital Items */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center border border-blue-200 shrink-0">
               <span className="material-symbols-outlined text-xl">restaurant</span>
@@ -1016,7 +1042,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
         </div>
 
         {/* KPI 2: In-Stock Online Items */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
               <span className="material-symbols-outlined text-xl">check_circle</span>
@@ -1036,7 +1062,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
         </div>
 
         {/* KPI 3: Out-of-Stock Items */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shrink-0">
               <span className="material-symbols-outlined text-xl">block</span>
@@ -1056,7 +1082,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
         </div>
 
         {/* KPI 4: Items with Price Overrides */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center border border-purple-200 shrink-0">
               <span className="material-symbols-outlined text-xl">sell</span>
@@ -1213,20 +1239,18 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
             {/* All Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('All');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatusFilter('All')}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'All'
+                selectedStatusFilters.length === 0
                   ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
                   : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
               }`}
             >
+              <span className="material-symbols-outlined text-[13px]">done_all</span>
               <span>All</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  statusFilter === 'All' ? 'bg-white/20 text-white' : 'bg-[#e8e2d8] text-[#5f5e5e]'
+                  selectedStatusFilters.length === 0 ? 'bg-white/20 text-white' : 'bg-[#e8e2d8] text-[#5f5e5e]'
                 }`}
               >
                 {countAll}
@@ -1236,12 +1260,9 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
             {/* Available Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('available');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatusFilter('available')}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'available'
+                selectedStatusFilters.includes('available')
                   ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
                   : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
               }`}
@@ -1250,7 +1271,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
               <span>Available</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  statusFilter === 'available' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                  selectedStatusFilters.includes('available') ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
                 }`}
               >
                 {countAvailable}
@@ -1260,12 +1281,9 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
             {/* Out of Stock Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('out_of_stock');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatusFilter('out_of_stock')}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'out_of_stock'
+                selectedStatusFilters.includes('out_of_stock')
                   ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
                   : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
               }`}
@@ -1274,7 +1292,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
               <span>Out of Stock</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  statusFilter === 'out_of_stock' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  selectedStatusFilters.includes('out_of_stock') ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 {countOutOfStock}
@@ -1284,12 +1302,9 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
             {/* Price Overrides Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('overrides');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatusFilter('overrides')}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'overrides'
+                selectedStatusFilters.includes('overrides')
                   ? 'bg-purple-700 text-white border-purple-700 shadow-xs'
                   : 'bg-white text-purple-800 border-purple-200 hover:bg-purple-50'
               }`}
@@ -1298,7 +1313,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
               <span>Price Overrides</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  statusFilter === 'overrides' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'
+                  selectedStatusFilters.includes('overrides') ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-800'
                 }`}
               >
                 {kpiOverrides}
@@ -1308,12 +1323,9 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
             {/* Archived Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('deleted');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatusFilter('deleted')}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'deleted'
+                selectedStatusFilters.includes('deleted')
                   ? 'bg-red-700 text-white border-red-700 shadow-xs'
                   : 'bg-white text-red-800 border-red-200 hover:bg-red-50'
               }`}
@@ -1322,7 +1334,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
               <span>Archived</span>
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
-                  statusFilter === 'deleted' ? 'bg-white/20 text-white' : 'bg-red-100 text-red-800'
+                  selectedStatusFilters.includes('deleted') ? 'bg-white/20 text-white' : 'bg-red-100 text-red-800'
                 }`}
               >
                 {countArchived}
