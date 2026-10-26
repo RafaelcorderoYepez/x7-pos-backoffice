@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import {
   OnlineStoreSetupDrawer,
@@ -40,8 +40,7 @@ interface OnlineStoresViewProps {
   onNavigate?: (view: string) => void;
 }
 
-export const OnlineStoresView: React.FC<OnlineStoresViewProps> = ({ onNavigate }) => {
-  const navigate = useNavigate();
+export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
   const [stores, setStores] = useState<OnlineStoreItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -1425,8 +1424,8 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = ({ onNavigate }
       />
 
       {/* Delete / Archive Confirmation Modal (Exact ProductsView pattern) */}
-      {isDeleteModalOpen && storeToDelete && (
-        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
+      {isDeleteModalOpen && storeToDelete && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans" role="dialog" aria-modal="true">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
@@ -1491,12 +1490,13 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = ({ onNavigate }
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Restore Confirmation Modal (Exact ProductsView pattern) */}
-      {isRestoreModalOpen && storeToRestore && (
-        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
+      {isRestoreModalOpen && storeToRestore && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans" role="dialog" aria-modal="true">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
@@ -1558,7 +1558,8 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = ({ onNavigate }
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

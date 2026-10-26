@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
 import { KitchenDevResetButton } from './KitchenDevResetButton';
@@ -460,7 +461,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           startedAt?: string;
           order?: { diningTable?: { name?: string }; table_number?: string; waiter_name?: string; waiter?: { name?: string } };
           notes?: string;
-          station?: { name?: string };
+          station?: { id?: number | string; name?: string };
+          stationId?: number | string;
           priority?: number;
           items?: Array<{
             id: string | number;
@@ -469,6 +471,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             variant?: { name?: string };
             variantName?: string;
             quantity?: number;
+            preparedQuantity?: number;
+            prepared_quantity?: number;
             notes?: string;
             course?: string;
             preparationStatus?: string;
@@ -510,7 +514,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             createdAtMs: customerTimeRef,
             server: o.order?.waiter_name || o.order?.waiter?.name || 'Kitchen Staff',
             stationName: o.station?.name || 'General Kitchen',
-            stationId: o.stationId ?? o.station?.id,
+            stationId: o.stationId != null ? Number(o.stationId) : o.station?.id != null ? Number(o.station?.id) : undefined,
             priority: (o.priority ?? 0) >= 3 ? 'vip' : (o.priority ?? 0) === 2 ? 'urgent' : (o.priority ?? 0) === 1 ? 'high' : 'normal',
             items: (o.items || o.kitchenOrderItems || []).map((i) => {
               const prepStatusUpper = (i.preparationStatus || 'pending').toUpperCase() as PreparationStatus;
@@ -3712,8 +3716,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       </main>
 
       {/* 4. Drawer: Pacing SLA & Target Window Settings */}
-      {isPacingDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-xs animate-fade-in font-sans">
+      {isPacingDrawerOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] flex justify-end bg-black/70 backdrop-blur-xs animate-fade-in font-sans" role="dialog" aria-modal="true">
           <div className="w-full max-w-md bg-[#1a1b20] border-l-2 border-[#ae001a] h-full flex flex-col shadow-2xl">
             {/* Drawer Header */}
             <div className="p-5 border-b border-zinc-800 bg-[#212228] flex justify-between items-center">
@@ -4007,7 +4011,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       <KitchenRecallTray
         isOpen={isRecallTrayOpen}
@@ -4117,10 +4122,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       )}
 
       {/* Floating Allergy Protocol & Safety Detail Modal (Historia X7P-4212) */}
-      {selectedAllergyDetail && (
+      {selectedAllergyDetail && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
           onClick={() => setSelectedAllergyDetail(null)}
+          role="dialog"
+          aria-modal="true"
         >
           <div
             className="relative w-full max-w-md bg-[#18191e] border-2 border-red-500/80 rounded-2xl shadow-[0_0_30px_rgba(239,68,68,0.4)] overflow-hidden flex flex-col my-auto max-h-[90vh] animate-scale-up"
@@ -4236,7 +4243,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Emergency Thermal Printer Paper Fallback Simulation Modal (Historia X7P-4211) */}

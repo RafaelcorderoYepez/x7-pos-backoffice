@@ -1,4 +1,5 @@
 import type {
+  BulkCreateQRLocationsDto,
   CreateQRLocationDto,
   MerchantRef,
   QRLocation,
@@ -8,7 +9,10 @@ import type {
   UpdateQRLocationDto,
 } from '../types/qr-location';
 import {
+  buildDispatchOrderUrl,
   buildQrLandingUrl,
+  buildQrTargetUrl,
+  generateLocHash,
   generateQrAssetImage,
   syncLocationTypeWithTable,
   validateTableMerchantContext,
@@ -17,6 +21,7 @@ import {
 } from '../lib/qr-location';
 import { getAccessToken } from '../lib/auth-storage';
 import { ApiError } from '../lib/api-error';
+import { getQRMenus } from './qr-menus';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 const STORAGE_KEY = 'x7_qr_locations_mock_db';
@@ -28,19 +33,39 @@ let _cachedTables: TableRef[] = [];
 
 // Default mock seed data (used when offline, mock mode, or unauthenticated)
 export const MOCK_MERCHANTS: MerchantRef[] = [
-  { id: 1, name: 'Bistro Downtown', code: 'MCH-001' },
-  { id: 2, name: 'La Trattoria Patio', code: 'MCH-002' },
-  { id: 3, name: 'prueba1', code: 'MCH-003' },
+  {
+    id: 1,
+    name: 'Bistro Downtown',
+    code: 'MCH-001',
+    slug: 'bistro-downtown',
+    logo_url: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=120&auto=format&fit=crop&q=80',
+  },
+  {
+    id: 2,
+    name: 'La Trattoria Patio',
+    code: 'MCH-002',
+    slug: 'la-trattoria-patio',
+    logo_url: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=120&auto=format&fit=crop&q=80',
+  },
+  {
+    id: 3,
+    name: 'prueba1',
+    code: 'MCH-003',
+    slug: 'prueba1',
+    logo_url: 'https://images.unsplash.com/photo-1552566626-52f8b828add9?w=120&auto=format&fit=crop&q=80',
+  },
 ];
 
 export const MOCK_MENUS: QRMenuRef[] = [
-  { id: 101, name: 'Main Dinner & Cocktail Menu', is_active: true },
-  { id: 102, name: 'Lunch Express & Drinks Menu', is_active: true },
-  { id: 103, name: 'Patio & Terrace Special Menu', is_active: true },
-  { id: 104, name: 'Takeout & Pickup Menu', is_active: true },
+  { id: 101, name: 'Main Dinner & Cocktail Menu', is_active: true, design_theme: 'Modern Elegance', status: 'active', merchant_id: 3 },
+  { id: 102, name: 'Lunch Express & Drinks Menu', is_active: true, design_theme: 'Tokyo Minimal', status: 'active', merchant_id: 3 },
+  { id: 103, name: 'Patio & Terrace Special Menu', is_active: true, design_theme: 'Sunset Coral', status: 'active', merchant_id: 3 },
+  { id: 104, name: 'Takeout & Pickup Menu', is_active: true, design_theme: 'Artisan Bakery', status: 'active', merchant_id: 3 },
+  { id: 105, name: 'Exclusive Downtown Tasting Menu', is_active: true, design_theme: 'Texas Theme', status: 'active', merchant_id: 1 },
 ];
 
 export const MOCK_TABLES: TableRef[] = [
+  { id: 1, number: 'A1', merchant_id: 1, capacity: 4, zone_name: 'Main Dining Room' },
   { id: 201, number: '12', merchant_id: 3, capacity: 4, zone_name: 'Main Dining Room' },
   { id: 202, number: '14', merchant_id: 3, capacity: 6, zone_name: 'Main Dining Room' },
   { id: 203, number: 'Patio-01', merchant_id: 3, capacity: 2, zone_name: 'Terrace' },
@@ -77,8 +102,8 @@ function initializeMockData(): QRLocation[] {
       table_id: 201,
       location_type: 'DINE_IN',
       status: 'active',
-      qr_code_url: buildQrLandingUrl(3, 1),
-      qr_code_image: generateQrAssetImage(buildQrLandingUrl(3, 1), 'Patio Table #12 Access'),
+      qr_code_url: buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: 201, qrMenuId: 101 }),
+      qr_code_image: generateQrAssetImage(buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: 201, qrMenuId: 101 }), 'Patio Table #12 Access'),
       created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
       updated_at: new Date().toISOString(),
     },
@@ -90,8 +115,8 @@ function initializeMockData(): QRLocation[] {
       table_id: null,
       location_type: 'PICKUP',
       status: 'active',
-      qr_code_url: buildQrLandingUrl(3, 2),
-      qr_code_image: generateQrAssetImage(buildQrLandingUrl(3, 2), 'Curbside Pickup Point'),
+      qr_code_url: buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: null, qrMenuId: 104 }),
+      qr_code_image: generateQrAssetImage(buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: null, qrMenuId: 104 }), 'Curbside Pickup Point'),
       created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
       updated_at: new Date().toISOString(),
     },
@@ -103,8 +128,8 @@ function initializeMockData(): QRLocation[] {
       table_id: 203,
       location_type: 'DINE_IN',
       status: 'inactive',
-      qr_code_url: buildQrLandingUrl(3, 3),
-      qr_code_image: generateQrAssetImage(buildQrLandingUrl(3, 3), 'Terrace Table #Patio-01'),
+      qr_code_url: buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: 203, qrMenuId: 103 }),
+      qr_code_image: generateQrAssetImage(buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: 203, qrMenuId: 103 }), 'Terrace Table #Patio-01'),
       created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
       updated_at: new Date().toISOString(),
     },
@@ -116,9 +141,22 @@ function initializeMockData(): QRLocation[] {
       table_id: null,
       location_type: 'ROOM_SERVICE',
       status: 'archived',
-      qr_code_url: buildQrLandingUrl(3, 4),
-      qr_code_image: generateQrAssetImage(buildQrLandingUrl(3, 4), 'Room 402 Room Service QR'),
+      qr_code_url: buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: null, qrMenuId: 102 }),
+      qr_code_image: generateQrAssetImage(buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: null, qrMenuId: 102 }), 'Room 402 Room Service QR'),
       created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 5,
+      name: 'Main Bar Stool #05',
+      merchant_id: 3,
+      qr_menu_id: 101,
+      table_id: null,
+      location_type: 'DINE_IN',
+      status: 'suspended',
+      qr_code_url: buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: null, qrMenuId: 101 }),
+      qr_code_image: generateQrAssetImage(buildDispatchOrderUrl({ merchantSlug: 'prueba1', tableId: null, qrMenuId: 101 }), 'Main Bar Stool #05'),
+      created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
       updated_at: new Date().toISOString(),
     },
   ];
@@ -139,7 +177,7 @@ function mapLocationTypeToBackend(type: QRMenuType): 'Table' | 'Pickup' | 'Deliv
 }
 
 // Convert backend enum to front-end QRMenuType
-function mapBackendLocationTypeToFrontend(type: string): QRMenuType {
+function mapBackendLocationTypeToFrontend(type?: string | null): QRMenuType {
   const upper = String(type || '').toUpperCase();
   if (upper === 'PICKUP') return 'PICKUP';
   if (upper === 'DELIVERY') return 'DELIVERY';
@@ -147,31 +185,36 @@ function mapBackendLocationTypeToFrontend(type: string): QRMenuType {
   return 'DINE_IN';
 }
 
-function normalizeBackendQRLocation(item: any): QRLocation {
-  const merchantId = item.merchant?.id ?? item.merchant_id ?? 0;
-  const qrMenuId = item.qrMenu?.id ?? item.qr_menu_id ?? 0;
-  const tableId = item.table?.id ?? item.table_id ?? null;
-  const locType = mapBackendLocationTypeToFrontend(item.location_type);
+function normalizeBackendQRLocation(item: Record<string, unknown>): QRLocation {
+  const merchantObj = item.merchant as Record<string, unknown> | undefined;
+  const qrMenuObj = item.qrMenu as Record<string, unknown> | undefined;
+  const tableObj = item.table as Record<string, unknown> | undefined;
 
-  const locId = item.id;
-  const url = item.qr_code_url || buildQrLandingUrl(merchantId, locId);
-  const img = item.qr_code_image || generateQrAssetImage(url, item.name);
+  const merchantId = Number(merchantObj?.id ?? item.merchant_id ?? 0);
+  const qrMenuId = Number(qrMenuObj?.id ?? item.qr_menu_id ?? 0);
+  const tableId = tableObj?.id !== undefined ? Number(tableObj.id) : (item.table_id !== undefined ? (item.table_id === null ? null : Number(item.table_id)) : null);
+  const locType = mapBackendLocationTypeToFrontend(item.location_type as string | undefined);
+
+  const locId = Number(item.id);
+  const name = String(item.name || `Location #${locId}`);
+  const url = (item.qr_code_url as string) || buildQrLandingUrl(merchantId, locId);
+  const img = (item.qr_code_image as string) || generateQrAssetImage(url, name);
 
   return {
     id: locId,
-    name: item.name,
+    name,
     merchant_id: merchantId,
     qr_menu_id: qrMenuId,
     table_id: tableId,
     location_type: locType,
-    status: item.status || 'active',
+    status: (item.status as QRLocation['status']) || 'active',
     qr_code_url: url,
     qr_code_image: img,
-    created_at: item.created_at || new Date().toISOString(),
-    updated_at: item.updated_at || new Date().toISOString(),
-    merchant: item.merchant,
-    qrMenu: item.qrMenu,
-    table: item.table,
+    created_at: String(item.created_at || new Date().toISOString()),
+    updated_at: String(item.updated_at || new Date().toISOString()),
+    merchant: merchantObj as unknown as QRLocation['merchant'],
+    qrMenu: qrMenuObj as unknown as QRLocation['qrMenu'],
+    table: tableObj as unknown as QRLocation['table'],
   };
 }
 
@@ -222,12 +265,12 @@ export async function fetchAvailableMerchants(): Promise<MerchantRef[]> {
       });
       if (response.ok) {
         const json = await response.json();
-        const rawList: any[] = json.data ?? (Array.isArray(json) ? json : []);
+        const rawList = (json.data ?? (Array.isArray(json) ? json : [])) as Array<Record<string, unknown>>;
         if (rawList.length > 0) {
           const list: MerchantRef[] = rawList.map((m) => ({
-            id: m.id,
-            name: m.name,
-            code: m.code || `MCH-${m.id}`,
+            id: Number(m.id),
+            name: String(m.name),
+            code: String(m.code || `MCH-${m.id}`),
           }));
           _cachedMerchants = list;
           return list;
@@ -246,34 +289,63 @@ export async function fetchAvailableMerchants(): Promise<MerchantRef[]> {
  * Fetch available QR Menus from backend or fallback to mocks
  */
 export async function fetchAvailableQRMenus(merchantId?: number): Promise<QRMenuRef[]> {
+  try {
+    const list = await getQRMenus(merchantId);
+    if (list && list.length > 0) {
+      const mapped: QRMenuRef[] = list.map((m) => {
+        const mMerchant = m.merchant as Record<string, unknown> | undefined;
+        return {
+          id: Number(m.id),
+          name: String(m.name || `Menu #${m.id}`),
+          is_active: m.status ? m.status === 'active' : true,
+          design_theme: String(m.design_theme || 'Modern Elegance'),
+          status: String(m.status || 'active'),
+          merchant_id: Number(mMerchant?.id ?? m.merchant_id ?? (merchantId || 0)),
+        };
+      });
+      _cachedMenus = mapped;
+
+      if (merchantId) {
+        const filtered = mapped.filter((m) => !m.merchant_id || m.merchant_id === merchantId);
+        if (filtered.length > 0) return filtered;
+      }
+      return mapped;
+    }
+  } catch {
+    // Continue to candidate paths
+  }
+
   const token = getAccessToken();
   if (token) {
     try {
-      const response = await fetch(`${API_BASE}/qr-menu?limit=100`, {
-        headers: authHeaders(),
-      });
-      if (response.ok) {
-        const json = await response.json();
-        const rawList: any[] = json.data ?? (Array.isArray(json) ? json : []);
-        if (rawList.length > 0) {
-          const mapped: QRMenuRef[] = rawList.map((m) => ({
-            id: m.id,
-            name: m.name || m.title || `Menu #${m.id}`,
-            is_active: m.status ? m.status === 'active' : true,
-          }));
-          _cachedMenus = mapped;
-
-          if (merchantId) {
-            const filtered = rawList
-              .filter((m) => !m.merchant || m.merchant.id === merchantId || m.merchant_id === merchantId)
-              .map((m) => ({
-                id: m.id,
-                name: m.name || m.title || `Menu #${m.id}`,
+      const candidatePaths = ['/qr-menus?limit=100', '/qr-menu?limit=100', '/v1/qr-menus?limit=100', '/v1/qr-menu?limit=100'];
+      for (const path of candidatePaths) {
+        const response = await fetch(`${API_BASE}${path}`, {
+          headers: authHeaders(),
+        });
+        if (response.ok) {
+          const json = await response.json();
+          const rawList = (json.data ?? (Array.isArray(json) ? json : [])) as Array<Record<string, unknown>>;
+          if (rawList.length > 0) {
+            const mapped: QRMenuRef[] = rawList.map((m) => {
+              const mMerchant = m.merchant as Record<string, unknown> | undefined;
+              return {
+                id: Number(m.id),
+                name: String(m.name || m.title || `Menu #${m.id}`),
                 is_active: m.status ? m.status === 'active' : true,
-              }));
-            if (filtered.length > 0) return filtered;
+                design_theme: String(m.design_theme || 'Modern Elegance'),
+                status: String(m.status || 'active'),
+                merchant_id: Number(mMerchant?.id ?? m.merchant_id ?? 0),
+              };
+            });
+            _cachedMenus = mapped;
+
+            if (merchantId) {
+              const filtered = mapped.filter((m) => !m.merchant_id || m.merchant_id === merchantId);
+              if (filtered.length > 0) return filtered;
+            }
+            return mapped;
           }
-          return mapped;
         }
       }
     } catch {
@@ -281,8 +353,9 @@ export async function fetchAvailableQRMenus(merchantId?: number): Promise<QRMenu
     }
   }
 
-  _cachedMenus = MOCK_MENUS;
-  return MOCK_MENUS;
+  const result = merchantId ? MOCK_MENUS.filter((m) => !m.merchant_id || m.merchant_id === merchantId) : MOCK_MENUS;
+  _cachedMenus = result;
+  return result;
 }
 
 /**
@@ -297,30 +370,34 @@ export async function fetchAvailableTables(merchantId?: number): Promise<TableRe
       });
       if (response.ok) {
         const json = await response.json();
-        const rawList: any[] = json.data ?? (Array.isArray(json) ? json : []);
-        if (rawList.length > 0) {
-          const mapped: TableRef[] = rawList.map((t) => ({
-            id: t.id,
-            number: String(t.number),
-            merchant_id: t.merchant?.id ?? t.merchant_id ?? (merchantId || 0),
-            capacity: t.capacity,
-            zone_name: t.floorZone?.name ?? t.zone?.name ?? t.zone_name,
-          }));
-          _cachedTables = mapped;
+        const rawList = (json.data ?? (Array.isArray(json) ? json : [])) as Array<Record<string, unknown>>;
+        const mapped: TableRef[] = rawList.map((t) => {
+          const tableMerchant = t.merchant as Record<string, unknown> | undefined;
+          const floorZone = t.floorZone as Record<string, unknown> | undefined;
+          const zone = t.zone as Record<string, unknown> | undefined;
+          return {
+            id: Number(t.id),
+            number: String(t.number ?? t.table_number ?? t.id),
+            merchant_id: Number(tableMerchant?.id ?? t.merchant_id ?? t.merchantId ?? (merchantId || 0)),
+            capacity: Number(t.capacity || 0),
+            zone_name: String(floorZone?.name ?? zone?.name ?? t.zone_name ?? ''),
+          };
+        });
+        _cachedTables = mapped;
 
-          if (merchantId) {
-            const filtered = mapped.filter((t) => !t.merchant_id || t.merchant_id === merchantId);
-            if (filtered.length > 0) return filtered;
-          }
-          return mapped;
+        if (merchantId) {
+          return mapped.filter((t) => !t.merchant_id || Number(t.merchant_id) === Number(merchantId));
         }
+        return mapped;
       }
     } catch {
       // Ignore network errors and fallback
     }
   }
 
-  const result = merchantId ? MOCK_TABLES.filter((t) => t.merchant_id === merchantId) : MOCK_TABLES;
+  const result = merchantId
+    ? MOCK_TABLES.filter((t) => !t.merchant_id || Number(t.merchant_id) === Number(merchantId))
+    : MOCK_TABLES;
   _cachedTables = result;
   return result;
 }
@@ -332,19 +409,22 @@ export async function getQRLocations(merchantId?: number): Promise<QRLocation[]>
   const token = getAccessToken();
   if (token) {
     try {
-      // Backend candidates (singular, plural, and v1 versioning)
-      const candidatePaths = ['/qr-location', '/qr-locations', '/v1/qr-locations', '/v1/qr-location'];
+      const candidatePaths = ['/qr-locations', '/qr-location', '/v1/qr-locations', '/v1/qr-location'];
       let response: Response | null = null;
       for (const path of candidatePaths) {
         response = await fetch(`${API_BASE}${path}?limit=100`, {
           headers: authHeaders(),
         });
         if (response.status !== 404) break;
+        const clone = response.clone();
+        const errJson = await clone.json().catch(() => ({}));
+        const msg = String(errJson.message || '');
+        if (!msg.startsWith('Cannot GET')) break;
       }
 
       if (response && response.ok) {
         const json = await response.json();
-        const rawList: any[] = json.data ?? (Array.isArray(json) ? json : []);
+        const rawList = (json.data ?? (Array.isArray(json) ? json : [])) as Array<Record<string, unknown>>;
         const normalized = rawList.map(normalizeBackendQRLocation);
         const filtered = merchantId
           ? normalized.filter((loc) => !loc.merchant_id || loc.merchant_id === merchantId)
@@ -380,24 +460,31 @@ export async function createQRLocation(dto: CreateQRLocationDto): Promise<QRLoca
 
   if (token) {
     const backendLocationType = mapLocationTypeToBackend(finalLocationType);
-    const tempUrl = buildQrLandingUrl(dto.merchant_id, 'new');
-    const tempImage = generateQrAssetImage(tempUrl, dto.name);
+    const locHash = generateLocHash(dto.name, 'new');
+    const targetUrl =
+      dto.qr_code_url ||
+      buildQrTargetUrl({
+        qrMenuId: dto.qr_menu_id,
+        locHash,
+        tableId: dto.table_id,
+      });
+    const targetImage = dto.qr_code_image || generateQrAssetImage(targetUrl, dto.name);
 
-    const backendPayload: Record<string, any> = {
+    const backendPayload: Record<string, unknown> = {
       merchant: Number(dto.merchant_id),
       qrMenu: Number(dto.qr_menu_id),
       name: dto.name.trim(),
       location_type: backendLocationType,
       status: dto.status === 'active' ? 'active' : 'inactive',
-      qr_code_url: tempUrl,
-      qr_code_image: tempImage,
+      qr_code_url: targetUrl,
+      qr_code_image: targetImage,
     };
     if (dto.table_id && Number(dto.table_id) > 0) {
       backendPayload.table = Number(dto.table_id);
     }
 
     try {
-      const candidatePaths = ['/qr-location', '/qr-locations', '/v1/qr-locations', '/v1/qr-location'];
+      const candidatePaths = ['/qr-locations', '/qr-location', '/v1/qr-locations', '/v1/qr-location'];
       let response: Response | null = null;
       for (const path of candidatePaths) {
         response = await fetch(`${API_BASE}${path}`, {
@@ -406,6 +493,10 @@ export async function createQRLocation(dto: CreateQRLocationDto): Promise<QRLoca
           body: JSON.stringify(backendPayload),
         });
         if (response.status !== 404) break;
+        const clone = response.clone();
+        const errJson = await clone.json().catch(() => ({}));
+        const msg = String(errJson.message || '');
+        if (!msg.startsWith('Cannot POST')) break;
       }
 
       if (response && response.ok) {
@@ -429,8 +520,17 @@ export async function createQRLocation(dto: CreateQRLocationDto): Promise<QRLoca
 
   // Fallback to local mock persistence
   const newId = items.length > 0 ? Math.max(...items.map((i) => i.id)) + 1 : 1;
-  const qr_code_url = buildQrLandingUrl(dto.merchant_id, newId);
-  const qr_code_image = generateQrAssetImage(qr_code_url, dto.name);
+  const activeMerchant = _cachedMerchants.find((m) => m.id === dto.merchant_id) || MOCK_MERCHANTS.find((m) => m.id === dto.merchant_id);
+  const locHash = generateLocHash(dto.name, newId);
+  const qr_code_url =
+    dto.qr_code_url ||
+    buildDispatchOrderUrl({
+      merchantSlug: activeMerchant?.slug || `merchant-${dto.merchant_id}`,
+      tableId: dto.table_id,
+      qrMenuId: dto.qr_menu_id,
+      locHash,
+    });
+  const qr_code_image = dto.qr_code_image || generateQrAssetImage(qr_code_url, dto.name);
 
   const newItem: QRLocation = {
     id: newId,
@@ -482,7 +582,7 @@ export async function updateQRLocation(
   const token = getAccessToken();
 
   if (token) {
-    const backendPayload: Record<string, any> = {};
+    const backendPayload: Record<string, unknown> = {};
     if (dto.name !== undefined) backendPayload.name = dto.name.trim();
     if (dto.merchant_id !== undefined) backendPayload.merchant = Number(dto.merchant_id);
     if (dto.qr_menu_id !== undefined) backendPayload.qrMenu = Number(dto.qr_menu_id);
@@ -497,9 +597,15 @@ export async function updateQRLocation(
     if (dto.status !== undefined) {
       backendPayload.status = dto.status === 'active' ? 'active' : 'inactive';
     }
+    if (dto.qr_code_url !== undefined) {
+      backendPayload.qr_code_url = dto.qr_code_url;
+    }
+    if (dto.qr_code_image !== undefined) {
+      backendPayload.qr_code_image = dto.qr_code_image;
+    }
 
     try {
-      const candidatePaths = ['/qr-location', '/qr-locations', '/v1/qr-locations', '/v1/qr-location'];
+      const candidatePaths = ['/qr-locations', '/qr-location', '/v1/qr-locations', '/v1/qr-location'];
       let response: Response | null = null;
       for (const path of candidatePaths) {
         response = await fetch(`${API_BASE}${path}/${id}`, {
@@ -508,6 +614,10 @@ export async function updateQRLocation(
           body: JSON.stringify(backendPayload),
         });
         if (response.status !== 404) break;
+        const clone = response.clone();
+        const errJson = await clone.json().catch(() => ({}));
+        const msg = String(errJson.message || '');
+        if (!msg.startsWith('Cannot PATCH')) break;
       }
 
       if (response && response.ok) {
@@ -532,8 +642,16 @@ export async function updateQRLocation(
     throw new ApiError(`QR Location #${id} not found.`, 404);
   }
 
-  const updatedUrl = buildQrLandingUrl(targetMerchantId, id);
-  const updatedImage = generateQrAssetImage(updatedUrl, dto.name ?? existing.name);
+  const locHash = generateLocHash(dto.name ?? existing.name, id);
+  const updatedUrl =
+    dto.qr_code_url ||
+    buildQrTargetUrl({
+      qrMenuId: dto.qr_menu_id ?? existing.qr_menu_id,
+      locHash,
+      tableId: targetTableId,
+    });
+  const updatedImage =
+    dto.qr_code_image || generateQrAssetImage(updatedUrl, dto.name ?? existing.name);
 
   const updatedItem: QRLocation = {
     ...existing,
@@ -550,19 +668,127 @@ export async function updateQRLocation(
 }
 
 /**
+ * Bulk provisions QR Locations from floor plan tables.
+ * Generates batch QRLocation records linked to the selected qr_menu_id in a single transactional payload.
+ */
+export async function bulkCreateQRLocations(
+  dto: BulkCreateQRLocationsDto
+): Promise<QRLocation[]> {
+  const tables = await fetchAvailableTables(dto.merchant_id);
+  const items = initializeMockData();
+  const selectedTables = tables.filter((t) => dto.table_ids.includes(t.id));
+
+  if (selectedTables.length === 0) {
+    throw new ApiError('No matching physical tables found for bulk deployment.', 400);
+  }
+
+  const token = getAccessToken();
+  if (token) {
+    try {
+      const backendPayload = {
+        merchant: dto.merchant_id,
+        qrMenu: dto.qr_menu_id,
+        table_ids: dto.table_ids,
+        status: dto.status,
+        name_prefix: dto.name_prefix || 'Table',
+      };
+      const candidatePaths = ['/qr-locations/bulk', '/qr-location/bulk', '/v1/qr-locations/bulk'];
+      for (const path of candidatePaths) {
+        const response = await fetch(`${API_BASE}${path}`, {
+          method: 'POST',
+          headers: authHeaders(true),
+          body: JSON.stringify(backendPayload),
+        });
+        if (response.ok) {
+          const json = await response.json();
+          const rawList = (json.data ?? (Array.isArray(json) ? json : [])) as Array<Record<string, unknown>>;
+          if (rawList.length > 0) {
+            return rawList.map(normalizeBackendQRLocation).map(hydrateRelations);
+          }
+        }
+        if (response.status !== 404) break;
+      }
+
+      // If backend has no dedicated bulk endpoint, provision through createQRLocation
+      const createdBulk: QRLocation[] = [];
+      for (const table of selectedTables) {
+        const name = dto.name_prefix
+          ? `${dto.name_prefix} ${table.number}`
+          : `Table #${table.number} Access`;
+        const loc = await createQRLocation({
+          name,
+          merchant_id: dto.merchant_id,
+          qr_menu_id: dto.qr_menu_id,
+          table_id: table.id,
+          location_type: 'DINE_IN',
+          status: dto.status,
+        });
+        createdBulk.push(loc);
+      }
+      if (createdBulk.length > 0) {
+        return createdBulk;
+      }
+    } catch {
+      // Fallback to local batch generation
+    }
+  }
+
+  let nextId = items.length > 0 ? Math.max(...items.map((i) => i.id)) : 0;
+  const newLocations: QRLocation[] = [];
+
+  for (const table of selectedTables) {
+    nextId += 1;
+    const name = dto.name_prefix
+      ? `${dto.name_prefix} ${table.number}`
+      : `Table #${table.number} Access`;
+    const locHash = generateLocHash(name, nextId);
+    const targetUrl = buildQrTargetUrl({
+      qrMenuId: dto.qr_menu_id,
+      locHash,
+      tableId: table.id,
+    });
+    const qrImage = generateQrAssetImage(targetUrl, name);
+
+    const newLoc: QRLocation = {
+      id: nextId,
+      name,
+      merchant_id: dto.merchant_id,
+      qr_menu_id: dto.qr_menu_id,
+      table_id: table.id,
+      location_type: 'DINE_IN',
+      status: dto.status,
+      qr_code_url: targetUrl,
+      qr_code_image: qrImage,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      table,
+    };
+    newLocations.push(newLoc);
+  }
+
+  const updatedList = [...newLocations, ...items];
+  persistMockData(updatedList);
+  return newLocations.map(hydrateRelations);
+}
+
+/**
  * Deletes a QR Location.
  */
 export async function deleteQRLocation(id: number): Promise<void> {
   const token = getAccessToken();
   if (token) {
     try {
-      const candidatePaths = ['/qr-location', '/qr-locations', '/v1/qr-locations', '/v1/qr-location'];
+      const candidatePaths = ['/qr-locations', '/qr-location', '/v1/qr-locations', '/v1/qr-location'];
       for (const path of candidatePaths) {
         const response = await fetch(`${API_BASE}${path}/${id}`, {
           method: 'DELETE',
           headers: authHeaders(),
         });
         if (response.status !== 404) break;
+        const clone = response.clone();
+        const errJson = await clone.json().catch(() => ({}));
+        const msg = String(errJson.message || '');
+        if (!msg.startsWith('Cannot DELETE')) break;
       }
     } catch {
       // Ignore

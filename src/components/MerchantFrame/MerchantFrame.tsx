@@ -121,6 +121,12 @@ import { KitchenOrderItemsView } from './views/restaurant-operations/kitchen-sta
 import { KitchenEventLogView } from './views/restaurant-operations/kitchen-stations/KitchenEventLogView';
 import { KitchenAnalyticsView } from './views/restaurant-operations/kitchen-stations/KitchenAnalyticsView';
 import { QRLocationsView } from './views/qr-code/QRLocationsView';
+import { QRMenusView } from './views/qr-code/QRMenusView';
+import { QRMenuSectionsView } from './views/qr-code/QRMenuSectionsView';
+import { QRMenuItemsView } from './views/qr-code/QRMenuItemsView';
+import { QROrdersView } from './views/qr-code/QROrdersView';
+import { QROrderItemsView } from './views/qr-code/QROrderItemsView';
+import { QRDeploymentsView } from './views/qr-code/QRDeploymentsView';
 import { clearAuthSession } from '../../lib/auth-storage';
 import { getCurrentMerchantId } from '../../api/users';
 
@@ -222,6 +228,18 @@ const getNavFromPath = (
     return { category: 'inventory', tab: 'movements' };
   } else if (path === '/qr-code/locations' || path === '/dashboard/qr-locations' || path === '/qr-code-locations') {
     return { category: 'commerce', tab: 'qr-code-locations' };
+  } else if (path === '/qr-code/menus' || path === '/dashboard/qr-menus' || path === '/qr-code-menus') {
+    return { category: 'commerce', tab: 'qr-code-menus' };
+  } else if (path === '/qr-code/menu-sections') {
+    return { category: 'commerce', tab: 'qr-code-menu-sections' };
+  } else if (path === '/qr-code/menu-items') {
+    return { category: 'commerce', tab: 'qr-code-menu-items' };
+  } else if (path === '/qr-code/deployments') {
+    return { category: 'commerce', tab: 'qr-code-deployments' };
+  } else if (path === '/qr-code/orders') {
+    return { category: 'commerce', tab: 'qr-code-orders' };
+  } else if (path === '/qr-code/order-items') {
+    return { category: 'commerce', tab: 'qr-order-items' };
   } else if (path === '/inventory/dashboard' || path === '/inventory/hub' || path === '/dashboard/inventory') {
     return { category: 'inventory', tab: 'inventory-dashboard' };
   } else if (path === '/inventory/raw-materials-dashboard' || path === '/inventory/raw-materials/dashboard' || path === '/dashboard/raw-materials-hub') {
@@ -347,7 +365,6 @@ export const MerchantFrame: React.FC = () => {
   }
 
   // Handle external side effects (sessionStorage) on route change
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const path = location.pathname;
     if (path === '/legal/privacy-policy') {
@@ -484,7 +501,7 @@ export const MerchantFrame: React.FC = () => {
       }
     }
   }, [location.pathname, location.state]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+
   const [showKitchenKDS, setShowKitchenKDS] = useState<boolean>(false);
 
   // Dynamic Navigation by Plan and Permissions
@@ -1284,6 +1301,60 @@ export const MerchantFrame: React.FC = () => {
       );
     }
 
+    if (activeTab === 'qr-code-menus') {
+      return (
+        <QRMenusView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'qr-code-menu-sections') {
+      return (
+        <QRMenuSectionsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'qr-code-menu-items') {
+      return (
+        <QRMenuItemsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'qr-code-orders') {
+      return (
+        <QROrdersView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'qr-order-items') {
+      return (
+        <QROrderItemsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
+    if (activeTab === 'qr-code-deployments') {
+      return (
+        <QRDeploymentsView
+          onNavigate={(view) => setActiveTab(view)}
+          merchantId={getCurrentMerchantId() ?? undefined}
+        />
+      );
+    }
+
     if (activeTab === 'locations') {
       return <LocationsView onNavigate={(view) => setActiveTab(view)} />;
     }
@@ -1366,7 +1437,7 @@ export const MerchantFrame: React.FC = () => {
     }
 
     if (activeTab === 'kitchen-order-items') {
-      return <KitchenOrderItemsView onNavigate={(view) => setActiveTab(view)} />;
+      return <KitchenOrderItemsView onNavigate={(view: string) => setActiveTab(view)} />;
     }
 
     if (activeTab === 'kitchen-event-log') {
@@ -1624,7 +1695,8 @@ export const MerchantFrame: React.FC = () => {
                         const isProductsApp = app.id === 'products-inventory' || app.name === 'Products' || app.name === 'Products/Inventory System';
                         const isRawMaterialsApp = app.id === 'raw-materials' || app.name === 'Raw Materials';
                         const isOnlineOrderingApp = app.id === 'online-ordering' || app.name === 'Online Ordering System' || app.name === 'Online Ordering';
-                        const isDirectHubApp = isKDSApp || isShiftsApp || isTipsApp || isConfigApp || isProductsApp || isRawMaterialsApp || isOnlineOrderingApp;
+                        const isQRCodeApp = app.id === 'qr-code' || app.name === 'QR Code System';
+                        const isDirectHubApp = isKDSApp || isShiftsApp || isTipsApp || isConfigApp || isProductsApp || isRawMaterialsApp || isOnlineOrderingApp || isQRCodeApp;
                         const isAppExpanded = !isDirectHubApp && (sidebarSearchQuery.trim() !== '' || !!expandedApps[app.id]);
                         const isAppSelected = isKDSApp
                           ? ['kds-dashboard', 'kitchen-kds-hub', 'kitchen-stations', 'kitchen-display-devices', 'kitchen-orders', 'kitchen-order-items', 'kitchen-event-log', 'kitchen-analytics'].includes(activeTab)
@@ -1640,6 +1712,8 @@ export const MerchantFrame: React.FC = () => {
                           ? ['raw-materials-dashboard', 'raw-materials-hub', 'purchase-orders', 'stock-movements', 'raw-materials', 'raw-material-categories', 'locations', 'movements'].includes(activeTab)
                           : isOnlineOrderingApp
                           ? ['online-ordering-hub', 'online-ordering-dashboard', 'online-stores', 'online-payments', 'online-menus', 'online-menu-categories', 'online-menu-items', 'online-orders', 'online-order-items', 'online-delivery-info'].includes(activeTab)
+                          : isQRCodeApp
+                          ? ['qr-code-hub', 'qr-code-locations', 'qr-code-menu-items', 'qr-code-menu-sections', 'qr-code-menus', 'qr-code-orders', 'qr-order-items', 'qr-deployments'].includes(activeTab)
                           : app.features.some(f => f.id === activeTab) || navHubById(activeTab)?.appId === app.id;
 
                         return (
@@ -1674,6 +1748,10 @@ export const MerchantFrame: React.FC = () => {
                                   setActiveCategory(cat.id);
                                   setActiveTab('online-ordering-hub');
                                   navigate('/online-ordering', { state: { activeTab: 'online-ordering-hub', activeCategory: cat.id } });
+                                } else if (isQRCodeApp) {
+                                  setActiveCategory(cat.id);
+                                  setActiveTab('qr-code-hub');
+                                  navigate('/dashboard', { state: { activeTab: 'qr-code-hub', activeCategory: cat.id } });
                                 } else {
                                   setExpandedApps(prev => ({
                                     ...prev,
@@ -1784,7 +1862,8 @@ export const MerchantFrame: React.FC = () => {
                         const isProductsApp = app.id === 'products-inventory' || app.name === 'Products' || app.name === 'Products/Inventory System';
                         const isRawMaterialsApp = app.id === 'raw-materials' || app.name === 'Raw Materials';
                         const isOnlineOrderingApp = app.id === 'online-ordering' || app.name === 'Online Ordering System' || app.name === 'Online Ordering';
-                        const isDirectHubApp = isKDSApp || isShiftsApp || isTipsApp || isConfigApp || isProductsApp || isRawMaterialsApp || isOnlineOrderingApp;
+                        const isQRCodeApp = app.id === 'qr-code' || app.name === 'QR Code System';
+                        const isDirectHubApp = isKDSApp || isShiftsApp || isTipsApp || isConfigApp || isProductsApp || isRawMaterialsApp || isOnlineOrderingApp || isQRCodeApp;
                         const isAppExpanded = !isDirectHubApp && (sidebarSearchQuery.trim() !== '' || !!expandedApps[app.id]);
                         const isAppSelected = isKDSApp
                           ? ['kds-dashboard', 'kitchen-kds-hub', 'kitchen-stations', 'kitchen-display-devices', 'kitchen-orders', 'kitchen-order-items', 'kitchen-event-log', 'kitchen-analytics'].includes(activeTab)
@@ -1800,6 +1879,8 @@ export const MerchantFrame: React.FC = () => {
                           ? ['raw-materials-dashboard', 'raw-materials-hub', 'purchase-orders', 'stock-movements', 'raw-materials', 'raw-material-categories', 'locations', 'movements'].includes(activeTab)
                           : isOnlineOrderingApp
                           ? ['online-ordering-hub', 'online-ordering-dashboard', 'online-stores', 'online-payments', 'online-menus', 'online-menu-categories', 'online-menu-items', 'online-orders', 'online-order-items', 'online-delivery-info'].includes(activeTab)
+                          : isQRCodeApp
+                          ? ['qr-code-hub', 'qr-code-locations', 'qr-code-menu-items', 'qr-code-menu-sections', 'qr-code-menus', 'qr-code-orders', 'qr-order-items', 'qr-deployments'].includes(activeTab)
                           : app.features.some(f => f.id === activeTab) || navHubById(activeTab)?.appId === app.id;
 
                         return (
@@ -1834,6 +1915,10 @@ export const MerchantFrame: React.FC = () => {
                                   setActiveCategory(cat.id);
                                   setActiveTab('online-ordering-hub');
                                   navigate('/online-ordering', { state: { activeTab: 'online-ordering-hub', activeCategory: cat.id } });
+                                } else if (isQRCodeApp) {
+                                  setActiveCategory(cat.id);
+                                  setActiveTab('qr-code-hub');
+                                  navigate('/dashboard', { state: { activeTab: 'qr-code-hub', activeCategory: cat.id } });
                                 } else {
                                   setExpandedApps(prev => ({
                                     ...prev,

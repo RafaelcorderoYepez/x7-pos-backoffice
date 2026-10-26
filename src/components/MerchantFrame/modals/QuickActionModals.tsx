@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { setAuthenticatedState, setSimulate401 } from '../../../services/restaurantService';
 
 interface ModalProps {
@@ -9,8 +10,8 @@ interface ModalProps {
 // Modal 1: Nueva Reserva
 export const NewReservationModal: React.FC<ModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
       <div className="bg-white border border-[#e8e2d8] p-6 max-w-md w-full rounded">
         <h3 className="font-bold text-lg text-[#222222] uppercase border-b border-[#e8e2d8] pb-3 mb-4">
           New Reservation
@@ -40,15 +41,16 @@ export const NewReservationModal: React.FC<ModalProps> = ({ isOpen, onClose }) =
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
 // Modal 2: Void Transaction
 export const VoidTransactionModal: React.FC<ModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
       <div className="bg-white border border-[#e8e2d8] p-6 max-w-md w-full rounded">
         <h3 className="font-bold text-lg text-red-600 uppercase border-b border-[#e8e2d8] pb-3 mb-4 flex items-center gap-1.5">
           <span className="material-symbols-outlined">warning</span> Void Transaction
@@ -77,15 +79,16 @@ export const VoidTransactionModal: React.FC<ModalProps> = ({ isOpen, onClose }) 
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
 // Modal 3: End of Day (EOD) Report
 export const EODReportModal: React.FC<ModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
       <div className="bg-white border border-[#e8e2d8] p-6 max-w-md w-full rounded text-left">
         <h3 className="font-bold text-lg text-[#222222] uppercase border-b border-[#e8e2d8] pb-3 mb-4">
           End of Day (EOD) Report Summary
@@ -121,7 +124,8 @@ export const EODReportModal: React.FC<ModalProps> = ({ isOpen, onClose }) => {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -152,8 +156,8 @@ export const EmergencySupportModal: React.FC<ModalProps> = ({ isOpen, onClose })
     }, 1000);
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
       <div className="bg-[#222222] border border-red-500 max-w-md w-full rounded flex flex-col h-[450px]">
         {/* Header */}
         <div className="p-4 bg-red-600 text-white font-bold text-sm uppercase flex justify-between items-center rounded-t">
@@ -192,7 +196,8 @@ export const EmergencySupportModal: React.FC<ModalProps> = ({ isOpen, onClose })
           </button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -225,8 +230,8 @@ export const NewQuickOrderModal: React.FC<ModalProps> = ({ isOpen, onClose }) =>
 
   const total = selectedItems.reduce((acc, curr) => acc + curr.price * curr.qty, 0);
 
-  return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/60 z-[9999] flex items-center justify-center p-4">
       <div className="bg-white border border-[#e8e2d8] p-6 max-w-2xl w-full rounded flex flex-col md:flex-row gap-6">
         {/* Left: Menu */}
         <div className="flex-1 text-left">
@@ -295,7 +300,8 @@ export const NewQuickOrderModal: React.FC<ModalProps> = ({ isOpen, onClose }) =>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -307,8 +313,8 @@ interface LoginGatewayProps {
 
 export const LoginGatewayModal: React.FC<LoginGatewayProps> = ({ isOpen, onLoginSuccess }) => {
   if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-[#16171d]/95 z-[999] flex items-center justify-center p-4 backdrop-blur-sm">
+  return createPortal(
+    <div className="fixed inset-0 bg-[#16171d]/95 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-[#222222] border border-white/10 p-8 max-w-md w-full rounded text-center shadow-2xl space-y-6">
         <div>
           <div className="w-16 h-16 bg-[#d51f2c]/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-[#d51f2c]/20">
@@ -352,6 +358,7 @@ export const LoginGatewayModal: React.FC<LoginGatewayProps> = ({ isOpen, onLogin
           </button>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

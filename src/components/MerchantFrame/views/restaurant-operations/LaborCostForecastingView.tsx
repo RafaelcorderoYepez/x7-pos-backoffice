@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   LaborForecastingSummary,
   DailyLaborForecast,
@@ -704,78 +705,80 @@ export const LaborCostForecastingView: React.FC<LaborCostForecastingViewProps> =
       </div>
 
       {/* Pre-Publication Confirmation Modal */}
-      {showPrePublishModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="bg-white border border-[#e8e2d8] rounded-lg w-full max-w-lg min-w-[320px] sm:min-w-[480px] p-6 text-[#222222] shadow-2xl">
-            <div className="bg-[#222222] text-white -mx-6 -mt-6 p-4 rounded-t-lg mb-4 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#ae001a] text-xl">alarm_on</span>
-                <h3 className="text-sm font-bold uppercase tracking-widest text-white">Pre-Publication Roster Budget Verification</h3>
-              </div>
-              <button onClick={() => setShowPrePublishModal(false)} className="text-white/70 hover:text-white">
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            {isOverBudget ? (
-              <div className="p-4 bg-amber-50 border border-amber-300 rounded text-xs space-y-2 mb-4">
-                <div className="flex items-center gap-2 text-amber-950 font-bold">
-                  <span className="material-symbols-outlined text-base text-amber-700">warning</span>
-                  Budget Boundary Warning Flagged
+      {showPrePublishModal &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="bg-white border border-[#e8e2d8] rounded-lg w-full max-w-lg min-w-[320px] sm:min-w-[480px] p-6 text-[#222222] shadow-2xl">
+              <div className="bg-[#222222] text-white -mx-6 -mt-6 p-4 rounded-t-lg mb-4 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#ae001a] text-xl">alarm_on</span>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-white">Pre-Publication Roster Budget Verification</h3>
                 </div>
-                <p className="text-amber-900">
-                  Scheduled roster exceeds target labor budget by{' '}
-                  <strong className="text-amber-950 font-poppins font-black">${Math.abs(data.budgetVarianceAmount).toFixed(2)}</strong>.
-                </p>
-                <p className="text-[#5f5e5e]">
-                  Projected Labor Cost % is {data.projectedLaborCostPercentage.toFixed(1)}% (Store Target: {data.targetLaborCostPercentage.toFixed(1)}%).
-                </p>
+                <button onClick={() => setShowPrePublishModal(false)} className="text-white/70 hover:text-white">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
               </div>
-            ) : (
-              <div className="p-4 bg-emerald-50 border border-emerald-300 rounded text-xs space-y-2 mb-4">
-                <div className="flex items-center gap-2 text-emerald-950 font-bold">
-                  <span className="material-symbols-outlined text-base text-emerald-700">check_circle</span>
-                  Schedule Within Target Budget Boundaries
+
+              {isOverBudget ? (
+                <div className="p-4 bg-amber-50 border border-amber-300 rounded text-xs space-y-2 mb-4">
+                  <div className="flex items-center gap-2 text-amber-950 font-bold">
+                    <span className="material-symbols-outlined text-base text-amber-700">warning</span>
+                    Budget Boundary Warning Flagged
+                  </div>
+                  <p className="text-amber-900">
+                    Scheduled roster exceeds target labor budget by{' '}
+                    <strong className="text-amber-950 font-poppins font-black">${Math.abs(data.budgetVarianceAmount).toFixed(2)}</strong>.
+                  </p>
+                  <p className="text-[#5f5e5e]">
+                    Projected Labor Cost % is {data.projectedLaborCostPercentage.toFixed(1)}% (Store Target: {data.targetLaborCostPercentage.toFixed(1)}%).
+                  </p>
                 </div>
-                <p className="text-emerald-900 font-poppins">
-                  Projected Labor Cost Total (${data.projectedLaborCostTotal.toFixed(2)}) is within max budget limit (${data.maxWeeklyLaborBudget.toFixed(2)}).
-                </p>
+              ) : (
+                <div className="p-4 bg-emerald-50 border border-emerald-300 rounded text-xs space-y-2 mb-4">
+                  <div className="flex items-center gap-2 text-emerald-950 font-bold">
+                    <span className="material-symbols-outlined text-base text-emerald-700">check_circle</span>
+                    Schedule Within Target Budget Boundaries
+                  </div>
+                  <p className="text-emerald-900 font-poppins">
+                    Projected Labor Cost Total (${data.projectedLaborCostTotal.toFixed(2)}) is within max budget limit (${data.maxWeeklyLaborBudget.toFixed(2)}).
+                  </p>
+                </div>
+              )}
+
+              <p className="text-xs text-[#5f5e5e] mb-6">
+                Publishing will convert draft shifts to published status and notify all scheduled staff.
+              </p>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-[#e8e2d8]">
+                <button
+                  type="button"
+                  onClick={() => setShowPrePublishModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-[#5f5e5e] bg-white border border-[#e8e2d8] hover:bg-[#fef9f1] rounded transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPrePublishModal(false);
+                    setPublishSuccessMsg(
+                      `Roster published successfully! Scheduled spend: $${data.projectedLaborCostTotal.toFixed(2)} (${data.projectedLaborCostPercentage.toFixed(1)}% of sales).`
+                    );
+                  }}
+                  className="px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest text-white bg-[#ae001a] hover:bg-[#930015] rounded transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">publish</span>
+                  Confirm & Publish Master Schedule
+                </button>
               </div>
-            )}
-
-            <p className="text-xs text-[#5f5e5e] mb-6">
-              Publishing will convert draft shifts to published status and notify all scheduled staff.
-            </p>
-
-            <div className="flex justify-end gap-3 pt-3 border-t border-[#e8e2d8]">
-              <button
-                type="button"
-                onClick={() => setShowPrePublishModal(false)}
-                className="px-4 py-2 text-xs font-bold text-[#5f5e5e] bg-white border border-[#e8e2d8] hover:bg-[#fef9f1] rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowPrePublishModal(false);
-                  setPublishSuccessMsg(
-                    `Roster published successfully! Scheduled spend: $${data.projectedLaborCostTotal.toFixed(2)} (${data.projectedLaborCostPercentage.toFixed(1)}% of sales).`
-                  );
-                }}
-                className="px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest text-white bg-[#ae001a] hover:bg-[#930015] rounded transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-base">publish</span>
-                Confirm & Publish Master Schedule
-              </button>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Staff Management Shortcuts */}
       <StaffManagementQuickLinks

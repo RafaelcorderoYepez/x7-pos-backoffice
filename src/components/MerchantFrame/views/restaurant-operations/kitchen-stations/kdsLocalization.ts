@@ -511,10 +511,16 @@ export function getDeviceLanguage(stationId?: number | string | null): KDSLangua
   return 'en';
 }
 
-export function getLocalizedVariantName(variantName?: string | null): string {
+export function getLocalizedVariantName(variantName?: string | null, lang: KDSLanguage = 'en'): string {
   if (!variantName) return '';
   const trimmed = variantName.trim();
   if (!trimmed || trimmed.toLowerCase() === 'estándar' || trimmed.toLowerCase() === 'standard') return '';
+  if (lang === 'es') {
+    const lower = trimmed.toLowerCase();
+    if (lower === 'small') return 'Pequeño';
+    if (lower === 'medium') return 'Mediano';
+    if (lower === 'large') return 'Grande';
+  }
   // Las variantes se mantienen tal cual aparecen en la base de datos
   return trimmed;
 }

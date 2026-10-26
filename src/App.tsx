@@ -110,6 +110,14 @@ export default function App() {
           }
         />
         <Route
+          path="/qr-code/*"
+          element={
+            <ProtectedRoute>
+              <MerchantFrame />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/dashboard/raw-materials"
           element={
             <ProtectedRoute>

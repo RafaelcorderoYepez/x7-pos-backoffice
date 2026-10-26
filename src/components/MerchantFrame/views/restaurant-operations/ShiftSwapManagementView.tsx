@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   ShiftSwapRequest,
   ShiftSwapStatus,
@@ -824,8 +825,9 @@ export const ShiftSwapManagementView: React.FC<ShiftSwapManagementViewProps> = (
       )}
 
       {/* DETAILED SWAP REVIEW & AUDIT MODAL */}
-      {selectedSwap && (
-        <div className="fixed inset-0 bg-black/65 z-[9999] flex justify-center items-center p-4 backdrop-blur-sm">
+      {selectedSwap &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/65 z-[9999] flex justify-center items-center p-4 backdrop-blur-sm">
           <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-2xl overflow-hidden animate-fade-in text-left font-sans">
             <div className="bg-[#222222] p-4 text-white flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -945,64 +947,67 @@ export const ShiftSwapManagementView: React.FC<ShiftSwapManagementViewProps> = (
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* MANDATORY REJECTION RATIONALE MODAL */}
-      {rejectingSwap && (
-        <div className="fixed inset-0 bg-black/70 z-[10000] flex justify-center items-center p-4">
-          <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md p-6 space-y-4 text-left font-sans animate-fade-in">
-            <h4 className="font-black text-sm uppercase tracking-wider text-[#222222] flex items-center gap-2">
-              <span className="material-symbols-outlined text-rose-600 text-base">block</span>
-              Mandatory Rejection Rationale
-            </h4>
-            <p className="text-xs text-[#5f5e5e]">
-              Provide a rationale for rejecting shift swap request <strong className="font-mono">#{rejectingSwap.id}</strong>.
-            </p>
+      {rejectingSwap &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/70 z-[10000] flex justify-center items-center p-4">
+            <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-md p-6 space-y-4 text-left font-sans animate-fade-in">
+              <h4 className="font-black text-sm uppercase tracking-wider text-[#222222] flex items-center gap-2">
+                <span className="material-symbols-outlined text-rose-600 text-base">block</span>
+                Mandatory Rejection Rationale
+              </h4>
+              <p className="text-xs text-[#5f5e5e]">
+                Provide a rationale for rejecting shift swap request <strong className="font-mono">#{rejectingSwap.id}</strong>.
+              </p>
 
-            <textarea
-              aria-label="Rejection Reason"
-              rows={3}
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              placeholder="E.g., Target collaborator lacks Waitstaff certification or creates overtime breach..."
-              className="w-full p-3 border border-[#e8e2d8] rounded text-xs focus:outline-none focus:border-rose-600"
-              required
-            />
+              <textarea
+                aria-label="Rejection Reason"
+                rows={3}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="E.g., Target collaborator lacks Waitstaff certification or creates overtime breach..."
+                className="w-full p-3 border border-[#e8e2d8] rounded text-xs focus:outline-none focus:border-rose-600"
+                required
+              />
 
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setRejectReason('Overtime threshold policy breach (>40h limit)')}
-                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-[10px] font-bold rounded text-gray-700"
-              >
-                + Overtime Breach
-              </button>
-              <button
-                onClick={() => setRejectReason('Lack of required role certification')}
-                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-[10px] font-bold rounded text-gray-700"
-              >
-                + Role Mismatch
-              </button>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setRejectReason('Overtime threshold policy breach (>40h limit)')}
+                  className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-[10px] font-bold rounded text-gray-700"
+                >
+                  + Overtime Breach
+                </button>
+                <button
+                  onClick={() => setRejectReason('Lack of required role certification')}
+                  className="px-2 py-1 bg-gray-100 hover:bg-gray-200 text-[10px] font-bold rounded text-gray-700"
+                >
+                  + Role Mismatch
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-[#e8e2d8]">
+                <button
+                  onClick={() => setRejectingSwap(null)}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 font-bold text-xs uppercase rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmReject}
+                  disabled={actionInProgress || !rejectReason.trim()}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase rounded disabled:opacity-50"
+                >
+                  Confirm Rejection
+                </button>
+              </div>
             </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-[#e8e2d8]">
-              <button
-                onClick={() => setRejectingSwap(null)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 font-bold text-xs uppercase rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmReject}
-                disabled={actionInProgress || !rejectReason.trim()}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase rounded disabled:opacity-50"
-              >
-                Confirm Rejection
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* CREATE NEW TRADE REQUEST MODAL */}
       {showCreateModal && (
@@ -1085,7 +1090,7 @@ const CreateTradeModal: React.FC<CreateTradeModalProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-black/65 z-[10000] flex justify-center items-center p-4 backdrop-blur-sm">
       <div className="bg-white border border-[#e8e2d8] rounded shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in text-left font-sans">
         <div className="bg-[#222222] p-4 text-white flex justify-between items-center">
@@ -1198,7 +1203,8 @@ const CreateTradeModal: React.FC<CreateTradeModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

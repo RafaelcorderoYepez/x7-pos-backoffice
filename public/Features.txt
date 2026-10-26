@@ -101,12 +101,12 @@ online-order-items|Online Order Items cart|online-ordering|1|0
 online-orders|Online Orders dispatch engine|online-ordering|1|0
 online-payments|Online Payments Gateway integrations|online-ordering|2|0
 online-stores|Online Stores Web Portal templates|online-ordering|2|0
-qr-code-locations|QR Code Locations anchors|qr-code|2|0
-qr-code-menu-items|QR Code Menu Items routing|qr-code|2|0
+qr-code-locations|QR Code Locations|qr-code|2|0
+qr-code-menu-items|QR Code Menu Items|qr-code|2|0
 qr-code-menu-sections|QR Code Menu Sections|qr-code|2|0
-qr-code-menus|QR Code Menus deployment|qr-code|2|0
-qr-code-orders|QR Code Orders dispatch link|qr-code|2|0
-qr-order-items|QR Order Items parsing|qr-code|2|0
+qr-code-menus|QR Code Menus|qr-code|2|0
+qr-code-orders|QR Code Orders|qr-code|2|0
+qr-order-items|QR Order Items|qr-code|2|0
 loyalty-customers|Loyalty customers profiles|loyalty-system|3|0
 loyalty-coupons|Loyalty coupons engine|loyalty-system|3|0
 loyalty-point-transactions|Loyalty point transactions ledger|loyalty-system|3|0

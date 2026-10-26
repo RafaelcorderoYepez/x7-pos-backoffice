@@ -1,2 +1,3 @@
 // Forwarding export for backwards compatibility
-export * from './OnlineStoreSetupDrawer';
+export { OnlineStoreSetupDrawer, OnlineStoreModal } from './OnlineStoreSetupDrawer';
+export type { OnlineStoreFormData, OnlineStoreSetupDrawerProps } from './OnlineStoreSetupDrawer';

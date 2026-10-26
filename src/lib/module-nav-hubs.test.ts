@@ -100,9 +100,9 @@ const STORY_LABELS: Record<string, { back: string; items: string[] }> = {
     back: 'QR CODE SYSTEM COMMAND HUB',
     items: [
       'QR CODE LOCATIONS',
+      'QR CODE MENU ITEMS',
+      'QR CODE MENU SECTIONS',
       'QR CODE MENUS',
-      'QR MENU SECTIONS',
-      'QR MENU ITEMS',
       'QR CODE ORDERS',
       'QR ORDER ITEMS',
     ],

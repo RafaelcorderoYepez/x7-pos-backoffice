@@ -494,7 +494,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
                 onChangeDensity={setRowDensity}
                 totalItems={totalItems > 0 ? totalItems : movements.length}
                 pageSize={pageSize}
-                onChangePageSize={(s) => {
+                onChangePageSize={(s: number) => {
                   setPageSize(s);
                   setPage(1);
                 }}
@@ -712,7 +712,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
               pageSize={pageSize}
               totalItems={totalItems > 0 ? totalItems : movements.length}
               onPageChange={setPage}
-              onChangePageSize={(s) => {
+              onPageSizeChange={(s: number) => {
                 setPageSize(s);
                 setPage(1);
               }}

@@ -102,6 +102,10 @@ const getItemPrepAction = (course?: string, productName?: string) => {
   };
 };
 
+export interface KitchenOrderItemsViewProps {
+  onNavigate?: (view: string) => void;
+}
+
 export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ onNavigate }) => {
   const [items, setItems] = useState<KitchenOrderItemDetail[]>([]);
   const [stations, setStations] = useState<KitchenStationOption[]>([]);
@@ -763,7 +767,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       businessStatus: string;
       tier: number;
       createdAt: string;
-      items: KitchenOrderItemRecord[];
+      items: KitchenOrderItemDetail[];
     }>();
 
     for (const it of result) {
@@ -827,7 +831,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     }
 
     // 4. Flatten the sorted list keeping items of each order together
-    const flatItems: KitchenOrderItemRecord[] = [];
+    const flatItems: KitchenOrderItemDetail[] = [];
     for (const grp of orderGroups) {
       flatItems.push(...grp.items);
     }

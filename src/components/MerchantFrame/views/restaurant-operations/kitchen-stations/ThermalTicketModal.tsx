@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import type { KitchenTicket } from './KitchenMonitorView';
 import { detectAllergies } from './kdsLocalization';
 
@@ -28,8 +29,8 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
     window.print();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-hidden animate-fade-in">
+  const content = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-hidden animate-fade-in" role="dialog" aria-modal="true">
       <div className="relative w-full max-w-md bg-[#18191e] border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
         {/* Header Bar */}
         <div className="flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-zinc-800 to-zinc-900 border-b border-zinc-700">
@@ -200,4 +201,6 @@ export const ThermalTicketModal: React.FC<ThermalTicketModalProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 };

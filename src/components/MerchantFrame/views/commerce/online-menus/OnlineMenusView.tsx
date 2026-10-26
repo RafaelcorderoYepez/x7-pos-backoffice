@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import {
   OnlineMenuSetupDrawer,
@@ -37,8 +37,7 @@ interface OnlineMenusViewProps {
   onNavigate?: (view: string) => void;
 }
 
-export const OnlineMenusView: React.FC<OnlineMenusViewProps> = ({ onNavigate }) => {
-  const navigate = useNavigate();
+export const OnlineMenusView: React.FC<OnlineMenusViewProps> = () => {
   const [menus, setMenus] = useState<OnlineMenuItem[]>([]);
   const [stores, setStores] = useState<OnlineStoreOption[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -1101,18 +1100,17 @@ export const OnlineMenusView: React.FC<OnlineMenusViewProps> = ({ onNavigate }) 
           )}
 
           {/* Table Pagination Footer (Identical to OnlineStoresView) */}
-          <TablePaginationFooter
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            totalItems={filteredMenus.length}
-            onPageChange={setCurrentPage}
-            onPageSizeChange={(newSize) => {
-              setPageSize(newSize);
-              setCurrentPage(1);
-            }}
-            pageSizeOptions={[5, 10, 20, 50]}
-          />
+            <TablePaginationFooter
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={filteredMenus.length}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setPageSize(newSize);
+                setCurrentPage(1);
+              }}
+            />
         </div>
       ) : filteredMenus.length === 0 ? (
         <div
@@ -1283,7 +1281,6 @@ export const OnlineMenusView: React.FC<OnlineMenusViewProps> = ({ onNavigate }) 
                 setPageSize(newSize);
                 setCurrentPage(1);
               }}
-              pageSizeOptions={[6, 12, 24, 48]}
             />
           </div>
         </div>
@@ -1303,8 +1300,8 @@ export const OnlineMenusView: React.FC<OnlineMenusViewProps> = ({ onNavigate }) 
       />
 
       {/* Delete / Soft-Delete Confirmation Modal (Agreed standard pattern) */}
-      {isDeleteModalOpen && menuToDelete && (
-        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
+      {isDeleteModalOpen && menuToDelete && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans" role="dialog" aria-modal="true">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
@@ -1369,7 +1366,8 @@ export const OnlineMenusView: React.FC<OnlineMenusViewProps> = ({ onNavigate }) 
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -1094,7 +1094,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                     onChangeDensity={setRowDensity}
                     totalItems={filteredOrders.length}
                     pageSize={pageSize}
-                    onChangePageSize={(s) => {
+                    onChangePageSize={(s: number) => {
                       setPageSize(s);
                       setCurrentPage(1);
                     }}
@@ -1370,7 +1370,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                   pageSize={pageSize}
                   totalItems={filteredOrders.length}
                   onPageChange={setCurrentPage}
-                  onChangePageSize={(s) => {
+                  onPageSizeChange={(s: number) => {
                     setPageSize(s);
                     setCurrentPage(1);
                   }}

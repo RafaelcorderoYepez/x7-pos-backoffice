@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   CashTipMovementType,
   CreateCashTipMovementDto,
@@ -149,9 +150,9 @@ export const CashTipMovementFormDrawer: React.FC<CashTipMovementFormDrawerProps>
     }
   };
 
-  return (
+  const content = (
     <div
-      className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-sm flex justify-end transition-opacity duration-300"
+      className="fixed inset-0 z-[9999] overflow-hidden bg-slate-900/60 backdrop-blur-sm flex justify-end transition-opacity duration-300"
       data-testid="cash-tip-movement-form-drawer"
     >
       <div className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col font-poppins overflow-y-auto animate-in slide-in-from-right duration-300">
@@ -396,6 +397,8 @@ export const CashTipMovementFormDrawer: React.FC<CashTipMovementFormDrawerProps>
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 };
 
 export default CashTipMovementFormDrawer;
