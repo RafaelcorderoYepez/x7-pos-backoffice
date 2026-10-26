@@ -280,8 +280,7 @@ export function getStoredItems(): QRMenuItem[] {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        // Exclude mock items with id >= 9000
-        return parsed.filter((it: QRMenuItem) => it && Number(it.id) < 9000);
+        return parsed.filter((it: QRMenuItem) => it != null);
       }
     } catch {
       // Ignore

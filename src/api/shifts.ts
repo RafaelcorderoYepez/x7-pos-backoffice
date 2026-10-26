@@ -1,3 +1,4 @@
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from './http';
 import type {
   ShiftAssignment,
   CreateShiftAssignmentDto,
@@ -13,9 +14,6 @@ import type {
   LaborForecastingFilterParams,
   UpdateLaborBudgetTargetsDto,
 } from '../types/shifts';
-import { getAccessToken } from '../lib/auth-storage';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 export const SHIFT_PRESETS: ShiftTemplatePreset[] = [
   { id: 'p1', name: 'Morning Opening', startTime: '07:00 AM', endTime: '03:00 PM', defaultHours: 8, breakDuration: 30 },
@@ -93,65 +91,48 @@ export function calculateProjectedWeeklyHours(
 }
 
 export async function fetchCollaborators(): Promise<Collaborator[]> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/collaborators`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch collaborators (${res.status})`);
-  }
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.data || [];
+  const data = await apiRequest<MaybeEnvelopedList<Collaborator>>(
+    '/v1/collaborators',
+    { method: 'GET' },
+    'Failed to fetch collaborators.',
+  );
+  return unwrapList(data);
 }
 
 export async function fetchOpenShifts(
   params?: OpenShiftFilterParams
 ): Promise<OpenShift[]> {
-  const token = getAccessToken();
   const query = new URLSearchParams();
   if (params?.merchant_id) query.set('merchant_id', params.merchant_id);
   if (params?.role && params.role !== 'ALL') query.set('role', params.role);
   if (params?.startDate) query.set('date_range_start', params.startDate);
   if (params?.endDate) query.set('date_range_end', params.endDate);
 
-  const res = await fetch(`${API_BASE}/v1/open-shifts?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch open shifts (${res.status})`);
-  }
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.data || [];
+  const data = await apiRequest<MaybeEnvelopedList<OpenShift>>(
+    `/v1/open-shifts?${query.toString()}`,
+    { method: 'GET' },
+    'Failed to fetch open shifts.',
+  );
+  return unwrapList(data);
 }
 
 export async function publishOpenShift(
   dto: CreateOpenShiftDto
 ): Promise<OpenShift> {
-  const token = getAccessToken();
   const estimatedGrossEarnings = dto.hours * dto.hourlyRate;
-  const res = await fetch(`${API_BASE}/v1/open-shifts`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+  return apiRequest<OpenShift>(
+    '/v1/open-shifts',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        ...dto,
+        collaborator_id: null,
+        status: 'OPEN_FOR_PICKUP',
+        estimated_gross_earnings: estimatedGrossEarnings,
+      }),
     },
-    body: JSON.stringify({
-      ...dto,
-      collaborator_id: null,
-      status: 'OPEN_FOR_PICKUP',
-      estimated_gross_earnings: estimatedGrossEarnings,
-    }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to publish open shift (${res.status})`);
-  }
-  return await res.json();
+    'Failed to publish open shift.',
+  );
 }
 
 export async function claimOpenShift(
@@ -168,25 +149,19 @@ export async function claimOpenShift(
   message: string;
 }> {
   void _userShifts;
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/open-shifts/${shiftId}/claim`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+  return apiRequest(
+    `/v1/open-shifts/${shiftId}/claim`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        collaborator_id: collaboratorId,
+        collaborator_name: collaboratorName,
+        user_role: userRole,
+        user_weekly_hours: userWeeklyHours,
+      }),
     },
-    body: JSON.stringify({
-      collaborator_id: collaboratorId,
-      collaborator_name: collaboratorName,
-      user_role: userRole,
-      user_weekly_hours: userWeeklyHours,
-    }),
-  });
-  if (!res.ok) {
-    const errJson = await res.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to claim open shift (${res.status})`);
-  }
-  return await res.json();
+    'Failed to claim open shift.',
+  );
 }
 
 export async function approveOpenShiftPickup(
@@ -194,19 +169,11 @@ export async function approveOpenShiftPickup(
   requestId: string,
   approvedBy = 'Carlos Mendoza (Supervisor)'
 ): Promise<{ openShift: OpenShift; shiftAssignment: ShiftAssignment }> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/open-shifts/${shiftId}/pickup-requests/${requestId}/approve`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ approved_by: approvedBy }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to approve pickup request (${res.status})`);
-  }
-  return await res.json();
+  return apiRequest<{ openShift: OpenShift; shiftAssignment: ShiftAssignment }>(
+    `/v1/open-shifts/${shiftId}/pickup-requests/${requestId}/approve`,
+    { method: 'POST', body: JSON.stringify({ approved_by: approvedBy }) },
+    'Failed to approve pickup request.',
+  );
 }
 
 export async function rejectOpenShiftPickup(
@@ -215,30 +182,22 @@ export async function rejectOpenShiftPickup(
   reason: string,
   rejectedBy = 'Carlos Mendoza (Supervisor)'
 ): Promise<OpenShift> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/open-shifts/${shiftId}/pickup-requests/${requestId}/reject`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+  return apiRequest<OpenShift>(
+    `/v1/open-shifts/${shiftId}/pickup-requests/${requestId}/reject`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason, rejected_by: rejectedBy }),
     },
-    body: JSON.stringify({ reason, rejected_by: rejectedBy }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to reject pickup request (${res.status})`);
-  }
-  return await res.json();
+    'Failed to reject pickup request.',
+  );
 }
 
 export async function cancelOpenShift(shiftId: string): Promise<boolean> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/open-shifts/${shiftId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to cancel open shift (${res.status})`);
-  }
+  await apiRequest<void>(
+    `/v1/open-shifts/${shiftId}`,
+    { method: 'DELETE' },
+    'Failed to cancel open shift.',
+  );
   return true;
 }
 
@@ -246,71 +205,44 @@ export async function fetchShiftAssignments(
   startDate?: string,
   endDate?: string
 ): Promise<ShiftAssignment[]> {
-  const token = getAccessToken();
   const query = new URLSearchParams();
   if (startDate) query.set('startDate', startDate);
   if (endDate) query.set('endDate', endDate);
-  const res = await fetch(`${API_BASE}/shifts?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch shift assignments (${res.status})`);
-  }
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.data || [];
+  const data = await apiRequest<MaybeEnvelopedList<ShiftAssignment>>(
+    `/shifts?${query.toString()}`,
+    { method: 'GET' },
+    'Failed to fetch shift assignments.',
+  );
+  return unwrapList(data);
 }
 
 export async function createShiftAssignment(
   dto: CreateShiftAssignmentDto
 ): Promise<ShiftAssignment> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/shifts`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(dto),
-  });
-  if (!res.ok) {
-    const errJson = await res.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to create shift assignment (${res.status})`);
-  }
-  return await res.json();
+  return apiRequest<ShiftAssignment>(
+    '/shifts',
+    { method: 'POST', body: JSON.stringify(dto) },
+    'Failed to create shift assignment.',
+  );
 }
 
 export async function updateShiftAssignment(
   id: string,
   dto: UpdateShiftAssignmentDto
 ): Promise<ShiftAssignment> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/shifts/${id}`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(dto),
-  });
-  if (!res.ok) {
-    const errJson = await res.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to update shift assignment (${res.status})`);
-  }
-  return await res.json();
+  return apiRequest<ShiftAssignment>(
+    `/shifts/${id}`,
+    { method: 'PATCH', body: JSON.stringify(dto) },
+    'Failed to update shift assignment.',
+  );
 }
 
 export async function deleteShiftAssignment(id: string): Promise<boolean> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/shifts/${id}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to delete shift assignment (${res.status})`);
-  }
+  await apiRequest<void>(
+    `/shifts/${id}`,
+    { method: 'DELETE' },
+    'Failed to delete shift assignment.',
+  );
   return true;
 }
 
@@ -318,19 +250,11 @@ export async function publishWeeklyRoster(
   startDate: string,
   endDate: string
 ): Promise<{ updatedCount: number; shifts: ShiftAssignment[] }> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/shifts/publish`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ startDate, endDate }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to publish weekly roster (${res.status})`);
-  }
-  return await res.json();
+  return apiRequest<{ updatedCount: number; shifts: ShiftAssignment[] }>(
+    '/shifts/publish',
+    { method: 'POST', body: JSON.stringify({ startDate, endDate }) },
+    'Failed to publish weekly roster.',
+  );
 }
 
 export interface ShiftSwapFilterParams {
@@ -346,7 +270,6 @@ export interface ShiftSwapFilterParams {
 export async function fetchShiftSwapRequests(
   params?: ShiftSwapFilterParams
 ): Promise<ShiftSwapRequest[]> {
-  const token = getAccessToken();
   const query = new URLSearchParams();
   if (params?.merchant_id) query.set('merchant_id', params.merchant_id);
   if (params?.status && params.status !== 'ALL') query.set('status', params.status);
@@ -355,36 +278,23 @@ export async function fetchShiftSwapRequests(
   if (params?.requester_id) query.set('requester_id', params.requester_id);
   if (params?.recipient_id) query.set('recipient_id', params.recipient_id);
 
-  const res = await fetch(`${API_BASE}/v1/shift-swaps?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch shift swaps (${res.status})`);
-  }
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.data || [];
+  const data = await apiRequest<MaybeEnvelopedList<ShiftSwapRequest>>(
+    `/v1/shift-swaps?${query.toString()}`,
+    { method: 'GET' },
+    'Failed to fetch shift swaps.',
+  );
+  return unwrapList(data);
 }
 
 export async function approveShiftSwapRequest(
   swapId: string,
   approvedBy = 'Carlos Mendoza (Floor Manager)'
 ): Promise<{ swap: ShiftSwapRequest; shift: ShiftAssignment }> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/shift-swaps/${swapId}/approve`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ approved_by: approvedBy }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to approve shift swap (${res.status})`);
-  }
-  return await res.json();
+  return apiRequest<{ swap: ShiftSwapRequest; shift: ShiftAssignment }>(
+    `/v1/shift-swaps/${swapId}/approve`,
+    { method: 'POST', body: JSON.stringify({ approved_by: approvedBy }) },
+    'Failed to approve shift swap.',
+  );
 }
 
 export async function rejectShiftSwapRequest(
@@ -392,37 +302,24 @@ export async function rejectShiftSwapRequest(
   reason: string,
   rejectedBy = 'Carlos Mendoza (Supervisor)'
 ): Promise<ShiftSwapRequest> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/shift-swaps/${swapId}/reject`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+  return apiRequest<ShiftSwapRequest>(
+    `/v1/shift-swaps/${swapId}/reject`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason, rejected_by: rejectedBy }),
     },
-    body: JSON.stringify({ reason, rejected_by: rejectedBy }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to reject shift swap (${res.status})`);
-  }
-  return await res.json();
+    'Failed to reject shift swap.',
+  );
 }
 
 export async function createShiftSwapRequest(
   dto: Omit<ShiftSwapRequest, 'id' | 'createdAt' | 'status'>
 ): Promise<ShiftSwapRequest> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/shift-swaps`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(dto),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to create shift swap request (${res.status})`);
-  }
-  return await res.json();
+  return apiRequest<ShiftSwapRequest>(
+    '/v1/shift-swaps',
+    { method: 'POST', body: JSON.stringify(dto) },
+    'Failed to create shift swap request.',
+  );
 }
 
 export async function fetchMyShiftAssignments(
@@ -430,23 +327,17 @@ export async function fetchMyShiftAssignments(
   endDate?: string,
   collaboratorId = ''
 ): Promise<ShiftAssignment[]> {
-  const token = getAccessToken();
   const query = new URLSearchParams();
   if (startDate) query.set('start_date', startDate);
   if (endDate) query.set('end_date', endDate);
   if (collaboratorId) query.set('collaborator_id', collaboratorId);
 
-  const res = await fetch(`${API_BASE}/v1/shift-assignments/me?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch personal shifts (${res.status})`);
-  }
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.data || [];
+  const data = await apiRequest<MaybeEnvelopedList<ShiftAssignment>>(
+    `/v1/shift-assignments/me?${query.toString()}`,
+    { method: 'GET' },
+    'Failed to fetch personal shifts.',
+  );
+  return unwrapList(data);
 }
 
 export async function submitShiftAbsenceNotice(
@@ -454,19 +345,11 @@ export async function submitShiftAbsenceNotice(
   reason: string,
   notes?: string
 ): Promise<ShiftAssignment> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/shift-assignments/${shiftId}/absence`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ reason, notes }),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to submit absence notice (${res.status})`);
-  }
-  return await res.json();
+  return apiRequest<ShiftAssignment>(
+    `/v1/shift-assignments/${shiftId}/absence`,
+    { method: 'POST', body: JSON.stringify({ reason, notes }) },
+    'Failed to submit absence notice.',
+  );
 }
 
 export function generateShiftICS(shifts: ShiftAssignment[], collaboratorName = 'Collaborator'): string {
@@ -542,38 +425,24 @@ export function downloadICSFile(filename: string, content: string): void {
 export async function fetchLaborForecasting(
   params?: LaborForecastingFilterParams
 ): Promise<LaborForecastingSummary> {
-  const token = getAccessToken();
   const query = new URLSearchParams();
   if (params?.merchantId) query.set('merchant_id', params.merchantId);
   if (params?.startDate) query.set('start_date', params.startDate);
   if (params?.endDate) query.set('end_date', params.endDate);
 
-  const res = await fetch(`${API_BASE}/v1/labor-forecasting?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch labor forecasting (${res.status})`);
-  }
-  return await res.json();
+  return apiRequest<LaborForecastingSummary>(
+    `/v1/labor-forecasting?${query.toString()}`,
+    { method: 'GET' },
+    'Failed to fetch labor forecasting.',
+  );
 }
 
 export async function updateLaborBudgetTargets(
   dto: UpdateLaborBudgetTargetsDto
 ): Promise<{ targetLaborCostPercentage: number; maxWeeklyLaborBudget: number }> {
-  const token = getAccessToken();
-  const res = await fetch(`${API_BASE}/v1/labor-forecasting/budget-targets`, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(dto),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to update labor budget targets (${res.status})`);
-  }
-  return await res.json();
+  return apiRequest<{ targetLaborCostPercentage: number; maxWeeklyLaborBudget: number }>(
+    '/v1/labor-forecasting/budget-targets',
+    { method: 'PATCH', body: JSON.stringify(dto) },
+    'Failed to update labor budget targets.',
+  );
 }

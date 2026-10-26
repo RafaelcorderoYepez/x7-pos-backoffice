@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   SupplierCreditNote,
   SupplierCreditNoteStatus,
@@ -17,8 +16,7 @@ import { AccountsPayableQuickLinks } from './AccountsPayableQuickLinks';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter } from '../../shared/AppModal';
 import { Toast } from '../../shared/Toast';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 // ---- Helpers ----
 
@@ -492,18 +490,6 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   // Resolves supplier name (backend does not embed supplier object).
   const supplierNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -522,10 +508,11 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/supplier-credit-notes?limit=100`, { headers: authHeaders() });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading credit notes');
-      const json = await res.json();
+      const json = await apiRequest<{ data?: SupplierCreditNote[] }>(
+        '/supplier-credit-notes?limit=100',
+        { method: 'GET' },
+        'Error loading credit notes',
+      );
       const active = (json.data ?? []).filter((cn: SupplierCreditNote) => !cn.deleted_at);
       setCreditNotes(active);
     } catch (err) {
@@ -538,9 +525,11 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
 
   const fetchSuppliers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/v1/inventory/suppliers?limit=100`, { headers: authHeaders() });
-      if (!res.ok) return;
-      const json = await res.json();
+      const json = await apiRequest<{ data?: InvoiceSupplierRef[] }>(
+        '/v1/inventory/suppliers?limit=100',
+        { method: 'GET' },
+        'Request failed. Please try again.',
+      );
       setSuppliers(json.data ?? []);
     } catch (err) {
       console.error('Error fetching suppliers for picker:', err);
@@ -552,7 +541,7 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
       fetchCreditNotes();
       fetchSuppliers();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeCompanyId]);
 
   const supplierOptions = useMemo(() => {
@@ -590,14 +579,11 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
   const handleCreateSubmit = async (dto: CreateSupplierCreditNoteDto) => {
     setFormSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-credit-notes`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ ...dto, company_id: activeCompanyId }),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to issue credit note');
+      const json = await apiRequest<{ data: SupplierCreditNote }>(
+        '/supplier-credit-notes',
+        { method: 'POST', body: JSON.stringify({ ...dto, company_id: activeCompanyId }) },
+        'Failed to issue credit note',
+      );
       setCreditNotes((prev) => [json.data, ...prev]);
       setFormDrawer(null);
       setToast({ message: 'Credit note issued successfully', type: 'success' });
@@ -612,14 +598,11 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
   const handleEditSubmit = async (id: number, dto: UpdateSupplierCreditNoteDto) => {
     setFormSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-credit-notes/${id}`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to update credit note');
+      const json = await apiRequest<{ data: SupplierCreditNote }>(
+        `/supplier-credit-notes/${id}`,
+        { method: 'PUT', body: JSON.stringify(dto) },
+        'Failed to update credit note',
+      );
       setCreditNotes((prev) => prev.map((cn) => (cn.id === json.data.id ? json.data : cn)));
       setFormDrawer(null);
       setToast({ message: 'Credit note updated successfully', type: 'success' });
@@ -647,15 +630,11 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
     if (!deletingNote) return;
     setDeleteSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-credit-notes/${deletingNote.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to delete credit note');
-      }
+      await apiRequest<void>(
+        `/supplier-credit-notes/${deletingNote.id}`,
+        { method: 'DELETE' },
+        'Failed to delete credit note',
+      );
       setCreditNotes((prev) => prev.filter((cn) => cn.id !== deletingNote.id));
       setDeletingNote(null);
       setToast({ message: 'Credit note deleted successfully', type: 'success' });
@@ -671,16 +650,11 @@ export const SupplierCreditNotesView: React.FC<SupplierCreditNotesViewProps> = (
     setDetailNote(withSupplier(cn));
     setDetailAllocations(null);
     try {
-      const res = await fetch(
-        `${API_BASE}/supplier-payment-allocations?credit_note_id=${cn.id}&limit=100`,
-        { headers: authHeaders() },
+      const json = await apiRequest<{ data?: SupplierPaymentAllocation[] }>(
+        `/supplier-payment-allocations?credit_note_id=${cn.id}&limit=100`,
+        { method: 'GET' },
+        'Request failed. Please try again.',
       );
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        setDetailAllocations([]);
-        return;
-      }
-      const json = await res.json();
       setDetailAllocations(json.data ?? []);
     } catch (err) {
       console.error('Error fetching allocations:', err);

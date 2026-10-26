@@ -757,7 +757,7 @@ export const PlanApplicationsView: React.FC<PlanApplicationsViewProps> = ({
           type="button"
           aria-label="Open associate-application form"
           onClick={openAssociateModal}
-          className="fixed bottom-8 right-8 w-14 h-14 bg-[#ae001a] text-white rounded-full flex items-center justify-center shadow-xl hover:bg-[#930015] transition-all transform hover:scale-110 active:scale-95 z-50"
+          className="fixed bottom-32 right-8 w-14 h-14 bg-[#ae001a] text-white rounded-full flex items-center justify-center shadow-xl hover:bg-[#930015] transition-all transform hover:scale-110 active:scale-95 z-50"
         >
           <span className="material-symbols-outlined text-3xl">add</span>
         </button>

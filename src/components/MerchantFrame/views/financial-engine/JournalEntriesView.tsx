@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   JournalEntry,
   JournalEntryReferenceType,
@@ -17,14 +16,13 @@ import {
 import type { CreateJournalEntryDto } from '../../../../types/accounting';
 import { LedgerQuickLinks } from './LedgerQuickLinks';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
 import {
   STATUS_BADGE_CLASSES,
   REFERENCE_TYPE_OPTIONS,
   formatCurrency,
   formatEntryDate,
 } from './journalEntriesHelpers';
+import { apiRequest } from '../../../../api/http';
 
 interface JournalEntryDetailDrawerProps {
   entry: JournalEntry;
@@ -477,19 +475,12 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
     const { type, entry } = confirmAction;
     setActionSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
       if (type === 'delete') {
-        const res = await fetch(`${API_BASE}/journal-entry/${entry.id}`, { method: 'DELETE', headers });
-        if (res.status === 401) {
-          clearAuthSession();
-          window.location.href = '/login';
-          return;
-        }
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(json.message || 'Failed to delete journal entry');
+        await apiRequest<void>(
+          `/journal-entry/${entry.id}`,
+          { method: 'DELETE' },
+          'Failed to delete journal entry',
+        );
 
         setEntries((prev) => prev.filter((e) => e.id !== entry.id));
         setDetailEntry(null);
@@ -507,41 +498,13 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
       }
 
       const path = type === 'post' ? 'post' : 'void';
-      const res = await fetch(`${API_BASE}/journal-entry/${entry.id}/${path}`, { method: 'POST', headers }).catch(() => null);
-      if (res && res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-      const json = res ? await res.json().catch(() => ({})) : {};
-
-      if (!res || !res.ok) {
-        setEntries((prev) =>
-          prev.map((e) =>
-            e.id === entry.id
-              ? {
-                  ...e,
-                  status: type === 'post' ? ('POSTED' as JournalEntryStatus) : ('VOIDED' as JournalEntryStatus),
-                  updated_at: new Date().toISOString(),
-                }
-              : e,
-          ),
-        );
-        if (detailEntry && detailEntry.id === entry.id) {
-          setDetailEntry((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  status: type === 'post' ? ('POSTED' as JournalEntryStatus) : ('VOIDED' as JournalEntryStatus),
-                  updated_at: new Date().toISOString(),
-                }
-              : null,
-          );
-        }
-      } else {
-        setEntries((prev) => prev.map((e) => (e.id === json.data.id ? json.data : e)));
-        setDetailEntry(json.data);
-      }
+      const json = await apiRequest<{ data: JournalEntry }>(
+        `/journal-entry/${entry.id}/${path}`,
+        { method: 'POST' },
+        `Failed to ${path} journal entry`,
+      );
+      setEntries((prev) => prev.map((e) => (e.id === json.data.id ? json.data : e)));
+      setDetailEntry(json.data);
 
       setConfirmAction(null);
       setToast({
@@ -565,26 +528,11 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
   const handleCreateSubmit = async (dto: CreateJournalEntryDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/journal-entry`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to create journal entry');
-      }
+      const json = await apiRequest<{ data: JournalEntry }>(
+        '/journal-entry',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to create journal entry',
+      );
 
       setEntries((prev) => [json.data, ...prev]);
       closeFormModal();
@@ -599,26 +547,11 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
   const handleEditSubmit = async (entryId: number, dto: CreateJournalEntryDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/journal-entry/${entryId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to update journal entry');
-      }
+      const json = await apiRequest<{ data: JournalEntry }>(
+        `/journal-entry/${entryId}`,
+        { method: 'PATCH', body: JSON.stringify(dto) },
+        'Failed to update journal entry',
+      );
 
       setEntries((prev) => prev.map((e) => (e.id === json.data.id ? json.data : e)));
       closeFormModal();
@@ -634,26 +567,12 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
     setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/journal-entry?limit=100`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        setError(`Failed to load journal entries. Server returned status ${res.status}`);
-        return;
-      }
-
-      const json = await res.json();
-      const loaded = json.data ?? [];
-      setEntries(loaded);
+      const json = await apiRequest<{ data?: JournalEntry[] }>(
+        '/journal-entry?limit=100',
+        { method: 'GET' },
+        'Failed to load journal entries.',
+      );
+      setEntries(json.data ?? []);
     } catch (err: unknown) {
       console.error('Error fetching journal entries:', err);
       setError(err instanceof Error ? err.message : 'Failed to load journal entries');
@@ -664,19 +583,13 @@ export const JournalEntriesView: React.FC<JournalEntriesViewProps> = ({ onNaviga
 
   const fetchLedgerAccounts = async () => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/ledger-accounts?limit=100`, { headers });
-      if (res.ok) {
-        const json = await res.json();
-        const active = ((json.data ?? []) as LedgerAccount[]).filter((a) => a.is_active);
-        if (active.length > 0) {
-          setLedgerAccounts(active);
-          return;
-        }
-      }
+      const json = await apiRequest<{ data?: LedgerAccount[] }>(
+        '/ledger-accounts?limit=100',
+        { method: 'GET' },
+        'Failed to load ledger accounts.',
+      );
+      const active = (json.data ?? []).filter((a) => a.is_active);
+      if (active.length > 0) setLedgerAccounts(active);
     } catch (err) {
       console.error('Error fetching ledger accounts:', err);
     }

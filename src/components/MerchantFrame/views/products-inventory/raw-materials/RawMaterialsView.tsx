@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession, getStoredUser } from '../../../../../lib/auth-storage';
+import { getStoredUser } from '../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
 
 interface Category {
   id: number;
@@ -38,6 +39,39 @@ interface RawMaterial {
 
 interface RawMaterialsViewProps {
   onNavigate?: (view: string) => void;
+}
+
+type RawMaterialRow = {
+  id: number;
+  code: string;
+  sku?: string | null;
+  name: string;
+  category_id?: number | null;
+  category?: { id: number; name: string } | null;
+  unit: string;
+  purchase_unit?: string | null;
+  consumption_unit?: string | null;
+  conversion_factor?: number | string;
+  cost_per_unit?: number | string | null;
+  description?: string | null;
+  isActive?: boolean;
+  created_at?: string;
+  createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+};
+
+// One stock row per (raw material, location); the backend has used several key spellings.
+interface StockRow {
+  supplyId?: number;
+  supply_id?: number;
+  supply?: { id: number };
+  rawMaterialId?: number;
+  raw_material_id?: number;
+  currentQty?: number | string;
+  minimumQty?: number | null;
+  minimum_qty?: number | null;
+  weightedAverageUnitCost?: number | null;
 }
 
 export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }) => {
@@ -99,8 +133,6 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
     navigator.clipboard.writeText(`Raw Materials: ${filteredMaterials.length} total, ${active} active, ${filteredMaterials.length - active} inactive.`);
   };
 
-
-
   // Drawer y Detalles
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit' | 'view'>('add');
@@ -131,8 +163,6 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
 
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
   const topRef = useRef<HTMLDivElement | null>(null);
-
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
   const currentUser = getStoredUser();
   const isInventorySpecialist = ['merchant_admin', 'admin', 'super_admin', 'SaaS Owner', 'Inventory Specialist'].includes(currentUser?.role || '');
 
@@ -140,62 +170,33 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
     if (!silent) setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
+      // Categories and stock enrich the grid; if either fails the materials still render.
+      const [materialsJson, categoriesJson, stockJson] = await Promise.all([
+        apiRequest<MaybeEnvelopedList<RawMaterialRow>>(
+          '/v1/inventory/raw-materials?limit=100&status=all',
+          { method: 'GET' },
+          'Error loading raw materials from server',
+        ),
+        apiRequest<MaybeEnvelopedList<Category>>('/v1/raw-material-categories', { method: 'GET' }, '').catch(() => null),
+        apiRequest<MaybeEnvelopedList<StockRow>>('/v1/raw-material-stock/items?limit=100', { method: 'GET' }, '').catch(() => null),
+      ]);
 
-      const materialsRes = await fetch(`${API_BASE}/v1/inventory/raw-materials?limit=100&status=all`, { headers });
-      if (materialsRes.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const categoriesRes = await fetch(`${API_BASE}/v1/raw-material-categories`, { headers });
-      const stockRes = await fetch(`${API_BASE}/v1/raw-material-stock/items?limit=100`, { headers });
-
-      if (!materialsRes.ok) {
-        throw new Error('Error loading raw materials from server');
-      }
-
-      const materialsJson = await materialsRes.json();
-      const categoriesJson = categoriesRes.ok ? await categoriesRes.json() : { data: [] };
-      const stockJson = stockRes.ok ? await stockRes.json() : { data: [] };
-
-      const rawMaterialsData = materialsJson.items || materialsJson.data || materialsJson || [];
-      const rawCategoriesData = categoriesJson.data || categoriesJson.items || categoriesJson || [];
-      const stockData = stockJson.data || stockJson.items || stockJson || [];
-      const mappedMaterials: RawMaterial[] = rawMaterialsData.map((rm: {
-        id: number;
-        code: string;
-        sku?: string | null;
-        name: string;
-        category_id?: number | null;
-        category?: { id: number; name: string } | null;
-        unit: string;
-        purchase_unit?: string | null;
-        consumption_unit?: string | null;
-        conversion_factor?: number | string;
-        cost_per_unit?: number | string | null;
-        description?: string | null;
-        isActive?: boolean;
-        created_at?: string;
-        createdAt?: string;
-        updated_at?: string;
-        updatedAt?: string;
-      }) => {
-        const stockItems = stockData.filter((s: { supplyId?: number; supply_id?: number; supply?: { id: number }; rawMaterialId?: number; raw_material_id?: number }) => {
+      // Raw materials: `items` takes precedence over `data` (legacy envelope).
+      const rawMaterialsData = Array.isArray(materialsJson)
+        ? materialsJson
+        : materialsJson.items || materialsJson.data || [];
+      const rawCategoriesData = unwrapList(categoriesJson);
+      const stockData = unwrapList(stockJson);
+      const mappedMaterials: RawMaterial[] = rawMaterialsData.map((rm) => {
+        const stockItems = stockData.filter((s) => {
           const sid = s.supplyId || s.supply_id || s.supply?.id || s.rawMaterialId || s.raw_material_id;
           return Number(sid) === Number(rm.id);
         });
-        const totalQty = stockItems.reduce((acc: number, cur: { currentQty?: number | string }) => acc + (Number(cur.currentQty) || 0), 0);
-        const minStockItem = stockItems.find((s: { minimumQty?: number | null; minimum_qty?: number | null }) => s.minimumQty != null || s.minimum_qty != null);
+        const totalQty = stockItems.reduce((acc: number, cur) => acc + (Number(cur.currentQty) || 0), 0);
+        const minStockItem = stockItems.find((s) => s.minimumQty != null || s.minimum_qty != null);
         const minStock = minStockItem ? (minStockItem.minimumQty ?? minStockItem.minimum_qty ?? null) : null;
-        const waccItem = stockItems.find((s: { weightedAverageUnitCost?: number | null }) => s.weightedAverageUnitCost != null);
+        const waccItem = stockItems.find((s) => s.weightedAverageUnitCost != null);
         const wacc = waccItem ? (waccItem.weightedAverageUnitCost ?? null) : null;
-
 
         return {
           id: rm.id,
@@ -227,7 +228,7 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
     } finally {
       setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     if (topRef.current) {
@@ -285,12 +286,6 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
       return;
     }
 
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-
     const isEdit = drawerMode === 'edit' && selectedMaterial;
     const finalSku = formSku && formSku.trim() !== '' ? formSku.trim() : undefined;
     const bodyData: {
@@ -318,38 +313,26 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
       isActive: formIsActive,
     };
 
-
     const saveAction = async () => {
       try {
         setIsLoading(true);
         setIsDrawerOpen(false);
 
-        let res;
-        if (isEdit) {
-          res = await fetch(`${API_BASE}/v1/inventory/raw-materials/${selectedMaterial.id}`, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify(bodyData),
-          });
-        } else {
+        if (!isEdit) {
           if (finalSku) {
             bodyData.code = finalSku;
           } else {
             const localUuid = crypto.randomUUID();
             bodyData.code = `RM-${localUuid.split('-')[0].toUpperCase()}`;
           }
-          res = await fetch(`${API_BASE}/v1/inventory/raw-materials`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(bodyData),
-          });
         }
-
-
-        if (!res.ok) {
-          const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error saving raw material to server');
-        }
+        await apiRequest<void>(
+          isEdit
+            ? `/v1/inventory/raw-materials/${selectedMaterial.id}`
+            : '/v1/inventory/raw-materials',
+          { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(bodyData) },
+          'Error saving raw material to server',
+        );
 
         await fetchData();
       } catch (err: unknown) {
@@ -369,17 +352,18 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
 
       if (unitOrFactorChanged) {
         try {
-          const usageRes = await fetch(`${API_BASE}/v1/inventory/raw-materials/${selectedMaterial.id}/usage`, { headers });
-          if (usageRes.ok) {
-            const usageData = await usageRes.json();
-            if (usageData.inRecipes || usageData.inMovements) {
-              setWarningMessage(
-                `Warning: This raw material is currently bound to active recipes or inventory movements. Modifying unit conversion factors will affect existing recipe yield calculations and historical costing model alignment.`
-              );
-              setPendingSaveHandler(() => saveAction);
-              setIsWarningModalOpen(true);
-              return;
-            }
+          const usageData = await apiRequest<{ inRecipes?: boolean; inMovements?: boolean }>(
+            `/v1/inventory/raw-materials/${selectedMaterial.id}/usage`,
+            { method: 'GET' },
+            'Failed to check raw material usage.',
+          );
+          if (usageData.inRecipes || usageData.inMovements) {
+            setWarningMessage(
+              `Warning: This raw material is currently bound to active recipes or inventory movements. Modifying unit conversion factors will affect existing recipe yield calculations and historical costing model alignment.`
+            );
+            setPendingSaveHandler(() => saveAction);
+            setIsWarningModalOpen(true);
+            return;
           }
         } catch (err) {
           console.error('Error checking usage:', err);
@@ -403,12 +387,6 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
     setIsToggling(true);
     setToggleError(null);
 
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-
     try {
       const nextActiveState = !toggleTarget.isActive;
 
@@ -418,16 +396,14 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
       }
 
       // Aplicar soft deactivation (PATCH)
-      const res = await fetch(`${API_BASE}/v1/inventory/raw-materials/${toggleTarget.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ isActive: nextActiveState }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Error updating raw material status');
-      }
-
+      await apiRequest<void>(
+        `/v1/inventory/raw-materials/${toggleTarget.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ isActive: nextActiveState }),
+        },
+        'Error updating raw material status.',
+      );
       setIsToggleModalOpen(false);
       await fetchData();
     } catch (err: unknown) {
@@ -442,7 +418,6 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
   const filteredMaterials = materials.filter((m) => {
     if (statusFilter === 'Active' && !m.isActive) return false;
     if (statusFilter === 'Inactive' && m.isActive) return false;
-
 
     const matchSearch =
       m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -573,9 +548,6 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
         </div>
       </div>
 
-
-
-
       {/* Table Container */}
       <div className="bg-white border border-[#e8e2d8] rounded overflow-hidden shadow-sm">
         <div className="p-4 bg-[#222222] flex justify-between items-center relative">
@@ -638,7 +610,11 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
 
             <tbody className="divide-y divide-[#e8e2d8] text-xs font-sans">
               {activeColSpan === 0 ? (
-                <NoColumnsEmptyState colSpan={7} />
+                <tr>
+                  <td colSpan={7}>
+                    <NoColumnsEmptyState />
+                  </td>
+                </tr>
               ) : isLoading ? (
                 <tr>
                   <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
@@ -813,10 +789,8 @@ export const RawMaterialsView: React.FC<RawMaterialsViewProps> = ({ onNavigate }
         />
       </div>
 
-
       {/* Quick Links Hub Persistente (Sprint 25 Story 4114) */}
       <StockQuickLinks current="raw-materials" onNavigate={onNavigate} />
-
 
       {/* Drawer Interactivo */}
       {isDrawerOpen && createPortal(

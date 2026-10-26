@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { OrdersRegistryView } from './OrdersRegistryView';
+import { jsonResponse } from '../../../test/fetch';
 import type { MerchantOrder } from '../../../types/settlements';
 
 vi.mock('../../../lib/saas-auth-storage', () => ({
@@ -48,12 +49,8 @@ const ORDERS: MerchantOrder[] = [
   },
 ];
 
-function jsonRes(body: unknown, status = 200) {
-  return { status, ok: status >= 200 && status < 300, json: async () => body };
-}
-
 function installFetch(orders: MerchantOrder[] = ORDERS) {
-  const spy = vi.fn(async () => jsonRes({ data: orders }));
+  const spy = vi.fn(async () => jsonResponse({ data: orders }));
   vi.stubGlobal('fetch', spy);
   return spy;
 }
@@ -84,7 +81,7 @@ describe('OrdersRegistryView — states', () => {
     // @ts-expect-error partial mock
     window.location = { href: '' };
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({}, 401)));
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({}, 401)));
     render(<OrdersRegistryView />);
     await waitFor(() => expect(window.location.href).toBe('/saas-admin'));
 

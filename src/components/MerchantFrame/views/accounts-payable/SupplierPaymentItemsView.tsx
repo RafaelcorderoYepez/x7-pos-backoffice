@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   SupplierPayment,
   SupplierPaymentItem,
@@ -19,8 +18,7 @@ import { AccountsPayableQuickLinks } from './AccountsPayableQuickLinks';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter, ModalFormError } from '../../shared/AppModal';
 import { Toast } from '../../shared/Toast';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 // ---- Helpers ----
 
@@ -55,7 +53,6 @@ interface PaymentItemFormDrawerProps {
   defaultPaymentId?: number;
   submitting: boolean;
   formError: string;
-  authHeaders: () => Record<string, string>;
   onCancel: () => void;
   onSubmit: (dto: CreateSupplierPaymentItemDto | UpdateSupplierPaymentItemDto) => void;
 }
@@ -67,7 +64,6 @@ const PaymentItemFormDrawer: React.FC<PaymentItemFormDrawerProps> = ({
   defaultPaymentId,
   submitting,
   formError,
-  authHeaders,
   onCancel,
   onSubmit,
 }) => {
@@ -107,13 +103,14 @@ const PaymentItemFormDrawer: React.FC<PaymentItemFormDrawerProps> = ({
     void Promise.resolve().then(() => {
       setSiblings(null);
     });
-    fetch(`${API_BASE}/supplier-payment-items?payment_id=${paymentId}&limit=100`, {
-      headers: authHeaders(),
-    })
-      .then((res) => (res.ok ? res.json() : { data: [] }))
+    apiRequest<{ data?: SupplierPaymentItem[] }>(
+      `/supplier-payment-items?payment_id=${paymentId}&limit=100`,
+      { method: 'GET' },
+      'Failed to load payment items.',
+    )
       .then((json) => {
         if (cancelled) return;
-        const list = ((json.data ?? []) as SupplierPaymentItem[]).filter((i) => !i.deleted_at);
+        const list = (json.data ?? []).filter((i) => !i.deleted_at);
         setSiblings(list);
       })
       .catch(() => {
@@ -122,7 +119,7 @@ const PaymentItemFormDrawer: React.FC<PaymentItemFormDrawerProps> = ({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [paymentId]);
 
   const amountNum = num(amount);
@@ -532,18 +529,6 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchItems = async () => {
     setLoading(true);
     setError(null);
@@ -551,13 +536,14 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
       // Multi-tenant scoping enforced by backend with JWT; parent context
       // se traduce a un filtro payment_id server-side.
       const url = payment
-        ? `${API_BASE}/supplier-payment-items?payment_id=${payment.id}&limit=100`
-        : `${API_BASE}/supplier-payment-items?limit=100`;
-      const res = await fetch(url, { headers: authHeaders() });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading payment items');
-      const json = await res.json();
-      const active = ((json.data ?? []) as SupplierPaymentItem[]).filter((i) => !i.deleted_at);
+        ? `/supplier-payment-items?payment_id=${payment.id}&limit=100`
+        : '/supplier-payment-items?limit=100';
+      const json = await apiRequest<{ data?: SupplierPaymentItem[] }>(
+        url,
+        { method: 'GET' },
+        'Error loading payment items',
+      );
+      const active = (json.data ?? []).filter((i) => !i.deleted_at);
       setItems(active);
     } catch (err) {
       console.error('Error fetching supplier payment items:', err);
@@ -570,11 +556,11 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
   // Payment catalog: resolves payment_number for grid and total/status for locks.
   const fetchPayments = async () => {
     try {
-      const res = await fetch(`${API_BASE}/supplier-payments?limit=100`, {
-        headers: authHeaders(),
-      });
-      if (!res.ok) return;
-      const json = await res.json();
+      const json = await apiRequest<{ data?: SupplierPayment[] }>(
+        '/supplier-payments?limit=100',
+        { method: 'GET' },
+        'Request failed. Please try again.',
+      );
       setPayments(((json.data ?? []) as SupplierPayment[]).filter((p) => !p.deleted_at));
     } catch (err) {
       console.error('Error fetching payments for payment items:', err);
@@ -649,14 +635,11 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
     setFormSubmitting(true);
     setFormError('');
     try {
-      const res = await fetch(`${API_BASE}/supplier-payment-items`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to add payment item');
+      await apiRequest<void>(
+        '/supplier-payment-items',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to add payment item',
+      );
       await fetchItems();
       await fetchPayments();
       setFormDrawer(null);
@@ -673,14 +656,11 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
     setFormSubmitting(true);
     setFormError('');
     try {
-      const res = await fetch(`${API_BASE}/supplier-payment-items/${id}`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to update payment item');
+      await apiRequest<void>(
+        `/supplier-payment-items/${id}`,
+        { method: 'PUT', body: JSON.stringify(dto) },
+        'Failed to update payment item',
+      );
       await fetchItems();
       await fetchPayments();
       setFormDrawer(null);
@@ -708,15 +688,11 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
     if (!deletingItem) return;
     setDeleteSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-payment-items/${deletingItem.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to delete payment item');
-      }
+      await apiRequest<void>(
+        `/supplier-payment-items/${deletingItem.id}`,
+        { method: 'DELETE' },
+        'Failed to delete payment item',
+      );
       setItems((prev) => prev.filter((i) => i.id !== deletingItem.id));
       setDeletingItem(null);
       setToast({ message: 'Payment item deleted successfully', type: 'success' });
@@ -1039,7 +1015,6 @@ export const SupplierPaymentItemsView: React.FC<SupplierPaymentItemsViewProps> =
           defaultPaymentId={payment?.id}
           submitting={formSubmitting}
           formError={formError}
-          authHeaders={authHeaders}
           onCancel={() => setFormDrawer(null)}
           onSubmit={(dto) =>
             formDrawer.mode === 'create'

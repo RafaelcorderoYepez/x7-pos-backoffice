@@ -5,7 +5,6 @@
 // relative to system date. Storing it would create dual truth and state drift.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   CollaboratorContract,
   ContractRevision,
@@ -45,6 +44,25 @@ import { Toast } from '../../shared/Toast';
 import { HrQuickLinks } from './HrQuickLinks';
 import { ContractFormDrawer, type ContractDraft } from './ContractFormDrawer';
 import { ContractDetailDrawer } from './ContractDetailDrawer';
+import { ApiError } from '../../../../lib/api-error';
+import { apiRequest } from '../../../../api/http';
+
+const REGISTER_FALLBACK = 'Failed to register the contract';
+const AMEND_FALLBACK = 'Failed to amend the contract';
+
+// Overlap 409 -> warning naming the conflicting contract; any other error passes through.
+function overlapError(
+  err: unknown,
+  contracts: CollaboratorContract[],
+  collaboratorId: number,
+  fallback: string,
+): unknown {
+  if (err instanceof ApiError && err.status === 409) {
+    const apiMessage = err.message === fallback ? undefined : err.message;
+    return new Error(conflictMessageFor(contracts, collaboratorId, apiMessage), { cause: err });
+  }
+  return err;
+}
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -137,34 +155,15 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  // Multipart upload: setting Content-Type manually breaks boundary.
-  const uploadHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchContracts = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/collaborator-contracts?limit=100`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading contracts');
-      const json = await res.json();
+      const json = await apiRequest<{ data?: CollaboratorContract[] }>(
+        '/collaborator-contracts?limit=100',
+        { method: 'GET' },
+        'Error loading contracts',
+      );
       setContracts((json.data ?? []) as CollaboratorContract[]);
     } catch (err) {
       console.error('Error fetching contracts:', err);
@@ -177,15 +176,11 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
   const fetchContext = async () => {
     setCollaboratorsError('');
     try {
-      const res = await fetch(`${API_BASE}/collaborators?limit=100`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to load collaborators.');
-      }
-      const json = await res.json();
+      const json = await apiRequest<{ data?: Collaborator[] }>(
+        '/collaborators?limit=100',
+        { method: 'GET' },
+        'Failed to load collaborators.',
+      );
       setCollaborators(
         ((json.data ?? []) as Collaborator[]).filter((c) => c.status !== DELETED_STATUS),
       );
@@ -199,15 +194,12 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
     // Company missing from session; DTO requires it, resolved from
     // el propio comercio en lugar de inventarla a partir del merchant_id.
     try {
-      const res = await fetch(`${API_BASE}/merchants/${activeMerchantId}`, {
-        headers: authHeaders(),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const data = json.data ?? {};
-        const resolved = data.company_id ?? data.company?.id ?? null;
-        if (resolved) setCompanyId(Number(resolved));
-      }
+      const json = await apiRequest<{
+        data?: { company_id?: number | null; company?: { id?: number } | null };
+      }>(`/merchants/${activeMerchantId}`, { method: 'GET' }, 'Failed to load the merchant.');
+      const data = json.data ?? {};
+      const resolved = data.company_id ?? data.company?.id ?? null;
+      if (resolved) setCompanyId(Number(resolved));
     } catch (err) {
       console.error('Error resolving the company for contracts:', err);
     }
@@ -233,16 +225,11 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
   const uploadDocument = async (contractId: number, file: File): Promise<void> => {
     const body = new FormData();
     body.append('document', file);
-    const res = await fetch(`${API_BASE}/collaborator-contracts/${contractId}/document`, {
-      method: 'POST',
-      headers: uploadHeaders(),
-      body,
-    });
-    if (res.status === 401) return handleUnauthorized();
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      throw new Error(json.message || 'The contract was saved but the document upload failed.');
-    }
+    await apiRequest<void>(
+      `/collaborator-contracts/${contractId}/document`,
+      { method: 'POST', body },
+      'The contract was saved but the document upload failed.',
+    );
   };
 
   // ---------------- Alta y enmienda ----------------
@@ -263,20 +250,16 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
         end_date: draft.end_date,
         active: draft.active,
       };
-      const res = await fetch(`${API_BASE}/collaborator-contracts`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // Overlap 409 translated into warning identifying conflicting contract.
-        throw new Error(
-          res.status === 409
-            ? conflictMessageFor(contracts, draft.collaborator_id, json.message)
-            : json.message || 'Failed to register the contract',
+      let json: { data?: CollaboratorContract };
+      try {
+        json = await apiRequest<{ data?: CollaboratorContract }>(
+          '/collaborator-contracts',
+          { method: 'POST', body: JSON.stringify(body) },
+          REGISTER_FALLBACK,
         );
+      } catch (err) {
+        // Overlap 409 translated into warning identifying conflicting contract.
+        throw overlapError(err, contracts, draft.collaborator_id, REGISTER_FALLBACK);
       }
       if (draft.document && json.data?.id) {
         await uploadDocument(Number(json.data.id), draft.document);
@@ -307,19 +290,14 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
         end_date: draft.end_date,
         active: draft.active,
       };
-      const res = await fetch(`${API_BASE}/collaborator-contracts/${id}`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(
-          res.status === 409
-            ? conflictMessageFor(contracts, draft.collaborator_id, json.message)
-            : json.message || 'Failed to amend the contract',
+      try {
+        await apiRequest<void>(
+          `/collaborator-contracts/${id}`,
+          { method: 'PUT', body: JSON.stringify(body) },
+          AMEND_FALLBACK,
         );
+      } catch (err) {
+        throw overlapError(err, contracts, draft.collaborator_id, AMEND_FALLBACK);
       }
       if (draft.document) await uploadDocument(id, draft.document);
       await fetchContracts();
@@ -336,15 +314,11 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
     if (!deleting) return;
     setDeleteSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/collaborator-contracts/${deleting.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to delete the contract');
-      }
+      await apiRequest<void>(
+        `/collaborator-contracts/${deleting.id}`,
+        { method: 'DELETE' },
+        'Failed to delete the contract',
+      );
       setContracts((prev) => prev.filter((c) => c.id !== deleting.id));
       setDeleting(null);
       setToast({ message: 'Contract deleted successfully', type: 'success' });
@@ -366,14 +340,12 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
     setRevisionsError('');
     setRevisions([]);
     try {
-      const res = await fetch(`${API_BASE}/collaborator-contracts/${id}/revisions`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok)
-        throw new Error(json.message || 'Failed to load the amendment history');
-      setRevisions((json.data ?? []) as ContractRevision[]);
+      const json = await apiRequest<{ data?: ContractRevision[] }>(
+        `/collaborator-contracts/${id}/revisions`,
+        { method: 'GET' },
+        'Failed to load the amendment history',
+      );
+      setRevisions(json.data ?? []);
     } catch (err) {
       setRevisionsError(
         err instanceof Error ? err.message : 'Failed to load the amendment history',

@@ -1,3 +1,4 @@
+import { apiRequest, unwrapList, type MaybeEnvelopedList, authHeaders, API_BASE } from './http';
 import type {
   TimeEntry,
   PunchType,
@@ -13,28 +14,6 @@ import type {
 } from '../types/attendance';
 import type { ShiftAssignment } from '../types/shifts';
 import { fetchShiftAssignments, parseTimeToMinutes } from './shifts';
-import { getAccessToken } from '../lib/auth-storage';
-
-function getApiUrl(path: string): string {
-  const base = import.meta.env.VITE_API_URL ?? '/api';
-  const fullPath = path.startsWith('/') ? `${base}${path}` : `${base}/${path}`;
-  if (fullPath.startsWith('http://') || fullPath.startsWith('https://')) {
-    return fullPath;
-  }
-  if (
-    typeof window !== 'undefined' &&
-    window.location?.origin &&
-    window.location.origin !== 'null' &&
-    window.location.origin !== 'opaque'
-  ) {
-    try {
-      return new URL(fullPath, window.location.origin).toString();
-    } catch {
-      // fallback
-    }
-  }
-  return `http://localhost:3000${fullPath.startsWith('/') ? '' : '/'}${fullPath}`;
-}
 
 export const DEFAULT_CONFIG: TimeClockConfig = {
   gracePeriodMinutes: 15,
@@ -73,13 +52,9 @@ export async function validatePin(
     };
   }
 
-  const token = getAccessToken();
-  const res = await fetch(getApiUrl('/v1/attendance/validate-pin'), {
+  const res = await fetch(`${API_BASE}/v1/attendance/validate-pin`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: authHeaders(true),
     body: JSON.stringify({ pinOrBadge: pinOrBadge.trim() }),
   });
 
@@ -114,13 +89,9 @@ export async function validateSupervisorPin(
   supervisorId: string,
   pin: string
 ): Promise<{ success: boolean; supervisorName?: string; error?: string }> {
-  const token = getAccessToken();
-  const res = await fetch(getApiUrl('/v1/attendance/validate-supervisor-pin'), {
+  const res = await fetch(`${API_BASE}/v1/attendance/validate-supervisor-pin`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: authHeaders(true),
     body: JSON.stringify({ supervisorId, pin: pin.trim() }),
   });
 
@@ -138,12 +109,8 @@ export async function validateSupervisorPin(
 export async function getCollaboratorPunchState(
   collaboratorId: string
 ): Promise<CollaboratorPunchState> {
-  const token = getAccessToken();
-  const res = await fetch(getApiUrl(`/v1/attendance/punch-state?collaborator_id=${collaboratorId}`), {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+  const res = await fetch(`${API_BASE}/v1/attendance/punch-state?collaborator_id=${collaboratorId}`, {
+    headers: authHeaders(),
   });
 
   if (!res.ok) {
@@ -219,13 +186,9 @@ export interface SubmitPunchDto {
 export async function submitPunch(
   dto: SubmitPunchDto
 ): Promise<{ success: boolean; entry?: TimeEntry; error?: string }> {
-  const token = getAccessToken();
-  const res = await fetch(getApiUrl('/v1/attendance/punch'), {
+  const res = await fetch(`${API_BASE}/v1/attendance/punch`, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: authHeaders(true),
     body: JSON.stringify(dto),
   });
 
@@ -245,20 +208,12 @@ export async function submitPunch(
 }
 
 export async function fetchTimeEntries(): Promise<TimeEntry[]> {
-  const token = getAccessToken();
-  const res = await fetch(getApiUrl('/v1/attendance/time-entries'), {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch time entries (${res.status})`);
-  }
-
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.data || [];
+  const data = await apiRequest<MaybeEnvelopedList<TimeEntry>>(
+    '/v1/attendance/time-entries',
+    { method: 'GET' },
+    'Failed to fetch time entries.',
+  );
+  return unwrapList(data);
 }
 
 export async function loadTimeEntries(): Promise<TimeEntry[]> {
@@ -266,20 +221,12 @@ export async function loadTimeEntries(): Promise<TimeEntry[]> {
 }
 
 export async function getSupervisors(): Promise<CollaboratorPinAccount[]> {
-  const token = getAccessToken();
-  const res = await fetch(getApiUrl('/v1/attendance/supervisors'), {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch supervisors (${res.status})`);
-  }
-
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.data || [];
+  const data = await apiRequest<MaybeEnvelopedList<CollaboratorPinAccount>>(
+    '/v1/attendance/supervisors',
+    { method: 'GET' },
+    'Failed to fetch supervisors.',
+  );
+  return unwrapList(data);
 }
 
 export function calculateNetPayableHours(
@@ -370,20 +317,12 @@ export const STORE_LOCATIONS = [
 ];
 
 export async function fetchAttendanceLedgerRecords(): Promise<AttendanceLedgerRecord[]> {
-  const token = getAccessToken();
-  const res = await fetch(getApiUrl('/v1/attendance/ledger'), {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch attendance ledger records (${res.status})`);
-  }
-
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.data || [];
+  const data = await apiRequest<MaybeEnvelopedList<AttendanceLedgerRecord>>(
+    '/v1/attendance/ledger',
+    { method: 'GET' },
+    'Failed to fetch attendance ledger records.',
+  );
+  return unwrapList(data);
 }
 
 export async function updateAttendanceLedgerRecord(
@@ -396,13 +335,9 @@ export async function updateAttendanceLedgerRecord(
     };
   }
 
-  const token = getAccessToken();
-  const res = await fetch(getApiUrl(`/v1/attendance/ledger/${dto.recordId}`), {
+  const res = await fetch(`${API_BASE}/v1/attendance/ledger/${dto.recordId}`, {
     method: 'PATCH',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: authHeaders(true),
     body: JSON.stringify(dto),
   });
 

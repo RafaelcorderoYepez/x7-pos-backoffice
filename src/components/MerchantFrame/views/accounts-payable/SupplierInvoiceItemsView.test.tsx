@@ -7,8 +7,10 @@ import type {
   SupplierInvoiceItem,
   InvoiceProductRef,
 } from '../../../../types/accounts-payable';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -108,10 +110,6 @@ const ITEMS: SupplierInvoiceItem[] = [
   },
 ];
 
-function jsonRes(body: unknown, status = 200) {
-  return { status, ok: status >= 200 && status < 300, json: async () => body };
-}
-
 interface InstallOpts {
   items?: SupplierInvoiceItem[];
   invoices?: SupplierInvoice[];
@@ -124,36 +122,36 @@ function installFetch({ items = ITEMS, invoices = INVOICES, products = PRODUCTS 
     const method = options?.method ?? 'GET';
 
     if (u.includes('/products')) {
-      return jsonRes({ data: products });
+      return jsonResponse({ data: products });
     }
 
     if (u.includes('/supplier-invoice-items')) {
       if (method === 'POST') {
         const body = JSON.parse(String(options?.body ?? '{}'));
-        return jsonRes({ data: { id: 999, deleted_at: null, ...body } }, 201);
+        return jsonResponse({ data: { id: 999, deleted_at: null, ...body } }, 201);
       }
       if (method === 'PUT') {
         const idMatch = u.match(/supplier-invoice-items\/(\d+)/);
         const body = JSON.parse(String(options?.body ?? '{}'));
         const existing = items.find((it) => String(it.id) === idMatch?.[1]);
-        return jsonRes({ data: { ...existing, ...body } });
+        return jsonResponse({ data: { ...existing, ...body } });
       }
       if (method === 'DELETE') {
-        return jsonRes({});
+        return jsonResponse({});
       }
-      return jsonRes({ data: items });
+      return jsonResponse({ data: items });
     }
 
     if (u.includes('/supplier-invoices')) {
       const detailMatch = u.match(/supplier-invoices\/(\d+)/);
       if (detailMatch) {
         const inv = invoices.find((i) => String(i.id) === detailMatch[1]);
-        return jsonRes({ data: inv ?? null });
+        return jsonResponse({ data: inv ?? null });
       }
-      return jsonRes({ data: invoices });
+      return jsonResponse({ data: invoices });
     }
 
-    return jsonRes({ data: [] });
+    return jsonResponse({ data: [] });
   });
   vi.stubGlobal('fetch', spy);
   return spy;
@@ -523,7 +521,7 @@ describe('SupplierInvoiceItemsView — quick links & errors', () => {
     // @ts-expect-error partial mock
     window.location = { href: '' };
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({}, 401)));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonResponse({}, 401)));
     render(<SupplierInvoiceItemsView />);
     await waitFor(() => expect(window.location.href).toBe('/login'));
 

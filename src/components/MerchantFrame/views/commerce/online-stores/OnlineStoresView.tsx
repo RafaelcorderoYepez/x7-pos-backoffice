@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import {
   OnlineStoreSetupDrawer,
   type OnlineStoreFormData,
@@ -13,6 +12,7 @@ import {
   type TableDensity,
 } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
 
 export interface OnlineStoreItem {
   id: number;
@@ -95,45 +95,22 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<Date>(() => new Date());
 
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   const fetchStores = useCallback(async (silent: boolean = false) => {
     try {
       if (!silent) setIsLoading(true);
       setIsRefreshing(true);
       setError(null);
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const [resActive, resDeleted] = await Promise.all([
-        fetch(`${API_BASE}/online-stores?limit=100&status=active`, { headers }),
-        fetch(`${API_BASE}/online-stores?limit=100&status=deleted`, { headers }),
+      type StoreList = MaybeEnvelopedList<Record<string, unknown>>;
+      // Archived stores are a secondary list: if that request fails the active ones still render.
+      const [jsonActive, jsonDeleted] = await Promise.all([
+        apiRequest<StoreList>('/online-stores?limit=100&status=active', { method: 'GET' }, 'Failed to load online stores.'),
+        apiRequest<StoreList>('/online-stores?limit=100&status=deleted', { method: 'GET' }, '').catch(() => null),
       ]);
-
-      if (resActive.status === 401 || resDeleted.status === 401) {
-        clearAuthSession();
-        window.location.assign('/login');
-        return;
-      }
-
-      if (!resActive.ok) {
-        throw new Error(`Failed to load online stores (${resActive.status})`);
-      }
-
-      const jsonActive = await resActive.json();
-      const rawActive: Record<string, unknown>[] = Array.isArray(jsonActive)
-        ? jsonActive
-        : (jsonActive.data || jsonActive.items || []);
+      const rawActive = unwrapList(jsonActive);
 
       let rawDeleted: Record<string, unknown>[] = [];
-      if (resDeleted.ok) {
-        const jsonDeleted = await resDeleted.json();
-        rawDeleted = Array.isArray(jsonDeleted)
-          ? jsonDeleted
-          : (jsonDeleted.data || jsonDeleted.items || []);
+      if (jsonDeleted) {
+        rawDeleted = unwrapList(jsonDeleted);
       }
 
       const rawList = [...rawActive, ...rawDeleted];
@@ -166,7 +143,7 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -185,52 +162,39 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
 
   // Handle Save (Create or Edit)
   const handleSaveStore = async (formData: OnlineStoreFormData) => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-
     if (modalMode === 'create') {
-      const res = await fetch(`${API_BASE}/online-stores`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          subdomain: formData.subdomain,
-          theme: formData.theme,
-          currency: formData.currency,
-          timezone: formData.timezone,
-          is_active: formData.is_active,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        const msg = errorJson.message || `Failed to create online store (${res.status})`;
-        throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
-      }
+      await apiRequest<void>(
+        '/online-stores',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            subdomain: formData.subdomain,
+            theme: formData.theme,
+            currency: formData.currency,
+            timezone: formData.timezone,
+            is_active: formData.is_active,
+          }),
+        },
+        'Failed to create online store.',
+      );
 
       showToast(`Storefront '${formData.subdomain}' provisioned successfully!`);
     } else if (modalMode === 'edit' && formData.id) {
-      const res = await fetch(`${API_BASE}/online-stores/${formData.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({
-          subdomain: formData.subdomain,
-          theme: formData.theme,
-          currency: formData.currency,
-          timezone: formData.timezone,
-          isActive: formData.is_active,
-          status: formData.status,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        const msg = errorJson.message || `Failed to update online store (${res.status})`;
-        throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
-      }
-
+      await apiRequest<void>(
+        `/online-stores/${formData.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            subdomain: formData.subdomain,
+            theme: formData.theme,
+            currency: formData.currency,
+            timezone: formData.timezone,
+            isActive: formData.is_active,
+            status: formData.status,
+          }),
+        },
+        'Failed to update online store.',
+      );
       showToast(`Storefront #${formData.id} updated successfully!`);
     }
 
@@ -244,23 +208,12 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
       return;
     }
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       const newActive = !store.is_active;
-      const res = await fetch(`${API_BASE}/online-stores/${store.id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ isActive: newActive }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to toggle status');
-      }
-
+      await apiRequest<void>(
+        `/online-stores/${store.id}`,
+        { method: 'PUT', body: JSON.stringify({ isActive: newActive }) },
+        'Failed to toggle status.',
+      );
       // Optimistic state update
       setStores((prev) =>
         prev.map((s) => (s.id === store.id ? { ...s, is_active: newActive } : s))
@@ -283,23 +236,11 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
     try {
       setIsDeleting(true);
       setDeleteError(null);
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/online-stores/${storeToDelete.id}`, {
-        method: 'DELETE',
-        headers,
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        const msg = errorJson.message || `Failed to archive online store (${res.status})`;
-        throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
-      }
-
+      await apiRequest<void>(
+        `/online-stores/${storeToDelete.id}`,
+        { method: 'DELETE' },
+        'Failed to archive online store.',
+      );
       showToast(`Store #${storeToDelete.id} archived successfully`);
       setIsDeleteModalOpen(false);
       setStoreToDelete(null);
@@ -319,26 +260,16 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
     try {
       setIsRestoring(true);
       setRestoreError(null);
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/online-stores/${storeToRestore.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({
-          status: 'active',
-        }),
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        const msg = errorJson.message || `Failed to restore online store (${res.status})`;
-        throw new Error(Array.isArray(msg) ? msg.join(', ') : msg);
-      }
-
+      await apiRequest<void>(
+        `/online-stores/${storeToRestore.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            status: 'active',
+          }),
+        },
+        'Failed to restore online store.',
+      );
       showToast(`Storefront #${storeToRestore.id} restored successfully!`);
       setIsRestoreModalOpen(false);
       setStoreToRestore(null);

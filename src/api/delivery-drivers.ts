@@ -1,0 +1,88 @@
+// Cliente HTTP del roster de repartidores.
+//
+// Rutas reales: `/api/delivery-driver` (SINGULAR, sin `/v1`). El comercio sale del JWT y el
+// backend usa `forbidNonWhitelisted`, así que los cuerpos se construyen campo a campo.
+
+import { MAX_PAGE_LIMIT, type Envelope } from './delivery';
+import { apiRequest } from './http';
+import { buildDriverQuery } from '../lib/delivery-drivers';
+import type {
+  DeliveryDriver,
+  DeliveryDriverDraft,
+  DriverPage,
+  DriverQuery,
+  DriverSummary,
+} from '../types/delivery-drivers';
+
+export async function listDeliveryDrivers(query: DriverQuery): Promise<DriverPage> {
+  const qs = buildDriverQuery({ ...query, limit: Math.min(query.limit, MAX_PAGE_LIMIT) });
+  const json = await apiRequest<Envelope<DeliveryDriver[]>>(
+    `/delivery-driver?${qs}`,
+    { method: 'GET' },
+    'Failed to load delivery drivers. Please try again.',
+  );
+  const rows = json?.data ?? [];
+  return {
+    rows,
+    total: json?.pagination?.total ?? rows.length,
+    page: json?.pagination?.page ?? query.page,
+    totalPages: json?.pagination?.totalPages ?? 1,
+  };
+}
+
+export async function getDriverSummary(): Promise<DriverSummary> {
+  const json = await apiRequest<Envelope<DriverSummary>>(
+    '/delivery-driver/summary',
+    { method: 'GET' },
+    'Failed to load the fleet summary.',
+  );
+  return json.data;
+}
+
+const driverBody = (draft: Partial<DeliveryDriverDraft>): Record<string, unknown> => {
+  const body: Record<string, unknown> = {};
+  if (draft.name !== undefined) body.name = draft.name.trim();
+  if (draft.phone !== undefined) body.phone = draft.phone.trim();
+  if (draft.vehicleType !== undefined) body.vehicleType = draft.vehicleType;
+  if (draft.status !== undefined) body.status = draft.status;
+  return body;
+};
+
+export async function createDeliveryDriver(draft: DeliveryDriverDraft): Promise<DeliveryDriver> {
+  const json = await apiRequest<Envelope<DeliveryDriver>>(
+    '/delivery-driver',
+    { method: 'POST', body: JSON.stringify(driverBody(draft)) },
+    'Failed to create the delivery driver.',
+  );
+  return json.data;
+}
+
+export async function updateDeliveryDriver(
+  id: number,
+  patch: Partial<DeliveryDriverDraft>,
+): Promise<DeliveryDriver> {
+  const json = await apiRequest<Envelope<DeliveryDriver>>(
+    `/delivery-driver/${id}`,
+    { method: 'PATCH', body: JSON.stringify(driverBody(patch)) },
+    'Failed to update the delivery driver.',
+  );
+  return json.data;
+}
+
+/** on_shift=true → active, false → off_duty. 409 si está en reparto o suspendido. */
+export async function setDriverShift(id: number, onShift: boolean): Promise<DeliveryDriver> {
+  const json = await apiRequest<Envelope<DeliveryDriver>>(
+    `/delivery-driver/${id}/shift`,
+    { method: 'PATCH', body: JSON.stringify({ on_shift: onShift }) },
+    'Failed to change the driver shift.',
+  );
+  return json.data;
+}
+
+export async function deleteDeliveryDriver(id: number): Promise<void> {
+  await apiRequest<Envelope<DeliveryDriver>>(
+    `/delivery-driver/${id}`,
+    { method: 'DELETE' },
+    'Failed to delete the delivery driver.',
+  );
+}

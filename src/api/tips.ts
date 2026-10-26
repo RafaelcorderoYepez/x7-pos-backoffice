@@ -1,19 +1,15 @@
-import { getAccessToken } from '../lib/auth-storage';
+import {
+  apiRequest,
+  unwrapItem,
+  unwrapList,
+  type MaybeEnvelopedItem,
+  type MaybeEnvelopedList,
+} from './http';
 import type {
   Tip,
   FetchTipsParams,
   TipsSummaryMetrics,
 } from '../types/tips';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-function authHeaders(): Record<string, string> {
-  const token = getAccessToken();
-  return {
-    Accept: 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 export interface FetchTipsResponse {
   data: Tip[];
@@ -64,16 +60,11 @@ export async function fetchTips(params: FetchTipsParams): Promise<Tip[]> {
 
   const path = `/v1/tips?${query.toString()}`;
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
-  }
-
-  const json = (await response.json()) as FetchTipsResponse | Tip[];
+  const json = await apiRequest<FetchTipsResponse | Tip[]>(
+    path,
+    { method: 'GET' },
+    'Failed to load tips. Please try again.',
+  );
   let tips: Tip[] = [];
 
   if (Array.isArray(json)) {
@@ -95,34 +86,21 @@ export interface PaymentOption {
 }
 
 export async function fetchPaymentOptionsForOrder(orderId: number): Promise<PaymentOption[]> {
-  const response = await fetch(`${API_BASE}/v1/orders/${orderId}/payments`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    throw new Error('Failed to fetch order payments');
-  }
-  const json = await response.json();
-  return Array.isArray(json) ? json : json.data ?? [];
+  const json = await apiRequest<MaybeEnvelopedList<PaymentOption>>(
+    `/v1/orders/${orderId}/payments`,
+    { method: 'GET' },
+    'Failed to fetch order payments.',
+  );
+  return unwrapList(json);
 }
 
 export async function updateTip(id: number, payload: Partial<Tip>): Promise<Tip> {
-  const response = await fetch(`${API_BASE}/v1/tips/${id}`, {
-    method: 'PATCH',
-    headers: {
-      ...authHeaders(),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const errJson = await response.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to update tip entry (${response.status})`);
-  }
-
-  const json = await response.json();
-  return normalizeTip(json.data || json);
+  const json = await apiRequest<MaybeEnvelopedItem<Tip>>(
+    `/v1/tips/${id}`,
+    { method: 'PATCH', body: JSON.stringify(payload) },
+    'Failed to update tip entry.',
+  );
+  return normalizeTip(unwrapItem(json));
 }
 
 export function normalizeTip(raw: Tip): Tip {

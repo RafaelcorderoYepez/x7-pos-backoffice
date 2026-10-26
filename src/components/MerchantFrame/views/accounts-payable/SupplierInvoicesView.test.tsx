@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { SupplierInvoicesView } from './SupplierInvoicesView';
 import type { SupplierInvoice, InvoiceSupplierRef } from '../../../../types/accounts-payable';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -70,14 +72,6 @@ const MOCK_INVOICES: SupplierInvoice[] = [
   },
 ];
 
-function jsonRes(body: unknown, status = 200) {
-  return {
-    status,
-    ok: status >= 200 && status < 300,
-    json: async () => body,
-  };
-}
-
 interface InstallOpts {
   invoices?: SupplierInvoice[];
   suppliers?: InvoiceSupplierRef[];
@@ -98,17 +92,17 @@ function installFetch({
     const method = options?.method ?? 'GET';
 
     if (u.includes('/suppliers')) {
-      return jsonRes({ data: suppliers });
+      return jsonResponse({ data: suppliers });
     }
 
     if (u.includes('/supplier-invoice-items')) {
-      return jsonRes({ data: items });
+      return jsonResponse({ data: items });
     }
 
     const restoreMatch = u.match(/supplier-invoices\/(\d+)\/restore/);
     if (restoreMatch && method === 'POST') {
       const inv = archived.find((i) => String(i.id) === restoreMatch[1]) ?? invoices[0];
-      return jsonRes({ data: { ...inv, deleted_at: null } });
+      return jsonResponse({ data: { ...inv, deleted_at: null } });
     }
 
     if (u.includes('/supplier-invoices')) {
@@ -116,19 +110,19 @@ function installFetch({
       if (method === 'GET') {
         if (detailMatch) {
           const inv = [...invoices, ...archived].find((i) => String(i.id) === detailMatch[1]);
-          return jsonRes({ data: inv ?? null });
+          return jsonResponse({ data: inv ?? null });
         }
         // Archived mode: only_deleted=true in URL.
         if (u.includes('only_deleted=true')) {
-          return jsonRes({ data: archived });
+          return jsonResponse({ data: archived });
         }
-        return jsonRes({ data: invoices });
+        return jsonResponse({ data: invoices });
       }
       // POST / PUT / DELETE default handled by per-test re-stubs.
-      return jsonRes({ data: {} });
+      return jsonResponse({ data: {} });
     }
 
-    return jsonRes({ data: [] });
+    return jsonResponse({ data: [] });
   });
   vi.stubGlobal('fetch', spy);
   return spy;
@@ -382,7 +376,7 @@ describe('SupplierInvoicesView — create & edit persistence', () => {
       balance_due: 1190,
       status: 'pending',
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({ data: created }, 201)));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonResponse({ data: created }, 201)));
 
     await user.click(screen.getByRole('button', { name: /register invoice/i }));
     await user.selectOptions(screen.getByLabelText(/^Supplier/), '10');
@@ -402,7 +396,7 @@ describe('SupplierInvoicesView — create & edit persistence', () => {
     const row = (await screen.findByText('INV-2026-0001')).closest('tr')!;
 
     const updated: SupplierInvoice = { ...MOCK_INVOICES[0], invoice_number: 'INV-2026-0001-R' };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({ data: updated })));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonResponse({ data: updated })));
 
     await user.click(within(row).getByLabelText('Edit invoice'));
     const numInput = screen.getByLabelText(/Invoice Number/);
@@ -574,7 +568,7 @@ describe('SupplierInvoicesView — errors', () => {
     // @ts-expect-error partial mock
     window.location = { href: '' };
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({}, 401)));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonResponse({}, 401)));
     render(<SupplierInvoicesView />);
     await waitFor(() => expect(window.location.href).toBe('/login'));
 
@@ -583,7 +577,7 @@ describe('SupplierInvoicesView — errors', () => {
   });
 
   it('shows a retry button on a generic failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({}, 500)));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonResponse({}, 500)));
     render(<SupplierInvoicesView />);
     expect(await screen.findByText('Retry Connection')).toBeInTheDocument();
   });

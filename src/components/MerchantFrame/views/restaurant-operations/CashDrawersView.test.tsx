@@ -3,8 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CashDrawersView } from './CashDrawersView';
 import type { CashDrawer } from '../../../../types/cash-drawer';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -12,16 +14,12 @@ vi.mock('../../../../lib/auth-storage', () => ({
 export function mockFetchOnce(data: CashDrawer[], status = 200) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      status,
-      ok: status >= 200 && status < 300,
-      json: async () => ({
+    vi.fn().mockImplementation(async () => jsonResponse({
         statusCode: status,
         message: 'ok',
         data,
         paginationMeta: { page: 1, limit: 100, total: data.length, totalPages: 1, hasNext: false, hasPrev: false },
-      }),
-    }),
+      }, status)),
   );
 }
 
@@ -237,11 +235,7 @@ describe('CashDrawersView — search and filters', () => {
 
     // Use a single stable mock for the whole test (rather than re-stubbing
     // via mockFetchOnce mid-test) so its call count accumulates correctly.
-    const fetchMock = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => ({ statusCode: 200, message: 'ok', data: [openDrawer] }),
-    });
+    const fetchMock = vi.fn().mockImplementation(async () => jsonResponse({ statusCode: 200, message: 'ok', data: [openDrawer] }));
     vi.stubGlobal('fetch', fetchMock);
 
     render(<CashDrawersView />);
@@ -272,11 +266,7 @@ describe('CashDrawersView — search and filters', () => {
 
     // A single stable mock (not mockFetchOnce) so its call count accumulates
     // correctly across the whole interaction.
-    const fetchMock = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => ({ statusCode: 200, message: 'ok', data: [openDrawer] }),
-    });
+    const fetchMock = vi.fn().mockImplementation(async () => jsonResponse({ statusCode: 200, message: 'ok', data: [openDrawer] }));
     vi.stubGlobal('fetch', fetchMock);
 
     render(<CashDrawersView />);
@@ -340,19 +330,11 @@ describe('CashDrawersView — search and filters', () => {
     await userEvent.selectOptions(screen.getByLabelText(/filter by status/i), 'Pause');
 
     // The newer (second) request resolves first.
-    resolveSecond({
-      status: 200,
-      ok: true,
-      json: async () => ({ statusCode: 200, message: 'ok', data: [closedDrawer] }),
-    });
+    resolveSecond(jsonResponse({ statusCode: 200, message: 'ok', data: [closedDrawer] }));
     await screen.findByText('#CD-2');
 
     // The stale (first) request resolves late — it must be ignored.
-    resolveFirst({
-      status: 200,
-      ok: true,
-      json: async () => ({ statusCode: 200, message: 'ok', data: [openDrawer] }),
-    });
+    resolveFirst(jsonResponse({ statusCode: 200, message: 'ok', data: [openDrawer] }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(screen.getByText('#CD-2')).toBeInTheDocument();
@@ -442,11 +424,7 @@ describe('CashDrawersView — search and filters', () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
     expect(screen.queryByTestId('cash-drawers-empty-state')).not.toBeInTheDocument();
 
-    resolveRefetch({
-      status: 200,
-      ok: true,
-      json: async () => ({ statusCode: 200, message: 'ok', data: [openDrawer] }),
-    });
+    resolveRefetch(jsonResponse({ statusCode: 200, message: 'ok', data: [openDrawer] }));
 
     expect(await screen.findByText('#CD-1')).toBeInTheDocument();
   });
@@ -476,17 +454,9 @@ describe('CashDrawersView — Open Cash Drawer', () => {
     // response into state, so the mock must answer both requests.
     const fetchMock = vi.fn(async (_url: unknown, options?: { method?: string }) => {
       if (options?.method === 'POST') {
-        return {
-          status: 201,
-          ok: true,
-          json: async () => ({ statusCode: 201, message: 'ok', data: openDrawer }),
-        };
+        return jsonResponse({ statusCode: 201, message: 'ok', data: openDrawer }, 201);
       }
-      return {
-        status: 200,
-        ok: true,
-        json: async () => ({ statusCode: 200, message: 'ok', data: [openDrawer] }),
-      };
+      return jsonResponse({ statusCode: 200, message: 'ok', data: [openDrawer] });
     });
     vi.stubGlobal('fetch', fetchMock);
     await userEvent.click(submitButton);
@@ -522,14 +492,10 @@ describe('CashDrawersView — Open Cash Drawer', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 409,
-        ok: false,
-        json: async () => ({
+      vi.fn().mockImplementation(async () => jsonResponse({
           message:
             'An active cash drawer session (#CD-12) is already open for this shift. Please close the active session before opening a new drawer.',
-        }),
-      }),
+        }, 409)),
     );
     await userEvent.click(within(dialog).getByRole('button', { name: /open drawer/i }));
 
@@ -554,13 +520,9 @@ describe('CashDrawersView — Open Cash Drawer', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 400,
-        ok: false,
-        json: async () => ({
+      vi.fn().mockImplementation(async () => jsonResponse({
           message: 'No active shift found. Start a shift before opening a cash drawer.',
-        }),
-      }),
+        }, 400)),
     );
     await userEvent.click(within(dialog).getByRole('button', { name: /open drawer/i }));
 
@@ -651,17 +613,9 @@ describe('CashDrawersView — Close Drawer', () => {
     };
     const fetchMock = vi.fn(async (_url: unknown, options?: { method?: string }) => {
       if (options?.method === 'PUT') {
-        return {
-          status: 200,
-          ok: true,
-          json: async () => ({ statusCode: 200, message: 'ok', data: closedResponse }),
-        };
+        return jsonResponse({ statusCode: 200, message: 'ok', data: closedResponse });
       }
-      return {
-        status: 200,
-        ok: true,
-        json: async () => ({ statusCode: 200, message: 'ok', data: [closedResponse] }),
-      };
+      return jsonResponse({ statusCode: 200, message: 'ok', data: [closedResponse] });
     });
     vi.stubGlobal('fetch', fetchMock);
     await userEvent.click(confirmButton);
@@ -697,11 +651,7 @@ describe('CashDrawersView — Close Drawer', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 400,
-        ok: false,
-        json: async () => ({ message: 'No collaborator profile is linked to your account.' }),
-      }),
+      vi.fn().mockImplementation(async () => jsonResponse({ message: 'No collaborator profile is linked to your account.' }, 400)),
     );
     await userEvent.click(screen.getByRole('button', { name: /confirm close/i }));
 

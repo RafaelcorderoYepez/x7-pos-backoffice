@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getSaasToken, clearSaasToken } from '../../../lib/saas-auth-storage';
+import { saasRequest } from '../../../api/http';
+import { ApiError } from '../../../lib/api-error';
 import type {
   MerchantSettlement,
   SettlementStatus,
@@ -16,8 +17,6 @@ import {
   num,
   SETTLEMENT_BADGE_STYLES,
 } from '../../../lib/settlements';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 // ===================== PAYOUT CONFIRM DIALOG =====================
 
@@ -209,6 +208,13 @@ const SettlementDetailDrawer: React.FC<SettlementDetailDrawerProps> = ({ settlem
 
 // ===================== MAIN VIEW =====================
 
+// saasRequest ya borró el token: se vuelve al login del panel.
+function isSessionExpired(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 401) return false;
+  window.location.href = '/saas-admin';
+  return true;
+}
+
 interface MerchantSettlementsViewProps {
   onNavigate?: (view: string) => void;
 }
@@ -234,34 +240,24 @@ export const MerchantSettlementsView: React.FC<MerchantSettlementsViewProps> = (
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = useCallback((): Record<string, string> => {
-    const token = getSaasToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  }, []);
-
-  const handleUnauthorized = useCallback(() => {
-    clearSaasToken();
-    window.location.href = '/saas-admin';
-  }, []);
-
   const fetchSettlements = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/v1/platform/merchant-settlements`, { headers: authHeaders() });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading settlements');
-      const json = await res.json();
+      const json = await saasRequest<{ data?: MerchantSettlement[] }>(
+        '/v1/platform/merchant-settlements',
+        { method: 'GET' },
+        'Error loading settlements',
+      );
       setSettlements(json.data ?? []);
     } catch (err) {
+      if (isSessionExpired(err)) return;
       console.error('Error fetching merchant settlements:', err);
       setError('Failed to load merchant settlements. Please check if the backend is running.');
     } finally {
       setLoading(false);
     }
-  }, [authHeaders, handleUnauthorized]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -273,17 +269,16 @@ export const MerchantSettlementsView: React.FC<MerchantSettlementsViewProps> = (
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      const res = await fetch(`${API_BASE}/v1/platform/merchant-settlements/generate`, {
-        method: 'POST',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to generate settlements');
+      const json = await saasRequest<{ data?: MerchantSettlement[] }>(
+        '/v1/platform/merchant-settlements/generate',
+        { method: 'POST' },
+        'Failed to generate settlements',
+      );
       // The endpoint returns the updated list of settlements.
       setSettlements(json.data ?? []);
       setToast({ message: 'Daily settlements generated successfully', type: 'success' });
     } catch (err: unknown) {
+      if (isSessionExpired(err)) return;
       setToast({ message: err instanceof Error ? err.message : 'Failed to generate settlements', type: 'error' });
     } finally {
       setGenerating(false);
@@ -295,17 +290,16 @@ export const MerchantSettlementsView: React.FC<MerchantSettlementsViewProps> = (
     if (!payingSettlement) return;
     setPaySubmitting(true);
     try {
-      const res = await fetch(
-        `${API_BASE}/v1/platform/merchant-settlements/${payingSettlement.id}/payout`,
-        { method: 'POST', headers: authHeaders() },
+      const json = await saasRequest<{ data: MerchantSettlement }>(
+        `/v1/platform/merchant-settlements/${payingSettlement.id}/payout`,
+        { method: 'POST' },
+        'Failed to execute payout',
       );
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to execute payout');
       setSettlements((prev) => prev.map((s) => (s.id === json.data.id ? json.data : s)));
       setPayingSettlement(null);
       setToast({ message: 'Payout executed successfully', type: 'success' });
     } catch (err: unknown) {
+      if (isSessionExpired(err)) return;
       setPayingSettlement(null);
       setToast({ message: err instanceof Error ? err.message : 'Failed to execute payout', type: 'error' });
     } finally {
@@ -315,14 +309,14 @@ export const MerchantSettlementsView: React.FC<MerchantSettlementsViewProps> = (
 
   const handleRowClick = async (id: number) => {
     try {
-      const res = await fetch(`${API_BASE}/v1/platform/merchant-settlements/${id}`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to load settlement details');
+      const json = await saasRequest<{ data: MerchantSettlement }>(
+        `/v1/platform/merchant-settlements/${id}`,
+        { method: 'GET' },
+        'Failed to load settlement details',
+      );
       setDetailSettlement(json.data);
     } catch (err: unknown) {
+      if (isSessionExpired(err)) return;
       setToast({ message: err instanceof Error ? err.message : 'Failed to load settlement details', type: 'error' });
     }
   };

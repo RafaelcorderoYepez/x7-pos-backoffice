@@ -70,7 +70,7 @@ export const KitchenAllergyModifierPicker: React.FC<KitchenAllergyModifierPicker
   className = '',
   placeholder = 'Other custom notes (e.g. cut in half, sauce on the side)...',
 }) => {
-  const [activeBuilder, setActiveBuilder] = useState<'addition' | 'removal' | null>(null);
+  const [activeBuilder, setActiveBuilder] = useState<'addition' | 'removal' | 'allergy' | null>(null);
   const [builderInput, setBuilderInput] = useState<string>('');
 
   const inputRef = useRef<HTMLInputElement>(null);

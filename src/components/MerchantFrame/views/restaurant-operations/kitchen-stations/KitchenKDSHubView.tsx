@@ -1,15 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { getAccessToken } from '../../../../../lib/auth-storage';
-import type { KitchenStation } from './KitchenStationsView';
+import type { KitchenDisplayMode, KitchenStation, KitchenStationType } from './KitchenStationsView';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import {
   StandardDashboardHub,
   type DashboardKPIItem,
   type DashboardModuleItem,
 } from '../../../../shared/StandardDashboardHub';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
 interface KitchenKDSHubViewProps {
   onNavigate?: (view: string) => void;
   onOpenLiveMonitor?: () => void;
@@ -27,26 +24,25 @@ export const KitchenKDSHubView: React.FC<KitchenKDSHubViewProps> = ({
     const fetchData = async () => {
       try {
         setLoading(true);
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-
-        const [stRes, devRes] = await Promise.all([
-          fetch(`${API_BASE}/kitchen-station`, { headers }),
-          fetch(`${API_BASE}/kitchen-display-devices`, { headers }),
+        // Stations and devices feed independent cards: one failing must not blank the other.
+        const [stJson, devJson] = await Promise.all([
+          apiRequest<MaybeEnvelopedList<KitchenStation & Record<string, unknown>>>(
+            '/kitchen-station',
+            { method: 'GET' },
+            '',
+          ).catch(() => null),
+          apiRequest<MaybeEnvelopedList<{ status?: string }>>('/kitchen-display-devices', { method: 'GET' }, '').catch(
+            () => null,
+          ),
         ]);
 
-        if (stRes.ok) {
-          const json = await stRes.json();
-          const rawList = Array.isArray(json) ? json : json.data || [];
+        if (stJson) {
           setStations(
-            rawList.map((st: KitchenStation & Record<string, unknown>) => ({
+            unwrapList(stJson).map((st) => ({
               ...st,
               is_active: (st.isActive as boolean | undefined) ?? st.is_active ?? true,
-              station_type: (st.stationType as string | undefined) ?? st.station_type ?? 'PREP',
-              display_mode: (st.displayMode as string | undefined) ?? st.display_mode ?? 'AUTO',
+              station_type: (st.stationType as KitchenStationType | undefined) ?? st.station_type ?? 'PREP',
+              display_mode: (st.displayMode as KitchenDisplayMode | undefined) ?? st.display_mode ?? 'AUTO',
               display_order: (st.displayOrder as number | undefined) ?? st.display_order ?? 1,
               printer_name: (st.printerName as string | null | undefined) ?? st.printer_name ?? null,
               status: st.status || 'active',
@@ -54,10 +50,8 @@ export const KitchenKDSHubView: React.FC<KitchenKDSHubViewProps> = ({
           );
         }
 
-        if (devRes.ok) {
-          const devJson = await devRes.json();
-          const devList = Array.isArray(devJson) ? devJson : devJson.data || [];
-          setDevicesCount(devList.filter((d: { status?: string }) => (d.status ?? 'active') === 'active').length);
+        if (devJson) {
+          setDevicesCount(unwrapList(devJson).filter((d) => (d.status ?? 'active') === 'active').length);
         }
       } catch (err) {
         console.error('Error loading KDS Hub metrics:', err);

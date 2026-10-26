@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type { MerchantTaxRule, TaxType, CreateTaxRuleDto, UpdateTaxRuleDto } from '../../../../types/configuration';
 import { RuleConfigQuickLinks } from './RuleConfigQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 function fuzzyMatch(query: string, target: string): boolean {
   let qi = 0;
@@ -382,31 +380,15 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`${API_BASE}/merchant-tax-rule?limit=100`, { headers }).catch(() => null);
-
-      if (res && res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res || !res.ok) {
-        setError('Failed to load tax rules. Server returned an error.');
-        return;
-      }
-
-      const json = await res.json();
-      const loaded = json.data ?? [];
-      setRules(loaded);
+      const json = await apiRequest<{ data?: MerchantTaxRule[] }>(
+        '/merchant-tax-rule?limit=100',
+        { method: 'GET' },
+        'Failed to load tax rules. Server returned an error.',
+      );
+      setRules(json.data ?? []);
     } catch (err: unknown) {
       console.error('Error fetching tax rules:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load tax rules');
+      setError('Failed to load tax rules. Server returned an error.');
     } finally {
       setLoading(false);
     }
@@ -421,30 +403,12 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
   const handleCreateSubmit = async (dto: CreateTaxRuleDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-tax-rule`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(dto),
-      }).catch(() => null);
-
-      if (res && res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = res ? await res.json().catch(() => ({})) : {};
+      const json = await apiRequest<{ data: MerchantTaxRule }>(
+        '/merchant-tax-rule',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to create tax rule',
+      );
       setFormModalOpen(null);
-
-      if (!res || !res.ok) {
-        setToast({ message: json.message || 'Failed to create tax rule', type: 'error' });
-        return;
-      }
-
       setRules((prev) => [json.data, ...prev]);
 
       setToast({ message: 'Tax rule created successfully', type: 'success' });
@@ -459,30 +423,12 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
   const handleEditSubmit = async (ruleId: number, dto: UpdateTaxRuleDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-tax-rule/${ruleId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(dto),
-      }).catch(() => null);
-
-      if (res && res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = res ? await res.json().catch(() => ({})) : {};
+      const json = await apiRequest<{ data: MerchantTaxRule }>(
+        `/merchant-tax-rule/${ruleId}`,
+        { method: 'PATCH', body: JSON.stringify(dto) },
+        'Failed to update tax rule',
+      );
       setFormModalOpen(null);
-
-      if (!res || !res.ok) {
-        setToast({ message: json.message || 'Failed to update tax rule', type: 'error' });
-        return;
-      }
-
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
 
       setToast({ message: 'Tax rule updated successfully', type: 'success' });
@@ -499,34 +445,12 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
     const nextStatus: 'active' | 'inactive' = togglingRule.status === 'active' ? 'inactive' : 'active';
     setToggleSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-tax-rule/${togglingRule.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ status: nextStatus }),
-      }).catch(() => null);
-
-      if (res && res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = res ? await res.json().catch(() => ({})) : {};
-      if (!res || !res.ok) {
-        setRules((prev) =>
-          prev.map((r) =>
-            r.id === togglingRule.id
-              ? { ...r, status: nextStatus, updatedAt: new Date().toISOString() }
-              : r,
-          ),
-        );
-      } else {
-        setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
-      }
+      const json = await apiRequest<{ data: MerchantTaxRule }>(
+        `/merchant-tax-rule/${togglingRule.id}`,
+        { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) },
+        'Failed to update tax rule status',
+      );
+      setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
 
       setTogglingRule(null);
       setToast({
@@ -543,22 +467,11 @@ export const TaxRulesView: React.FC<TaxRulesViewProps> = ({ onNavigate }) => {
 
   const handleRowClick = async (ruleId: number) => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-tax-rule/${ruleId}`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to load tax rule details');
-      }
+      const json = await apiRequest<{ data: MerchantTaxRule }>(
+        `/merchant-tax-rule/${ruleId}`,
+        { method: 'GET' },
+        'Failed to load tax rule details',
+      );
 
       setDetailRule(json.data);
     } catch (err: unknown) {

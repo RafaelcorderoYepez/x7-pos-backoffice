@@ -14,6 +14,40 @@ import { CompanyRegistryView } from './views/CompanyRegistryView';
 import { OrdersRegistryView } from './views/OrdersRegistryView';
 import { MerchantSettlementsView } from './views/MerchantSettlementsView';
 import type { SubscriptionPlan } from '../../types/subscription';
+import { navHubById } from '../../lib/module-nav-hubs';
+import { ModuleNavHubBar } from '../MerchantFrame/layout/ModuleNavHubBar';
+import { ModuleCommandHubView } from '../MerchantFrame/views/ModuleCommandHubView';
+
+// NavHubBar del Subscription System en el panel SaaS. Las opciones son las mismas que en
+// MerchantFrame (module-nav-hubs.ts, featureIds de Features.txt), pero este panel navega con
+// sus propios ids de pestaña: se traducen en los dos sentidos.
+const SUBSCRIPTION_HUB_TAB = 'subscription-hub';
+const SAAS_TAB_BY_FEATURE: Record<string, string> = {
+  'apps-config': 'subscription-applications',
+  'features-control': 'subscription-features',
+  'merchant-subs-link': 'subscription-merchant-subscriptions',
+  'plan-apps-rules': 'subscription-plan-applications',
+  'plan-features-mapping': 'subscription-plan-features',
+  'sub-plans-core': 'subscription',
+  'sub-apps-mapping': 'subscription-subscription-applications',
+  'sub-payments-billing': 'subscription-payments',
+};
+const FEATURE_BY_SAAS_TAB: Record<string, string> = Object.fromEntries(
+  Object.entries(SAAS_TAB_BY_FEATURE).map(([feature, tab]) => [tab, feature]),
+);
+// Opciones sin vista todavía en el panel SaaS.
+const SAAS_PENDING_TABS: Record<string, { icon: string; title: string; desc: string }> = {
+  'subscription-merchant-subscriptions': {
+    icon: 'storefront',
+    title: 'Merchant Subscriptions',
+    desc: 'Which plan each merchant is subscribed to.',
+  },
+  'subscription-subscription-applications': {
+    icon: 'apps',
+    title: 'Subscription Applications',
+    desc: 'Applications active on each merchant subscription.',
+  },
+};
 
 export const SaaSFrame: React.FC = () => {
   const [saasAuthenticated, setSaasAuthenticated] = useState(isSaasAuthenticated);
@@ -66,8 +100,59 @@ export const SaaSFrame: React.FC = () => {
     setActiveTab(view);
   };
 
+  const subscriptionHub = navHubById('subscription-system-hub');
+  const showSubscriptionBar =
+    !!subscriptionHub && (activeTab === SUBSCRIPTION_HUB_TAB || activeTab in FEATURE_BY_SAAS_TAB);
+  const navigateSubscriptionHub = (id: string) => {
+    if (id === subscriptionHub?.hubId) setActiveTab(SUBSCRIPTION_HUB_TAB);
+    else if (SAAS_TAB_BY_FEATURE[id]) setActiveTab(SAAS_TAB_BY_FEATURE[id]);
+  };
+
   // Render views according to active tab (AC 1.1 and 4.3)
   const renderContent = () => {
+    if (activeTab === SUBSCRIPTION_HUB_TAB && subscriptionHub) {
+      return <ModuleCommandHubView hub={subscriptionHub} onNavigate={navigateSubscriptionHub} />;
+    }
+
+    const pending = SAAS_PENDING_TABS[activeTab];
+    if (pending) {
+      return (
+        <div className="bg-white border border-[#e8e2d8] p-12 rounded flex flex-col items-center text-center">
+          <span className="material-symbols-outlined text-[#d51f2c] text-6xl" aria-hidden="true">{pending.icon}</span>
+          <h2 className="text-h2 font-black text-[#222222] mt-4 uppercase">{pending.title}</h2>
+          <p className="text-body-md text-[#666666] mt-2 max-w-md text-center">{pending.desc}</p>
+          <p className="text-label-caps font-bold text-[#d51f2c] mt-4 uppercase">In Development</p>
+        </div>
+      );
+    }
+
+    // Desde la NavHubBar se llega sin plan elegido: estas dos vistas lo necesitan.
+    if (
+      (activeTab === 'subscription-plan-applications' || activeTab === 'subscription-plan-features') &&
+      !selectedPlan
+    ) {
+      return (
+        <div className="bg-white border border-[#e8e2d8] p-12 rounded flex flex-col items-center text-center">
+          <span className="material-symbols-outlined text-[#d51f2c] text-6xl" aria-hidden="true">
+            {activeTab === 'subscription-plan-features' ? 'checklist' : 'widgets'}
+          </span>
+          <h2 className="text-h2 font-black text-[#222222] mt-4 uppercase">
+            {activeTab === 'subscription-plan-features' ? 'Plan Features' : 'Plan Applications'}
+          </h2>
+          <p className="text-body-md text-[#666666] mt-2 max-w-md text-center">
+            Select a subscription plan first.
+          </p>
+          <button
+            type="button"
+            onClick={() => setActiveTab('subscription')}
+            className="mt-6 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-colors duration-200"
+          >
+            Choose a plan
+          </button>
+        </div>
+      );
+    }
+
     if (activeTab === 'subscription') {
       return <SubscriptionPlansView onNavigate={handleNavigateView} />;
     }
@@ -401,7 +486,8 @@ export const SaaSFrame: React.FC = () => {
                   : activeTab === 'subscription-live-installs' ? 'Live Installs'
                   : activeTab === 'subscription-plan-applications' ? 'Plan Applications'
                   : activeTab === 'subscription-plan-features' ? 'Plan Features'
-                  : activeTab}
+                  : activeTab === SUBSCRIPTION_HUB_TAB ? 'Subscription System'
+                  : SAAS_PENDING_TABS[activeTab]?.title ?? activeTab}
               </h1>
               <p className="text-body-md text-[#666666] mt-1">
                 {activeTab === 'dashboard'
@@ -426,7 +512,11 @@ export const SaaSFrame: React.FC = () => {
                               ? `Applications bundled into the "${selectedPlan?.name}" subscription tier.`
                               : activeTab === 'subscription-plan-features'
                                 ? `Feature entitlements and quantitative limits bundled into the "${selectedPlan?.name}" subscription tier.`
-                                : `Interactive visualization and management for /${activeTab}.`}
+                                : activeTab === SUBSCRIPTION_HUB_TAB
+                                  ? 'Plans, the applications and features they unlock, and merchant subscriptions and payments.'
+                                  : SAAS_PENDING_TABS[activeTab]
+                                    ? SAAS_PENDING_TABS[activeTab].desc
+                                    : `Interactive visualization and management for /${activeTab}.`}
               </p>
             </div>
             {activeTab === 'dashboard' && (
@@ -451,6 +541,17 @@ export const SaaSFrame: React.FC = () => {
 
           {/* Dynamic SPA view rendering (AC 1.1) */}
           {renderContent()}
+          {showSubscriptionBar && subscriptionHub ? (
+            <>
+              {/* La barra es `fixed`: este hueco evita que tape el final de la vista. */}
+              <div aria-hidden="true" className="h-16 shrink-0" />
+              <ModuleNavHubBar
+                hub={subscriptionHub}
+                currentFeatureId={FEATURE_BY_SAAS_TAB[activeTab] ?? ''}
+                onNavigate={navigateSubscriptionHub}
+              />
+            </>
+          ) : null}
         </div>
       </main>
 

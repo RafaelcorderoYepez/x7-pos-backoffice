@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   SupplierInvoice,
   SupplierInvoiceItem,
@@ -17,8 +16,7 @@ import { AccountsPayableQuickLinks } from './AccountsPayableQuickLinks';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter } from '../../shared/AppModal';
 import { Toast } from '../../shared/Toast';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 // ---- Coercion and formatting helpers ----
 
@@ -641,18 +639,6 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchInvoices = async () => {
     setLoading(true);
     setError(null);
@@ -660,13 +646,11 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
       // Tenant scoping resolved by backend via JWT; requesting high limit.
       // En modo "archived" pedimos las soft-deleted con only_deleted=true.
       const query = viewMode === 'archived' ? 'only_deleted=true&limit=100' : 'limit=100';
-      const res = await fetch(
-        `${API_BASE}/supplier-invoices?${query}`,
-        { headers: authHeaders() },
+      const json = await apiRequest<{ data?: SupplierInvoice[] }>(
+        `/supplier-invoices?${query}`,
+        { method: 'GET' },
+        'Error loading supplier invoices',
       );
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading supplier invoices');
-      const json = await res.json();
       // Active: excludes soft-deleted. Archived: only soft-deleted.
       const list = (json.data ?? []).filter((inv: SupplierInvoice) =>
         viewMode === 'archived' ? !!inv.deleted_at : !inv.deleted_at,
@@ -682,9 +666,11 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
 
   const fetchSuppliers = async () => {
     try {
-      const res = await fetch(`${API_BASE}/v1/inventory/suppliers?limit=100`, { headers: authHeaders() });
-      if (!res.ok) return;
-      const json = await res.json();
+      const json = await apiRequest<{ data?: InvoiceSupplierRef[] }>(
+        '/v1/inventory/suppliers?limit=100',
+        { method: 'GET' },
+        'Request failed. Please try again.',
+      );
       setSuppliers(json.data ?? []);
     } catch (err) {
       console.error('Error fetching suppliers for picker:', err);
@@ -702,7 +688,7 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
     void Promise.resolve().then(() => {
       fetchSuppliers();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeCompanyId]);
 
   // Supplier filter options: union of fetched suppliers and those in invoices.
@@ -753,14 +739,11 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
   const handleCreateSubmit = async (dto: CreateSupplierInvoiceDto) => {
     setFormSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-invoices`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ ...dto, company_id: activeCompanyId }),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to register invoice');
+      const json = await apiRequest<{ data: SupplierInvoice }>(
+        '/supplier-invoices',
+        { method: 'POST', body: JSON.stringify({ ...dto, company_id: activeCompanyId }) },
+        'Failed to register invoice',
+      );
       setInvoices((prev) => [json.data, ...prev]);
       setFormDrawer(null);
       setToast({ message: 'Invoice registered successfully', type: 'success' });
@@ -775,14 +758,11 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
   const handleEditSubmit = async (invoiceId: number, dto: UpdateSupplierInvoiceDto) => {
     setFormSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-invoices/${invoiceId}`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to update invoice');
+      const json = await apiRequest<{ data: SupplierInvoice }>(
+        `/supplier-invoices/${invoiceId}`,
+        { method: 'PUT', body: JSON.stringify(dto) },
+        'Failed to update invoice',
+      );
       setInvoices((prev) => prev.map((inv) => (inv.id === json.data.id ? json.data : inv)));
       setFormDrawer(null);
       setToast({ message: 'Invoice updated successfully', type: 'success' });
@@ -798,15 +778,11 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
     if (!deletingInvoice) return;
     setDeleteSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-invoices/${deletingInvoice.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to delete invoice');
-      }
+      await apiRequest<void>(
+        `/supplier-invoices/${deletingInvoice.id}`,
+        { method: 'DELETE' },
+        'Failed to delete invoice',
+      );
       // Soft-delete: removed from active directory without physical purge.
       setInvoices((prev) => prev.filter((inv) => inv.id !== deletingInvoice.id));
       setDeletingInvoice(null);
@@ -823,15 +799,11 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
     if (!restoringInvoice) return;
     setRestoreSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-invoices/${restoringInvoice.id}/restore`, {
-        method: 'POST',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to restore invoice');
-      }
+      await apiRequest<void>(
+        `/supplier-invoices/${restoringInvoice.id}/restore`,
+        { method: 'POST' },
+        'Failed to restore invoice',
+      );
       // Restaurada: sale del listado de archivadas.
       setInvoices((prev) => prev.filter((inv) => inv.id !== restoringInvoice.id));
       setRestoringInvoice(null);
@@ -846,12 +818,11 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
 
   const handleRowClick = async (invoiceId: number) => {
     try {
-      const res = await fetch(`${API_BASE}/supplier-invoices/${invoiceId}`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to load invoice details');
+      const json = await apiRequest<{ data: SupplierInvoice }>(
+        `/supplier-invoices/${invoiceId}`,
+        { method: 'GET' },
+        'Failed to load invoice details',
+      );
       const inv: SupplierInvoice = json.data;
 
       // Backend returns flat invoice: resolve supplier contact
@@ -861,14 +832,12 @@ export const SupplierInvoicesView: React.FC<SupplierInvoicesViewProps> = ({ onNa
 
       let items: SupplierInvoiceItem[] = [];
       try {
-        const itemsRes = await fetch(
-          `${API_BASE}/supplier-invoice-items?invoice_id=${invoiceId}&limit=100`,
-          { headers: authHeaders() },
+        const ij = await apiRequest<{ data?: SupplierInvoiceItem[] }>(
+          `/supplier-invoice-items?invoice_id=${invoiceId}&limit=100`,
+          { method: 'GET' },
+          'Failed to load invoice items.',
         );
-        if (itemsRes.ok) {
-          const ij = await itemsRes.json();
-          items = (ij.data ?? []).filter((it: SupplierInvoiceItem) => !it.deleted_at);
-        }
+        items = (ij.data ?? []).filter((it) => !it.deleted_at);
       } catch {
         /* items are optional for detail */
       }

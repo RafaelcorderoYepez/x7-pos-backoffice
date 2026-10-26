@@ -1,10 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken } from '../../../../../lib/auth-storage';
-import type { BackendKitchenStation, KitchenTicket } from './KitchenMonitorView';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
+import type { BackendKitchenStation, KitchenTicket } from './kds-monitor-model';
+import { apiRequest } from '../../../../../api/http';
 export interface StationRerouteStatus {
   stationId: number;
   stationName: string;
@@ -131,27 +128,21 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
     setSaving(true);
     setFeedbackMessage(null);
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-station/${selectedStationId}/reroute-config`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      await apiRequest<void>(
+        `/kitchen-station/${selectedStationId}/reroute-config`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            backupStationId,
+            maxActiveTicketsCapacity: capacityLimit,
+            autoRerouteOnOffline: autoOfflineReroute,
+            autoRerouteOnCapacity: autoCapacityReroute,
+            fallbackAction,
+            printerName: printerName.trim() || null,
+          }),
         },
-        body: JSON.stringify({
-          backupStationId,
-          maxActiveTicketsCapacity: capacityLimit,
-          autoRerouteOnOffline: autoOfflineReroute,
-          autoRerouteOnCapacity: autoCapacityReroute,
-          fallbackAction,
-          printerName: printerName.trim() || null,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json();
-        throw new Error(errorJson.message || 'Failed to update rerouting configuration');
-      }
+        'Failed to update rerouting configuration',
+      );
 
       setFeedbackMessage({
         text: 'Configuration successfully updated & live policies applied.',
@@ -171,25 +162,17 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
     setRerouting(true);
     setFeedbackMessage(null);
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-station/${selectedStationId}/reroute-orders`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      const resData = await apiRequest<{ message?: string; thermalPrinted?: boolean }>(
+        `/kitchen-station/${selectedStationId}/reroute-orders`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetStationId: backupStationId || undefined,
+            reason: 'Manual Emergency Load Balancing & Station Reroute',
+          }),
         },
-        body: JSON.stringify({
-          targetStationId: backupStationId || undefined,
-          reason: 'Manual Emergency Load Balancing & Station Reroute',
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.message || 'Failed to reroute orders');
-      }
-
-      const resData = await res.json();
+        'Failed to reroute orders',
+      );
       setFeedbackMessage({
         text: resData.message || `Rerouted orders to secondary station successfully!`,
         type: 'success',

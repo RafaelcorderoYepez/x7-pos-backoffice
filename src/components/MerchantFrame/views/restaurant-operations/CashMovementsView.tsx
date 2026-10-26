@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
+import { ApiError } from '../../../../lib/api-error';
 import type { CashMovement, CashMovementType, CreateCashMovementDto } from '../../../../types/cash-movement';
 import { CashManagementQuickLinks } from './CashManagementQuickLinks';
+import { apiRequest } from '../../../../api/http';
 
 // Real backend route: GET /api/cash-shifts/:shiftId/expenses
 // Response shape:     { statusCode: number; data: CashMovement[] }
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+const RECORD_MOVEMENT_FALLBACK = 'Request failed. Please try again.';
 
 // ─── Pure helpers (exported for unit tests) ────────────────────────────────
 
@@ -179,7 +180,6 @@ const RecordCashMovementModal: React.FC<RecordCashMovementModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const API_BASE_MODAL = import.meta.env.VITE_API_URL ?? '/api';
 
   const [movementType, setMovementType] = useState<'INFLOW' | 'OUTFLOW'>('OUTFLOW');
   const [amount, setAmount] = useState('');
@@ -249,8 +249,8 @@ const RecordCashMovementModal: React.FC<RecordCashMovementModalProps> = ({
 
     const endpoint =
       movementType === 'OUTFLOW'
-        ? `${API_BASE_MODAL}/cash-shifts/${shiftId}/expenses`
-        : `${API_BASE_MODAL}/cash-shifts/${shiftId}/inflows`;
+        ? `/cash-shifts/${shiftId}/expenses`
+        : `/cash-shifts/${shiftId}/inflows`;
 
     const payload: CreateCashMovementDto = {
       amount: parsedAmount,
@@ -259,39 +259,22 @@ const RecordCashMovementModal: React.FC<RecordCashMovementModalProps> = ({
     };
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const msg =
-          body?.message ||
-          (res.status === 403
-            ? 'You do not have permission to record this type of movement.'
-            : `Request failed (HTTP ${res.status}).`);
-        setSubmitError(Array.isArray(msg) ? msg.join(' ') : msg);
-        return;
-      }
-
+      await apiRequest<void>(
+        endpoint,
+        { method: 'POST', body: JSON.stringify(payload) },
+        RECORD_MOVEMENT_FALLBACK,
+      );
       onSuccess();
-    } catch {
-      setSubmitError('Network error — please check your connection and try again.');
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setSubmitError(
+          err.status === 403 && err.message === RECORD_MOVEMENT_FALLBACK
+            ? 'You do not have permission to record this type of movement.'
+            : err.message,
+        );
+      } else {
+        setSubmitError('Network error — please check your connection and try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -616,28 +599,21 @@ export const CashMovementsView: React.FC<CashMovementsViewProps> = ({ onNavigate
     const fetchShifts = async () => {
       setShiftsLoading(true);
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const res = await fetch(`${API_BASE}/cash-shifts?limit=50`, { headers });
-        if (res.status === 401) {
-          clearAuthSession();
-          window.location.href = '/login';
-          return;
-        }
-        if (res.ok) {
-          const json = await res.json();
-          const list: ShiftOption[] = (json.data ?? []).map((s: ShiftOption) => ({
-            id: s.id,
-            status: s.status,
-            openedAt: s.openedAt,
-          }));
-          setShifts(list);
-          // Auto-select the first OPEN shift, or the most recent one
-          const open = list.find((s) => s.status === 'OPEN');
-          if (open) setSelectedShiftId(open.id);
-          else if (list.length > 0) setSelectedShiftId(list[0].id);
-        }
+        const json = await apiRequest<{ data?: ShiftOption[] }>(
+          '/cash-shifts?limit=50',
+          { method: 'GET' },
+          'Failed to load cash shifts.',
+        );
+        const list: ShiftOption[] = (json.data ?? []).map((s) => ({
+          id: s.id,
+          status: s.status,
+          openedAt: s.openedAt,
+        }));
+        setShifts(list);
+        // Auto-select the first OPEN shift, or the most recent one
+        const open = list.find((s) => s.status === 'OPEN');
+        if (open) setSelectedShiftId(open.id);
+        else if (list.length > 0) setSelectedShiftId(list[0].id);
       } catch (err) {
         console.error('Error fetching shifts:', err);
       } finally {
@@ -654,22 +630,13 @@ export const CashMovementsView: React.FC<CashMovementsViewProps> = ({ onNavigate
     setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
       // Real endpoint: GET /api/cash-shifts/:shiftId/expenses
-      const res = await fetch(`${API_BASE}/cash-shifts/${selectedShiftId}/expenses`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const json = await res.json();
-      setMovements((json.data ?? []).map((m: CashMovement) => ({
+      const json = await apiRequest<{ data?: CashMovement[] }>(
+        `/cash-shifts/${selectedShiftId}/expenses`,
+        { method: 'GET' },
+        'Failed to load cash movements for this shift.',
+      );
+      setMovements((json.data ?? []).map((m) => ({
         ...m,
         amount: Number(m.amount),
       })));

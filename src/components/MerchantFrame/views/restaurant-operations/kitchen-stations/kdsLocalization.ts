@@ -609,3 +609,15 @@ export function extractCleanKitchenInstruction(
   return text;
 }
 
+
+// Nombres de estación habituales traducidos para la pantalla en español.
+export const getLocalizedStationName = (name: string, lang: 'en' | 'es'): string => {
+  if (lang !== 'es') return name;
+  const n = name.trim().toLowerCase();
+  if (n.includes('hot line')) return 'Línea Caliente y Parrilla';
+  if (n.includes('cold prep')) return 'Preparación Fría y Ensaladas';
+  if (n.includes('main bar')) return 'Bar Principal y Bebidas';
+  if (n.includes('desserts') || n.includes('bakery')) return 'Postres y Panadería';
+  if (n.includes('expo')) return 'Expo y Control de Calidad';
+  return name;
+};

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { login } from '../../../api/auth';
 import { saveSaasToken } from '../../../lib/saas-auth-storage';
 
 interface Props {
@@ -16,15 +17,7 @@ export const SaasLoginOverlay: React.FC<Props> = ({ onSuccess }) => {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'Invalid credentials');
-      }
+      const data = await login(email, password);
       if (data.user?.role !== 'portal_admin') {
         throw new Error('Access restricted to Platform Administrators');
       }

@@ -1,4 +1,10 @@
-import { getAccessToken } from '../lib/auth-storage';
+import {
+  apiRequest,
+  unwrapItem,
+  unwrapList,
+  type MaybeEnvelopedItem,
+  type MaybeEnvelopedList,
+} from './http';
 import type {
   TipAllocation,
   FetchTipAllocationsParams,
@@ -9,16 +15,6 @@ import type {
   ShiftOption,
 } from '../types/tip-allocations';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-function authHeaders(): Record<string, string> {
-  const token = getAccessToken();
-  return {
-    Accept: 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
 export interface FetchTipAllocationsResponse {
   data: TipAllocation[];
   meta?: {
@@ -28,27 +24,21 @@ export interface FetchTipAllocationsResponse {
 }
 
 export async function fetchTipOptions(): Promise<TipOption[]> {
-  const response = await fetch(`${API_BASE}/v1/tips/options`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch tip options (${response.status})`);
-  }
-  const json = await response.json();
-  return Array.isArray(json) ? json : json.data || [];
+  const json = await apiRequest<MaybeEnvelopedList<TipOption>>(
+    '/v1/tips/options',
+    { method: 'GET' },
+    'Failed to fetch tip options.',
+  );
+  return unwrapList(json);
 }
 
 export async function fetchShiftOptions(): Promise<ShiftOption[]> {
-  const response = await fetch(`${API_BASE}/v1/shifts/options`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch shift options (${response.status})`);
-  }
-  const json = await response.json();
-  return Array.isArray(json) ? json : json.data || [];
+  const json = await apiRequest<MaybeEnvelopedList<ShiftOption>>(
+    '/v1/shifts/options',
+    { method: 'GET' },
+    'Failed to fetch shift options.',
+  );
+  return unwrapList(json);
 }
 
 /**
@@ -93,16 +83,11 @@ export async function fetchTipAllocations(
 
   const path = `/v1/tip-allocations?${query.toString()}`;
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
-  }
-
-  const json = (await response.json()) as FetchTipAllocationsResponse | TipAllocation[];
+  const json = await apiRequest<FetchTipAllocationsResponse | TipAllocation[]>(
+    path,
+    { method: 'GET' },
+    'Failed to load tip allocations. Please try again.',
+  );
   let allocations: TipAllocation[] = [];
 
   if (Array.isArray(json)) {
@@ -229,22 +214,12 @@ export async function createTipAllocation(
     throw new Error('Allocated amount must be a valid non-negative number.');
   }
 
-  const response = await fetch(`${API_BASE}/v1/tip-allocations`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-    body: JSON.stringify(dto),
-  });
-
-  if (!response.ok) {
-    const errJson = await response.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to create tip allocation (${response.status})`);
-  }
-
-  const json = await response.json();
-  return normalizeTipAllocation(json.data || json);
+  const json = await apiRequest<MaybeEnvelopedItem<TipAllocation>>(
+    '/v1/tip-allocations',
+    { method: 'POST', body: JSON.stringify(dto) },
+    'Failed to create tip allocation.',
+  );
+  return normalizeTipAllocation(unwrapItem(json));
 }
 
 export async function updateTipAllocation(
@@ -258,22 +233,12 @@ export async function updateTipAllocation(
     }
   }
 
-  const response = await fetch(`${API_BASE}/v1/tip-allocations/${id}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-    body: JSON.stringify(dto),
-  });
-
-  if (!response.ok) {
-    const errJson = await response.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to update tip allocation (${response.status})`);
-  }
-
-  const json = await response.json();
-  return normalizeTipAllocation(json.data || json);
+  const json = await apiRequest<MaybeEnvelopedItem<TipAllocation>>(
+    `/v1/tip-allocations/${id}`,
+    { method: 'PATCH', body: JSON.stringify(dto) },
+    'Failed to update tip allocation.',
+  );
+  return normalizeTipAllocation(unwrapItem(json));
 }
 
 export async function updateTipAllocationStatus(

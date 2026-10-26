@@ -1,11 +1,24 @@
 import { describe, expect, it } from 'vitest';
 // `?raw` (Vite) en vez de node:fs: el tsconfig de la app no carga los tipos de Node.
 import featuresTxt from '../../public/Features.txt?raw';
-import merchantFrameSource from '../components/MerchantFrame/MerchantFrame.tsx?raw';
+import { REGISTERED_VIEW_TABS } from '../components/MerchantFrame/views/merchant-view-registry';
 import { MODULE_NAV_HUBS, navHubById, navHubForFeature } from './module-nav-hubs';
 
 // Etiquetas EXACTAS de las historias de cada módulo.
 const STORY_LABELS: Record<string, { back: string; items: string[] }> = {
+  'subscription-system': {
+    back: 'SUBSCRIPTION SYSTEM COMMAND HUB',
+    items: [
+      'APPLICATIONS',
+      'FEATURES',
+      'MERCHANT SUBSCRIPTIONS',
+      'PLAN APPLICATIONS',
+      'PLAN FEATURES',
+      'SUBSCRIPTION PLANS',
+      'SUBSCRIPTION APPLICATIONS',
+      'SUBSCRIPTION PAYMENTS',
+    ],
+  },
   hr: {
     back: 'HR COMMAND HUB',
     items: ['COLLABORATORS', 'COLLABORATORS CONTRACTS', 'COLLABORATORS TIME ENTRIES'],
@@ -58,6 +71,16 @@ const STORY_LABELS: Record<string, { back: string; items: string[] }> = {
       'CASH MOVEMENTS',
       'CASH SHIFTS',
       'CASH TRANSACTIONS',
+    ],
+  },
+  'delivery-management': {
+    back: 'DELIVERY MANAGEMENT COMMAND HUB',
+    items: [
+      'DELIVERY ASSIGNMENTS',
+      'DELIVERY DRIVERS',
+      'DELIVERY FEES',
+      'DELIVERY TRACKING',
+      'DELIVERY ZONES',
     ],
   },
   shifts: {
@@ -151,11 +174,10 @@ describe('module NavHubBars', () => {
     }
   });
 
-  it('marks as live exactly the options MerchantFrame routes to a view', () => {
-    const frame = merchantFrameSource;
+  it('marks as live exactly the options with a registered view', () => {
     for (const hub of MODULE_NAV_HUBS) {
       for (const item of hub.items) {
-        expect({ id: item.featureId, live: frame.includes(`activeTab === '${item.featureId}'`) }).toEqual({
+        expect({ id: item.featureId, live: REGISTERED_VIEW_TABS.includes(item.featureId) }).toEqual({
           id: item.featureId,
           live: item.live,
         });

@@ -126,9 +126,6 @@ export const OnlineStoreSetupDrawer: React.FC<OnlineStoreSetupDrawerProps> = ({
   );
 };
 
-// Aliased export for backwards compatibility
-export const OnlineStoreModal = OnlineStoreSetupDrawer;
-
 interface ContentProps {
   mode: 'create' | 'edit';
   initialData?: OnlineStoreFormData | null;

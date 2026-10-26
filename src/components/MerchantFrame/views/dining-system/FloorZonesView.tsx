@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   DiningTable,
   FloorPlan,
@@ -24,8 +23,7 @@ import { FloorPlanEditor } from './FloorPlanEditor';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter, ModalFormError } from '../../shared/AppModal';
 import { Toast } from '../../shared/Toast';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 const pluralize = (n: number, singular: string, plural: string): string =>
   `${n} ${n === 1 ? singular : plural}`;
@@ -363,26 +361,15 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchZones = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/floor-zone?limit=100`, { headers: authHeaders() });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading zones');
-      const json = await res.json();
+      const json = await apiRequest<{ data?: FloorZone[] }>(
+        '/floor-zone?limit=100',
+        { method: 'GET' },
+        'Error loading zones',
+      );
       setZones((json.data ?? []) as FloorZone[]);
     } catch (err) {
       console.error('Error fetching floor zones:', err);
@@ -394,9 +381,11 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
 
   const fetchPlans = async () => {
     try {
-      const res = await fetch(`${API_BASE}/floor-plan?limit=100`, { headers: authHeaders() });
-      if (!res.ok) return;
-      const json = await res.json();
+      const json = await apiRequest<{ data?: FloorPlan[] }>(
+        '/floor-plan?limit=100',
+        { method: 'GET' },
+        'Request failed. Please try again.',
+      );
       setPlans((json.data ?? []) as FloorPlan[]);
     } catch (err) {
       console.error('Error fetching floor plans for zones:', err);
@@ -405,13 +394,12 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
 
   const fetchTables = async () => {
     try {
-      const res = await fetch(`${API_BASE}/tables?limit=100`, { headers: authHeaders() });
-      if (!res.ok) {
-        setTableCountsUnknown(true);
-        return;
-      }
-      const json = await res.json();
-      setTables((json.data ?? []) as DiningTable[]);
+      const json = await apiRequest<{ data?: DiningTable[] }>(
+        '/tables?limit=100',
+        { method: 'GET' },
+        'Failed to load tables.',
+      );
+      setTables(json.data ?? []);
       setTableCountsUnknown(false);
     } catch (err) {
       console.error('Error fetching tables for zone counts:', err);
@@ -425,7 +413,7 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
       fetchPlans();
       fetchTables();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeMerchantId]);
 
   // Aislamiento multi-tenant: /api/floor-zone no filtra por comercio, pero embebe `merchant`.
@@ -497,14 +485,11 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
         floorPlan: dto.floorPlan ?? 0,
         status: dto.status ?? 'active',
       };
-      const res = await fetch(`${API_BASE}/floor-zone`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to create floor zone');
+      await apiRequest<void>(
+        '/floor-zone',
+        { method: 'POST', body: JSON.stringify(body) },
+        'Failed to create floor zone',
+      );
       await fetchZones();
       setFormDrawer(null);
       setToast({ message: 'Floor zone created successfully', type: 'success' });
@@ -520,14 +505,11 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
     setFormError('');
     try {
       // PATCH (not PUT) and without `merchant`: reassigning merchant would break isolation.
-      const res = await fetch(`${API_BASE}/floor-zone/${id}`, {
-        method: 'PATCH',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to update floor zone');
+      await apiRequest<void>(
+        `/floor-zone/${id}`,
+        { method: 'PATCH', body: JSON.stringify(dto) },
+        'Failed to update floor zone',
+      );
       await fetchZones();
       setFormDrawer(null);
       setToast({ message: 'Floor zone updated successfully', type: 'success' });
@@ -555,15 +537,11 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
     if (!deletingZone) return;
     setDeleteSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/floor-zone/${deletingZone.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to delete floor zone');
-      }
+      await apiRequest<void>(
+        `/floor-zone/${deletingZone.id}`,
+        { method: 'DELETE' },
+        'Failed to delete floor zone',
+      );
       setZones((prev) => prev.filter((z) => z.id !== deletingZone.id));
       setDeletingZone(null);
       setToast({ message: 'Floor zone deleted successfully', type: 'success' });

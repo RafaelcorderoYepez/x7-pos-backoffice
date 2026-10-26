@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { getAccessToken, getStoredUser } from '../../../../../lib/auth-storage';
+import { getStoredUser } from '../../../../../lib/auth-storage';
 import { clearOfflineData } from '../../../../../lib/kds-offline-sync';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../../api/http';
 
 interface KitchenDevResetButtonProps {
   onResetComplete?: () => void;
@@ -51,22 +50,11 @@ export const KitchenDevResetButton: React.FC<KitchenDevResetButtonProps> = ({ on
     setStatusType(null);
 
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-orders/reset-test-data`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ mode }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.message || 'Error executing kitchen reset');
-      }
-
-      const data = await res.json();
+      const data = await apiRequest<{ message?: string }>(
+        '/kitchen-orders/reset-test-data',
+        { method: 'POST', body: JSON.stringify({ mode }) },
+        'Error executing kitchen reset',
+      );
       void clearOfflineData();
       setStatusType('success');
       setStatusMessage(

@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken } from '../../../../../lib/auth-storage';
-import { enqueueOfflineAction } from '../../../../../lib/kds-offline-sync';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { enqueueOfflineAction, isRetryableKdsError } from '../../../../../lib/kds-offline-sync';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
+import { ApiError } from '../../../../../lib/api-error';
 
 export interface BumpedOrderItemRecord {
   id: number;
@@ -40,6 +39,46 @@ interface KitchenRecallTrayProps {
   isOffline?: boolean;
 }
 
+// Completed kitchen order as returned by GET /kitchen-orders?businessStatus=completed.
+type RawCompletedOrder = {
+  id: number;
+  order_id?: number;
+  orderId?: number;
+  order?: { diningTable?: { name?: string }; table_number?: string; waiter?: { name?: string }; waiter_name?: string };
+  station?: { name?: string; id?: number };
+  station_id?: number;
+  stationId?: number;
+  stationName?: string;
+  priority?: number;
+  started_at?: string;
+  startedAt?: string;
+  completed_at?: string;
+  completedAt?: string;
+  created_at?: string;
+  createdAt?: string;
+  items?: Array<{
+    id: number;
+    product?: { name?: string };
+    productName?: string;
+    variant?: { name?: string };
+    variantName?: string;
+    quantity?: number;
+    course?: string;
+    notes?: string;
+  }>;
+  kitchenOrderItems?: Array<{
+    id: number;
+    product?: { name?: string };
+    productName?: string;
+    variant?: { name?: string };
+    variantName?: string;
+    quantity?: number;
+    course?: string;
+    notes?: string;
+  }>;
+      
+};
+
 export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
   isOpen,
   onClose,
@@ -70,12 +109,6 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
   const fetchRecentBumps = useCallback(async () => {
     setLoading(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       const params = new URLSearchParams({
         businessStatus: 'completed',
         limit: '10',
@@ -87,69 +120,34 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
         params.append('stationId', String(activeStationId));
       }
 
-      const res = await fetch(`${API_BASE}/kitchen-orders?${params.toString()}`, { headers });
-      if (res.ok) {
-        const json = await res.json();
-        const list = Array.isArray(json) ? json : json.data || [];
-        const mapped: BumpedOrderRecord[] = list.map((o: {
-          id: number;
-          order_id?: number;
-          orderId?: number;
-          order?: { diningTable?: { name?: string }; table_number?: string; waiter?: { name?: string }; waiter_name?: string };
-          station?: { name?: string; id?: number };
-          station_id?: number;
-          stationId?: number;
-          stationName?: string;
-          priority?: number;
-          started_at?: string;
-          startedAt?: string;
-          completed_at?: string;
-          completedAt?: string;
-          created_at?: string;
-          createdAt?: string;
-          items?: Array<{
-            id: number;
-            product?: { name?: string };
-            productName?: string;
-            variant?: { name?: string };
-            variantName?: string;
-            quantity?: number;
-            course?: string;
-            notes?: string;
-          }>;
-          kitchenOrderItems?: Array<{
-            id: number;
-            product?: { name?: string };
-            productName?: string;
-            variant?: { name?: string };
-            variantName?: string;
-            quantity?: number;
-            course?: string;
-            notes?: string;
-          }>;
-        }) => ({
-          id: o.id,
-          orderId: o.orderId ?? o.order_id,
-          table: o.order?.diningTable?.name || o.order?.table_number || 'Takeout',
-          server: o.order?.waiter?.name || o.order?.waiter_name || 'Counter Staff',
-          stationId: o.stationId ?? o.station_id ?? o.station?.id,
-          stationName: o.stationName || o.station?.name || 'General Kitchen',
-          priority: o.priority,
-          startedAt: o.startedAt || o.started_at,
-          completedAt: o.completedAt || o.completed_at,
-          createdAt: o.createdAt || o.created_at,
-          items: (o.items || o.kitchenOrderItems || []).map((i) => ({
-            id: i.id,
-            productName: i.product?.name || i.productName || 'Dish Item',
-            variantName: i.variant?.name || i.variantName,
-            quantity: i.quantity || 1,
-            course: i.course,
-            notes: i.notes,
-          })),
-        }));
+      const json = await apiRequest<MaybeEnvelopedList<RawCompletedOrder>>(
+        `/kitchen-orders?${params.toString()}`,
+        { method: 'GET' },
+        'Failed to load recently completed tickets.',
+      );
+      const list = unwrapList(json);
+      const mapped: BumpedOrderRecord[] = list.map((o) => ({
+        id: o.id,
+        orderId: o.orderId ?? o.order_id,
+        table: o.order?.diningTable?.name || o.order?.table_number || 'Takeout',
+        server: o.order?.waiter?.name || o.order?.waiter_name || 'Counter Staff',
+        stationId: o.stationId ?? o.station_id ?? o.station?.id,
+        stationName: o.stationName || o.station?.name || 'General Kitchen',
+        priority: o.priority,
+        startedAt: o.startedAt || o.started_at,
+        completedAt: o.completedAt || o.completed_at,
+        createdAt: o.createdAt || o.created_at,
+        items: (o.items || o.kitchenOrderItems || []).map((i) => ({
+          id: i.id,
+          productName: i.product?.name || i.productName || 'Dish Item',
+          variantName: i.variant?.name || i.variantName,
+          quantity: i.quantity || 1,
+          course: i.course,
+          notes: i.notes,
+        })),
+      }));
 
-        setCompletedOrders(mapped);
-      }
+      setCompletedOrders(mapped);
     } catch (err) {
       console.warn('Failed to fetch recent bumped orders:', err);
     } finally {
@@ -270,21 +268,11 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
     }
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/kitchen-orders/${orderId}/recall`, {
-        method: 'POST',
-        headers,
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => null);
-        throw new Error(errJson?.message || 'Failed to restore ticket');
-      }
+      await apiRequest<void>(
+        `/kitchen-orders/${orderId}/recall`,
+        { method: 'POST' },
+        'Failed to restore ticket',
+      );
 
       setFeedback({
         id: orderId,
@@ -309,6 +297,13 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
         setFeedback(null);
       }, 900);
     } catch (err) {
+      // A 4xx is a real rejection (e.g. ticket already recalled elsewhere): show it, don't queue it.
+      if (!isRetryableKdsError(err)) {
+        if (!(err instanceof ApiError && err.status === 401)) {
+          setFeedback({ id: orderId, message: err instanceof Error ? err.message : 'Failed to restore ticket', type: 'error' });
+        }
+        return;
+      }
       console.warn('Network recall failed, saving offline fallback:', err);
       try {
         await doOfflineRecall();

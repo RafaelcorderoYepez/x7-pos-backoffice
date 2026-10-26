@@ -4,8 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CashTransactionsView } from './CashTransactionsView';
 import { formatDateTime, formatTypeLabel, formatLoyaltySource, getTodayDateString } from './cashTransactionsHelpers';
 import type { CashTransaction } from '../../../../types/cash-transaction';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -19,11 +21,7 @@ const paginationMeta = { page: 1, limit: 10, total: 1, totalPages: 1, hasNext: f
 export function mockFetchOnce(data: CashTransaction[], meta = paginationMeta, status = 200) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      status,
-      ok: status >= 200 && status < 300,
-      json: async () => ({ statusCode: status, message: 'ok', data, paginationMeta: meta }),
-    }),
+    vi.fn().mockImplementation(async () => jsonResponse({ statusCode: status, message: 'ok', data, paginationMeta: meta }, status)),
   );
 }
 
@@ -31,14 +29,9 @@ function mockFetchWithDetail(list: CashTransaction[], detail: CashTransaction) {
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) =>
-      Promise.resolve({
-        status: 200,
-        ok: true,
-        json: async () =>
-          url.includes(`/cash-transactions/${detail.id}`)
+      Promise.resolve(jsonResponse(url.includes(`/cash-transactions/${detail.id}`)
             ? { statusCode: 200, message: 'ok', data: detail }
-            : { statusCode: 200, message: 'ok', data: list, paginationMeta },
-      }),
+            : { statusCode: 200, message: 'ok', data: list, paginationMeta })),
     ),
   );
 }
@@ -280,12 +273,8 @@ describe('CashTransactionsView — View Details drawer', () => {
       'fetch',
       vi.fn((url: string) =>
         url.includes('/cash-transactions/1')
-          ? Promise.resolve({ status: 500, ok: false, json: async () => ({}) })
-          : Promise.resolve({
-              status: 200,
-              ok: true,
-              json: async () => ({ statusCode: 200, message: 'ok', data: [saleTxn], paginationMeta }),
-            }),
+          ? Promise.resolve(jsonResponse({}, 500))
+          : Promise.resolve(jsonResponse({ statusCode: 200, message: 'ok', data: [saleTxn], paginationMeta })),
       ),
     );
     render(<CashTransactionsView />);
@@ -303,14 +292,9 @@ describe('CashTransactionsView — type, status, shift, date, and drawer filters
   it('populates the drawer filter from GET /cash-drawers and requests it as a query param on selection', async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn((url: string) =>
-      Promise.resolve({
-        status: 200,
-        ok: true,
-        json: async () =>
-          url.includes('/cash-drawers')
+      Promise.resolve(jsonResponse(url.includes('/cash-drawers')
             ? { statusCode: 200, message: 'ok', data: [{ id: 3 }, { id: 7 }] }
-            : { statusCode: 200, message: 'ok', data: [saleTxn], paginationMeta },
-      }),
+            : { statusCode: 200, message: 'ok', data: [saleTxn], paginationMeta })),
     );
     vi.stubGlobal('fetch', fetchMock);
 

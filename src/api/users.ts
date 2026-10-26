@@ -1,5 +1,6 @@
-import { getAccessToken, clearAuthSession, getStoredUser } from '../lib/auth-storage';
-import { ApiError, getApiErrorMessage } from '../lib/api-error';
+import { apiRequest } from './http';
+import { getStoredUser } from '../lib/auth-storage';
+import { ApiError } from '../lib/api-error';
 import type {
   CreateUserPayload,
   MerchantUser,
@@ -10,49 +11,6 @@ import type {
   UserMutationResponse,
   UsersListResponse,
 } from '../types/user';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-function authHeaders(includeJson = false): Record<string, string> {
-  const token = getAccessToken();
-  return {
-    Accept: 'application/json',
-    ...(includeJson ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
-async function userRequest<T>(
-  path: string,
-  init: RequestInit,
-  fallbackMessage: string,
-): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      ...authHeaders(Boolean(init.body)),
-      ...init.headers,
-    },
-  });
-
-  if (response.status === 401) {
-    clearAuthSession();
-    window.location.href = '/login';
-    throw new ApiError('Unauthorized', 401);
-  }
-
-  if (!response.ok) {
-    const message = await getApiErrorMessage(response, fallbackMessage);
-    throw new ApiError(message, response.status);
-  }
-
-  const text = await response.text();
-  if (!text.trim()) {
-    return undefined as T;
-  }
-
-  return JSON.parse(text) as T;
-}
 
 /** Resolves the logged-in administrator's merchant id (used to anchor new users). */
 export function getCurrentMerchantId(): number | null {
@@ -65,7 +23,7 @@ export async function getMerchantUsers(): Promise<MerchantUser[]> {
     throw new ApiError('Unable to resolve merchant context. Please sign in again.', 400);
   }
 
-  const json = await userRequest<UsersListResponse>(
+  const json = await apiRequest<UsersListResponse>(
     `/users/merchant/${merchantId}`,
     { method: 'GET' },
     'Failed to load users. Please try again.',
@@ -77,7 +35,7 @@ export async function getMerchantUsers(): Promise<MerchantUser[]> {
 export async function createUser(
   payload: CreateUserPayload,
 ): Promise<MerchantUser> {
-  const json = await userRequest<UserMutationResponse>(
+  const json = await apiRequest<UserMutationResponse>(
     '/users',
     {
       method: 'POST',
@@ -93,7 +51,7 @@ export async function updateUser(
   id: number,
   payload: UpdateUserPayload,
 ): Promise<MerchantUser> {
-  const json = await userRequest<UserMutationResponse>(
+  const json = await apiRequest<UserMutationResponse>(
     `/users/${id}`,
     {
       method: 'PUT',
@@ -109,7 +67,7 @@ export async function setUserActiveStatus(
   id: number,
   isActive: boolean,
 ): Promise<MerchantUser> {
-  const json = await userRequest<UserMutationResponse>(
+  const json = await apiRequest<UserMutationResponse>(
     `/users/${id}/status`,
     {
       method: 'PATCH',
@@ -124,7 +82,7 @@ export async function setUserActiveStatus(
 export async function triggerUserPasswordReset(
   id: number,
 ): Promise<MessageResponse> {
-  return userRequest<MessageResponse>(
+  return apiRequest<MessageResponse>(
     `/users/${id}/reset-password`,
     { method: 'POST' },
     'Failed to trigger password reset. Please try again.',
@@ -132,7 +90,7 @@ export async function triggerUserPasswordReset(
 }
 
 export async function getUserHrSummary(id: number): Promise<UserHrSummary> {
-  const json = await userRequest<UserHrSummaryResponse>(
+  const json = await apiRequest<UserHrSummaryResponse>(
     `/users/${id}/hr-summary`,
     { method: 'GET' },
     'Failed to load HR summary. Please try again.',

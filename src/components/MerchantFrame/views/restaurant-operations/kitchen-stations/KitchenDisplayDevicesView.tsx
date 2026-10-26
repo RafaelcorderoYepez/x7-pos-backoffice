@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken } from '../../../../../lib/auth-storage';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { AppModal } from '../../../shared/AppModal';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
 import { TableOptionsMenu, NoColumnsEmptyState, TableEmptyState, TablePaginationFooter } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { NavHubBar } from '../../../../shared/NavHubBar';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
+import { ApiError } from '../../../../../lib/api-error';
 
 export type KitchenDisplayDeviceStatus = 'active' | 'deleted';
 
@@ -43,6 +44,37 @@ export interface KitchenDisplayDevice {
 interface KitchenDisplayDevicesViewProps {
   onNavigate?: (view: string) => void;
 }
+
+// KDS device row as returned by GET /kitchen-display-devices (camelCase and snake_case variants).
+type RawKdsDevice = {
+  id: number;
+  merchant_id?: number;
+  merchantId?: number;
+  station_id?: number;
+  stationId?: number;
+  station?: {
+    id: number;
+    name: string;
+    stationNumber?: number;
+    station_number?: number;
+    display_order?: number;
+    displayOrder?: number;
+  };
+  name: string;
+  device_identifier?: string;
+  deviceIdentifier?: string;
+  ip_address?: string;
+  ipAddress?: string;
+  is_online?: boolean;
+  isOnline?: boolean;
+  last_sync?: string;
+  lastSync?: string;
+  status?: KitchenDisplayDeviceStatus;
+  created_at?: string;
+  createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+};
 
 export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps> = ({ onNavigate }) => {
   const [devices, setDevices] = useState<KitchenDisplayDevice[]>([]);
@@ -141,8 +173,6 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   }, [toastMessage]);
 
   const topRef = useRef<HTMLDivElement | null>(null);
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   useEffect(() => {
     if (topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'instant' });
@@ -152,46 +182,40 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   // Load kitchen station list for selectors and calculate counts
   const fetchStationsList = useCallback(async () => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-      const [resStations, resDevices] = await Promise.all([
-        fetch(`${API_BASE}/kitchen-station?status=active`, { headers }),
-        fetch(`${API_BASE}/kitchen-display-devices?status=active&limit=100`, { headers }),
+      // The device count per station is secondary: if it fails the station list still loads.
+      const [json, devJson] = await Promise.all([
+        apiRequest<
+          MaybeEnvelopedList<{
+            id: number;
+            name: string;
+            stationNumber?: number;
+            station_number?: number;
+            display_order?: number;
+            displayOrder?: number;
+          }>
+        >('/kitchen-station?status=active', { method: 'GET' }, 'Failed to load kitchen stations.'),
+        apiRequest<MaybeEnvelopedList<{ station_id?: number; stationId?: number; station?: { id: number } }>>(
+          '/kitchen-display-devices?status=active&limit=100',
+          { method: 'GET' },
+          '',
+        ).catch(() => null),
       ]);
 
-      if (resStations.ok) {
-        const json = await resStations.json();
-        const rawList = Array.isArray(json) ? json : json.data || [];
-        setStations(
-          rawList.map(
-            (s: {
-              id: number;
-              name: string;
-              stationNumber?: number;
-              station_number?: number;
-              display_order?: number;
-              displayOrder?: number;
-            }) => ({
-              id: s.id,
-              name: s.name,
-              stationNumber: s.stationNumber ?? s.station_number ?? s.displayOrder ?? s.display_order ?? s.id,
-              station_number: s.station_number ?? s.stationNumber ?? s.display_order ?? s.displayOrder ?? s.id,
-              display_order: s.display_order ?? s.displayOrder,
-            })
-          )
-        );
-      } else {
-        setStations([]);
-      }
+      setStations(
+        unwrapList(json).map(
+          (s) => ({
+            id: s.id,
+            name: s.name,
+            stationNumber: s.stationNumber ?? s.station_number ?? s.displayOrder ?? s.display_order ?? s.id,
+            station_number: s.station_number ?? s.stationNumber ?? s.display_order ?? s.displayOrder ?? s.id,
+            display_order: s.display_order ?? s.displayOrder,
+          })
+        )
+      );
 
-      if (resDevices.ok) {
-        const devJson = await resDevices.json();
-        const rawDevs = Array.isArray(devJson) ? devJson : devJson.data || [];
+      if (devJson) {
         const countMap: Record<number, number> = {};
-        rawDevs.forEach((d: { station_id?: number; stationId?: number; station?: { id: number } }) => {
+        unwrapList(devJson).forEach((d) => {
           const sId = d.station_id ?? d.stationId ?? d.station?.id;
           if (sId) {
             countMap[sId] = (countMap[sId] || 0) + 1;
@@ -203,7 +227,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       console.error('Error fetching kitchen stations from database:', err);
       setStations([]);
     }
-  }, [API_BASE]);
+  }, []);
 
   // Fetch KDS devices from PostgreSQL
   const fetchDevices = useCallback(async (silent = false) => {
@@ -211,12 +235,6 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     setIsRefreshing(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       const params = new URLSearchParams();
       if (statusFilter === 'Deleted') params.append('status', 'deleted');
       else if (statusFilter === 'Active') params.append('status', 'active');
@@ -224,76 +242,45 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
 
       params.append('limit', '100');
 
-      const res = await fetch(`${API_BASE}/kitchen-display-devices?${params.toString()}`, { headers });
-
-      if (res.ok) {
-        const json = await res.json();
-        const rawList = Array.isArray(json) ? json : json.data || [];
-        const dataList = rawList.map((dev: {
-          id: number;
-          merchant_id?: number;
-          merchantId?: number;
-          station_id?: number;
-          stationId?: number;
-          station?: {
-            id: number;
-            name: string;
-            stationNumber?: number;
-            station_number?: number;
-            display_order?: number;
-            displayOrder?: number;
-          };
-          name: string;
-          device_identifier?: string;
-          deviceIdentifier?: string;
-          ip_address?: string;
-          ipAddress?: string;
-          is_online?: boolean;
-          isOnline?: boolean;
-          last_sync?: string;
-          lastSync?: string;
-          status?: string;
-          created_at?: string;
-          createdAt?: string;
-          updated_at?: string;
-          updatedAt?: string;
-        }) => ({
-          id: dev.id,
-          merchant_id: dev.merchant_id ?? dev.merchantId ?? 1,
-          station_id: dev.station_id ?? dev.stationId ?? dev.station?.id ?? null,
-          station: dev.station
-            ? {
-                id: dev.station.id,
-                name: dev.station.name,
-                stationNumber:
-                  dev.station.stationNumber ??
-                  dev.station.station_number ??
-                  dev.station.displayOrder ??
-                  dev.station.display_order ??
-                  dev.station.id,
-                station_number:
-                  dev.station.station_number ??
-                  dev.station.stationNumber ??
-                  dev.station.display_order ??
-                  dev.station.displayOrder ??
-                  dev.station.id,
-                display_order: dev.station.display_order ?? dev.station.displayOrder,
-              }
-            : null,
-          name: dev.name,
-          device_identifier: dev.device_identifier ?? dev.deviceIdentifier ?? 'DEV-000',
-          ip_address: dev.ip_address ?? dev.ipAddress ?? null,
-          is_online: dev.is_online ?? dev.isOnline ?? false,
-          last_sync: dev.last_sync ?? dev.lastSync ?? null,
-          status: dev.status ?? 'active',
-          created_at: dev.created_at ?? dev.createdAt ?? new Date().toISOString(),
-          updated_at: dev.updated_at ?? dev.updatedAt ?? new Date().toISOString(),
-        }));
-        setDevices(dataList);
-        setLastUpdated(new Date());
-      } else {
-        setDevices([]);
-      }
+      const json = await apiRequest<MaybeEnvelopedList<RawKdsDevice>>(
+        `/kitchen-display-devices?${params.toString()}`,
+        { method: 'GET' },
+        'Failed to fetch KDS display devices from backend API.',
+      );
+      const dataList = unwrapList(json).map((dev) => ({
+        id: dev.id,
+        merchant_id: dev.merchant_id ?? dev.merchantId ?? 1,
+        station_id: dev.station_id ?? dev.stationId ?? dev.station?.id ?? null,
+        station: dev.station
+          ? {
+              id: dev.station.id,
+              name: dev.station.name,
+              stationNumber:
+                dev.station.stationNumber ??
+                dev.station.station_number ??
+                dev.station.displayOrder ??
+                dev.station.display_order ??
+                dev.station.id,
+              station_number:
+                dev.station.station_number ??
+                dev.station.stationNumber ??
+                dev.station.display_order ??
+                dev.station.displayOrder ??
+                dev.station.id,
+              display_order: dev.station.display_order ?? dev.station.displayOrder,
+            }
+          : null,
+        name: dev.name,
+        device_identifier: dev.device_identifier ?? dev.deviceIdentifier ?? 'DEV-000',
+        ip_address: dev.ip_address ?? dev.ipAddress ?? null,
+        is_online: dev.is_online ?? dev.isOnline ?? false,
+        last_sync: dev.last_sync ?? dev.lastSync ?? null,
+        status: dev.status ?? 'active',
+        created_at: dev.created_at ?? dev.createdAt ?? new Date().toISOString(),
+        updated_at: dev.updated_at ?? dev.updatedAt ?? new Date().toISOString(),
+      }));
+      setDevices(dataList);
+      setLastUpdated(new Date());
     } catch (err) {
       console.error('API error fetching KDS devices from database:', err);
       setError('Failed to fetch KDS display devices from backend API.');
@@ -302,7 +289,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [statusFilter, API_BASE]);
+  }, [statusFilter]);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -468,12 +455,6 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     const isDeletedStatus = formStatus === 'deleted';
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       const payload = {
         name: formName.trim(),
         deviceIdentifier: formDeviceIdentifier.trim(),
@@ -483,20 +464,13 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         status: formStatus,
       };
 
-      const url = drawerMode === 'add' ? `${API_BASE}/kitchen-display-devices` : `${API_BASE}/kitchen-display-devices/${editingDevice?.id}`;
+      const url = drawerMode === 'add' ? '/kitchen-display-devices' : `/kitchen-display-devices/${editingDevice?.id}`;
       const method = drawerMode === 'add' ? 'POST' : 'PUT';
 
-      const res = await fetch(url, { method, headers, body: JSON.stringify(payload) });
-
-      if (res.ok) {
-        setIsDrawerOpen(false);
-        fetchDevices(true);
-        fetchStationsList();
-      } else {
-        const errJson = await res.json().catch(() => null);
-        const msg = Array.isArray(errJson?.message) ? errJson.message[0] : (errJson?.message || 'Failed to save device in database');
-        setFormError(msg);
-      }
+      await apiRequest<void>(url, { method, body: JSON.stringify(payload) }, 'Failed to save device in database');
+      setIsDrawerOpen(false);
+      fetchDevices(true);
+      fetchStationsList();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Network error saving device';
       setFormError(msg);
@@ -511,38 +485,27 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     const nowIso = new Date().toISOString();
 
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-display-devices/${device.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          name: device.name,
-          deviceIdentifier: device.device_identifier,
-          ipAddress: device.ip_address,
-          stationId: device.station_id,
-          isOnline: true,
-          lastSync: nowIso,
-        }),
+      await apiRequest<void>(
+        `/kitchen-display-devices/${device.id}`,
+        { method: 'PUT', body: JSON.stringify({
+            name: device.name,
+            deviceIdentifier: device.device_identifier,
+            ipAddress: device.ip_address,
+            stationId: device.station_id,
+            isOnline: true,
+            lastSync: nowIso,
+        }) },
+        `Failed to resynchronize device "${device.name}".`,
+      );
+      await fetchDevices(true);
+      setToastMessage({
+        text: `Device "${device.name}" successfully resynchronized with KDS.`,
+        type: 'success',
       });
-      if (res.ok) {
-        await fetchDevices(true);
-        setToastMessage({
-          text: `Device "${device.name}" successfully resynchronized with KDS.`,
-          type: 'success',
-        });
-      } else {
-        setToastMessage({
-          text: `Failed to resynchronize device "${device.name}".`,
-          type: 'warning',
-        });
-      }
     } catch (err: unknown) {
       console.error('Error resyncing device:', err);
       setToastMessage({
-        text: `Network error resynchronizing "${device.name}".`,
+        text: err instanceof ApiError ? err.message : `Network error resynchronizing "${device.name}".`,
         type: 'warning',
       });
     } finally {
@@ -555,23 +518,16 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     if (!deviceToDelete) return;
     setIsDeleting(true);
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-display-devices/${deviceToDelete.id}`, {
-        method: 'DELETE',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-
-      if (res.ok) {
-        fetchDevices(true);
-        fetchStationsList();
-      } else {
-        const errJson = await res.json().catch(() => null);
-        alert(errJson?.message || 'Failed to delete device from database');
-      }
+      await apiRequest<void>(
+        `/kitchen-display-devices/${deviceToDelete.id}`,
+        { method: 'DELETE' },
+        'Failed to delete device from database',
+      );
+      fetchDevices(true);
+      fetchStationsList();
     } catch (err) {
       console.error('Error deleting device:', err);
+      if (err instanceof ApiError && err.status !== 401) alert(err.message);
     } finally {
       setIsDeleting(false);
       setDeleteModalOpen(false);

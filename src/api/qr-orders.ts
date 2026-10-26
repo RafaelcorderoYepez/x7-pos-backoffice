@@ -37,8 +37,8 @@ export const MOCK_MERCHANTS: MerchantRef[] = [
 ];
 
 export const MOCK_QR_LOCATIONS: QRLocationRef[] = [
-  { id: 1, name: 'Mesa Terraza 2', merchant_id: 1, location_type: 'DINE_IN', qr_code_url: 'https://menu.x7pos.com/m/1/loc/1' },
-  { id: 2, name: 'Curbside Pickup Point', merchant_id: 1, location_type: 'PICKUP', qr_code_url: 'https://menu.x7pos.com/m/1/loc/2' },
+  { id: 1, name: 'Mesa Terraza 2', merchant_id: 3, location_type: 'DINE_IN', qr_code_url: 'https://menu.x7pos.com/m/3/loc/1' },
+  { id: 2, name: 'Curbside Pickup Point', merchant_id: 3, location_type: 'PICKUP', qr_code_url: 'https://menu.x7pos.com/m/3/loc/2' },
   { id: 3, name: 'Patio Table #12 Access', merchant_id: 3, location_type: 'DINE_IN', qr_code_url: 'https://menu.x7pos.com/m/3/loc/3' },
   { id: 4, name: 'Terrace Table #Patio-01', merchant_id: 3, location_type: 'DINE_IN', qr_code_url: 'https://menu.x7pos.com/m/3/loc/4' },
   { id: 5, name: 'Main Bar Stool #5', merchant_id: 3, location_type: 'DINE_IN', qr_code_url: 'https://menu.x7pos.com/m/3/loc/5' },

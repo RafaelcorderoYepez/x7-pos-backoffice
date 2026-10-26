@@ -936,12 +936,6 @@ export const QRLocationDrawer: React.FC<QRLocationDrawerProps> = ({
             <button
               type="submit"
               form="qr-drawer-single-form"
-              onClick={() => {
-                const f = document.getElementById('qr-drawer-single-form') as HTMLFormElement | null;
-                if (f) {
-                  f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-                }
-              }}
               disabled={isSubmitting}
               className="px-5 py-2 bg-[#ae001a] hover:bg-[#900015] text-white font-bold rounded-xl text-sm shadow-md transition-colors duration-200 flex items-center gap-2 disabled:opacity-50"
             >
@@ -958,12 +952,6 @@ export const QRLocationDrawer: React.FC<QRLocationDrawerProps> = ({
             <button
               type="submit"
               form="qr-drawer-bulk-form"
-              onClick={() => {
-                const f = document.getElementById('qr-drawer-bulk-form') as HTMLFormElement | null;
-                if (f) {
-                  f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-                }
-              }}
               disabled={isSubmitting || bulkSelectedTableIds.size === 0}
               className="px-5 py-2 bg-[#ae001a] hover:bg-[#900015] text-white font-bold rounded-xl text-sm shadow-md transition-colors duration-200 flex items-center gap-2 disabled:opacity-50"
             >

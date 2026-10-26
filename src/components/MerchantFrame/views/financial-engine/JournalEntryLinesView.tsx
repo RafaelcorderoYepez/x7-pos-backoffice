@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   CreateJournalEntryLineDto,
   JournalEntry,
@@ -11,13 +10,12 @@ import type {
 import { formatCurrency, formatEntryDate, STATUS_BADGE_CLASSES } from './journalEntriesHelpers';
 import { LedgerQuickLinks } from './LedgerQuickLinks';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
 import {
   flattenJournalEntryLines,
   isLeafAccount,
   type FlattenedJournalEntryLine,
 } from './journalEntryLinesHelpers';
+import { apiRequest } from '../../../../api/http';
 
 interface SearchComboboxProps<T> {
   ariaLabel: string;
@@ -522,26 +520,12 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
     setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/journal-entry?limit=100`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        setError(`Failed to load journal entry lines. Server returned status ${res.status}`);
-        return;
-      }
-
-      const json = await res.json();
-      const loaded = json.data ?? [];
-      setEntries(loaded);
+      const json = await apiRequest<{ data?: JournalEntry[] }>(
+        '/journal-entry?limit=100',
+        { method: 'GET' },
+        'Failed to load journal entry lines.',
+      );
+      setEntries(json.data ?? []);
     } catch (err: unknown) {
       console.error('Error fetching journal entry lines:', err);
       setError(err instanceof Error ? err.message : 'Failed to load journal entry lines');
@@ -552,18 +536,12 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
 
   const fetchLedgerAccounts = async () => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/ledger-accounts?limit=100`, { headers });
-      if (res.ok) {
-        const json = await res.json();
-        const active = ((json.data ?? []) as LedgerAccount[]).filter((a) => a.is_active !== false);
-        setLedgerAccounts(active);
-        return;
-      }
-      setLedgerAccounts([]);
+      const json = await apiRequest<{ data?: LedgerAccount[] }>(
+        '/ledger-accounts?limit=100',
+        { method: 'GET' },
+        'Failed to load ledger accounts.',
+      );
+      setLedgerAccounts((json.data ?? []).filter((a) => a.is_active !== false));
     } catch (err) {
       console.error('Error fetching ledger accounts:', err);
       setLedgerAccounts([]);
@@ -649,6 +627,9 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
     setFormError(null);
     try {
       if (entryId === -1) {
+        // entryId -1 only comes from the create form, so the payload is a full create DTO
+        const createDto = dto as CreateJournalEntryLineDto;
+        const now = new Date().toISOString();
         const nextNum = entries.length + 1;
         const newEntryNumber = `JE-2026-00${nextNum}`;
         const newDraftEntry: JournalEntry = {
@@ -657,22 +638,25 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
           entry_date: new Date().toISOString().split('T')[0],
           description: 'New Inventory Adjustment Entry',
           status: 'DRAFT',
-          total_debit: dto.debit,
-          total_credit: dto.credit,
-          is_balanced: Math.abs(dto.debit - dto.credit) < 0.01,
+          total_debit: createDto.debit,
+          total_credit: createDto.credit,
+          is_balanced: Math.abs(createDto.debit - createDto.credit) < 0.01,
           reference_type: 'ADJUSTMENT',
+          reference_id: null,
+          created_at: now,
+          updated_at: now,
           company: { id: 1, name: 'Main Merchant Branch' },
           lines: [
             {
               id: Date.now() + 1,
-              account: leafAccounts.find((a) => a.id === dto.account_id) || {
-                id: dto.account_id,
+              account: leafAccounts.find((a) => a.id === createDto.account_id) || {
+                id: createDto.account_id,
                 code: '1100',
                 name: 'Raw Material Inventory',
               },
-              debit: dto.debit,
-              credit: dto.credit,
-              description: dto.description || '',
+              debit: createDto.debit,
+              credit: createDto.credit,
+              description: createDto.description || '',
             },
           ],
         };
@@ -682,28 +666,16 @@ export const JournalEntryLinesView: React.FC<JournalEntryLinesViewProps> = ({ en
         return;
       }
 
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
       const isEdit = formDrawer.mode === 'edit';
       const url = isEdit
-        ? `${API_BASE}/journal-entries/${entryId}/lines/${formDrawer.item.line.id}`
-        : `${API_BASE}/journal-entries/${entryId}/lines`;
+        ? `/journal-entries/${entryId}/lines/${formDrawer.item.line.id}`
+        : `/journal-entries/${entryId}/lines`;
 
-      const res = await fetch(url, { method: isEdit ? 'PATCH' : 'POST', headers, body: JSON.stringify(dto) }).catch(() => null);
-
-      if (res && res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const errJson = res ? await res.json().catch(() => ({})) : {};
-      if (!res || !res.ok) {
-        setFormError(errJson.message || 'Failed to submit journal entry line');
-        return;
-      }
+      await apiRequest<void>(
+        url,
+        { method: isEdit ? 'PATCH' : 'POST', body: JSON.stringify(dto) },
+        'Failed to submit journal entry line',
+      );
 
       await fetchJournalEntries();
       setFormDrawer(null);

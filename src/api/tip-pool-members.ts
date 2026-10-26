@@ -1,4 +1,10 @@
-import { getAccessToken } from '../lib/auth-storage';
+import {
+  apiRequest,
+  unwrapItem,
+  unwrapList,
+  type MaybeEnvelopedItem,
+  type MaybeEnvelopedList,
+} from './http';
 import type {
   TipPoolMember,
   FetchTipPoolMembersParams,
@@ -7,16 +13,6 @@ import type {
   UpdateTipPoolMemberDto,
   CollaboratorOption,
 } from '../types/tip-pool-members';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-function authHeaders(): Record<string, string> {
-  const token = getAccessToken();
-  return {
-    Accept: 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 export interface FetchTipPoolMembersResponse {
   data: TipPoolMember[];
@@ -27,15 +23,12 @@ export interface FetchTipPoolMembersResponse {
 }
 
 export async function fetchCollaboratorOptions(): Promise<CollaboratorOption[]> {
-  const response = await fetch(`${API_BASE}/v1/collaborators`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch collaborator options (${response.status})`);
-  }
-  const json = await response.json();
-  return Array.isArray(json) ? json : json.data || [];
+  const json = await apiRequest<MaybeEnvelopedList<CollaboratorOption>>(
+    '/v1/collaborators',
+    { method: 'GET' },
+    'Failed to fetch collaborator options.',
+  );
+  return unwrapList(json);
 }
 
 /**
@@ -68,16 +61,11 @@ export async function fetchTipPoolMembers(
 
   const path = `/v1/tip-pool-members?${query.toString()}`;
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
-  }
-
-  const json = (await response.json()) as FetchTipPoolMembersResponse | TipPoolMember[];
+  const json = await apiRequest<FetchTipPoolMembersResponse | TipPoolMember[]>(
+    path,
+    { method: 'GET' },
+    'Failed to load tip pool members. Please try again.',
+  );
   let members: TipPoolMember[] = [];
 
   if (Array.isArray(json)) {
@@ -151,22 +139,12 @@ export async function createTipPoolMember(
     throw new Error('Distribution weight exceeds maximum precision 5, scale 2 (max 999.99).');
   }
 
-  const response = await fetch(`${API_BASE}/v1/tip-pool-members`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-    body: JSON.stringify(dto),
-  });
-
-  if (!response.ok) {
-    const errJson = await response.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to create tip pool member (${response.status})`);
-  }
-
-  const json = await response.json();
-  return normalizeTipPoolMember(json.data || json);
+  const json = await apiRequest<MaybeEnvelopedItem<TipPoolMember>>(
+    '/v1/tip-pool-members',
+    { method: 'POST', body: JSON.stringify(dto) },
+    'Failed to create tip pool member.',
+  );
+  return normalizeTipPoolMember(unwrapItem(json));
 }
 
 export async function updateTipPoolMember(
@@ -177,20 +155,10 @@ export async function updateTipPoolMember(
     throw new Error('Distribution weight must be a non-negative number.');
   }
 
-  const response = await fetch(`${API_BASE}/v1/tip-pool-members/${id}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-    body: JSON.stringify(dto),
-  });
-
-  if (!response.ok) {
-    const errJson = await response.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to update tip pool member (${response.status})`);
-  }
-
-  const json = await response.json();
-  return normalizeTipPoolMember(json.data || json);
+  const json = await apiRequest<MaybeEnvelopedItem<TipPoolMember>>(
+    `/v1/tip-pool-members/${id}`,
+    { method: 'PATCH', body: JSON.stringify(dto) },
+    'Failed to update tip pool member.',
+  );
+  return normalizeTipPoolMember(unwrapItem(json));
 }

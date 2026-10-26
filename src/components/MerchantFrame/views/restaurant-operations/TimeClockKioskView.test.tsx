@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { TimeClockKioskView } from './TimeClockKioskView';
 import * as attendanceApi from '../../../../api/attendance';
+import type { CollaboratorPinAccount, CollaboratorPunchState } from '../../../../types/attendance';
 
-const TEST_ACCOUNTS: Record<string, attendanceApi.CollaboratorPinAccount> = {
+const TEST_ACCOUNTS: Record<string, CollaboratorPinAccount> = {
   '1234': {
     collaboratorId: 'emp-101',
     name: 'Carlos Mendoza',
@@ -24,7 +25,7 @@ const TEST_ACCOUNTS: Record<string, attendanceApi.CollaboratorPinAccount> = {
   },
 };
 
-let mockPunchState: attendanceApi.CollaboratorPunchState = 'OFF_DUTY';
+let mockPunchState: CollaboratorPunchState = 'OFF_DUTY';
 
 describe('TimeClockKioskView & Attendance Pipeline', () => {
   beforeEach(() => {

@@ -1,13 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   CashDrawerHistory,
   CashDrawerHistoryStatus,
 } from '../../../../types/cash-drawer-history';
 import { CashManagementQuickLinks } from './CashManagementQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 // ─── Pure Helpers (exported for unit tests) ────────────────────────────────
 
@@ -502,24 +500,14 @@ export const CashDrawerHistoryView: React.FC<CashDrawerHistoryViewProps> = ({ on
     const fetchDrawers = async () => {
       setDrawersLoading(true);
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const res = await fetch(`${API_BASE}/cash-drawers?limit=100`, { headers });
-
-        if (res.status === 401) {
-          clearAuthSession();
-          window.location.href = '/login';
-          return;
-        }
-
-        if (res.ok) {
-          const json = await res.json();
-          const list: DrawerOption[] = (json.data ?? []).map((d: { id: number }) => ({ id: d.id }));
-          setDrawers(list);
-          if (list.length > 0) setSelectedDrawerId(list[0].id);
-        }
+        const json = await apiRequest<{ data?: { id: number }[] }>(
+          '/cash-drawers?limit=100',
+          { method: 'GET' },
+          'Failed to load cash drawers.',
+        );
+        const list: DrawerOption[] = (json.data ?? []).map((d) => ({ id: d.id }));
+        setDrawers(list);
+        if (list.length > 0) setSelectedDrawerId(list[0].id);
       } catch (err) {
         console.error('Error fetching cash drawers:', err);
       } finally {
@@ -539,10 +527,6 @@ export const CashDrawerHistoryView: React.FC<CashDrawerHistoryViewProps> = ({ on
     setError(null);
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
       const params = new URLSearchParams({
         cashDrawerId: String(selectedDrawerId),
         limit: '100',
@@ -551,20 +535,11 @@ export const CashDrawerHistoryView: React.FC<CashDrawerHistoryViewProps> = ({ on
         ...(statusFilter ? { status: statusFilter } : {}),
       });
 
-      const res = await fetch(
-        `${API_BASE}/cash-drawer-history?${params.toString()}`,
-        { headers },
+      const json = await apiRequest<{ data?: Parameters<typeof normalizeHistoryRecord>[0][] }>(
+        `/cash-drawer-history?${params.toString()}`,
+        { method: 'GET' },
+        'Failed to load cash drawer history records.',
       );
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const json = await res.json();
       setRecords((json.data ?? []).map(normalizeHistoryRecord));
     } catch (err) {
       console.error('Error fetching cash drawer history:', err);

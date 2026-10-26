@@ -1,12 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type { CashShift, CashShiftStatus, CreateCashShiftDto } from '../../../../types/cash-shift';
 import type { CloseCashShiftDto } from '../../../../types/cash-shift';
 import type { CashDrawer } from '../../../../types/cash-drawer';
 import { CashManagementQuickLinks } from './CashManagementQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 import {
   STATUS_BADGE_CLASSES,
@@ -16,6 +13,7 @@ import {
   varianceColorClass,
   formatVariance,
 } from './cashShiftsHelpers';
+import { apiRequest } from '../../../../api/http';
 
 interface CashShiftDetailModalProps {
   shift: CashShift;
@@ -361,23 +359,11 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
     setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/cash-shifts`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading cash shifts');
-      }
-
-      const json = await res.json();
+      const json = await apiRequest<{ data?: Parameters<typeof normalizeShift>[0][] }>(
+        '/cash-shifts',
+        { method: 'GET' },
+        'Error loading cash shifts',
+      );
       setShifts((json.data ?? []).map(normalizeShift));
     } catch (err) {
       console.error('Error fetching cash shifts:', err);
@@ -445,16 +431,16 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
     setCreateError(null);
     setFormModalOpen(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch(`${API_BASE}/cash-drawers?limit=100`, { headers });
-      const json = await res.json().catch(() => ({ data: [] }));
+      const json = await apiRequest<{ data?: CashDrawer[] }>(
+        '/cash-drawers?limit=100',
+        { method: 'GET' },
+        'Failed to load cash drawers.',
+      );
       const openShiftDrawerIds = new Set(
         shifts.filter((s) => s.status === 'OPEN').map((s) => s.cashDrawerId),
       );
       const drawers: CashDrawer[] = (json.data ?? []).filter(
-        (d: CashDrawer) => d.status === 'Open' && !openShiftDrawerIds.has(d.id),
+        (d) => d.status === 'Open' && !openShiftDrawerIds.has(d.id),
       );
       setAvailableDrawers(drawers);
     } catch (err) {
@@ -472,26 +458,11 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
     setFormSubmitting(true);
     setCreateError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/cash-shifts`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to open cash shift');
-      }
+      await apiRequest<void>(
+        '/cash-shifts',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to open cash shift',
+      );
 
       await fetchCashShifts();
       setFormModalOpen(false);
@@ -523,26 +494,11 @@ export const CashShiftsView: React.FC<CashShiftsViewProps> = ({ onNavigate }) =>
     setCloseSubmitting(true);
     setCloseError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/cash-shifts/${closingShift.id}/close`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to close cash shift');
-      }
+      const json = await apiRequest<{ data: Parameters<typeof normalizeShift>[0] }>(
+        `/cash-shifts/${closingShift.id}/close`,
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to close cash shift',
+      );
 
       await fetchCashShifts();
       setClosingShift(null);

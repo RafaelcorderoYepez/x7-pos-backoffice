@@ -1,4 +1,4 @@
-import { getAccessToken } from '../lib/auth-storage';
+import { apiRequest, unwrapItem, type MaybeEnvelopedItem } from './http';
 import type {
   TipSettlement,
   TipSettlementStatus,
@@ -6,16 +6,6 @@ import type {
   TipSettlementsSummaryMetrics,
   CreateTipSettlementDto,
 } from '../types/tip-settlements';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-function authHeaders(): Record<string, string> {
-  const token = getAccessToken();
-  return {
-    Accept: 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 export interface FetchTipSettlementsResponse {
   data: TipSettlement[];
@@ -68,16 +58,11 @@ export async function fetchTipSettlements(
 
   const path = `/v1/tip-settlements?${query.toString()}`;
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
-  }
-
-  const json = (await response.json()) as FetchTipSettlementsResponse | TipSettlement[];
+  const json = await apiRequest<FetchTipSettlementsResponse | TipSettlement[]>(
+    path,
+    { method: 'GET' },
+    'Failed to load tip settlements. Please try again.',
+  );
   let settlements: TipSettlement[] = [];
 
   if (Array.isArray(json)) {
@@ -93,22 +78,12 @@ export async function fetchTipSettlements(
  * Creates a new TipSettlement record.
  */
 export async function createTipSettlement(dto: CreateTipSettlementDto): Promise<TipSettlement> {
-  const response = await fetch(`${API_BASE}/v1/tip-settlements`, {
-    method: 'POST',
-    headers: {
-      ...authHeaders(),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(dto),
-  });
-
-  if (!response.ok) {
-    const errJson = await response.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to create tip settlement (${response.status})`);
-  }
-
-  const json = await response.json();
-  return normalizeTipSettlement(json.data || json);
+  const json = await apiRequest<MaybeEnvelopedItem<TipSettlement>>(
+    '/v1/tip-settlements',
+    { method: 'POST', body: JSON.stringify(dto) },
+    'Failed to create tip settlement.',
+  );
+  return normalizeTipSettlement(unwrapItem(json));
 }
 
 /**
@@ -120,22 +95,15 @@ export async function updateTipSettlementStatus(
   settledBy?: number | string | null,
   notes?: string
 ): Promise<TipSettlement> {
-  const response = await fetch(`${API_BASE}/v1/tip-settlements/${id}/status`, {
-    method: 'PATCH',
-    headers: {
-      ...authHeaders(),
-      'Content-Type': 'application/json',
+  const json = await apiRequest<MaybeEnvelopedItem<TipSettlement>>(
+    `/v1/tip-settlements/${id}/status`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ status, settled_by: settledBy, notes }),
     },
-    body: JSON.stringify({ status, settled_by: settledBy, notes }),
-  });
-
-  if (!response.ok) {
-    const errJson = await response.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to update settlement status (${response.status})`);
-  }
-
-  const json = await response.json();
-  return normalizeTipSettlement(json.data || json);
+    'Failed to update settlement status.',
+  );
+  return normalizeTipSettlement(unwrapItem(json));
 }
 
 export function normalizeTipSettlement(raw: TipSettlement): TipSettlement {

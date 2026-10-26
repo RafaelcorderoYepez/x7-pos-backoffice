@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   MerchantOvertimeRule,
   OvertimeCalculationType,
@@ -9,8 +8,7 @@ import type {
   UpdateOvertimeRuleDto,
 } from '../../../../types/configuration';
 import { RuleConfigQuickLinks } from './RuleConfigQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 function fuzzyMatch(query: string, target: string): boolean {
   let qi = 0;
@@ -513,25 +511,11 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`${API_BASE}/merchant-overtime-rule?limit=100`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading overtime rules');
-      }
-
-      const json = await res.json();
+      const json = await apiRequest<{ data?: MerchantOvertimeRule[] }>(
+        '/merchant-overtime-rule?limit=100',
+        { method: 'GET' },
+        'Error loading overtime rules',
+      );
       setRules(json.data ?? []);
     } catch (err) {
       console.error('Error fetching overtime rules:', err);
@@ -550,26 +534,11 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
   const handleCreateSubmit = async (dto: CreateOvertimeRuleDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-overtime-rule`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to create overtime rule');
-      }
+      const json = await apiRequest<{ data: MerchantOvertimeRule }>(
+        '/merchant-overtime-rule',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to create overtime rule',
+      );
 
       setRules((prev) => [json.data, ...prev]);
       setFormModalOpen(null);
@@ -585,26 +554,11 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
   const handleEditSubmit = async (ruleId: number, dto: UpdateOvertimeRuleDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-overtime-rule/${ruleId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to update overtime rule');
-      }
+      const json = await apiRequest<{ data: MerchantOvertimeRule }>(
+        `/merchant-overtime-rule/${ruleId}`,
+        { method: 'PATCH', body: JSON.stringify(dto) },
+        'Failed to update overtime rule',
+      );
 
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
       setFormModalOpen(null);
@@ -619,22 +573,11 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
 
   const handleRowClick = async (ruleId: number) => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-overtime-rule/${ruleId}`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to load overtime rule details');
-      }
+      const json = await apiRequest<{ data: MerchantOvertimeRule }>(
+        `/merchant-overtime-rule/${ruleId}`,
+        { method: 'GET' },
+        'Failed to load overtime rule details',
+      );
 
       setDetailRule(json.data);
     } catch (err: unknown) {
@@ -647,26 +590,11 @@ export const OvertimeRulesView: React.FC<OvertimeRulesViewProps> = ({ onNavigate
     const nextStatus: 'active' | 'inactive' = togglingRule.status === 'active' ? 'inactive' : 'active';
     setToggleSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-overtime-rule/${togglingRule.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ status: nextStatus }),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to update overtime rule status');
-      }
+      const json = await apiRequest<{ data: MerchantOvertimeRule }>(
+        `/merchant-overtime-rule/${togglingRule.id}`,
+        { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) },
+        'Failed to update overtime rule status',
+      );
 
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
       setTogglingRule(null);

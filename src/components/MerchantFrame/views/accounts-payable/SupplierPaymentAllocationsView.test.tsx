@@ -9,8 +9,10 @@ import type {
   SupplierInvoice,
   InvoiceSupplierRef,
 } from '../../../../types/accounts-payable';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -100,23 +102,15 @@ const ALLOCATIONS: SupplierPaymentAllocation[] = [
   },
 ];
 
-function jsonRes(body: unknown, status = 200) {
-  return Promise.resolve({
-    ok: status >= 200 && status < 300,
-    status,
-    json: () => Promise.resolve(body),
-  } as Response);
-}
-
 function defaultFetch(allocations: SupplierPaymentAllocation[] = ALLOCATIONS) {
   return vi.fn((url: string | URL | Request) => {
     const u = String(url);
-    if (u.includes('/supplier-payment-allocations')) return jsonRes({ data: allocations });
-    if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-    if (u.includes('/supplier-credit-notes')) return jsonRes({ data: CREDIT_NOTES });
-    if (u.includes('/supplier-invoices')) return jsonRes({ data: INVOICES });
-    if (u.includes('/suppliers')) return jsonRes({ data: SUPPLIERS });
-    return jsonRes({ data: [] });
+    if (u.includes('/supplier-payment-allocations')) return jsonResponse({ data: allocations });
+    if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+    if (u.includes('/supplier-credit-notes')) return jsonResponse({ data: CREDIT_NOTES });
+    if (u.includes('/supplier-invoices')) return jsonResponse({ data: INVOICES });
+    if (u.includes('/suppliers')) return jsonResponse({ data: SUPPLIERS });
+    return jsonResponse({ data: [] });
   });
 }
 
@@ -394,14 +388,14 @@ describe('SupplierPaymentAllocationsView', () => {
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/supplier-payment-allocations') && opts?.method === 'POST') {
-          return jsonRes({ data: { id: 200 } }, 201);
+          return jsonResponse({ data: { id: 200 } }, 201);
         }
-        if (u.includes('/supplier-payment-allocations')) return jsonRes({ data: ALLOCATIONS });
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        if (u.includes('/supplier-credit-notes')) return jsonRes({ data: CREDIT_NOTES });
-        if (u.includes('/supplier-invoices')) return jsonRes({ data: INVOICES });
-        if (u.includes('/suppliers')) return jsonRes({ data: SUPPLIERS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payment-allocations')) return jsonResponse({ data: ALLOCATIONS });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        if (u.includes('/supplier-credit-notes')) return jsonResponse({ data: CREDIT_NOTES });
+        if (u.includes('/supplier-invoices')) return jsonResponse({ data: INVOICES });
+        if (u.includes('/suppliers')) return jsonResponse({ data: SUPPLIERS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 
@@ -440,14 +434,14 @@ describe('SupplierPaymentAllocationsView', () => {
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/supplier-payment-allocations') && opts?.method === 'POST') {
-          return jsonRes({ data: { id: 200 } }, 201);
+          return jsonResponse({ data: { id: 200 } }, 201);
         }
-        if (u.includes('/supplier-payment-allocations')) return jsonRes({ data: ALLOCATIONS });
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        if (u.includes('/supplier-credit-notes')) return jsonRes({ data: CREDIT_NOTES });
-        if (u.includes('/supplier-invoices')) return jsonRes({ data: INVOICES });
-        if (u.includes('/suppliers')) return jsonRes({ data: SUPPLIERS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payment-allocations')) return jsonResponse({ data: ALLOCATIONS });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        if (u.includes('/supplier-credit-notes')) return jsonResponse({ data: CREDIT_NOTES });
+        if (u.includes('/supplier-invoices')) return jsonResponse({ data: INVOICES });
+        if (u.includes('/suppliers')) return jsonResponse({ data: SUPPLIERS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 
@@ -477,7 +471,7 @@ describe('SupplierPaymentAllocationsView', () => {
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/supplier-payment-allocations') && opts?.method === 'POST') {
-          return jsonRes(
+          return jsonResponse(
             {
               message:
                 'An allocation must be funded by exactly one source: either a payment or a credit note.',
@@ -485,12 +479,12 @@ describe('SupplierPaymentAllocationsView', () => {
             400,
           );
         }
-        if (u.includes('/supplier-payment-allocations')) return jsonRes({ data: ALLOCATIONS });
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        if (u.includes('/supplier-credit-notes')) return jsonRes({ data: CREDIT_NOTES });
-        if (u.includes('/supplier-invoices')) return jsonRes({ data: INVOICES });
-        if (u.includes('/suppliers')) return jsonRes({ data: SUPPLIERS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payment-allocations')) return jsonResponse({ data: ALLOCATIONS });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        if (u.includes('/supplier-credit-notes')) return jsonResponse({ data: CREDIT_NOTES });
+        if (u.includes('/supplier-invoices')) return jsonResponse({ data: INVOICES });
+        if (u.includes('/suppliers')) return jsonResponse({ data: SUPPLIERS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 
@@ -536,16 +530,16 @@ describe('SupplierPaymentAllocationsView', () => {
         const u = String(url);
         if (u.includes('/supplier-payment-allocations/101') && opts?.method === 'DELETE') {
           deleted = true;
-          return jsonRes({ data: { id: 101 } });
+          return jsonResponse({ data: { id: 101 } });
         }
         if (u.includes('/supplier-payment-allocations')) {
-          return jsonRes({ data: deleted ? ALLOCATIONS.slice(1) : ALLOCATIONS });
+          return jsonResponse({ data: deleted ? ALLOCATIONS.slice(1) : ALLOCATIONS });
         }
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        if (u.includes('/supplier-credit-notes')) return jsonRes({ data: CREDIT_NOTES });
-        if (u.includes('/supplier-invoices')) return jsonRes({ data: INVOICES });
-        if (u.includes('/suppliers')) return jsonRes({ data: SUPPLIERS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        if (u.includes('/supplier-credit-notes')) return jsonResponse({ data: CREDIT_NOTES });
+        if (u.includes('/supplier-invoices')) return jsonResponse({ data: INVOICES });
+        if (u.includes('/suppliers')) return jsonResponse({ data: SUPPLIERS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 
@@ -573,14 +567,14 @@ describe('SupplierPaymentAllocationsView', () => {
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/supplier-payment-allocations/101') && opts?.method === 'DELETE') {
-          return jsonRes({ message: 'Allocation is locked' }, 400);
+          return jsonResponse({ message: 'Allocation is locked' }, 400);
         }
-        if (u.includes('/supplier-payment-allocations')) return jsonRes({ data: ALLOCATIONS });
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        if (u.includes('/supplier-credit-notes')) return jsonRes({ data: CREDIT_NOTES });
-        if (u.includes('/supplier-invoices')) return jsonRes({ data: INVOICES });
-        if (u.includes('/suppliers')) return jsonRes({ data: SUPPLIERS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payment-allocations')) return jsonResponse({ data: ALLOCATIONS });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        if (u.includes('/supplier-credit-notes')) return jsonResponse({ data: CREDIT_NOTES });
+        if (u.includes('/supplier-invoices')) return jsonResponse({ data: INVOICES });
+        if (u.includes('/suppliers')) return jsonResponse({ data: SUPPLIERS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 

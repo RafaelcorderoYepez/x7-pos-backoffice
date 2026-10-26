@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
 import { InventoryNavHubBar } from '../InventoryNavHubBar';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
+import { apiRequest } from '../../../../../api/http';
 
 interface Product {
   id: number;
@@ -74,38 +74,14 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
       topRef.current.scrollIntoView({ behavior: 'instant' });
     }
   }, []);
-
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   const fetchAllData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const [variantsRes, productsRes] = await Promise.all([
-        fetch(`${API_BASE}/variants?limit=100`, { headers }),
-        fetch(`${API_BASE}/products?limit=100`, { headers })
+      const [variantsJson, productsJson] = await Promise.all([
+        apiRequest<{ data?: { id: number; name: string; sku?: string; price: number | string; isActive?: boolean; product?: { id: number; name: string } | null }[] }>('/variants?limit=100', { method: 'GET' }, 'Error loading data from server'),
+        apiRequest<{ data?: { id: number; name: string }[] }>('/products?limit=100', { method: 'GET' }, 'Error loading data from server'),
       ]);
-
-      if (variantsRes.status === 401 || productsRes.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!variantsRes.ok || !productsRes.ok) {
-        throw new Error('Error loading data from server');
-      }
-
-      const variantsJson = await variantsRes.json();
-      const productsJson = await productsRes.json();
 
       const variantsData = variantsJson.data || [];
       const productsData = productsJson.data || [];
@@ -134,7 +110,7 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -240,23 +216,14 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
     setIsToggling(true);
     setToggleError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      const res = await fetch(`${API_BASE}/variants/${confirmTargetVariant.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ isActive: !confirmTargetVariant.isActive })
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error updating variant status');
-      }
-
+      await apiRequest<void>(
+        `/variants/${confirmTargetVariant.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ isActive: !confirmTargetVariant.isActive })
+        },
+        'Error updating variant status.',
+      );
       setVariants((prevVariants) =>
         prevVariants.map((varItem) =>
           varItem.id === confirmTargetVariant.id ? { ...varItem, isActive: !confirmTargetVariant.isActive } : varItem
@@ -286,14 +253,6 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
     }
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
       const bodyData: { name: string; sku?: string; price: number; isActive: boolean; productId?: number } = {
         name: formName,
         sku: formSku.trim() || undefined,
@@ -303,25 +262,17 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
 
       if (modalMode === 'add') {
         bodyData.productId = parseInt(formProduct, 10);
-        const res = await fetch(`${API_BASE}/variants`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(bodyData)
-        });
-        if (!res.ok) {
-          const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error creating variant');
-        }
+        await apiRequest<void>(
+          '/variants',
+          { method: 'POST', body: JSON.stringify(bodyData) },
+          'Error creating variant.',
+        );
       } else if (modalMode === 'edit' && editingVariantId) {
-        const res = await fetch(`${API_BASE}/variants/${editingVariantId}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify(bodyData)
-        });
-        if (!res.ok) {
-          const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error updating variant');
-        }
+        await apiRequest<void>(
+          `/variants/${editingVariantId}`,
+          { method: 'PATCH', body: JSON.stringify(bodyData) },
+          'Error updating variant.',
+        );
       }
 
       setIsModalOpen(false);
@@ -737,7 +688,6 @@ export const VariantsView: React.FC<VariantsViewProps> = ({ onNavigate }) => {
         </div>,
         document.body
       )}
-
 
       <EmergencySupportModal
         isOpen={isSupportOpen}

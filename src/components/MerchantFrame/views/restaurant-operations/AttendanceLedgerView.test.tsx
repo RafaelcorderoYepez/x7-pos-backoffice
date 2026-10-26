@@ -2,22 +2,26 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { TimeEntriesView } from './TimeEntriesView';
+import type { AttendanceLedgerRecord } from '../../../../types/attendance';
 import * as attendanceApi from '../../../../api/attendance';
 import {
   calculateNetPayableHours,
   determineAttendanceStatus,
 } from '../../../../api/attendance';
 
-const sampleLedgerRecords: attendanceApi.AttendanceLedgerRecord[] = [
+const sampleLedgerRecords: AttendanceLedgerRecord[] = [
   {
     id: 'ledg-101',
+    storeLocationId: 'loc-1',
+    storeLocationName: 'Main Store',
     collaboratorId: 'emp-101',
     collaboratorName: 'Carlos Mendoza',
     role: 'Supervisor',
     department: 'Floor Management',
     date: '2026-09-15',
     scheduledWindow: { startTime: '09:00 AM', endTime: '05:00 PM', scheduledHours: 8.0 },
-    actualPunches: { clockIn: '09:04 AM', clockOut: '05:00 PM', unpaidBreakMinutes: 30 },
+    actualPunches: { clockIn: '09:04 AM', clockOut: '05:00 PM' },
+    unpaidBreakMinutes: 30,
     status: 'ON_TIME',
     varianceMinutes: 0,
     varianceLabel: 'On Time',
@@ -28,13 +32,16 @@ const sampleLedgerRecords: attendanceApi.AttendanceLedgerRecord[] = [
   },
   {
     id: 'ledg-102',
+    storeLocationId: 'loc-1',
+    storeLocationName: 'Main Store',
     collaboratorId: 'emp-102',
     collaboratorName: 'Sofia Rodriguez',
     role: 'Waitstaff',
     department: 'Dining Room',
     date: '2026-09-15',
     scheduledWindow: { startTime: '09:00 AM', endTime: '05:00 PM', scheduledHours: 8.0 },
-    actualPunches: { clockIn: '09:12 AM', clockOut: '05:03 PM', unpaidBreakMinutes: 30 },
+    actualPunches: { clockIn: '09:12 AM', clockOut: '05:03 PM' },
+    unpaidBreakMinutes: 30,
     status: 'TARDY',
     varianceMinutes: 12,
     varianceLabel: '+12 min Late',
@@ -45,13 +52,16 @@ const sampleLedgerRecords: attendanceApi.AttendanceLedgerRecord[] = [
   },
   {
     id: 'ledg-103',
+    storeLocationId: 'loc-1',
+    storeLocationName: 'Main Store',
     collaboratorId: 'emp-103',
     collaboratorName: 'Mateo Silva',
     role: 'Line Cook',
     department: 'Kitchen',
     date: '2026-09-15',
     scheduledWindow: { startTime: '09:00 AM', endTime: '05:00 PM', scheduledHours: 8.0 },
-    actualPunches: { clockIn: '09:00 AM', clockOut: null, unpaidBreakMinutes: 0 },
+    actualPunches: { clockIn: '09:00 AM', clockOut: null },
+    unpaidBreakMinutes: 0,
     status: 'MISSED_PUNCH',
     varianceMinutes: 0,
     varianceLabel: 'Missing Clock-Out',
@@ -79,8 +89,8 @@ describe('Attendance Ledger Workspace Directory & Calculation Engine', () => {
           ...record.actualPunches,
           clockIn: dto.clockIn !== undefined ? dto.clockIn : record.actualPunches.clockIn,
           clockOut: dto.clockOut !== undefined ? dto.clockOut : record.actualPunches.clockOut,
-          unpaidBreakMinutes: dto.unpaidBreakMinutes ?? record.actualPunches.unpaidBreakMinutes,
         },
+        unpaidBreakMinutes: dto.unpaidBreakMinutes ?? record.unpaidBreakMinutes,
         netPayableHours: 7.47,
         isManualOverride: true,
         auditLogs: [
@@ -97,7 +107,7 @@ describe('Attendance Ledger Workspace Directory & Calculation Engine', () => {
           },
         ],
       };
-      return { success: true, record: updated as unknown as CollaboratorTimeRecord };
+      return { success: true, record: updated as unknown as AttendanceLedgerRecord };
     });
   });
 

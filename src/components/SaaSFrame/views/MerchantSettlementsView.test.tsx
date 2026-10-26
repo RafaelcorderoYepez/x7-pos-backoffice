@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { MerchantSettlementsView } from './MerchantSettlementsView';
+import { jsonResponse } from '../../../test/fetch';
 import type { MerchantSettlement } from '../../../types/settlements';
 
 vi.mock('../../../lib/saas-auth-storage', () => ({
@@ -50,10 +51,6 @@ const SETTLEMENTS: MerchantSettlement[] = [
   },
 ];
 
-function jsonRes(body: unknown, status = 200) {
-  return { status, ok: status >= 200 && status < 300, json: async () => body };
-}
-
 interface InstallOpts {
   settlements?: MerchantSettlement[];
   generated?: MerchantSettlement[];
@@ -65,13 +62,13 @@ function installFetch({ settlements = SETTLEMENTS, generated }: InstallOpts = {}
     const method = options?.method ?? 'GET';
 
     if (u.includes('/merchant-settlements/generate') && method === 'POST') {
-      return jsonRes({ data: generated ?? settlements });
+      return jsonResponse({ data: generated ?? settlements });
     }
     const payoutMatch = u.match(/merchant-settlements\/(\d+)\/payout/);
     if (payoutMatch && method === 'POST') {
       const id = Number(payoutMatch[1]);
       const base = settlements.find((s) => s.id === id)!;
-      return jsonRes({
+      return jsonResponse({
         data: {
           ...base,
           status: 'PAID',
@@ -83,9 +80,9 @@ function installFetch({ settlements = SETTLEMENTS, generated }: InstallOpts = {}
     const detailMatch = u.match(/merchant-settlements\/(\d+)$/);
     if (detailMatch && method === 'GET') {
       const s = settlements.find((x) => String(x.id) === detailMatch[1]);
-      return jsonRes({ data: s ?? null });
+      return jsonResponse({ data: s ?? null });
     }
-    return jsonRes({ data: settlements });
+    return jsonResponse({ data: settlements });
   });
   vi.stubGlobal('fetch', spy);
   return spy;
@@ -118,7 +115,7 @@ describe('MerchantSettlementsView — states', () => {
     // @ts-expect-error partial mock
     window.location = { href: '' };
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({}, 401)));
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({}, 401)));
     render(<MerchantSettlementsView />);
     await waitFor(() => expect(window.location.href).toBe('/saas-admin'));
 

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   DiningTable,
   FloorPlan,
@@ -43,8 +42,7 @@ import { FloorPlanEditor } from './FloorPlanEditor';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter, ModalFormError } from '../../shared/AppModal';
 import { Toast } from '../../shared/Toast';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 // ---- Helpers ----
 
@@ -460,18 +458,6 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   // /api/floor-plan NUNCA embebe tables ni floorZones (findAll solo hace join con merchant),
   // neither /api/tables nor /api/floor-zone accept floor plan filter: only way
   // computing counts requires fetching both collections once and grouping by floorPlan.id.
@@ -479,19 +465,19 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     setLoading(true);
     setError(null);
     try {
-      const [plansRes, zonesRes, tablesRes] = await Promise.all([
-        fetch(`${API_BASE}/floor-plan?limit=100`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/floor-zone?limit=100`, { headers: authHeaders() }),
+      const optionalList = <T,>(path: string) =>
+        apiRequest<{ data?: T[] }>(path, { method: 'GET' }, '').catch(() => null);
+      const [plansJson, zonesJson, tablesJson] = await Promise.all([
+        apiRequest<{ data?: Array<Omit<FloorPlan, 'status'> & { status: string }> }>(
+          '/floor-plan?limit=100',
+          { method: 'GET' },
+          'Error loading floor plans',
+        ),
+        optionalList<FloorZone>('/floor-zone?limit=100'),
         // limit capped at 100 in tables: requesting more returns 400.
-        fetch(`${API_BASE}/tables?limit=100`, { headers: authHeaders() }),
+        optionalList<DiningTable>('/tables?limit=100'),
       ]);
-      if (plansRes.status === 401 || zonesRes.status === 401 || tablesRes.status === 401) {
-        return handleUnauthorized();
-      }
-      if (!plansRes.ok) throw new Error('Error loading floor plans');
-
-      const plansJson = await plansRes.json();
-      const rows = (plansJson.data ?? []) as Array<Omit<FloorPlan, 'status'> & { status: string }>;
+      const rows = plansJson.data ?? [];
       setPlans(
         rows.map((row) => ({
           ...row,
@@ -503,13 +489,11 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
 
       // Grid remains usable with 0, but table counter also feeds
       // guard de borrado/archivado: marcamos el censo como no fiable para bloquearlo.
-      setCountsStale(!zonesRes.ok || !tablesRes.ok);
-      const zonesJson = zonesRes.ok ? await zonesRes.json() : { data: [] };
-      const tablesJson = tablesRes.ok ? await tablesRes.json() : { data: [] };
+      setCountsStale(!zonesJson || !tablesJson);
       // Soft-delete retains status 'deleted' rows in the query response; counting them
       // would block floor plan deletion for tables no longer existing.
-      setZones(((zonesJson.data ?? []) as FloorZone[]).filter((z) => z.status !== 'deleted'));
-      setTables(((tablesJson.data ?? []) as DiningTable[]).filter((t) => t.status !== 'deleted'));
+      setZones((zonesJson?.data ?? []).filter((z) => z.status !== 'deleted'));
+      setTables((tablesJson?.data ?? []).filter((t) => t.status !== 'deleted'));
     } catch (err) {
       console.error('Error fetching floor plans:', err);
       setError('Failed to load floor plans. Please check if the backend is running.');
@@ -522,7 +506,7 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     void Promise.resolve().then(() => {
       fetchFloorPlans();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeMerchantId]);
 
   const zoneCountByPlan = useMemo(() => {
@@ -585,14 +569,11 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
         height: dto.height ?? 0,
         status: dto.status ?? 'active',
       };
-      const res = await fetch(`${API_BASE}/floor-plan`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to create floor plan');
+      await apiRequest<void>(
+        '/floor-plan',
+        { method: 'POST', body: JSON.stringify(body) },
+        'Failed to create floor plan',
+      );
       await fetchFloorPlans();
       setFormDrawer(null);
       setToast({ message: 'Floor plan created successfully', type: 'success' });
@@ -608,14 +589,11 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     setFormError('');
     try {
       // PATCH (not PUT) and without `merchant`: Object.assign would overwrite relationship.
-      const res = await fetch(`${API_BASE}/floor-plan/${id}`, {
-        method: 'PATCH',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to update floor plan');
+      await apiRequest<void>(
+        `/floor-plan/${id}`,
+        { method: 'PATCH', body: JSON.stringify(dto) },
+        'Failed to update floor plan',
+      );
       await fetchFloorPlans();
       setFormDrawer(null);
       setToast({ message: 'Floor plan updated successfully', type: 'success' });
@@ -644,15 +622,11 @@ export const FloorPlansView: React.FC<FloorPlansViewProps> = ({ onNavigate, merc
     if (!deletingPlan) return;
     setDeleteSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/floor-plan/${deletingPlan.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to delete floor plan');
-      }
+      await apiRequest<void>(
+        `/floor-plan/${deletingPlan.id}`,
+        { method: 'DELETE' },
+        'Failed to delete floor plan',
+      );
       setPlans((prev) => prev.filter((p) => p.id !== deletingPlan.id));
       setDeletingPlan(null);
       setToast({ message: 'Floor plan deleted successfully', type: 'success' });

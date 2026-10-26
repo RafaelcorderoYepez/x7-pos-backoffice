@@ -1,6 +1,24 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { getAccessToken } from '../../../../../lib/auth-storage';
+import {
+  aggregateAllDay,
+  aggregateSummary,
+  isActiveKitchenOrder,
+  mapKitchenOrderToTicket,
+  mapKitchenStation,
+  type BackendKitchenStation,
+  type CourseType,
+  type KdsCardDensity,
+  type KdsView,
+  type KitchenTicket,
+  type PreparationStatus,
+  type RawKitchenOrder,
+} from './kds-monitor-model';
+import { formatCountdown, getCourseTheme, getPriorityBadge } from './kds-monitor-display';
+import { playKitchenFireChime } from '../../../../../lib/kds-chime';
+import { KdsAllDayPrepBar } from './KdsAllDayPrepBar';
+import { KdsSummaryBatchView } from './KdsSummaryBatchView';
+import { KdsPacingSettingsDrawer } from './KdsPacingSettingsDrawer';
+import { KdsAllergyDetailModal, type AllergyDetail } from './KdsAllergyDetailModal';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
 import { KitchenDevResetButton } from './KitchenDevResetButton';
 import { KitchenRecallTray, type BumpedOrderRecord } from './KitchenRecallTray';
@@ -11,7 +29,11 @@ import {
   cacheTicketsLocally,
   getCachedTicketsLocally,
   clearOfflineData,
+  isRetryableKdsError,
 } from '../../../../../lib/kds-offline-sync';
+import { sendStationKeepaliveHeartbeat } from '../../../../../lib/kds-keepalive';
+import { API_BASE, apiRequest, authHeaders, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
+import { ApiError } from '../../../../../lib/api-error';
 import {
   StationRerouteModal,
   type StationRerouteStatus,
@@ -30,127 +52,19 @@ import {
   getDeviceLanguage,
   setDeviceLanguage,
   extractCleanKitchenInstruction,
+  getLocalizedStationName,
 } from './kdsLocalization';
 
-const getLocalizedStationName = (name: string, lang: 'en' | 'es'): string => {
-  if (lang !== 'es') return name;
-  const n = name.trim().toLowerCase();
-  if (n.includes('hot line')) return 'Línea Caliente y Parrilla';
-  if (n.includes('cold prep')) return 'Preparación Fría y Ensaladas';
-  if (n.includes('main bar')) return 'Bar Principal y Bebidas';
-  if (n.includes('desserts') || n.includes('bakery')) return 'Postres y Panadería';
-  if (n.includes('expo')) return 'Expo y Control de Calidad';
-  return name;
-};
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-export type CourseType = 'APPETIZER' | 'MAIN_COURSE' | 'DESSERT' | 'BEVERAGE';
-export type PreparationStatus = 'HELD' | 'PENDING' | 'IN_PREPARATION' | 'READY';
-
-export interface TicketItem {
-  id: number;
-  name: string;
-  variantName?: string;
-  qty: number;
-  preparedQuantity?: number;
-  notes?: string;
-  course: CourseType;
-  preparationStatus: PreparationStatus;
-  holdRemainingSeconds?: number;
-  firedAt?: string | null;
-}
-
-export interface KitchenTicket {
-  id: string;
-  backendOrderId?: number;
-  table: string;
-  timeElapsed: number; // minutes
-  createdAtMs?: number;
-  server: string;
-  stationName?: string;
-  stationId?: number;
-  priority: 'normal' | 'high' | 'urgent' | 'vip';
-  items: TicketItem[];
-  orderNotes?: string | null;
-  isPulsing?: boolean;
-  alertMessage?: string | null;
-}
-
-export type KdsView = 'EXPO' | 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID';
 
 interface KitchenMonitorViewProps {
   onBackToDashboard: () => void;
 }
 
-/**
- * Native Audio Chime Synthesizer using Web Audio API (Zero external audio file dependency)
- */
-const playKitchenFireChime = () => {
-  try {
-    const AudioContextClass =
-      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
-    const now = ctx.currentTime;
 
-    // First Harmonic Tone (880 Hz - High Bell A5)
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(880, now);
-    gain1.gain.setValueAtTime(0.25, now);
-    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.start(now);
-    osc1.stop(now + 0.45);
-
-    // Second Resonant Tone (1320 Hz - Bell E6)
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'triangle';
-    osc2.frequency.setValueAtTime(1320, now + 0.08);
-    gain2.gain.setValueAtTime(0.3, now + 0.08);
-    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.start(now + 0.08);
-    osc2.stop(now + 0.65);
-  } catch (e) {
-    console.warn('Audio chime playback omitted or blocked by browser user gesture policy:', e);
-  }
-};
-
-export interface BackendKitchenStation {
-  id: number;
-  name: string;
-  station_type?: string;
-  stationType?: string;
-  display_mode?: 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID';
-  displayMode?: 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID';
-  display_order?: number;
-  displayOrder?: number;
-  backup_station_id?: number | null;
-  backupStationId?: number | null;
-  max_active_tickets_capacity?: number;
-  maxActiveTicketsCapacity?: number;
-  auto_reroute_on_offline?: boolean;
-  autoRerouteOnOffline?: boolean;
-  auto_reroute_on_capacity?: boolean;
-  autoRerouteOnCapacity?: boolean;
-  fallback_action?: string;
-  fallbackAction?: string;
-  printer_name?: string | null;
-  printerName?: string | null;
-  is_active?: boolean;
-  isActive?: boolean;
-  status?: string;
-}
-
-export type KdsCardDensity = 'compact' | 'normal' | 'spacious';
 
 const completingTicketIdsDebounce = new Set<string>();
+
 
 export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackToDashboard }) => {
   const [tickets, setTickets] = useState<KitchenTicket[]>([]);
@@ -223,15 +137,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   }, [selectedStationFilter]);
 
   // Floating Allergy Protocol Detail Modal (Historia X7P-4212)
-  const [selectedAllergyDetail, setSelectedAllergyDetail] = useState<{
-    ticketId: string;
-    table: string;
-    itemName: string;
-    alertBannerText: string;
-    allergyTags: string[];
-    rawNotes?: string;
-    severity: 'critical' | 'warning';
-  } | null>(null);
+  const [selectedAllergyDetail, setSelectedAllergyDetail] = useState<AllergyDetail | null>(null);
 
   // Offline duration tracker:
   // Upon reaching >= 60 seconds without network or heartbeat, KDS terminal autonomously
@@ -251,18 +157,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
   const fetchRerouteStatuses = useCallback(async () => {
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-station/rerouting-status`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data)) {
-          setStationRerouteStatuses(data);
-        }
+      const data = await apiRequest<StationRerouteStatus[]>(
+        '/kitchen-station/rerouting-status',
+        { method: 'GET' },
+        'Failed to load station rerouting statuses.',
+      );
+      if (Array.isArray(data)) {
+        setStationRerouteStatuses(data);
       }
     } catch (e) {
       console.warn('Could not fetch station rerouting statuses:', e);
@@ -292,45 +193,23 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     setActiveAlertToast({ id: String(Date.now()), message, type });
   }, [audioChimeEnabled]);
 
+  // The server judged and refused the action (4xx): show why instead of queueing it offline.
+  const reportRejectedAction = (err: unknown) => {
+    if (err instanceof ApiError && err.status === 401) return; // already redirecting to login
+    triggerAlert(`Rejected: ${err instanceof Error ? err.message : 'action refused by the server'}`, 'fire');
+  };
+
   // Load registered kitchen stations and their configured display_mode from backend
   const fetchStations = useCallback(async () => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-      const res = await fetch(`${API_BASE}/kitchen-station`, { headers });
-      if (res.ok) {
-        const json = await res.json();
-        const list: Record<string, unknown>[] = Array.isArray(json) ? json : json.data || [];
-        const mapped: BackendKitchenStation[] = list.map((s) => ({
-          id: Number(s.id),
-          name: String(s.name || ''),
-          station_type: (s.stationType || s.station_type) as string | undefined,
-          stationType: (s.stationType || s.station_type) as string | undefined,
-          display_mode: (s.displayMode || s.display_mode || 'GRID') as 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID',
-          displayMode: (s.displayMode || s.display_mode || 'GRID') as 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID',
-          display_order: Number(s.displayOrder ?? s.display_order ?? s.id),
-          displayOrder: Number(s.displayOrder ?? s.display_order ?? s.id),
-          backup_station_id: (s.backup_station_id ?? s.backupStationId ?? null) as number | null,
-          backupStationId: (s.backupStationId ?? s.backup_station_id ?? null) as number | null,
-          max_active_tickets_capacity: (s.max_active_tickets_capacity ?? s.maxActiveTicketsCapacity ?? 15) as number,
-          maxActiveTicketsCapacity: (s.maxActiveTicketsCapacity ?? s.max_active_tickets_capacity ?? 15) as number,
-          auto_reroute_on_offline: (s.auto_reroute_on_offline ?? s.autoRerouteOnOffline ?? true) as boolean,
-          autoRerouteOnOffline: (s.auto_reroute_on_offline ?? s.autoRerouteOnOffline ?? true) as boolean,
-          auto_reroute_on_capacity: (s.auto_reroute_on_capacity ?? s.autoRerouteOnCapacity ?? true) as boolean,
-          autoRerouteOnCapacity: (s.auto_reroute_on_capacity ?? s.autoRerouteOnCapacity ?? true) as boolean,
-          fallback_action: (s.fallback_action || s.fallbackAction || 'BACKUP_STATION') as string,
-          fallbackAction: (s.fallbackAction || s.fallback_action || 'BACKUP_STATION') as string,
-          printer_name: (s.printer_name || s.printerName || null) as string | null,
-          printerName: (s.printerName || s.printer_name || null) as string | null,
-          is_active: (s.isActive ?? s.is_active ?? true) as boolean,
-          isActive: (s.isActive ?? s.is_active ?? true) as boolean,
-          status: s.status as string | undefined,
-        }));
-        setKitchenStations(mapped.filter((s) => s.status !== 'deleted' && s.isActive !== false));
-      }
+      const json = await apiRequest<MaybeEnvelopedList<Record<string, unknown>>>(
+        '/kitchen-station',
+        { method: 'GET' },
+        'Request failed. Please try again.',
+      );
+      const list = unwrapList(json);
+      const mapped = list.map(mapKitchenStation);
+      setKitchenStations(mapped.filter((s) => s.status !== 'deleted' && s.isActive !== false));
     } catch (err) {
       console.warn('Could not load kitchen stations in KDS:', err);
     }
@@ -399,16 +278,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
         if (anyAutoFired && firedItems.length > 0) {
           setTimeout(() => {
-            const token = getAccessToken();
-            const headers: Record<string, string> = {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            };
             firedItems.forEach((f) => {
-              fetch(`${API_BASE}/kitchen-order-items/${f.id}/fire`, {
-                method: 'POST',
-                headers,
-              }).catch((e) => console.warn('Auto-fire backend sync failed:', e));
+              apiRequest<void>(
+                `/kitchen-order-items/${f.id}/fire`,
+                { method: 'POST' },
+                'Auto-fire failed',
+              ).catch((e) => console.warn('Auto-fire backend sync failed:', e));
               triggerAlert(`⏱️ Auto-fired: ${f.name} (${f.table})`, 'pacing');
             });
           }, 0);
@@ -442,129 +317,36 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const fetchBackendOrders = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-      const res = await fetch(`${API_BASE}/kitchen-orders?limit=100&sortBy=priority&sortOrder=DESC`, { headers });
-      if (res.ok) {
-        const json = await res.json();
-        const list = Array.isArray(json) ? json : json.data || [];
-        const activeOrders = list.filter(
-          (o: { businessStatus?: string; status?: string }) => o.businessStatus !== 'completed' && o.businessStatus !== 'cancelled' && o.status !== 'deleted'
-        );
+      const json = await apiRequest<MaybeEnvelopedList<RawKitchenOrder>>(
+        '/kitchen-orders?limit=100&sortBy=priority&sortOrder=DESC',
+        { method: 'GET' },
+        'Request failed. Please try again.',
+      );
+      const list = Array.isArray(json) ? json : json.data || [];
+      const now = Date.now();
+      const mapped: KitchenTicket[] = list.filter(isActiveKitchenOrder).map((o) => mapKitchenOrderToTicket(o, now));
 
-        const mapped: KitchenTicket[] = activeOrders.map((o: {
-          id: string | number;
-          createdAt?: string;
-          startedAt?: string;
-          order?: { diningTable?: { name?: string }; table_number?: string; waiter_name?: string; waiter?: { name?: string } };
-          notes?: string;
-          station?: { id?: number | string; name?: string };
-          stationId?: number | string;
-          priority?: number;
-          items?: Array<{
-            id: string | number;
-            product?: { name?: string };
-            productName?: string;
-            variant?: { name?: string };
-            variantName?: string;
-            quantity?: number;
-            preparedQuantity?: number;
-            prepared_quantity?: number;
-            notes?: string;
-            course?: string;
-            preparationStatus?: string;
-            holdUntil?: string;
-            firedAt?: string;
-            fired_at?: string;
-          }>;
-          kitchenOrderItems?: Array<{
-            id: string | number;
-            product?: { name?: string };
-            productName?: string;
-            variant?: { name?: string };
-            variantName?: string;
-            quantity?: number;
-            preparedQuantity?: number;
-            prepared_quantity?: number;
-            notes?: string;
-            course?: string;
-            preparationStatus?: string;
-            holdUntil?: string;
-            firedAt?: string;
-            fired_at?: string;
-          }>;
-        }) => {
-          const customerTimeRef = o.createdAt ? new Date(o.createdAt).getTime() : Date.now();
-          const elapsedMins = Math.max(0, Math.floor((Date.now() - customerTimeRef) / 60000));
-          const tableName = o.order?.diningTable?.name
-            ? `Table ${o.order.diningTable.name}`
-            : o.order?.table_number
-            ? `Table ${o.order.table_number}`
-            : o.notes?.split('•')?.[0]?.trim() || o.notes?.match(/Table \d+/i)?.[0] || (o.notes && o.notes.length <= 30 ? o.notes.trim() : null) || `Ticket #KO-${o.id}`;
+      setTickets(mapped);
+      cacheTicketsLocally(mapped);
 
-          return {
-            id: `KO-${o.id}`,
-            backendOrderId: o.id,
-            table: tableName,
-            orderNotes: o.notes || null,
-            timeElapsed: elapsedMins,
-            createdAtMs: customerTimeRef,
-            server: o.order?.waiter_name || o.order?.waiter?.name || 'Kitchen Staff',
-            stationName: o.station?.name || 'General Kitchen',
-            stationId: o.stationId != null ? Number(o.stationId) : o.station?.id != null ? Number(o.station?.id) : undefined,
-            priority: (o.priority ?? 0) >= 3 ? 'vip' : (o.priority ?? 0) === 2 ? 'urgent' : (o.priority ?? 0) === 1 ? 'high' : 'normal',
-            items: (o.items || o.kitchenOrderItems || []).map((i) => {
-              const prepStatusUpper = (i.preparationStatus || 'pending').toUpperCase() as PreparationStatus;
-              let holdSeconds: number | undefined = undefined;
-              if (prepStatusUpper === 'HELD') {
-                if (i.holdUntil) {
-                  holdSeconds = Math.max(0, Math.floor((new Date(i.holdUntil).getTime() - Date.now()) / 1000));
-                } else {
-                  const prioNum = o.priority ?? 0;
-                  const defaultMins = prioNum >= 3 ? 1 : prioNum === 2 ? 4 : prioNum === 1 ? 7 : 10;
-                  holdSeconds = defaultMins * 60;
-                }
-              }
-
-              return {
-                id: i.id,
-                name: i.product?.name || i.productName || 'Dish Item',
-                variantName: i.variant?.name || i.variantName || undefined,
-                qty: i.quantity || 1,
-                preparedQuantity: i.prepared_quantity ?? i.preparedQuantity ?? 0,
-                notes: i.notes || undefined,
-                course: ((i.course || 'MAIN_COURSE').toUpperCase()) as CourseType,
-                preparationStatus: prepStatusUpper,
-                holdRemainingSeconds: holdSeconds,
-                firedAt: i.firedAt || i.fired_at,
-              };
-            }),
-          };
-        });
-
-        setTickets(mapped);
-        cacheTicketsLocally(mapped);
-
-        // Purge from local bump history any order confirmed active by backend
-        const activeBackendIds = new Set(mapped.map((t) => t.backendOrderId).filter(Boolean));
-        setBumpedOrdersHistory((prev) => {
-          const next = prev.filter((o) => !activeBackendIds.has(o.id));
-          if (next.length !== prev.length) {
-            try {
-              localStorage.setItem('x7_kds_bumped_history', JSON.stringify(next));
-            } catch {
-              /* ignore storage error */
-            }
+      // Purge from local bump history any order confirmed active by backend
+      const activeBackendIds = new Set(mapped.map((t) => t.backendOrderId).filter(Boolean));
+      setBumpedOrdersHistory((prev) => {
+        const next = prev.filter((o) => !activeBackendIds.has(o.id));
+        if (next.length !== prev.length) {
+          try {
+            localStorage.setItem('x7_kds_bumped_history', JSON.stringify(next));
+          } catch {
+            /* ignore storage error */
           }
-          return next;
-        });
-      }
+        }
+        return next;
+      });
     } catch (err) {
       console.warn('Backend orders sync failed:', err);
-      // Restore from offline IndexedDB cache if server is unreachable
+      // Restore from offline IndexedDB cache only if the server is unreachable: on a 4xx the
+      // cache would show tickets the server just refused to serve.
+      if (!isRetryableKdsError(err)) return;
       const cached = await getCachedTicketsLocally<KitchenTicket>();
       if (cached && cached.length > 0) {
         setTickets(cached);
@@ -588,15 +370,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       }
 
       setIsSyncing(true);
-      const token = getAccessToken();
-      console.log('[X7-KDS-SYNC] Token present:', !!token, 'API_BASE:', API_BASE);
-      const res = await flushOfflineQueue(API_BASE, token);
+      const res = await flushOfflineQueue();
       setIsSyncing(false);
-      console.log('[X7-KDS-SYNC] flushOfflineQueue result:', JSON.stringify(res));
 
-      if (res.success && res.syncedCount > 0) {
-        setSyncFeedback(`All ${res.syncedCount} offline change(s) synchronized with server`);
-        setTimeout(() => setSyncFeedback(null), 4000);
+      if (res.success && (res.syncedCount > 0 || res.ignored.length > 0)) {
+        // Rejected actions were applied optimistically on screen: report them and reload.
+        setSyncFeedback(
+          res.ignored.length > 0
+            ? `${res.syncedCount} change(s) synchronized; ${res.ignored.length} rejected by the server and reverted`
+            : `All ${res.syncedCount} offline change(s) synchronized with server`,
+        );
+        setTimeout(() => setSyncFeedback(null), res.ignored.length > 0 ? 8000 : 4000);
         fetchBackendOrders(true);
       }
       const remaining = await getQueuedActions();
@@ -614,7 +398,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   useEffect(() => {
     getQueuedActions()
       .then((q) => setQueuedActionsCount(q.length))
-      .catch(() => {});
+      .catch(() => { });
 
     let isMounted = true;
 
@@ -632,13 +416,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
     // Heartbeat ping every 2500ms to detect server / ping failure within 3 seconds
     const pingTimer = setInterval(async () => {
-      const token = getAccessToken();
+      // Raw fetch on purpose: a connectivity probe with its own 2s timeout, not a business call.
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
 
       try {
         const res = await fetch(`${API_BASE}/kitchen-event-logs/ping`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: authHeaders(),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
@@ -721,18 +505,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         setQueuedActionsCount(q.length);
       } else {
         try {
-          const token = getAccessToken();
-          const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          };
-          const res = await fetch(
-            `${API_BASE}/kitchen-order-items/order/${targetTicket.backendOrderId}/fire-course?course=${course.toLowerCase()}`,
-            { method: 'POST', headers }
+          await apiRequest<void>(
+            `/kitchen-order-items/order/${targetTicket.backendOrderId}/fire-course?course=${course.toLowerCase()}`,
+            { method: 'POST' },
+            'Fire course failed',
           );
-          if (!res.ok) throw new Error('Fire course failed');
           fetchBackendOrders(true);
         } catch (e) {
+          if (!isRetryableKdsError(e)) {
+            reportRejectedAction(e);
+            return;
+          }
           console.warn('Backend fire-course failed, storing offline:', e);
           setIsOffline(true);
           await enqueueOfflineAction({
@@ -753,11 +536,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           const updatedItems = t.items.map((item) =>
             item.course === course && item.preparationStatus === 'HELD'
               ? {
-                  ...item,
-                  preparationStatus: 'IN_PREPARATION' as PreparationStatus,
-                  holdRemainingSeconds: 0,
-                  firedAt: new Date().toISOString(),
-                }
+                ...item,
+                preparationStatus: 'IN_PREPARATION' as PreparationStatus,
+                holdRemainingSeconds: 0,
+                firedAt: new Date().toISOString(),
+              }
               : item
           );
           return {
@@ -796,15 +579,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       setQueuedActionsCount(q.length);
     } else {
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/fire`, { method: 'POST', headers });
-        if (!res.ok) throw new Error('Fire item failed');
+        await apiRequest<void>(
+          `/kitchen-order-items/${itemId}/fire`,
+          { method: 'POST' },
+          'Fire item failed',
+        );
         fetchBackendOrders(true);
       } catch (e) {
+        if (!isRetryableKdsError(e)) {
+          reportRejectedAction(e);
+          return;
+        }
         console.warn('Backend fire-item failed, storing offline:', e);
         setIsOffline(true);
         await enqueueOfflineAction({
@@ -865,26 +650,24 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       setQueuedActionsCount(q.length);
     } else {
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
         if (isStagedCourse) {
-          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/hold?holdMinutes=${delayMins}`, {
-            method: 'POST',
-            headers,
-          });
-          if (!res.ok) throw new Error('Hold failed');
+          await apiRequest<void>(
+            `/kitchen-order-items/${itemId}/hold?holdMinutes=${delayMins}`,
+            { method: 'POST' },
+            'Hold failed',
+          );
         } else {
-          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify({ preparationStatus: 'pending' }),
-          });
-          if (!res.ok) throw new Error('Revert failed');
+          await apiRequest<void>(
+            `/kitchen-order-items/${itemId}`,
+            { method: 'PUT', body: JSON.stringify({ preparationStatus: 'pending' }) },
+            'Revert failed',
+          );
         }
       } catch (e) {
+        if (!isRetryableKdsError(e)) {
+          reportRejectedAction(e);
+          return;
+        }
         console.warn('Backend revert-item failed, storing offline:', e);
         setIsOffline(true);
         await enqueueOfflineAction({
@@ -902,17 +685,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       const next = prev.map((t) =>
         t.id === ticketId
           ? {
-              ...t,
-              items: t.items.map((i) =>
-                i.id === itemId
-                  ? {
-                      ...i,
-                      preparationStatus: targetStatus as PreparationStatus,
-                      holdRemainingSeconds: isStagedCourse ? delayMins * 60 : undefined,
-                    }
-                  : i
-              ),
-            }
+            ...t,
+            items: t.items.map((i) =>
+              i.id === itemId
+                ? {
+                  ...i,
+                  preparationStatus: targetStatus as PreparationStatus,
+                  holdRemainingSeconds: isStagedCourse ? delayMins * 60 : undefined,
+                }
+                : i
+            ),
+          }
           : t
       );
       cacheTicketsLocally(next);
@@ -954,18 +737,19 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       setQueuedActionsCount(q.length);
     } else {
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ preparationStatus: nextStatus.toLowerCase() }),
-        });
-        if (!res.ok) throw new Error('Status change failed');
+        await apiRequest<void>(
+          `/kitchen-order-items/${itemId}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({ preparationStatus: nextStatus.toLowerCase() }),
+          },
+          'Status change failed',
+        );
       } catch (e) {
+        if (!isRetryableKdsError(e)) {
+          reportRejectedAction(e);
+          return;
+        }
         console.warn('Backend toggle-item-ready failed, storing offline:', e);
         setIsOffline(true);
         await enqueueOfflineAction({
@@ -1017,14 +801,30 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     });
   };
 
+  // Batch status change for SUMMARY view. Sequential like before; reports which items the server
+  // accepted so the screen only moves those (a rejected item must not look done).
+  const updateItemStatuses = async (itemIds: number[], preparationStatus: string) => {
+    const accepted = new Set<number>();
+    let failed = 0;
+    let firstError = '';
+    for (const id of itemIds) {
+      try {
+        await apiRequest<void>(
+          `/kitchen-order-items/${id}`,
+          { method: 'PUT', body: JSON.stringify({ preparationStatus }) },
+          'Failed to update item',
+        );
+        accepted.add(id);
+      } catch (err) {
+        failed += 1;
+        firstError ||= err instanceof Error ? err.message : 'Failed to update item';
+      }
+    }
+    return { accepted, failed, firstError };
+  };
+
   // Mark all pending units of a batch as READY in SUMMARY view
   const handleMarkBatchReady = async (batchItemName: string, batchVariant?: string) => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-
     const targetItems: Array<{ ticketId: string; itemId: number }> = [];
     filteredTickets.forEach((t) => {
       t.items.forEach((i) => {
@@ -1039,32 +839,24 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       });
     });
 
-    for (const ti of targetItems) {
-      try {
-        await fetch(`${API_BASE}/kitchen-order-items/${ti.itemId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ preparationStatus: 'ready' }),
-        });
-      } catch (e) {
-        console.warn('Failed to mark batch item ready:', e);
-      }
+    const { accepted, failed, firstError } = await updateItemStatuses(
+      targetItems.map((ti) => ti.itemId),
+      'ready',
+    );
+    if (failed > 0) {
+      triggerAlert(`${failed} item(s) of ${batchItemName} not updated: ${firstError}`, 'fire');
     }
 
     setTickets((prev) =>
       prev.map((t) => ({
         ...t,
         items: t.items.map((i) =>
-          i.name === batchItemName &&
-          i.variantName === batchVariant &&
-          (activeCourseFilter === 'ALL' || i.course === activeCourseFilter)
-            ? { ...i, preparationStatus: 'READY' }
-            : i
+          accepted.has(i.id) ? { ...i, preparationStatus: 'READY' } : i
         ),
       }))
     );
 
-    triggerAlert(`✓ Ready: ${batchItemName}`);
+    if (accepted.size > 0 && failed === 0) triggerAlert(`✓ Ready: ${batchItemName}`);
   };
 
   // Release all held units of a batch directly to prep in SUMMARY view
@@ -1091,12 +883,6 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
   // Start preparation for all queued (PENDING) units of a batch in SUMMARY view
   const handleStartBatchQueue = async (batchItemName: string, batchVariant?: string) => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-
     const targetItems: Array<{ ticketId: string; itemId: number }> = [];
     filteredTickets.forEach((t) => {
       t.items.forEach((i) => {
@@ -1111,43 +897,28 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       });
     });
 
-    for (const ti of targetItems) {
-      try {
-        await fetch(`${API_BASE}/kitchen-order-items/${ti.itemId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
-        });
-      } catch (e) {
-        console.warn('Failed to start queued batch item:', e);
-      }
+    const { accepted, failed, firstError } = await updateItemStatuses(
+      targetItems.map((ti) => ti.itemId),
+      'in_preparation',
+    );
+    if (failed > 0) {
+      triggerAlert(`${failed} item(s) of ${batchItemName} not updated: ${firstError}`, 'fire');
     }
 
     setTickets((prev) =>
       prev.map((t) => ({
         ...t,
         items: t.items.map((i) =>
-          i.name === batchItemName &&
-          i.variantName === batchVariant &&
-          i.preparationStatus === 'PENDING' &&
-          (activeCourseFilter === 'ALL' || i.course === activeCourseFilter)
-            ? { ...i, preparationStatus: 'IN_PREPARATION' as PreparationStatus }
-            : i
+          accepted.has(i.id) ? { ...i, preparationStatus: 'IN_PREPARATION' as PreparationStatus } : i
         ),
       }))
     );
 
-    triggerAlert(`Started: ${batchItemName}`);
+    if (accepted.size > 0 && failed === 0) triggerAlert(`Started: ${batchItemName}`);
   };
 
   // Revert a completed batch back to cooking in SUMMARY view
   const handleRevertBatch = async (batchItemName: string, batchVariant?: string) => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-
     const targetItems: Array<{ ticketId: string; itemId: number }> = [];
     filteredTickets.forEach((t) => {
       t.items.forEach((i) => {
@@ -1162,33 +933,24 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       });
     });
 
-    for (const ti of targetItems) {
-      try {
-        await fetch(`${API_BASE}/kitchen-order-items/${ti.itemId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
-        });
-      } catch (e) {
-        console.warn('Failed to revert batch item ready:', e);
-      }
+    const { accepted, failed, firstError } = await updateItemStatuses(
+      targetItems.map((ti) => ti.itemId),
+      'in_preparation',
+    );
+    if (failed > 0) {
+      triggerAlert(`${failed} item(s) of ${batchItemName} not updated: ${firstError}`, 'fire');
     }
 
     setTickets((prev) =>
       prev.map((t) => ({
         ...t,
         items: t.items.map((i) =>
-          i.name === batchItemName &&
-          i.variantName === batchVariant &&
-          i.preparationStatus === 'READY' &&
-          (activeCourseFilter === 'ALL' || i.course === activeCourseFilter)
-            ? { ...i, preparationStatus: 'IN_PREPARATION' as PreparationStatus }
-            : i
+          accepted.has(i.id) ? { ...i, preparationStatus: 'IN_PREPARATION' as PreparationStatus } : i
         ),
       }))
     );
 
-    triggerAlert(`↺ Reverted: ${batchItemName}`, 'pacing');
+    if (accepted.size > 0 && failed === 0) triggerAlert(`↺ Reverted: ${batchItemName}`, 'pacing');
   };
 
   // Toggle individual table item in SUMMARY view (HELD -> FIRE, COOKING -> READY, READY -> COOKING)
@@ -1349,29 +1111,28 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       setQueuedActionsCount(q.length);
     } else {
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-
-        const res = await fetch(`${API_BASE}/kitchen-order-items/batch-bump-fifo`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            stationId: targetStationId,
-            productName,
-            variantName: variantName || undefined,
-            bumpQuantity,
-          }),
-        });
-
-        if (!res.ok) throw new Error('Batch bump failed');
+        await apiRequest<void>(
+          '/kitchen-order-items/batch-bump-fifo',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              stationId: targetStationId,
+              productName,
+              variantName: variantName || undefined,
+              bumpQuantity,
+            }),
+          },
+          'Batch bump failed',
+        );
 
         setTimeout(() => {
           fetchBackendOrders(true);
         }, 400);
       } catch (err) {
+        if (!isRetryableKdsError(err)) {
+          reportRejectedAction(err);
+          return;
+        }
         console.warn('Backend batch-bump-fifo call failed, storing offline:', err);
         setIsOffline(true);
         await enqueueOfflineAction({
@@ -1444,19 +1205,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         triggerAlert(`✓ Ticket #${id} bumped`);
       } else {
         try {
-          const token = getAccessToken();
-          const headers: Record<string, string> = {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          };
-          const res = await fetch(`${API_BASE}/kitchen-orders/${backendOrderId}`, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify({ businessStatus: 'completed' }),
-          });
-          if (!res.ok) throw new Error('Bump request failed');
+          await apiRequest<void>(
+            `/kitchen-orders/${backendOrderId}`,
+            { method: 'PUT', body: JSON.stringify({ businessStatus: 'completed' }) },
+            'Bump request failed',
+          );
           triggerAlert(`✓ Ticket #${id} bumped`);
         } catch (e) {
+          if (!isRetryableKdsError(e)) {
+            reportRejectedAction(e);
+            return;
+          }
           console.warn('Backend bump order failed, storing offline:', e);
           setIsOffline(true);
           await enqueueOfflineAction({
@@ -1477,15 +1236,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   // Trigger immediate auto-pacing run
   const handleRunAutoPacingNow = async () => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-      await fetch(`${API_BASE}/kitchen-order-items/auto-pacing/tick`, { method: 'POST', headers });
+      await apiRequest<void>('/kitchen-order-items/auto-pacing/tick', { method: 'POST' }, 'Auto-pacing tick failed');
       fetchBackendOrders(true);
     } catch (e) {
       console.warn('Auto-pacing tick failed:', e);
+      triggerAlert(`Auto-pacing failed: ${e instanceof Error ? e.message : 'server error'}`, 'fire');
+      return;
     }
 
     // Force expire any item with <= 60s remaining for quick test/demo
@@ -1504,88 +1260,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     setIsPacingDrawerOpen(false);
   };
 
-  const formatCountdown = (seconds?: number) => {
-    if (seconds === undefined || seconds <= 0) return '00:00';
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
 
-  const getPriorityBadge = (priority: KitchenTicket['priority']) => {
-    const isEs = deviceLanguage === 'es';
-    switch (priority) {
-      case 'vip':
-        return {
-          border: 'border-fuchsia-500',
-          badge: 'bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/50 font-black animate-pulse',
-          label: 'VIP RUSH (+3)',
-        };
-      case 'urgent':
-        return {
-          border: 'border-red-500',
-          badge: 'bg-red-500/20 text-red-400 border border-red-500/40 font-black',
-          label: isEs ? 'URGENTE (+2)' : 'URGENT (+2)',
-        };
-      case 'high':
-        return {
-          border: 'border-amber-500',
-          badge: 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold',
-          label: isEs ? 'ALTA (+1)' : 'HIGH (+1)',
-        };
-      case 'normal':
-      default:
-        return {
-          border: 'border-zinc-700',
-          badge: 'bg-zinc-800 text-zinc-300 border border-zinc-700 font-semibold',
-          label: 'NORMAL (0)',
-        };
-    }
-  };
 
-  const getCourseTheme = (course: CourseType) => {
-    switch (course) {
-      case 'APPETIZER':
-        return {
-          title: 'APPETIZERS / STARTERS',
-          icon: 'restaurant',
-          badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-          fireLabel: 'FIRE APPS',
-          prepVerb: 'PREP',
-          prepIcon: 'restaurant',
-          inPrepLabel: 'TO PREP',
-        };
-      case 'MAIN_COURSE':
-        return {
-          title: 'MAIN COURSES',
-          icon: 'lunch_dining',
-          badge: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-          fireLabel: 'FIRE MAINS',
-          prepVerb: 'COOK',
-          prepIcon: 'skillet',
-          inPrepLabel: 'TO COOK',
-        };
-      case 'DESSERT':
-        return {
-          title: 'DESSERTS',
-          icon: 'cake',
-          badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-          fireLabel: 'FIRE DESSERTS',
-          prepVerb: 'PREP',
-          prepIcon: 'cake',
-          inPrepLabel: 'TO PREP',
-        };
-      case 'BEVERAGE':
-        return {
-          title: 'BEVERAGES',
-          icon: 'local_bar',
-          badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-          fireLabel: 'FIRE DRINKS',
-          prepVerb: 'POUR',
-          prepIcon: 'local_bar',
-          inPrepLabel: 'TO POUR',
-        };
-    }
-  };
 
   const getTicketStationMode = useCallback(
     (t: KitchenTicket): 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID' => {
@@ -1629,18 +1305,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const sendStationHeartbeat = useCallback(
     async (stationId: number | string) => {
       if (isOffline || !navigator.onLine) return;
-      try {
-        const token = getAccessToken();
-        await fetch(`${API_BASE}/kitchen-station/${stationId}/heartbeat`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-      } catch (err) {
-        console.warn('Failed to send station heartbeat:', err);
-      }
+      await sendStationKeepaliveHeartbeat(stationId);
     },
     [isOffline],
   );
@@ -1669,29 +1334,29 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       stationRerouteStatuses.length > 0
         ? stationRerouteStatuses
         : kitchenStations.map((st) => ({
-            stationId: st.id,
-            stationName: st.name,
-            stationNumber: st.display_order ?? st.displayOrder ?? st.id,
-            stationType: st.station_type ?? st.stationType ?? 'OTHER',
-            displayMode: st.display_mode ?? st.displayMode ?? 'GRID',
-            backupStationId: null,
-            backupStationName: null,
-            maxActiveTicketsCapacity: 15,
-            activeTicketsCount: 0,
-            isCapacityOverflow: false,
-            devicesCount: 1,
-            onlineDevicesCount: isOffline ? 0 : 1,
-            isDevicesOffline: isOffline && offlineSeconds >= 60,
-            printerName: 'Thermal Kitchen Printer #1',
-            autoRerouteOnOffline: true,
-            autoRerouteOnCapacity: true,
-            fallbackAction: 'BOTH',
-            isFallbackActive: isOffline && offlineSeconds >= 60,
-            fallbackReason:
-              isOffline && offlineSeconds >= 60
-                ? ('DEVICES_OFFLINE' as const)
-                : ('NONE' as const),
-          }));
+          stationId: st.id,
+          stationName: st.name,
+          stationNumber: st.display_order ?? st.displayOrder ?? st.id,
+          stationType: st.station_type ?? st.stationType ?? 'OTHER',
+          displayMode: st.display_mode ?? st.displayMode ?? 'GRID',
+          backupStationId: null,
+          backupStationName: null,
+          maxActiveTicketsCapacity: 15,
+          activeTicketsCount: 0,
+          isCapacityOverflow: false,
+          devicesCount: 1,
+          onlineDevicesCount: isOffline ? 0 : 1,
+          isDevicesOffline: isOffline && offlineSeconds >= 60,
+          printerName: 'Thermal Kitchen Printer #1',
+          autoRerouteOnOffline: true,
+          autoRerouteOnCapacity: true,
+          fallbackAction: 'BOTH',
+          isFallbackActive: isOffline && offlineSeconds >= 60,
+          fallbackReason:
+            isOffline && offlineSeconds >= 60
+              ? ('DEVICES_OFFLINE' as const)
+              : ('NONE' as const),
+        }));
 
     if (!isOffline || offlineSeconds < 60) {
       return baseStatuses;
@@ -1725,7 +1390,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const activeStationStatus =
     resolvedStation.id !== 'ALL' && typeof resolvedStation.id === 'number'
       ? effectiveStationRerouteStatuses.find((s) => s.stationId === resolvedStation.id) ||
-        null
+      null
       : failingStations[0] || effectiveStationRerouteStatuses.find((s) => s.isFallbackActive) || null;
 
   const hasOfflineStations = effectiveStationRerouteStatuses.some(
@@ -1746,7 +1411,6 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     }
 
     try {
-      const token = getAccessToken();
       const payloadBody: { reason: string; orderIds?: (string | number)[] } = {
         reason: overflowOnly
           ? 'Queue Capacity Limit Load Balancing (Overflow Only)'
@@ -1767,24 +1431,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         }
       }
 
-      const res = await fetch(
-        `${API_BASE}/kitchen-station/${stationId}/reroute-orders`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify(payloadBody),
-        },
+      const resData = await apiRequest<{ message?: string }>(
+        `/kitchen-station/${stationId}/reroute-orders`,
+        { method: 'POST', body: JSON.stringify(payloadBody) },
+        'Failed to reroute orders',
       );
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || 'Failed to reroute orders');
-      }
-
-      const resData = await res.json();
       triggerAlert(
         `Dynamic Rerouting Engaged: ${resData.message || 'Orders rerouted to secondary station'}`,
         'pacing',
@@ -1973,152 +1624,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     }
   };
 
+
+
   // Aggregated items for SUMMARY VIEW (batch preparation)
-  const aggregatedSummary = (() => {
-    interface AggregatedSummaryTable {
-      ticketId: string;
-      itemId: number;
-      table: string;
-      qty: number;
-      status: PreparationStatus;
-    }
-
-    interface AggregatedSummaryItem {
-      key: string;
-      name: string;
-      variantName?: string;
-      course: CourseType;
-      totalQty: number;
-      pendingQty: number;
-      inPrepQty: number;
-      heldQty: number;
-      readyQty: number;
-      notes: string[];
-      tables: AggregatedSummaryTable[];
-    }
-    const map = new Map<string, AggregatedSummaryItem>();
-
-    filteredTickets.forEach((t) => {
-      t.items.forEach((item) => {
-        if (activeCourseFilter !== 'ALL' && item.course !== activeCourseFilter) {
-          return;
-        }
-        const key = `${item.name.trim()}__${item.variantName?.trim() || ''}`;
-        if (!map.has(key)) {
-          map.set(key, {
-            key,
-            name: item.name,
-            variantName: item.variantName,
-            course: item.course,
-            totalQty: 0,
-            pendingQty: 0,
-            inPrepQty: 0,
-            heldQty: 0,
-            readyQty: 0,
-            notes: [],
-            tables: [],
-          });
-        }
-        const record = map.get(key)!;
-        record.totalQty += item.qty;
-        if (item.preparationStatus === 'READY') {
-          record.readyQty += item.qty;
-        } else if (item.preparationStatus === 'HELD') {
-          record.heldQty += item.qty;
-        } else if (item.preparationStatus === 'IN_PREPARATION') {
-          record.inPrepQty += item.qty;
-        } else {
-          record.pendingQty += item.qty;
-        }
-        if (item.notes && !record.notes.includes(item.notes)) {
-          record.notes.push(item.notes);
-        }
-        record.tables.push({
-          ticketId: t.id,
-          itemId: item.id,
-          table: t.table,
-          qty: item.qty,
-          status: item.preparationStatus,
-        });
-      });
-    });
-
-    return Array.from(map.values()).sort(
-      (a, b) =>
-        b.inPrepQty + b.pendingQty + b.heldQty - (a.inPrepQty + a.pendingQty + a.heldQty)
-    );
-  })();
+  const aggregatedSummary = aggregateSummary(filteredTickets, activeCourseFilter);
 
   // Real-Time All-Day Batch Aggregation across active station tickets (Historia X7P-4208)
-  const allDaySummary = (() => {
-    interface AllDayAggregatedItem {
-      key: string;
-      productName: string;
-      variantName?: string;
-      course: CourseType;
-      totalNeeded: number;
-      totalOrdered: number;
-      totalPrepared: number;
-      modifiers: Array<{ note: string; count: number }>;
-    }
-
-    const map = new Map<string, AllDayAggregatedItem>();
-    let totalNeededCount = 0;
-
-    filteredTickets.forEach((ticket) => {
-      ticket.items.forEach((item) => {
-        if (activeCourseFilter !== 'ALL' && item.course !== activeCourseFilter) {
-          return;
-        }
-        if (item.preparationStatus !== 'PENDING' && item.preparationStatus !== 'IN_PREPARATION') {
-          return;
-        }
-
-        const currentPrepared = item.preparedQuantity || 0;
-        const needed = Math.max(0, item.qty - currentPrepared);
-        if (needed <= 0) return;
-
-        totalNeededCount += needed;
-        const key = `${item.name.trim().toLowerCase()}__${(item.variantName || '').trim().toLowerCase()}`;
-
-        if (!map.has(key)) {
-          map.set(key, {
-            key,
-            productName: item.name,
-            variantName: item.variantName,
-            course: item.course,
-            totalNeeded: 0,
-            totalOrdered: 0,
-            totalPrepared: 0,
-            modifiers: [],
-          });
-        }
-
-        const entry = map.get(key)!;
-        entry.totalNeeded += needed;
-        entry.totalOrdered += item.qty;
-        entry.totalPrepared += currentPrepared;
-
-        if (item.notes && item.notes.trim().length > 0) {
-          const noteText = item.notes.trim();
-          const existingMod = entry.modifiers.find(
-            (m) => m.note.toLowerCase() === noteText.toLowerCase()
-          );
-          if (existingMod) {
-            existingMod.count += needed;
-          } else {
-            entry.modifiers.push({ note: noteText, count: needed });
-          }
-        }
-      });
-    });
-
-    const items = Array.from(map.values()).sort((a, b) => b.totalNeeded - a.totalNeeded);
-    return {
-      items,
-      totalNeededCount,
-    };
-  })();
+  const allDaySummary = aggregateAllDay(filteredTickets, activeCourseFilter);
 
   // Active ticket for MANUAL QUEUE view
   const activeManualTicket = (() => {
@@ -2131,7 +1643,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
   // Reusable Ticket Card Renderer
   const renderTicketCard = (ticket: KitchenTicket, isFullWidth: boolean = false) => {
-    const pColors = getPriorityBadge(ticket.priority);
+    const pColors = getPriorityBadge(ticket.priority, deviceLanguage);
     const coursesPresent: CourseType[] = ['BEVERAGE', 'APPETIZER', 'MAIN_COURSE', 'DESSERT'];
     const isCompact = cardDensity === 'compact';
     const isSpacious = cardDensity === 'spacious';
@@ -2145,19 +1657,18 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     const cardWidthClass = isFullWidth
       ? 'w-full h-full'
       : isCompact
-      ? 'w-64 h-full max-h-[85vh] flex-shrink-0'
-      : isSpacious
-      ? 'w-80 h-full max-h-[85vh] flex-shrink-0'
-      : 'w-72 h-full max-h-[85vh] flex-shrink-0';
+        ? 'w-64 h-full max-h-[85vh] flex-shrink-0'
+        : isSpacious
+          ? 'w-80 h-full max-h-[85vh] flex-shrink-0'
+          : 'w-72 h-full max-h-[85vh] flex-shrink-0';
 
     return (
       <div
         key={ticket.id}
-        className={`${cardWidthClass} bg-[#1a1b20] border-t-4 ${pColors.border} border-x border-b border-zinc-800 rounded-xl flex flex-col shadow-2xl transition-all duration-300 ${
-          ticket.isPulsing
+        className={`${cardWidthClass} bg-[#1a1b20] border-t-4 ${pColors.border} border-x border-b border-zinc-800 rounded-xl flex flex-col shadow-2xl transition-all duration-300 ${ticket.isPulsing
             ? 'ring-4 ring-amber-500 bg-amber-950/30 animate-pulse shadow-amber-500/50'
             : 'hover:border-zinc-700'
-        }`}
+          }`}
       >
         {/* Ticket Header Card */}
         <div className={`${isCompact ? 'p-2' : 'p-2.5'} border-b border-zinc-800 bg-[#212228] rounded-t-lg flex justify-between items-start shrink-0`}>
@@ -2216,11 +1727,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   s.stationId === ticket.stationId ||
                   s.stationName === ticket.stationName,
               )?.isCapacityOverflow && (
-                <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-amber-600/30 text-amber-300 border border-amber-500/50 flex items-center gap-0.5 animate-pulse">
-                  <span className="material-symbols-outlined text-[9px]">warning</span>
-                  {deviceLanguage === 'es' ? 'SOBRECUPO' : 'OVERFLOW'}
-                </span>
-              )}
+                  <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-amber-600/30 text-amber-300 border border-amber-500/50 flex items-center gap-0.5 animate-pulse">
+                    <span className="material-symbols-outlined text-[9px]">warning</span>
+                    {deviceLanguage === 'es' ? 'SOBRECUPO' : 'OVERFLOW'}
+                  </span>
+                )}
             </div>
             <p className={`${isCompact ? 'text-[9px]' : 'text-[10px]'} font-semibold mt-0.5 text-zinc-400 truncate`}>
               #{ticket.id} • {getLocalizedStationName(ticket.stationName || 'Line', deviceLanguage)}{ticket.server && ticket.server !== 'Kitchen Staff' ? ` • ${ticket.server}` : ''}
@@ -2243,13 +1754,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
           <div className="text-right shrink-0">
             <p
-              className={`font-mono font-black ${isCompact ? 'text-sm' : 'text-base'} leading-tight ${
-                ticket.timeElapsed >= 12
+              className={`font-mono font-black ${isCompact ? 'text-sm' : 'text-base'} leading-tight ${ticket.timeElapsed >= 12
                   ? 'text-red-400 animate-pulse'
                   : ticket.timeElapsed >= 8
-                  ? 'text-amber-400'
-                  : 'text-emerald-400'
-              }`}
+                    ? 'text-amber-400'
+                    : 'text-emerald-400'
+                }`}
             >
               {ticket.timeElapsed}m
             </p>
@@ -2332,29 +1842,27 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                       return (
                         <div
                           key={item.id}
-                          className={`group relative rounded-lg ${isCompact ? 'p-1.5' : 'p-2'} transition-all duration-200 border shadow-xs ${
-                            isHeld
+                          className={`group relative rounded-lg ${isCompact ? 'p-1.5' : 'p-2'} transition-all duration-200 border shadow-xs ${isHeld
                               ? 'bg-amber-950/25 border-dashed border-amber-500/50 backdrop-blur-xs'
                               : isReady
-                              ? 'bg-emerald-950/30 border-emerald-500/40'
-                              : isInPrep
-                              ? 'bg-blue-950/30 border-blue-500/50 hover:border-blue-400'
-                              : 'bg-zinc-800/80 border-zinc-700/70 hover:border-amber-500/50 hover:bg-zinc-800'
-                          }`}
+                                ? 'bg-emerald-950/30 border-emerald-500/40'
+                                : isInPrep
+                                  ? 'bg-blue-950/30 border-blue-500/50 hover:border-blue-400'
+                                  : 'bg-zinc-800/80 border-zinc-700/70 hover:border-amber-500/50 hover:bg-zinc-800'
+                            }`}
                         >
                           <div className="flex items-start justify-between gap-1.5">
                             {/* Left: Quantity Badge + Dish Info */}
                             <div className="flex items-start gap-2 flex-1 min-w-0">
                               <span
-                                className={`${isCompact ? 'w-5 h-5 text-[10px]' : 'w-6 h-6 text-[11px]'} rounded-md flex items-center justify-center font-mono font-black shrink-0 shadow-xs ${
-                                  isHeld
+                                className={`${isCompact ? 'w-5 h-5 text-[10px]' : 'w-6 h-6 text-[11px]'} rounded-md flex items-center justify-center font-mono font-black shrink-0 shadow-xs ${isHeld
                                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                                     : isReady
-                                    ? 'bg-emerald-500 text-white shadow-emerald-950/50'
-                                    : isInPrep
-                                    ? 'bg-blue-500 text-white shadow-blue-950/50'
-                                    : 'bg-zinc-700 text-zinc-200 border border-zinc-500/80'
-                                }`}
+                                      ? 'bg-emerald-500 text-white shadow-emerald-950/50'
+                                      : isInPrep
+                                        ? 'bg-blue-500 text-white shadow-blue-950/50'
+                                        : 'bg-zinc-700 text-zinc-200 border border-zinc-500/80'
+                                  }`}
                                 title={`Qty: ${item.qty}`}
                               >
                                 {item.qty}
@@ -2363,9 +1871,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-1.5 flex-wrap">
                                   <span
-                                    className={`${isCompact ? 'text-[11px]' : 'text-xs'} font-bold tracking-tight leading-snug break-words ${
-                                      isReady ? 'text-emerald-300/60 line-through' : 'text-white'
-                                    }`}
+                                    className={`${isCompact ? 'text-[11px]' : 'text-xs'} font-bold tracking-tight leading-snug break-words ${isReady ? 'text-emerald-300/60 line-through' : 'text-white'
+                                      }`}
                                     style={{ color: isReady ? '#a7f3d0' : '#ffffff' }}
                                   >
                                     {getLocalizedDishName(item.name, deviceLanguage)}
@@ -2373,7 +1880,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
                                   {item.variantName && (
                                     <span className="text-[10px] font-normal text-zinc-400">
-                                      ({getLocalizedVariantName(item.variantName, deviceLanguage)})
+                                      ({getLocalizedVariantName(item.variantName)})
                                     </span>
                                   )}
 
@@ -2575,9 +2082,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink">
           <div className="flex items-center gap-1.5 shrink-0">
             <span
-              className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full ${
-                isOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-ping'
-              }`}
+              className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full ${isOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-ping'
+                }`}
             ></span>
             <span className="material-symbols-outlined text-[#ae001a] text-lg sm:text-2xl">table_restaurant</span>
           </div>
@@ -2587,12 +2093,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 {activeKdsView === 'EXPO'
                   ? (deviceLanguage === 'es' ? 'MONITOR KDS EXPEDITER' : 'EXPEDITER KDS DISPLAY')
                   : activeDisplayMode === 'SUMMARY'
-                  ? (deviceLanguage === 'es' ? 'RESUMEN DE PRODUCCIÓN KDS' : 'KDS PRODUCTION SUMMARY')
-                  : activeDisplayMode === 'MANUAL'
-                  ? (deviceLanguage === 'es' ? 'COLA MANUAL KDS' : 'KDS MANUAL QUEUE')
-                  : activeDisplayMode === 'AUTO'
-                  ? (deviceLanguage === 'es' ? 'LÍNEA AUTO-DESPACHO KDS' : 'KDS AUTO-DISPATCH LINE')
-                  : (deviceLanguage === 'es' ? 'MATRIZ CUADRÍCULA KDS' : 'KDS GRID MATRIX')}
+                    ? (deviceLanguage === 'es' ? 'RESUMEN DE PRODUCCIÓN KDS' : 'KDS PRODUCTION SUMMARY')
+                    : activeDisplayMode === 'MANUAL'
+                      ? (deviceLanguage === 'es' ? 'COLA MANUAL KDS' : 'KDS MANUAL QUEUE')
+                      : activeDisplayMode === 'AUTO'
+                        ? (deviceLanguage === 'es' ? 'LÍNEA AUTO-DESPACHO KDS' : 'KDS AUTO-DISPATCH LINE')
+                        : (deviceLanguage === 'es' ? 'MATRIZ CUADRÍCULA KDS' : 'KDS GRID MATRIX')}
               </span>
             </h1>
             <p className="text-[10px] text-zinc-300 font-bold hidden 2xl:block truncate max-w-[220px]" style={{ color: '#d4d4d8' }}>
@@ -2610,14 +2116,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 queuedActionsCount > 0
                   ? `${queuedActionsCount} local action(s) stored in IndexedDB`
                   : offlineSeconds >= 60
-                  ? 'All terminals offline >60s: Local hardware fallback engaged'
-                  : 'Working locally - Monitoring offline timer'
+                    ? 'All terminals offline >60s: Local hardware fallback engaged'
+                    : 'Working locally - Monitoring offline timer'
               }
-              className={`flex items-center h-8 gap-1 px-2 border rounded-lg text-xs font-bold shadow-xs animate-pulse shrink-0 ${
-                offlineSeconds >= 60
+              className={`flex items-center h-8 gap-1 px-2 border rounded-lg text-xs font-bold shadow-xs animate-pulse shrink-0 ${offlineSeconds >= 60
                   ? 'bg-red-500/20 border-red-500/80 text-red-300'
                   : 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-              }`}
+                }`}
             >
               <span className={`material-symbols-outlined text-sm ${offlineSeconds >= 60 ? 'text-red-400' : 'text-amber-400'}`}>
                 {offlineSeconds >= 60 ? 'portable_wifi_off' : 'cloud_off'}
@@ -2679,11 +2184,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 1. EXPO (All Stations Master View) */}
             <button
               onClick={() => handleViewSwitch('EXPO')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'EXPO'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'EXPO'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Expediter Master Display: All kitchen stations unified in real-time pass"
             >
               <span className="material-symbols-outlined text-sm">room_service</span>
@@ -2693,11 +2197,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 2. AUTO DISPATCH */}
             <button
               onClick={() => handleViewSwitch('AUTO')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'AUTO'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'AUTO'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Auto Dispatch Mode: Fast-track cooking line with 1-touch auto bump"
             >
               <span className="material-symbols-outlined text-sm">bolt</span>
@@ -2707,11 +2210,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 3. MANUAL QUEUE */}
             <button
               onClick={() => handleViewSwitch('MANUAL')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'MANUAL'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'MANUAL'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Manual Queue Mode: 1-by-1 focus card with FIFO backlog queue"
             >
               <span className="material-symbols-outlined text-sm">queue</span>
@@ -2721,11 +2223,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 4. SUMMARY VIEW */}
             <button
               onClick={() => handleViewSwitch('SUMMARY')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'SUMMARY'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'SUMMARY'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Summary View: Aggregated production batch quantities (Bakery / Mass Prep)"
             >
               <span className="material-symbols-outlined text-sm">summarize</span>
@@ -2735,11 +2236,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 5. GRID MATRIX */}
             <button
               onClick={() => handleViewSwitch('GRID')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'GRID'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'GRID'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Grid Matrix Mode: Classic multi-ticket station board with SLA timers"
             >
               <span className="material-symbols-outlined text-sm">grid_view</span>
@@ -2753,11 +2253,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               type="button"
               onClick={() => handleDensityChange('compact')}
               title="Compact Cards (Fits 4-6 on screen)"
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
-                cardDensity === 'compact'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${cardDensity === 'compact'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
             >
               <span className="material-symbols-outlined text-sm">density_small</span>
             </button>
@@ -2765,11 +2264,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               type="button"
               onClick={() => handleDensityChange('normal')}
               title="Normal Cards (Balanced)"
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
-                cardDensity === 'normal'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${cardDensity === 'normal'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
             >
               <span className="material-symbols-outlined text-sm">density_medium</span>
             </button>
@@ -2777,11 +2275,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               type="button"
               onClick={() => handleDensityChange('spacious')}
               title="Wide Cards (Large touch display)"
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
-                cardDensity === 'spacious'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${cardDensity === 'spacious'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
             >
               <span className="material-symbols-outlined text-sm">density_large</span>
             </button>
@@ -2795,11 +2292,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               if (!audioChimeEnabled) playKitchenFireChime();
             }}
             title={audioChimeEnabled ? 'Audio Chime Enabled' : 'Audio Chime Muted'}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
-              audioChimeEnabled
+            className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer shrink-0 ${audioChimeEnabled
                 ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-xs'
                 : 'bg-zinc-800 text-zinc-500 border-zinc-700'
-            }`}
+              }`}
           >
             <span className="material-symbols-outlined text-base">
               {audioChimeEnabled ? 'notifications_active' : 'notifications_off'}
@@ -2811,17 +2307,15 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             <button
               type="button"
               onClick={() => setIsAllDayBarExpanded((prev) => !prev)}
-              className={`h-8 px-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1 border cursor-pointer shadow-xs shrink-0 ${
-                isAllDayBarExpanded
+              className={`h-8 px-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1 border cursor-pointer shadow-xs shrink-0 ${isAllDayBarExpanded
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                   : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-              }`}
+                }`}
               title="Toggle All-Day Aggregated Prep Bar"
             >
               <span className="material-symbols-outlined text-sm">skillet</span>
-              <span className={`px-1 py-0.1 rounded-full text-[9px] font-black ${
-                allDaySummary.totalNeededCount > 0 ? 'bg-amber-500 text-black' : 'bg-zinc-700 text-zinc-300'
-              }`}>
+              <span className={`px-1 py-0.1 rounded-full text-[9px] font-black ${allDaySummary.totalNeededCount > 0 ? 'bg-amber-500 text-black' : 'bg-zinc-700 text-zinc-300'
+                }`}>
                 {allDaySummary.totalNeededCount}
               </span>
             </button>
@@ -2851,19 +2345,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           <button
             type="button"
             onClick={() => setIsRerouteModalOpen(true)}
-            className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center border cursor-pointer shadow-xs shrink-0 relative ${
-              hasOfflineStations || hasCapacityOverflowStations
+            className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center border cursor-pointer shadow-xs shrink-0 relative ${hasOfflineStations || hasCapacityOverflowStations
                 ? 'bg-red-500/20 text-red-300 border-red-500/60 ring-2 ring-red-500/40 animate-pulse'
                 : 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700'
-            }`}
+              }`}
             title="Configure Station Fallback Routes, Load Balancing & Thermal Printer Fallback"
           >
             <span
-              className={`material-symbols-outlined text-base ${
-                hasOfflineStations || hasCapacityOverflowStations
+              className={`material-symbols-outlined text-base ${hasOfflineStations || hasCapacityOverflowStations
                   ? 'text-red-400'
                   : 'text-amber-400'
-              }`}
+                }`}
             >
               alt_route
             </span>
@@ -2910,11 +2402,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               <button
                 key={course}
                 onClick={() => setActiveCourseFilter(course)}
-                className={`px-3 py-1 rounded text-xs font-black tracking-wider uppercase transition-all cursor-pointer whitespace-nowrap ${
-                  isActive
+                className={`px-3 py-1 rounded text-xs font-black tracking-wider uppercase transition-all cursor-pointer whitespace-nowrap ${isActive
                     ? 'bg-[#ae001a] text-white shadow-xs'
                     : 'bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700'
-                }`}
+                  }`}
               >
                 {course === 'ALL'
                   ? (deviceLanguage === 'es' ? 'TODOS' : 'ALL COURSES')
@@ -3082,189 +2573,23 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
       {/* 3. All-Day Consolidated Batch Prep Summary Bar (Historia X7P-4208) */}
       {activeDisplayMode !== 'SUMMARY' && (
-        <div className="bg-[#15161b] border-b border-amber-500/30 px-4 py-1.5 shrink-0 transition-all">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-amber-400 text-base">skillet</span>
-              <span className="text-[11px] font-black tracking-wider text-white uppercase flex items-center gap-1.5">
-                {deviceLanguage === 'es' ? 'CONSOLIDADOR DEL TURNO' : 'ALL-DAY PREP CONSOLIDATOR'}
-                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  {allDaySummary.totalNeededCount}{' '}
-                  {deviceLanguage === 'es'
-                    ? allDaySummary.totalNeededCount === 1
-                      ? 'unidad requerida'
-                      : 'unidades requeridas'
-                    : allDaySummary.totalNeededCount === 1
-                    ? 'unit required'
-                    : 'units required'}
-                </span>
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-400 font-medium hidden md:inline">
-                {deviceLanguage === 'es' ? (
-                  <>Pulsa <strong className="text-amber-300">+1 / +2 / +4 / TODOS</strong> para despachar FIFO</>
-                ) : (
-                  <>Tap <strong className="text-amber-300">+1 / +2 / +4 / ALL</strong> to bump FIFO</>
-                )}
-              </span>
-              <button
-                onClick={() => setIsAllDayBarExpanded(!isAllDayBarExpanded)}
-                className="text-zinc-400 hover:text-white flex items-center gap-0.5 text-[10px] font-bold cursor-pointer transition-colors"
-                title={isAllDayBarExpanded ? (deviceLanguage === 'es' ? 'Colapsar barra' : 'Collapse All-Day Bar') : (deviceLanguage === 'es' ? 'Expandir barra' : 'Expand All-Day Bar')}
-              >
-                <span>{isAllDayBarExpanded ? (deviceLanguage === 'es' ? 'Ocultar' : 'Hide') : (deviceLanguage === 'es' ? 'Mostrar' : 'Show')}</span>
-                <span className="material-symbols-outlined text-xs">
-                  {isAllDayBarExpanded ? 'expand_less' : 'expand_more'}
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {isAllDayBarExpanded && (
-            <div>
-              {allDaySummary.items.length === 0 ? (
-                <div className="py-1.5 px-3 rounded-md bg-zinc-900/60 border border-dashed border-zinc-800 text-center text-[11px] text-zinc-400 font-medium flex items-center justify-center gap-1.5">
-                  <span className="material-symbols-outlined text-emerald-400 text-sm">check_circle</span>
-                  <span>
-                    {deviceLanguage === 'es'
-                      ? 'No hay platos pendientes para esta etapa en esta estación.'
-                      : 'No pending items for this course on this station.'}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-stretch gap-2.5 overflow-x-auto pb-1 custom-scrollbar">
-                  {allDaySummary.items.map((item) => (
-                    <div
-                      key={item.key}
-                      className="min-w-[190px] max-w-[240px] bg-[#1a1c24] hover:bg-[#20232d] border border-zinc-700/80 hover:border-amber-500/60 rounded-lg p-2 flex flex-col justify-between transition-all shadow-xs group shrink-0"
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-1.5">
-                          <div className="flex-1 min-w-0">
-                            <h4 className="text-xs font-black text-white leading-tight truncate" title={item.productName}>
-                              {getLocalizedDishName(item.productName, deviceLanguage)}
-                            </h4>
-                            {item.variantName && (
-                              <span className="inline-block mt-0.5 text-[9px] font-bold px-1 py-0.2 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 truncate max-w-full">
-                                {getLocalizedVariantName(item.variantName, deviceLanguage)}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="text-base font-black font-mono text-amber-400 leading-none block">
-                              {item.totalNeeded}x
-                            </span>
-                            <span className="text-[8px] uppercase tracking-wider font-bold text-zinc-400">
-                              {deviceLanguage === 'es' ? 'PENDIENTE' : 'PENDING'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Prep Progress Bar */}
-                        <div className="mt-1 text-[9px] font-bold text-zinc-400 flex items-center justify-between">
-                          <span>{deviceLanguage === 'es' ? 'Progreso:' : 'Progress:'}</span>
-                          <span>
-                            <strong className="text-emerald-400">{item.totalPrepared}</strong>/{item.totalOrdered} {deviceLanguage === 'es' ? 'listo' : 'done'}
-                          </span>
-                        </div>
-                        <div className="w-full bg-zinc-800 h-1 rounded-full overflow-hidden mt-0.5">
-                          <div
-                            className="bg-gradient-to-r from-amber-500 to-emerald-500 h-full rounded-full transition-all duration-300"
-                            style={{
-                              width: `${item.totalOrdered > 0 ? Math.min(100, Math.round((item.totalPrepared / item.totalOrdered) * 100)) : 0}%`,
-                            }}
-                          />
-                        </div>
-
-                        {/* Modifiers / Special Notes Breakdown */}
-                        {item.modifiers.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {item.modifiers.map((mod, idx) => {
-                              const isAllergy = detectAllergies(mod.note, deviceLanguage).hasAllergy;
-                              const isAdd = mod.note.startsWith('+') || mod.note.toLowerCase().includes('extra') || mod.note.toLowerCase().startsWith('add');
-                              const isRem = mod.note.startsWith('-') || mod.note.toLowerCase().startsWith('no') || mod.note.toLowerCase().startsWith('sin');
-                              return (
-                                <span
-                                  key={idx}
-                                  className={`text-[8px] font-black px-1.5 py-0.2 rounded flex items-center gap-0.5 ${
-                                    isAllergy
-                                      ? 'bg-red-950 text-red-100 border border-red-500 animate-pulse shadow-xs'
-                                      : isAdd
-                                      ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/50'
-                                      : isRem
-                                      ? 'bg-rose-950/80 text-rose-300 border border-rose-500/50'
-                                      : 'bg-amber-950/60 text-amber-200 border border-amber-500/30'
-                                  }`}
-                                >
-                                  {isAllergy && <span className="material-symbols-outlined text-[9px] text-red-400">warning</span>}
-                                  {mod.count}x {mod.note}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Quick Action Batch Bump Buttons */}
-                      <div className="mt-1.5 pt-1 border-t border-zinc-800/80 flex items-center gap-1">
-                        <button
-                          onClick={() => handleBatchBumpFifo(item.productName, item.variantName, 1)}
-                          className="flex-1 py-1 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-black font-black text-[10px] rounded border border-amber-500/40 transition-all cursor-pointer text-center active:scale-95"
-                          title={`Bump 1x ${item.productName} to oldest ticket (FIFO)`}
-                        >
-                          +1
-                        </button>
-
-                        {item.totalNeeded >= 2 && (
-                          <button
-                            onClick={() => handleBatchBumpFifo(item.productName, item.variantName, 2)}
-                            className="flex-1 py-1 bg-zinc-800 hover:bg-amber-500 text-zinc-200 hover:text-black font-black text-[10px] rounded border border-zinc-700 transition-all cursor-pointer text-center active:scale-95"
-                            title={`Bump 2x ${item.productName} to oldest tickets (FIFO)`}
-                          >
-                            +2
-                          </button>
-                        )}
-
-                        {item.totalNeeded >= 4 && (
-                          <button
-                            onClick={() => handleBatchBumpFifo(item.productName, item.variantName, 4)}
-                            className="flex-1 py-1 bg-zinc-800 hover:bg-amber-500 text-zinc-200 hover:text-black font-black text-[10px] rounded border border-zinc-700 transition-all cursor-pointer text-center active:scale-95"
-                            title={`Bump 4x ${item.productName} to oldest tickets (FIFO)`}
-                          >
-                            +4
-                          </button>
-                        )}
-
-                        {item.totalNeeded > 1 && (
-                          <button
-                            onClick={() => handleBatchBumpFifo(item.productName, item.variantName, item.totalNeeded)}
-                            className="px-1.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[9px] uppercase rounded border border-emerald-400 transition-all cursor-pointer active:scale-95"
-                            title={`Bump entire batch (${item.totalNeeded}x) to oldest tickets`}
-                          >
-                            {deviceLanguage === 'es' ? 'TODOS' : 'ALL'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <KdsAllDayPrepBar
+          summary={allDaySummary}
+          expanded={isAllDayBarExpanded}
+          language={deviceLanguage}
+          onToggleExpanded={() => setIsAllDayBarExpanded(!isAllDayBarExpanded)}
+          onBumpFifo={handleBatchBumpFifo}
+        />
       )}
 
       {/* 4. Main KDS Workspace Cards Staging Grid */}
       <main
-        className={`flex-1 px-4 py-2 ${
-          activeDisplayMode === 'SUMMARY'
+        className={`flex-1 px-4 py-2 ${activeDisplayMode === 'SUMMARY'
             ? 'overflow-y-auto custom-scrollbar flex flex-col'
             : activeDisplayMode === 'MANUAL'
-            ? 'overflow-hidden flex gap-4 items-stretch'
-            : 'overflow-x-auto overflow-y-hidden flex flex-col custom-scrollbar'
-        }`}
+              ? 'overflow-hidden flex gap-4 items-stretch'
+              : 'overflow-x-auto overflow-y-hidden flex flex-col custom-scrollbar'
+          }`}
       >
         {loading ? (
           <div className="w-full h-full min-h-[400px] flex flex-col items-center justify-center gap-4 text-center">
@@ -3300,268 +2625,16 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           /* ========================================================= */
           /* MODE 1: SUMMARY VIEW (Aggregated Batch Preparation)       */
           /* ========================================================= */
-          <div className="flex flex-col gap-5 w-full h-full pb-8">
-            {/* Summary Top Banner */}
-            <div className="bg-gradient-to-r from-blue-950/80 via-zinc-900 to-blue-950/80 border border-blue-500/40 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-lg shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center border border-blue-500/40">
-                  <span className="material-symbols-outlined text-2xl">layers</span>
-                </div>
-                <div>
-                  <h4 className="text-sm font-black text-blue-300 tracking-wider uppercase flex items-center gap-2">
-                    PRODUCTION BATCH CONSOLIDATOR
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-200 border border-blue-500/30">
-                      STATION: {selectedStationFilter}
-                    </span>
-                  </h4>
-                  <p className="text-xs text-zinc-300 mt-0.5">
-                    Consolidating production batches across all active tickets (Bar, Cold Line, Hot Line, Bakery).
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 text-xs font-bold flex-wrap">
-                <span className="px-3 py-1.5 bg-zinc-800/90 text-zinc-200 rounded-lg border border-zinc-700">
-                  Batches: <strong className="text-white font-mono text-sm ml-1">{aggregatedSummary.length}</strong>
-                </span>
-                <span className="px-3 py-1.5 bg-zinc-800/90 text-zinc-300 rounded-lg border border-zinc-700">
-                  Queue: <strong className="text-white font-mono text-sm ml-1">
-                    {aggregatedSummary.reduce((sum, item) => sum + item.pendingQty, 0)}
-                  </strong>
-                </span>
-                <span className="px-3 py-1.5 bg-blue-500/20 text-blue-300 rounded-lg border border-blue-500/30">
-                  In Prep: <strong className="text-blue-200 font-mono text-sm ml-1">
-                    {aggregatedSummary.reduce((sum, item) => sum + item.inPrepQty, 0)}
-                  </strong>
-                </span>
-                <span className="px-3 py-1.5 bg-amber-500/20 text-amber-300 rounded-lg border border-amber-500/30">
-                  Held: <strong className="text-amber-200 font-mono text-sm ml-1">
-                    {aggregatedSummary.reduce((sum, item) => sum + item.heldQty, 0)}
-                  </strong>
-                </span>
-                <span className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 rounded-lg border border-emerald-500/30">
-                  Ready: <strong className="text-emerald-200 font-mono text-sm ml-1">
-                    {aggregatedSummary.reduce((sum, item) => sum + item.readyQty, 0)}
-                  </strong>
-                </span>
-              </div>
-            </div>
-
-            {/* Batch Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {aggregatedSummary.map((batch) => {
-                const totalUnready = batch.pendingQty + batch.inPrepQty + batch.heldQty;
-                const isFullyReady = totalUnready === 0 && batch.totalQty > 0;
-                const courseTheme = getCourseTheme(batch.course);
-
-                return (
-                  <div
-                    key={batch.key}
-                    className={`rounded-xl border p-5 flex flex-col justify-between transition-all shadow-xl ${
-                      isFullyReady
-                        ? 'bg-emerald-950/20 border-emerald-500/40 shadow-emerald-950/30'
-                        : 'bg-[#1a1b20] border-zinc-800 hover:border-zinc-700'
-                    }`}
-                  >
-                    <div>
-                      {/* Header */}
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="min-w-0 flex-1">
-                          <h3 className="font-black text-lg text-white leading-tight break-words" style={{ color: '#ffffff' }}>
-                            {getLocalizedDishName(batch.name, deviceLanguage)}
-                          </h3>
-                          {batch.variantName && (
-                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-200 border border-zinc-700 inline-block mt-1">
-                              {getLocalizedVariantName(batch.variantName, deviceLanguage)}
-                            </span>
-                          )}
-                        </div>
-                        <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border shrink-0 ${courseTheme.badge}`}>
-                          {getLocalizedCourse(batch.course, deviceLanguage)}
-                        </span>
-                      </div>
-
-                      {/* Stat Counters: QUEUE / [PREP VERB] / HELD / READY / TOTAL */}
-                      <div className="my-3 p-2.5 bg-zinc-900/90 rounded-xl border border-zinc-800 grid grid-cols-5 gap-0.5 text-center">
-                        <div className="p-1">
-                          <p className="text-xl font-black font-mono text-zinc-300">{batch.pendingQty}</p>
-                          <p className="text-[7.5px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">
-                            {deviceLanguage === 'es' ? 'COLA' : 'QUEUE'}
-                          </p>
-                        </div>
-                        <div className="p-1 border-l border-zinc-800">
-                          <p className="text-xl font-black font-mono text-blue-400">{batch.inPrepQty}</p>
-                          <p className="text-[7.5px] font-bold text-blue-300 uppercase tracking-wider mt-0.5">
-                            {deviceLanguage === 'es' ? 'EN COCCIÓN' : courseTheme.prepVerb}
-                          </p>
-                        </div>
-                        <div className="p-1 border-l border-zinc-800">
-                          <p className="text-xl font-black font-mono text-amber-400">{batch.heldQty}</p>
-                          <p className="text-[7.5px] font-bold text-amber-300 uppercase tracking-wider mt-0.5">
-                            {deviceLanguage === 'es' ? 'RETENIDO' : 'HELD'}
-                          </p>
-                        </div>
-                        <div className="p-1 border-l border-zinc-800">
-                          <p className="text-xl font-black font-mono text-emerald-400">{batch.readyQty}</p>
-                          <p className="text-[7.5px] font-bold text-emerald-300 uppercase tracking-wider mt-0.5">
-                            {deviceLanguage === 'es' ? 'LISTO' : 'READY'}
-                          </p>
-                        </div>
-                        <div className="p-1 border-l border-zinc-800">
-                          <p className="text-xl font-black font-mono text-zinc-300">{batch.totalQty}</p>
-                          <p className="text-[7.5px] font-bold text-zinc-400 uppercase tracking-wider mt-0.5">
-                            {deviceLanguage === 'es' ? 'TOTAL' : 'TOTAL'}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Interactive Tables Breakdown */}
-                      <div className="space-y-1.5 mb-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[10px] font-black text-zinc-400 uppercase tracking-wider flex items-center gap-1">
-                            <span className="material-symbols-outlined text-xs text-zinc-400">touch_app</span>
-                            {deviceLanguage === 'es' ? 'MESAS (TOCA PARA AVANZAR):' : 'TABLES (TAP TO ADVANCE):'}
-                          </p>
-                          <span className="text-[10px] text-zinc-500 font-bold">
-                            {batch.tables.length} {deviceLanguage === 'es' ? (batch.tables.length === 1 ? 'mesa' : 'mesas') : (batch.tables.length === 1 ? 'table' : 'tables')}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto custom-scrollbar p-1.5 bg-zinc-950/40 rounded-lg border border-zinc-800/80">
-                          {batch.tables.map((t, idx) => {
-                            const isReady = t.status === 'READY';
-                            const isHeld = t.status === 'HELD';
-                            const isInPrep = t.status === 'IN_PREPARATION';
-
-                            const chipIcon = isReady
-                              ? 'check_circle'
-                              : isHeld
-                              ? 'lock'
-                              : isInPrep
-                              ? courseTheme.prepIcon
-                              : 'schedule';
-
-                            const chipStatusLabel = isReady
-                              ? 'READY'
-                              : isHeld
-                              ? 'HELD'
-                              : isInPrep
-                              ? courseTheme.prepVerb
-                              : 'QUEUE';
-
-                            const chipStyle = isReady
-                              ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900/60'
-                              : isHeld
-                              ? 'bg-amber-950/60 text-amber-300 border-amber-500/50 hover:bg-amber-900/60 animate-pulse'
-                              : isInPrep
-                              ? 'bg-blue-950/70 text-blue-200 border-blue-500/60 hover:bg-blue-900/70 shadow-xs'
-                              : 'bg-zinc-800/90 text-zinc-300 border-zinc-700 hover:bg-zinc-700/80 hover:text-white';
-
-                            const qtyBadgeStyle = isReady
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : isHeld
-                              ? 'bg-amber-500/20 text-amber-300'
-                              : isInPrep
-                              ? 'bg-blue-500/20 text-blue-200'
-                              : 'bg-zinc-700 text-zinc-300';
-
-                            const tooltipText = isHeld
-                              ? `HELD: Click to FIRE for ${t.table}`
-                              : !isInPrep && !isReady
-                              ? `QUEUE (PENDING): Click to start ${courseTheme.prepVerb.toLowerCase()} for ${t.table}`
-                              : isInPrep
-                              ? `IN PREPARATION: Click to mark READY for ${t.table}`
-                              : `READY: Click to revert ${t.table} back to prep`;
-
-                            return (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => handleToggleSummaryTableItem(t, batch.name)}
-                                title={tooltipText}
-                                className={`text-[11px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-xs ${chipStyle}`}
-                              >
-                                <span className="material-symbols-outlined text-[12px]">
-                                  {chipIcon}
-                                </span>
-                                <span>{t.table}</span>
-                                <span className={`font-mono font-black text-[10px] px-1 rounded ${qtyBadgeStyle}`}>
-                                  x{t.qty}
-                                </span>
-                                <span className="text-[8px] uppercase tracking-wider font-extrabold opacity-75">
-                                  {chipStatusLabel}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Aggregated Notes */}
-                      {batch.notes.length > 0 && (
-                        <div className="mb-3 p-2.5 bg-amber-950/40 border border-amber-500/30 rounded-lg text-xs text-amber-300">
-                          <strong className="block text-[10px] text-amber-400 uppercase tracking-wider mb-1">
-                            SPECIAL PREP INSTRUCTIONS:
-                          </strong>
-                          <ul className="list-disc list-inside space-y-0.5">
-                            {batch.notes.map((note, idx) => (
-                              <li key={idx} className="italic">{note}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex flex-col gap-2 mt-2">
-                      {batch.heldQty > 0 && (
-                        <button
-                          onClick={() => handleFireBatchHeld(batch.name, batch.variantName)}
-                          className="w-full py-2 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98"
-                        >
-                          <span className="material-symbols-outlined text-sm">local_fire_department</span>
-                          <span>{deviceLanguage === 'es' ? `A FUEGO TODOS LOS RETENIDOS (${batch.heldQty})` : `FIRE ALL HELD (${batch.heldQty})`}</span>
-                        </button>
-                      )}
-
-                      {batch.pendingQty > 0 && (
-                        <button
-                          onClick={() => handleStartBatchQueue(batch.name, batch.variantName)}
-                          className="w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98 border border-blue-400/50"
-                        >
-                          <span className="material-symbols-outlined text-sm">{courseTheme.prepIcon}</span>
-                          <span>{deviceLanguage === 'es' ? `INICIAR TODA LA COLA (${batch.pendingQty})` : `START ALL QUEUE (${batch.pendingQty})`}</span>
-                        </button>
-                      )}
-
-                      {totalUnready > 0 ? (
-                        <button
-                          onClick={() => handleMarkBatchReady(batch.name, batch.variantName)}
-                          className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md cursor-pointer active:scale-98"
-                        >
-                          <span className="material-symbols-outlined text-sm">check_circle</span>
-                          <span>{deviceLanguage === 'es' ? `MARCAR TODOS LISTOS (${totalUnready})` : `MARK ALL READY (${totalUnready})`}</span>
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 py-2.5 bg-emerald-950/40 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-inner">
-                            <span className="material-symbols-outlined text-sm">task_alt</span>
-                            <span>{deviceLanguage === 'es' ? `LOS ${batch.totalQty} ESTÁN LISTOS` : `ALL ${batch.totalQty} READY`}</span>
-                          </div>
-                          <button
-                            onClick={() => handleRevertBatch(batch.name, batch.variantName)}
-                            title="Revert batch back to preparation"
-                            className="px-3 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white border border-zinc-700 rounded-lg text-xs font-bold uppercase transition-all flex items-center gap-1 cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-sm">undo</span>
-                            <span className="hidden sm:inline">{deviceLanguage === 'es' ? 'DESHACER' : 'UNDO'}</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <KdsSummaryBatchView
+            batches={aggregatedSummary}
+            stationName={selectedStationFilter}
+            language={deviceLanguage}
+            onFireHeld={handleFireBatchHeld}
+            onStartQueue={handleStartBatchQueue}
+            onMarkReady={handleMarkBatchReady}
+            onRevert={handleRevertBatch}
+            onToggleTableItem={handleToggleSummaryTableItem}
+          />
         ) : activeDisplayMode === 'MANUAL' ? (
           /* ========================================================= */
           /* MODE 2: MANUAL QUEUE (Split-Screen Focus + FIFO Queue)    */
@@ -3634,16 +2707,15 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               <div className="flex-1 overflow-y-auto space-y-2.5 mt-3 custom-scrollbar">
                 {filteredTickets.map((t, index) => {
                   const isSelected = activeManualTicket?.id === t.id;
-                  const pColors = getPriorityBadge(t.priority);
+                  const pColors = getPriorityBadge(t.priority, deviceLanguage);
                   return (
                     <div
                       key={t.id}
                       onClick={() => setManualActiveTicketId(t.id)}
-                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                        isSelected
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${isSelected
                           ? 'bg-[#ae001a]/20 border-[#ae001a] ring-1 ring-[#ae001a]'
                           : 'bg-zinc-900/80 hover:bg-zinc-800/80 border-zinc-800'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-black text-zinc-300 shrink-0 border border-zinc-700">
@@ -3666,9 +2738,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
                       <div className="text-right shrink-0 ml-2">
                         <span
-                          className={`font-mono font-black text-sm ${
-                            t.timeElapsed >= 12 ? 'text-red-400' : t.timeElapsed >= 8 ? 'text-amber-400' : 'text-emerald-400'
-                          }`}
+                          className={`font-mono font-black text-sm ${t.timeElapsed >= 12 ? 'text-red-400' : t.timeElapsed >= 8 ? 'text-amber-400' : 'text-emerald-400'
+                            }`}
                         >
                           {t.timeElapsed}m
                         </span>
@@ -3716,303 +2787,23 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       </main>
 
       {/* 4. Drawer: Pacing SLA & Target Window Settings */}
-      {isPacingDrawerOpen && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[9999] flex justify-end bg-black/70 backdrop-blur-xs animate-fade-in font-sans" role="dialog" aria-modal="true">
-          <div className="w-full max-w-md bg-[#1a1b20] border-l-2 border-[#ae001a] h-full flex flex-col shadow-2xl">
-            {/* Drawer Header */}
-            <div className="p-5 border-b border-zinc-800 bg-[#212228] flex justify-between items-center">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-[#ae001a] text-2xl">tune</span>
-                <div>
-                  <h2
-                    className="text-base font-black uppercase tracking-wider text-white !text-white"
-                    style={{ color: '#ffffff', fontSize: '15px', lineHeight: '1.4' }}
-                  >
-                    Multi-Course Pacing SLA
-                  </h2>
-                  <p className="text-xs text-zinc-400 font-bold" style={{ color: '#a1a1aa' }}>
-                    Target Hold Delays &amp; Automated Fire Thresholds
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsPacingDrawerOpen(false)}
-                className="w-8 h-8 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-              >
-                <span className="material-symbols-outlined text-base">close</span>
-              </button>
-            </div>
-
-            {/* Drawer Body */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar text-sm">
-              {/* Card Density Setting */}
-              <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3
-                      className="font-black text-white !text-white text-xs uppercase tracking-wider flex items-center gap-1.5"
-                      style={{ color: '#ffffff', fontSize: '12px', lineHeight: '1rem' }}
-                    >
-                      <span className="material-symbols-outlined text-amber-400 text-sm">view_column</span>
-                      KDS Ticket Card Density
-                    </h3>
-                    <p className="text-xs text-zinc-400 font-medium mt-0.5" style={{ color: '#a1a1aa' }}>
-                      Controls ticket width to fit more simultaneous cards on screen.
-                    </p>
-                  </div>
-                  <span className="font-mono text-xs font-black text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/40 uppercase">
-                    {cardDensity}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  {(['compact', 'normal', 'spacious'] as const).map((density) => (
-                    <button
-                      key={density}
-                      type="button"
-                      onClick={() => handleDensityChange(density)}
-                      className={`flex-1 py-1.5 rounded text-xs font-bold border transition-all cursor-pointer uppercase ${
-                        cardDensity === density
-                          ? 'bg-[#ae001a] text-white border-[#ae001a]'
-                          : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-                      }`}
-                    >
-                      {density === 'compact' ? 'Compact (256px)' : density === 'normal' ? 'Normal (288px)' : 'Wide (320px)'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Main Course Delay Setting */}
-              <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3
-                      className="font-black text-white !text-white text-xs uppercase tracking-wider flex items-center gap-1.5"
-                      style={{ color: '#ffffff', fontSize: '12px', lineHeight: '1rem' }}
-                    >
-                      <span className="material-symbols-outlined text-blue-400 text-sm">lunch_dining</span>
-                      Main Course Hold Delay
-                    </h3>
-                    <p className="text-xs text-zinc-400 font-medium mt-0.5" style={{ color: '#a1a1aa' }}>
-                      Target window after appetizers before mains auto-fire.
-                    </p>
-                  </div>
-                  <span className="font-mono text-base font-black text-blue-400 bg-blue-950/60 px-2.5 py-1 rounded border border-blue-500/40">
-                    {mainCourseHoldDelayMins}m
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="4"
-                  max="20"
-                  step="1"
-                  value={mainCourseHoldDelayMins}
-                  onChange={(e) => setMainCourseHoldDelayMins(Number(e.target.value))}
-                  className="w-full accent-[#ae001a] cursor-pointer"
-                />
-                <div className="flex gap-2">
-                  {[8, 10, 12, 15].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setMainCourseHoldDelayMins(preset)}
-                      className={`flex-1 py-1 rounded text-xs font-bold border transition-all cursor-pointer ${
-                        mainCourseHoldDelayMins === preset
-                          ? 'bg-[#ae001a] text-white border-[#ae001a]'
-                          : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-                      }`}
-                    >
-                      {preset}m
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Dessert Delay Setting */}
-              <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3
-                      className="font-black text-white !text-white text-xs uppercase tracking-wider flex items-center gap-1.5"
-                      style={{ color: '#ffffff', fontSize: '12px', lineHeight: '1rem' }}
-                    >
-                      <span className="material-symbols-outlined text-purple-400 text-sm">cake</span>
-                      Dessert Course Hold Delay
-                    </h3>
-                    <p className="text-xs text-zinc-400 font-medium mt-0.5" style={{ color: '#a1a1aa' }}>
-                      Target hold delay while entrees are served.
-                    </p>
-                  </div>
-                  <span className="font-mono text-base font-black text-purple-400 bg-purple-950/60 px-2.5 py-1 rounded border border-purple-500/40">
-                    {dessertHoldDelayMins}m
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="10"
-                  max="35"
-                  step="5"
-                  value={dessertHoldDelayMins}
-                  onChange={(e) => setDessertHoldDelayMins(Number(e.target.value))}
-                  className="w-full accent-[#ae001a] cursor-pointer"
-                />
-                <div className="flex gap-2">
-                  {[15, 20, 25, 30].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setDessertHoldDelayMins(preset)}
-                      className={`flex-1 py-1 rounded text-xs font-bold border transition-all cursor-pointer ${
-                        dessertHoldDelayMins === preset
-                          ? 'bg-[#ae001a] text-white border-[#ae001a]'
-                          : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-                      }`}
-                    >
-                      {preset}m
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Critical Kitchen SLA & Shield Setting */}
-              <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3
-                      className="font-black text-white !text-white text-xs uppercase tracking-wider flex items-center gap-1.5"
-                      style={{ color: '#ffffff', fontSize: '12px', lineHeight: '1rem' }}
-                    >
-                      <span className="material-symbols-outlined text-red-500 text-sm">shield</span>
-                      Critical SLA Shield Target
-                    </h3>
-                    <p className="text-xs text-zinc-400 font-medium mt-0.5" style={{ color: '#a1a1aa' }}>
-                      Orders reaching this wait receive SLA Shield protection &amp; turn red.
-                    </p>
-                  </div>
-                  <span className="font-mono text-base font-black text-red-400 bg-red-950/60 px-2.5 py-1 rounded border border-red-500/40">
-                    {criticalSlaMinutes}m
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="60"
-                  step="1"
-                  value={criticalSlaMinutes}
-                  onChange={(e) => setCriticalSlaMinutes(Number(e.target.value))}
-                  className="w-full accent-[#ae001a] cursor-pointer"
-                />
-                <div className="flex flex-wrap gap-2">
-                  {[2, 5, 10, 15, 20, 30].map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setCriticalSlaMinutes(preset)}
-                      className={`flex-1 py-1 rounded text-xs font-bold border transition-all cursor-pointer ${
-                        criticalSlaMinutes === preset
-                          ? 'bg-[#ae001a] text-white border-[#ae001a]'
-                          : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-                      }`}
-                    >
-                      {preset}m
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Automation Toggles */}
-              <div className="bg-zinc-900/60 border border-zinc-800 p-4 rounded-xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p
-                      className="font-black text-xs text-white !text-white uppercase tracking-wider"
-                      style={{ color: '#ffffff' }}
-                    >
-                      Automated Fire on Expiration
-                    </p>
-                    <p className="text-xs text-zinc-400 font-medium mt-0.5" style={{ color: '#a1a1aa' }}>
-                      Release held dishes directly to cook line queues when pacing timer reaches zero.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAutoFireEnabled(!autoFireEnabled)}
-                    className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
-                      autoFireEnabled ? 'bg-emerald-600' : 'bg-zinc-700'
-                    }`}
-                  >
-                    <span
-                      className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform ${
-                        autoFireEnabled ? 'right-0.5' : 'left-0.5'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-zinc-800 pt-3">
-                  <div>
-                    <p
-                      className="font-black text-xs text-white !text-white uppercase tracking-wider"
-                      style={{ color: '#ffffff' }}
-                    >
-                      Kitchen Audio Chime
-                    </p>
-                    <p className="text-xs text-zinc-400 font-medium mt-0.5" style={{ color: '#a1a1aa' }}>
-                      Sound resonant double bell when courses or items are fired.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAudioChimeEnabled(!audioChimeEnabled)}
-                    className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer ${
-                      audioChimeEnabled ? 'bg-emerald-600' : 'bg-zinc-700'
-                    }`}
-                  >
-                    <span
-                      className={`w-5 h-5 rounded-full bg-white absolute top-0.5 transition-transform ${
-                        audioChimeEnabled ? 'right-0.5' : 'left-0.5'
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-
-              {/* Force Pacing Engine Now */}
-              <div className="bg-amber-950/20 border border-amber-500/30 p-4 rounded-xl space-y-2">
-                <h4
-                  className="font-black text-xs uppercase tracking-wider text-amber-300 flex items-center gap-1.5"
-                  style={{ color: '#fcd34d' }}
-                >
-                  <span className="material-symbols-outlined text-sm">bolt</span>
-                  Immediate Staging Override
-                </h4>
-                <p className="text-xs text-zinc-400" style={{ color: '#a1a1aa' }}>
-                  Instantly releases all held courses across all active tickets without waiting for timers.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleRunAutoPacingNow}
-                  className="w-full mt-2 py-2 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white font-black text-xs uppercase tracking-wider rounded transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
-                >
-                  <span className="material-symbols-outlined text-base">flash_on</span>
-                  <span>Release All Held Courses Now</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Drawer Footer */}
-            <div className="p-4 border-t border-zinc-800 bg-[#212228] flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setIsPacingDrawerOpen(false)}
-                className="w-full py-2.5 bg-[#ae001a] hover:bg-[#900015] text-white font-black text-xs uppercase tracking-wider rounded transition-colors cursor-pointer shadow-md"
-              >
-                Save &amp; Close Settings
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
+      {isPacingDrawerOpen && (
+        <KdsPacingSettingsDrawer
+          cardDensity={cardDensity}
+          mainCourseHoldDelayMins={mainCourseHoldDelayMins}
+          dessertHoldDelayMins={dessertHoldDelayMins}
+          criticalSlaMinutes={criticalSlaMinutes}
+          autoFireEnabled={autoFireEnabled}
+          audioChimeEnabled={audioChimeEnabled}
+          onDensityChange={handleDensityChange}
+          onMainCourseHoldDelayChange={setMainCourseHoldDelayMins}
+          onDessertHoldDelayChange={setDessertHoldDelayMins}
+          onCriticalSlaChange={setCriticalSlaMinutes}
+          onToggleAutoFire={() => setAutoFireEnabled(!autoFireEnabled)}
+          onToggleAudioChime={() => setAudioChimeEnabled(!audioChimeEnabled)}
+          onRunAutoPacingNow={handleRunAutoPacingNow}
+          onClose={() => setIsPacingDrawerOpen(false)}
+        />
       )}
       <KitchenRecallTray
         isOpen={isRecallTrayOpen}
@@ -4122,129 +2913,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       )}
 
       {/* Floating Allergy Protocol & Safety Detail Modal (Historia X7P-4212) */}
-      {selectedAllergyDetail && typeof document !== 'undefined' && createPortal(
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in"
-          onClick={() => setSelectedAllergyDetail(null)}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className="relative w-full max-w-md bg-[#18191e] border-2 border-red-500/80 rounded-2xl shadow-[0_0_30px_rgba(239,68,68,0.4)] overflow-hidden flex flex-col my-auto max-h-[90vh] animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-red-950 via-red-900 to-zinc-900 border-b border-red-500/40">
-              <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-red-400 text-2xl animate-bounce">
-                  emergency
-                </span>
-                <div>
-                  <div className="text-sm font-black uppercase tracking-wider text-red-100 flex items-center gap-1.5">
-                    {deviceLanguage === 'es' ? 'PROTOCOLO DE ALERGIA CRÍTICA' : 'CRITICAL ALLERGY PROTOCOL'}
-                  </div>
-                  <p className="text-[10px] text-red-300/80 font-medium">
-                    {deviceLanguage === 'es' ? selectedAllergyDetail.table.replace(/^Table\s+/i, 'Mesa ') : selectedAllergyDetail.table} • #{selectedAllergyDetail.ticketId}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedAllergyDetail(null)}
-                className="w-7 h-7 flex items-center justify-center rounded-lg bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-base">close</span>
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-5 space-y-4 overflow-y-auto">
-              {/* Target Item Name */}
-              <div className="bg-zinc-900/90 border border-zinc-800 p-3 rounded-xl flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400" style={{ color: '#a1a1aa' }}>
-                    {deviceLanguage === 'es' ? 'PLATO / ÍTEM AFECTADO:' : 'TARGET DISH / ITEM:'}
-                  </span>
-                  <div
-                    className="text-base sm:text-lg font-black text-white !text-white mt-0.5 tracking-tight"
-                    style={{ color: '#ffffff' }}
-                  >
-                    {selectedAllergyDetail.itemName}
-                  </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-black uppercase bg-red-600/30 text-red-300 border border-red-500/50">
-                  {deviceLanguage === 'es' ? selectedAllergyDetail.table.replace(/^Table\s+/i, 'Mesa ') : selectedAllergyDetail.table}
-                </span>
-              </div>
-
-              {/* Detected Allergens list */}
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-red-400 flex items-center gap-1 mb-1.5">
-                  <span className="material-symbols-outlined text-xs">warning</span>
-                  {deviceLanguage === 'es' ? 'ALÉRGENOS DETECTADOS:' : 'DETECTED ALLERGENS:'}
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedAllergyDetail.allergyTags.map((tag, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-lg text-xs font-black uppercase bg-red-950 text-red-200 border-2 border-red-500 shadow-sm flex items-center gap-1"
-                    >
-                      <span className="material-symbols-outlined text-xs text-red-400">report_problem</span>
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Full Notes & Special Instructions (descartando si solo coincide con la referencia de ticket o mesa) */}
-              {Boolean(
-                selectedAllergyDetail.rawNotes &&
-                selectedAllergyDetail.rawNotes.trim().toLowerCase() !== selectedAllergyDetail.table.trim().toLowerCase() &&
-                selectedAllergyDetail.rawNotes.trim().toLowerCase().replace(/^(?:table|mesa)\s+/i, '') !== selectedAllergyDetail.table.trim().toLowerCase().replace(/^(?:table|mesa)\s+/i, '')
-              ) && (
-                <div className="bg-zinc-900/80 border border-amber-500/30 p-3 rounded-xl">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1 mb-1">
-                    <span className="material-symbols-outlined text-xs">edit_note</span>
-                    {deviceLanguage === 'es' ? 'INSTRUCCIÓN COMPLETA DE COCINA:' : 'FULL KITCHEN INSTRUCTION:'}
-                  </span>
-                  <p className="text-xs text-zinc-200 font-medium whitespace-pre-wrap break-words leading-relaxed pl-2 border-l-2 border-amber-500/70">
-                    {deviceLanguage === 'es'
-                      ? selectedAllergyDetail.rawNotes!.replace(/\bTable\s+(\d+)/gi, 'Mesa $1')
-                      : selectedAllergyDetail.rawNotes}
-                  </p>
-                </div>
-              )}
-
-              {/* Kitchen Safety Cross-Contamination Notice */}
-              <div className="bg-red-950/40 border border-red-500/30 p-3 rounded-xl flex items-start gap-2.5">
-                <span className="material-symbols-outlined text-base text-red-400 shrink-0 mt-0.5">
-                  sanitizer
-                </span>
-                <div className="text-[10.5px] text-red-200/90 leading-snug">
-                  <strong className="block text-red-300 font-bold mb-0.5">
-                    {deviceLanguage === 'es' ? 'Medidas de Seguridad de Cocina:' : 'Kitchen Safety Notice:'}
-                  </strong>
-                  {deviceLanguage === 'es'
-                    ? 'Lavar y desinfectar superficies y utensilios. Cambiar guantes antes de manipular este pedido. Utilizar aceite y recipientes separados para evitar contacto cruzado.'
-                    : 'Wash and sanitize hands, surfaces, and cookware. Change gloves before prepping this order. Use separate oil and utensils to prevent cross-contact.'}
-                </div>
-              </div>
-            </div>
-
-            {/* Footer Action */}
-            <div className="p-3.5 bg-zinc-900 border-t border-zinc-800 flex items-center justify-end">
-              <button
-                type="button"
-                onClick={() => setSelectedAllergyDetail(null)}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer active:scale-95 shadow-lg flex items-center gap-1.5"
-              >
-                <span className="material-symbols-outlined text-sm">check</span>
-                <span>{deviceLanguage === 'es' ? 'Cerrar' : 'Close'}</span>
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
+      {selectedAllergyDetail && (
+        <KdsAllergyDetailModal
+          detail={selectedAllergyDetail}
+          language={deviceLanguage}
+          onClose={() => setSelectedAllergyDetail(null)}
+        />
       )}
 
       {/* Emergency Thermal Printer Paper Fallback Simulation Modal (Historia X7P-4211) */}

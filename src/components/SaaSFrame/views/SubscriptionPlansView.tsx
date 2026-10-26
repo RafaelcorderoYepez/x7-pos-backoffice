@@ -252,7 +252,7 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
         <button
           type="button"
           onClick={openModal}
-          className="fixed bottom-8 right-8 w-14 h-14 bg-[#ae001a] text-white rounded-full flex items-center justify-center shadow-xl hover:bg-[#930015] transition-all hover:scale-110 active:scale-95 z-50"
+          className="fixed bottom-32 right-8 w-14 h-14 bg-[#ae001a] text-white rounded-full flex items-center justify-center shadow-xl hover:bg-[#930015] transition-all hover:scale-110 active:scale-95 z-50"
           title="New Plan"
         >
           <span className="material-symbols-outlined text-2xl">add</span>
@@ -529,7 +529,7 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
       <button
         type="button"
         onClick={openModal}
-        className="fixed bottom-8 right-8 w-14 h-14 bg-[#ae001a] text-white rounded-full flex items-center justify-center shadow-xl hover:bg-[#930015] transition-all hover:scale-110 active:scale-95 z-50"
+        className="fixed bottom-32 right-8 w-14 h-14 bg-[#ae001a] text-white rounded-full flex items-center justify-center shadow-xl hover:bg-[#930015] transition-all hover:scale-110 active:scale-95 z-50"
         title="New Plan"
       >
         <span className="material-symbols-outlined text-2xl">add</span>

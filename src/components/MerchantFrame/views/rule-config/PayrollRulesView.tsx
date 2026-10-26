@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   MerchantPayrollRule,
   PayrollFrequency,
@@ -8,8 +7,7 @@ import type {
   UpdatePayrollRuleDto,
 } from '../../../../types/configuration';
 import { RuleConfigQuickLinks } from './RuleConfigQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 function formatPayrollSchedule(rule: MerchantPayrollRule): string {
   const dayOfWeek = rule.payDayOfWeek != null ? Number(rule.payDayOfWeek) : null;
@@ -482,25 +480,11 @@ export const PayrollRulesView: React.FC<PayrollRulesViewProps> = ({ onNavigate }
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`${API_BASE}/merchant-payroll-rule?limit=100`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading payroll rules');
-      }
-
-      const json = await res.json();
+      const json = await apiRequest<{ data?: MerchantPayrollRule[] }>(
+        '/merchant-payroll-rule?limit=100',
+        { method: 'GET' },
+        'Error loading payroll rules',
+      );
       setRules(json.data ?? []);
     } catch (err) {
       console.error('Error fetching payroll rules:', err);
@@ -558,26 +542,11 @@ export const PayrollRulesView: React.FC<PayrollRulesViewProps> = ({ onNavigate }
   const handleCreateSubmit = async (dto: CreatePayrollRuleDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-payroll-rule`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to create payroll rule');
-      }
+      const json = await apiRequest<{ data: MerchantPayrollRule }>(
+        '/merchant-payroll-rule',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to create payroll rule',
+      );
 
       setRules((prev) => [json.data, ...prev]);
       setFormModalOpen(null);
@@ -593,26 +562,11 @@ export const PayrollRulesView: React.FC<PayrollRulesViewProps> = ({ onNavigate }
   const handleEditSubmit = async (ruleId: number, dto: UpdatePayrollRuleDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-payroll-rule/${ruleId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to update payroll rule');
-      }
+      const json = await apiRequest<{ data: MerchantPayrollRule }>(
+        `/merchant-payroll-rule/${ruleId}`,
+        { method: 'PATCH', body: JSON.stringify(dto) },
+        'Failed to update payroll rule',
+      );
 
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
       setFormModalOpen(null);
@@ -627,22 +581,11 @@ export const PayrollRulesView: React.FC<PayrollRulesViewProps> = ({ onNavigate }
 
   const handleRowClick = async (ruleId: number) => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-payroll-rule/${ruleId}`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to load payroll rule details');
-      }
+      const json = await apiRequest<{ data: MerchantPayrollRule }>(
+        `/merchant-payroll-rule/${ruleId}`,
+        { method: 'GET' },
+        'Failed to load payroll rule details',
+      );
 
       setDetailRule(json.data);
     } catch (err: unknown) {
@@ -655,26 +598,11 @@ export const PayrollRulesView: React.FC<PayrollRulesViewProps> = ({ onNavigate }
     const nextStatus: 'active' | 'inactive' = togglingRule.status === 'active' ? 'inactive' : 'active';
     setToggleSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-payroll-rule/${togglingRule.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ status: nextStatus }),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to update payroll rule status');
-      }
+      const json = await apiRequest<{ data: MerchantPayrollRule }>(
+        `/merchant-payroll-rule/${togglingRule.id}`,
+        { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) },
+        'Failed to update payroll rule status',
+      );
 
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
       setTogglingRule(null);

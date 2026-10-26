@@ -8,8 +8,7 @@
 // el DTO tumba la petición con un 400: los cuerpos se construyen explícitos, nunca a base de
 // esparcir el estado del formulario.
 
-import { getAccessToken, clearAuthSession } from '../lib/auth-storage';
-import { ApiError, getApiErrorDetails } from '../lib/api-error';
+import { apiRequest } from './http';
 import type {
   CustomerRef,
   Reservation,
@@ -28,8 +27,6 @@ import type {
 } from '../lib/reservation-capacity';
 import { normalizeGuestPhone } from '../lib/reservation-guests';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
 // El tope de `limit` del DTO de consulta es 100 en todo el backend: pedir más devuelve un 400
 // "limit must not be greater than 100".
 export const MAX_PAGE_LIMIT = 100;
@@ -41,41 +38,6 @@ interface Envelope<T> {
   total?: number;
   totalPages?: number;
   hasNext?: boolean;
-}
-
-function authHeaders(includeJson = false): Record<string, string> {
-  const token = getAccessToken();
-  return {
-    Accept: 'application/json',
-    ...(includeJson ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
-async function request<T>(
-  path: string,
-  init: RequestInit,
-  fallbackMessage: string,
-): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: { ...authHeaders(Boolean(init.body)), ...init.headers },
-  });
-
-  if (response.status === 401) {
-    clearAuthSession();
-    window.location.href = '/login';
-    throw new ApiError('Unauthorized', 401);
-  }
-
-  if (!response.ok) {
-    const { message, code } = await getApiErrorDetails(response, fallbackMessage);
-    throw new ApiError(message, response.status, code);
-  }
-
-  const text = await response.text();
-  if (!text.trim()) return undefined as T;
-  return JSON.parse(text) as T;
 }
 
 export interface ReservationQuery {
@@ -105,7 +67,7 @@ export async function listReservations(
   params.set('page', String(query.page ?? 1));
   params.set('limit', String(Math.min(query.limit ?? MAX_PAGE_LIMIT, MAX_PAGE_LIMIT)));
 
-  const json = await request<Envelope<Reservation[]>>(
+  const json = await apiRequest<Envelope<Reservation[]>>(
     `/reservation?${params.toString()}`,
     { method: 'GET' },
     'Failed to load reservations. Please try again.',
@@ -137,7 +99,7 @@ export async function createReservation(draft: ReservationDraft): Promise<Reserv
     };
   }
 
-  const json = await request<Envelope<Reservation>>(
+  const json = await apiRequest<Envelope<Reservation>>(
     '/reservation',
     { method: 'POST', body: JSON.stringify(body) },
     'Failed to create the reservation.',
@@ -150,7 +112,7 @@ export async function updateReservation(
   id: number,
   patch: Partial<ReservationDraft> & { seated_at?: string; manager_override?: ManagerOverride },
 ): Promise<Reservation> {
-  const json = await request<Envelope<Reservation>>(
+  const json = await apiRequest<Envelope<Reservation>>(
     `/reservation/${id}`,
     { method: 'PATCH', body: JSON.stringify(patch) },
     'Failed to update the reservation.',
@@ -160,7 +122,7 @@ export async function updateReservation(
 
 // Anular tiene endpoint propio (deja rastro en el histórico de estados con un solo viaje).
 export async function cancelReservation(id: number): Promise<Reservation> {
-  const json = await request<Envelope<Reservation>>(
+  const json = await apiRequest<Envelope<Reservation>>(
     `/reservation/${id}/cancel`,
     { method: 'PATCH' },
     'Failed to cancel the reservation.',
@@ -170,7 +132,7 @@ export async function cancelReservation(id: number): Promise<Reservation> {
 
 // DELETE es un borrado LÓGICO (is_active = false) que arrastra mesas, invitados y notas.
 export async function deleteReservation(id: number): Promise<void> {
-  await request<Envelope<Reservation>>(
+  await apiRequest<Envelope<Reservation>>(
     `/reservation/${id}`,
     { method: 'DELETE' },
     'Failed to delete the reservation.',
@@ -196,7 +158,7 @@ export async function createReservationGuest(payload: {
   const phone = normalizeGuestPhone(payload.phone ?? '');
   if (phone) body.phone = phone;
 
-  await request<Envelope<unknown>>(
+  await apiRequest<Envelope<unknown>>(
     '/reservation-guest',
     { method: 'POST', body: JSON.stringify(body) },
     'The reservation was saved, but the guest contact could not be attached.',
@@ -207,7 +169,7 @@ export async function createReservationGuest(payload: {
 // comercio — el servicio hace un find() sin scope. El filtrado por merchant se hace aquí, o el
 // autocompletado ofrecería clientes de otros locales.
 export async function listCustomers(merchantId?: number): Promise<CustomerRef[]> {
-  const json = await request<CustomerRef[] | Envelope<CustomerRef[]>>(
+  const json = await apiRequest<CustomerRef[] | Envelope<CustomerRef[]>>(
     '/customers',
     { method: 'GET' },
     'Failed to load the customer directory.',
@@ -232,7 +194,7 @@ export async function createCustomer(payload: {
   const body: Record<string, unknown> = { ...payload };
   if (!payload.phone?.trim()) delete body.phone;
 
-  const json = await request<CustomerRef | Envelope<CustomerRef>>(
+  const json = await apiRequest<CustomerRef | Envelope<CustomerRef>>(
     '/customers',
     { method: 'POST', body: JSON.stringify(body) },
     'Failed to create the customer profile.',
@@ -244,7 +206,7 @@ export async function createCustomer(payload: {
 export async function listTablesForCapacity(): Promise<
   Array<{ id: number; number: string; capacity: number; status: string }>
 > {
-  const json = await request<Envelope<Array<{ id: number; number: string; capacity: number; status: string }>>>(
+  const json = await apiRequest<Envelope<Array<{ id: number; number: string; capacity: number; status: string }>>>(
     `/tables?limit=${MAX_PAGE_LIMIT}`,
     { method: 'GET' },
     'Failed to load the table inventory.',
@@ -266,7 +228,7 @@ export async function assignTables(
   reservationId: number,
   tableIds: number[],
 ): Promise<ReservationTableLink[]> {
-  const json = await request<Envelope<ReservationTableLink[]>>(
+  const json = await apiRequest<Envelope<ReservationTableLink[]>>(
     '/reservation-table/bulk',
     {
       method: 'POST',
@@ -283,7 +245,7 @@ export async function unassignTable(
   reservationId: number,
   tableId: number,
 ): Promise<void> {
-  await request<Envelope<ReservationTableLink>>(
+  await apiRequest<Envelope<ReservationTableLink>>(
     `/reservation-table/${reservationId}/${tableId}`,
     { method: 'DELETE' },
     'Failed to release the table.',
@@ -297,7 +259,7 @@ export async function listReservationTables(
   const params = new URLSearchParams({ limit: String(MAX_PAGE_LIMIT) });
   if (reservationId) params.set('reservation_id', String(reservationId));
 
-  const json = await request<Envelope<ReservationTableLink[]>>(
+  const json = await apiRequest<Envelope<ReservationTableLink[]>>(
     `/reservation-table?${params.toString()}`,
     { method: 'GET' },
     'Failed to load the table assignments.',
@@ -312,7 +274,7 @@ export async function createReservationNote(
   reservationId: number,
   note: string,
 ): Promise<ReservationNote> {
-  const json = await request<Envelope<ReservationNote>>(
+  const json = await apiRequest<Envelope<ReservationNote>>(
     '/reservation-note',
     {
       method: 'POST',
@@ -327,7 +289,7 @@ export async function updateReservationNote(
   id: number,
   note: string,
 ): Promise<ReservationNote> {
-  const json = await request<Envelope<ReservationNote>>(
+  const json = await apiRequest<Envelope<ReservationNote>>(
     `/reservation-note/${id}`,
     { method: 'PATCH', body: JSON.stringify({ note: note.trim() }) },
     'Failed to update the note.',
@@ -337,7 +299,7 @@ export async function updateReservationNote(
 
 // Borrado lógico: la nota deja de listarse pero el histórico del servicio la conserva.
 export async function deleteReservationNote(id: number): Promise<void> {
-  await request<Envelope<ReservationNote>>(
+  await apiRequest<Envelope<ReservationNote>>(
     `/reservation-note/${id}`,
     { method: 'DELETE' },
     'Failed to remove the note.',
@@ -349,7 +311,7 @@ export async function deleteReservationNote(id: number): Promise<void> {
 export async function listStaff(): Promise<
   Array<{ id: number; user_id?: number; name?: string; role?: string }>
 > {
-  const json = await request<Envelope<Array<{ id: number; user_id?: number; name?: string; role?: string }>>>(
+  const json = await apiRequest<Envelope<Array<{ id: number; user_id?: number; name?: string; role?: string }>>>(
     `/collaborators?limit=${MAX_PAGE_LIMIT}`,
     { method: 'GET' },
     'Failed to load the staff directory.',
@@ -379,7 +341,7 @@ export async function createGuest(draft: GuestDraft): Promise<ReservationGuest> 
   if (phone) body.phone = phone;
   if (draft.is_primary != null) body.is_primary = draft.is_primary;
 
-  const json = await request<Envelope<ReservationGuest>>(
+  const json = await apiRequest<Envelope<ReservationGuest>>(
     '/reservation-guest',
     { method: 'POST', body: JSON.stringify(body) },
     'Failed to add the guest.',
@@ -398,7 +360,7 @@ export async function updateGuest(
   if (patch.phone != null) body.phone = normalizeGuestPhone(patch.phone);
   if (patch.is_primary != null) body.is_primary = patch.is_primary;
 
-  const json = await request<Envelope<ReservationGuest>>(
+  const json = await apiRequest<Envelope<ReservationGuest>>(
     `/reservation-guest/${id}`,
     { method: 'PATCH', body: JSON.stringify(body) },
     'Failed to update the guest.',
@@ -409,7 +371,7 @@ export async function updateGuest(
 // Baja lógica (is_active = false). Si el que se va era el principal, el servidor eleva al
 // siguiente del roster en la misma transacción.
 export async function removeGuest(id: number): Promise<void> {
-  await request<Envelope<ReservationGuest>>(
+  await apiRequest<Envelope<ReservationGuest>>(
     `/reservation-guest/${id}`,
     { method: 'DELETE' },
     'Failed to remove the guest.',
@@ -422,7 +384,7 @@ export async function searchGuests(term: string): Promise<ReservationGuest[]> {
   const params = new URLSearchParams({ limit: String(MAX_PAGE_LIMIT) });
   if (term.trim()) params.set('search', term.trim());
 
-  const json = await request<Envelope<ReservationGuest[]>>(
+  const json = await apiRequest<Envelope<ReservationGuest[]>>(
     `/reservation-guest?${params.toString()}`,
     { method: 'GET' },
     'Failed to search the guest roster.',
@@ -445,7 +407,7 @@ async function fetchAllHistoryPages(
   params.set('limit', String(MAX_PAGE_LIMIT));
   for (let page = 1; page <= MAX_HISTORY_PAGES; page += 1) {
     params.set('page', String(page));
-    const json = await request<Envelope<StatusHistoryFeedEntry[]>>(
+    const json = await apiRequest<Envelope<StatusHistoryFeedEntry[]>>(
       `${path}?${params.toString()}`,
       { method: 'GET' },
       fallbackMessage,
@@ -501,7 +463,7 @@ export async function getAvailability(query: {
   if (query.excludeReservationId) {
     params.set('exclude_reservation_id', String(query.excludeReservationId));
   }
-  const json = await request<Envelope<DayAvailability>>(
+  const json = await apiRequest<Envelope<DayAvailability>>(
     `/reservation-capacity/availability?${params.toString()}`,
     { method: 'GET' },
     'Failed to load slot availability.',
@@ -510,7 +472,7 @@ export async function getAvailability(query: {
 }
 
 export async function getCapacitySettings(): Promise<CapacitySettings> {
-  const json = await request<Envelope<CapacitySettings>>(
+  const json = await apiRequest<Envelope<CapacitySettings>>(
     '/reservation-capacity/settings',
     { method: 'GET' },
     'Failed to load the capacity settings.',
@@ -525,7 +487,7 @@ export async function updateCapacitySettings(payload: {
   max_covers_per_slot: number | null;
   shifts: Array<{ name: string; start: string; end: string }>;
 }): Promise<CapacitySettings> {
-  const json = await request<Envelope<CapacitySettings>>(
+  const json = await apiRequest<Envelope<CapacitySettings>>(
     '/reservation-capacity/settings',
     { method: 'PUT', body: JSON.stringify(payload) },
     'Failed to save the capacity settings.',
