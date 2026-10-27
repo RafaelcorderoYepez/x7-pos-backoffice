@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   OnlineMenuSetupDrawer,
   type OnlineMenuFormData,
@@ -1236,8 +1237,8 @@ export const OnlineMenusView: React.FC<OnlineMenusViewProps> = () => {
       />
 
       {/* Delete / Soft-Delete Confirmation Modal (Agreed standard pattern) */}
-      {isDeleteModalOpen && menuToDelete && (
-        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
+      {isDeleteModalOpen && menuToDelete && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans" role="dialog" aria-modal="true">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
@@ -1302,7 +1303,8 @@ export const OnlineMenusView: React.FC<OnlineMenusViewProps> = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

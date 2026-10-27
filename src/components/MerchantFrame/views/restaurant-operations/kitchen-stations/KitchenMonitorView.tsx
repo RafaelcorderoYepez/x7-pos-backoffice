@@ -398,7 +398,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   useEffect(() => {
     getQueuedActions()
       .then((q) => setQueuedActionsCount(q.length))
-      .catch(() => {});
+      .catch(() => { });
 
     let isMounted = true;
 
@@ -536,11 +536,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           const updatedItems = t.items.map((item) =>
             item.course === course && item.preparationStatus === 'HELD'
               ? {
-                  ...item,
-                  preparationStatus: 'IN_PREPARATION' as PreparationStatus,
-                  holdRemainingSeconds: 0,
-                  firedAt: new Date().toISOString(),
-                }
+                ...item,
+                preparationStatus: 'IN_PREPARATION' as PreparationStatus,
+                holdRemainingSeconds: 0,
+                firedAt: new Date().toISOString(),
+              }
               : item
           );
           return {
@@ -685,17 +685,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       const next = prev.map((t) =>
         t.id === ticketId
           ? {
-              ...t,
-              items: t.items.map((i) =>
-                i.id === itemId
-                  ? {
-                      ...i,
-                      preparationStatus: targetStatus as PreparationStatus,
-                      holdRemainingSeconds: isStagedCourse ? delayMins * 60 : undefined,
-                    }
-                  : i
-              ),
-            }
+            ...t,
+            items: t.items.map((i) =>
+              i.id === itemId
+                ? {
+                  ...i,
+                  preparationStatus: targetStatus as PreparationStatus,
+                  holdRemainingSeconds: isStagedCourse ? delayMins * 60 : undefined,
+                }
+                : i
+            ),
+          }
           : t
       );
       cacheTicketsLocally(next);
@@ -1334,29 +1334,29 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       stationRerouteStatuses.length > 0
         ? stationRerouteStatuses
         : kitchenStations.map((st) => ({
-            stationId: st.id,
-            stationName: st.name,
-            stationNumber: st.display_order ?? st.displayOrder ?? st.id,
-            stationType: st.station_type ?? st.stationType ?? 'OTHER',
-            displayMode: st.display_mode ?? st.displayMode ?? 'GRID',
-            backupStationId: null,
-            backupStationName: null,
-            maxActiveTicketsCapacity: 15,
-            activeTicketsCount: 0,
-            isCapacityOverflow: false,
-            devicesCount: 1,
-            onlineDevicesCount: isOffline ? 0 : 1,
-            isDevicesOffline: isOffline && offlineSeconds >= 60,
-            printerName: 'Thermal Kitchen Printer #1',
-            autoRerouteOnOffline: true,
-            autoRerouteOnCapacity: true,
-            fallbackAction: 'BOTH',
-            isFallbackActive: isOffline && offlineSeconds >= 60,
-            fallbackReason:
-              isOffline && offlineSeconds >= 60
-                ? ('DEVICES_OFFLINE' as const)
-                : ('NONE' as const),
-          }));
+          stationId: st.id,
+          stationName: st.name,
+          stationNumber: st.display_order ?? st.displayOrder ?? st.id,
+          stationType: st.station_type ?? st.stationType ?? 'OTHER',
+          displayMode: st.display_mode ?? st.displayMode ?? 'GRID',
+          backupStationId: null,
+          backupStationName: null,
+          maxActiveTicketsCapacity: 15,
+          activeTicketsCount: 0,
+          isCapacityOverflow: false,
+          devicesCount: 1,
+          onlineDevicesCount: isOffline ? 0 : 1,
+          isDevicesOffline: isOffline && offlineSeconds >= 60,
+          printerName: 'Thermal Kitchen Printer #1',
+          autoRerouteOnOffline: true,
+          autoRerouteOnCapacity: true,
+          fallbackAction: 'BOTH',
+          isFallbackActive: isOffline && offlineSeconds >= 60,
+          fallbackReason:
+            isOffline && offlineSeconds >= 60
+              ? ('DEVICES_OFFLINE' as const)
+              : ('NONE' as const),
+        }));
 
     if (!isOffline || offlineSeconds < 60) {
       return baseStatuses;
@@ -1390,7 +1390,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
   const activeStationStatus =
     resolvedStation.id !== 'ALL' && typeof resolvedStation.id === 'number'
       ? effectiveStationRerouteStatuses.find((s) => s.stationId === resolvedStation.id) ||
-        null
+      null
       : failingStations[0] || effectiveStationRerouteStatuses.find((s) => s.isFallbackActive) || null;
 
   const hasOfflineStations = effectiveStationRerouteStatuses.some(
@@ -1657,19 +1657,18 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
     const cardWidthClass = isFullWidth
       ? 'w-full h-full'
       : isCompact
-      ? 'w-64 h-full max-h-[85vh] flex-shrink-0'
-      : isSpacious
-      ? 'w-80 h-full max-h-[85vh] flex-shrink-0'
-      : 'w-72 h-full max-h-[85vh] flex-shrink-0';
+        ? 'w-64 h-full max-h-[85vh] flex-shrink-0'
+        : isSpacious
+          ? 'w-80 h-full max-h-[85vh] flex-shrink-0'
+          : 'w-72 h-full max-h-[85vh] flex-shrink-0';
 
     return (
       <div
         key={ticket.id}
-        className={`${cardWidthClass} bg-[#1a1b20] border-t-4 ${pColors.border} border-x border-b border-zinc-800 rounded-xl flex flex-col shadow-2xl transition-all duration-300 ${
-          ticket.isPulsing
+        className={`${cardWidthClass} bg-[#1a1b20] border-t-4 ${pColors.border} border-x border-b border-zinc-800 rounded-xl flex flex-col shadow-2xl transition-all duration-300 ${ticket.isPulsing
             ? 'ring-4 ring-amber-500 bg-amber-950/30 animate-pulse shadow-amber-500/50'
             : 'hover:border-zinc-700'
-        }`}
+          }`}
       >
         {/* Ticket Header Card */}
         <div className={`${isCompact ? 'p-2' : 'p-2.5'} border-b border-zinc-800 bg-[#212228] rounded-t-lg flex justify-between items-start shrink-0`}>
@@ -1728,11 +1727,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   s.stationId === ticket.stationId ||
                   s.stationName === ticket.stationName,
               )?.isCapacityOverflow && (
-                <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-amber-600/30 text-amber-300 border border-amber-500/50 flex items-center gap-0.5 animate-pulse">
-                  <span className="material-symbols-outlined text-[9px]">warning</span>
-                  {deviceLanguage === 'es' ? 'SOBRECUPO' : 'OVERFLOW'}
-                </span>
-              )}
+                  <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-amber-600/30 text-amber-300 border border-amber-500/50 flex items-center gap-0.5 animate-pulse">
+                    <span className="material-symbols-outlined text-[9px]">warning</span>
+                    {deviceLanguage === 'es' ? 'SOBRECUPO' : 'OVERFLOW'}
+                  </span>
+                )}
             </div>
             <p className={`${isCompact ? 'text-[9px]' : 'text-[10px]'} font-semibold mt-0.5 text-zinc-400 truncate`}>
               #{ticket.id} • {getLocalizedStationName(ticket.stationName || 'Line', deviceLanguage)}{ticket.server && ticket.server !== 'Kitchen Staff' ? ` • ${ticket.server}` : ''}
@@ -1755,13 +1754,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
           <div className="text-right shrink-0">
             <p
-              className={`font-mono font-black ${isCompact ? 'text-sm' : 'text-base'} leading-tight ${
-                ticket.timeElapsed >= 12
+              className={`font-mono font-black ${isCompact ? 'text-sm' : 'text-base'} leading-tight ${ticket.timeElapsed >= 12
                   ? 'text-red-400 animate-pulse'
                   : ticket.timeElapsed >= 8
-                  ? 'text-amber-400'
-                  : 'text-emerald-400'
-              }`}
+                    ? 'text-amber-400'
+                    : 'text-emerald-400'
+                }`}
             >
               {ticket.timeElapsed}m
             </p>
@@ -1844,29 +1842,27 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                       return (
                         <div
                           key={item.id}
-                          className={`group relative rounded-lg ${isCompact ? 'p-1.5' : 'p-2'} transition-all duration-200 border shadow-xs ${
-                            isHeld
+                          className={`group relative rounded-lg ${isCompact ? 'p-1.5' : 'p-2'} transition-all duration-200 border shadow-xs ${isHeld
                               ? 'bg-amber-950/25 border-dashed border-amber-500/50 backdrop-blur-xs'
                               : isReady
-                              ? 'bg-emerald-950/30 border-emerald-500/40'
-                              : isInPrep
-                              ? 'bg-blue-950/30 border-blue-500/50 hover:border-blue-400'
-                              : 'bg-zinc-800/80 border-zinc-700/70 hover:border-amber-500/50 hover:bg-zinc-800'
-                          }`}
+                                ? 'bg-emerald-950/30 border-emerald-500/40'
+                                : isInPrep
+                                  ? 'bg-blue-950/30 border-blue-500/50 hover:border-blue-400'
+                                  : 'bg-zinc-800/80 border-zinc-700/70 hover:border-amber-500/50 hover:bg-zinc-800'
+                            }`}
                         >
                           <div className="flex items-start justify-between gap-1.5">
                             {/* Left: Quantity Badge + Dish Info */}
                             <div className="flex items-start gap-2 flex-1 min-w-0">
                               <span
-                                className={`${isCompact ? 'w-5 h-5 text-[10px]' : 'w-6 h-6 text-[11px]'} rounded-md flex items-center justify-center font-mono font-black shrink-0 shadow-xs ${
-                                  isHeld
+                                className={`${isCompact ? 'w-5 h-5 text-[10px]' : 'w-6 h-6 text-[11px]'} rounded-md flex items-center justify-center font-mono font-black shrink-0 shadow-xs ${isHeld
                                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                                     : isReady
-                                    ? 'bg-emerald-500 text-white shadow-emerald-950/50'
-                                    : isInPrep
-                                    ? 'bg-blue-500 text-white shadow-blue-950/50'
-                                    : 'bg-zinc-700 text-zinc-200 border border-zinc-500/80'
-                                }`}
+                                      ? 'bg-emerald-500 text-white shadow-emerald-950/50'
+                                      : isInPrep
+                                        ? 'bg-blue-500 text-white shadow-blue-950/50'
+                                        : 'bg-zinc-700 text-zinc-200 border border-zinc-500/80'
+                                  }`}
                                 title={`Qty: ${item.qty}`}
                               >
                                 {item.qty}
@@ -1875,9 +1871,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-1.5 flex-wrap">
                                   <span
-                                    className={`${isCompact ? 'text-[11px]' : 'text-xs'} font-bold tracking-tight leading-snug break-words ${
-                                      isReady ? 'text-emerald-300/60 line-through' : 'text-white'
-                                    }`}
+                                    className={`${isCompact ? 'text-[11px]' : 'text-xs'} font-bold tracking-tight leading-snug break-words ${isReady ? 'text-emerald-300/60 line-through' : 'text-white'
+                                      }`}
                                     style={{ color: isReady ? '#a7f3d0' : '#ffffff' }}
                                   >
                                     {getLocalizedDishName(item.name, deviceLanguage)}
@@ -2087,9 +2082,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 shrink">
           <div className="flex items-center gap-1.5 shrink-0">
             <span
-              className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full ${
-                isOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-ping'
-              }`}
+              className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full ${isOffline ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-ping'
+                }`}
             ></span>
             <span className="material-symbols-outlined text-[#ae001a] text-lg sm:text-2xl">table_restaurant</span>
           </div>
@@ -2099,12 +2093,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 {activeKdsView === 'EXPO'
                   ? (deviceLanguage === 'es' ? 'MONITOR KDS EXPEDITER' : 'EXPEDITER KDS DISPLAY')
                   : activeDisplayMode === 'SUMMARY'
-                  ? (deviceLanguage === 'es' ? 'RESUMEN DE PRODUCCIÓN KDS' : 'KDS PRODUCTION SUMMARY')
-                  : activeDisplayMode === 'MANUAL'
-                  ? (deviceLanguage === 'es' ? 'COLA MANUAL KDS' : 'KDS MANUAL QUEUE')
-                  : activeDisplayMode === 'AUTO'
-                  ? (deviceLanguage === 'es' ? 'LÍNEA AUTO-DESPACHO KDS' : 'KDS AUTO-DISPATCH LINE')
-                  : (deviceLanguage === 'es' ? 'MATRIZ CUADRÍCULA KDS' : 'KDS GRID MATRIX')}
+                    ? (deviceLanguage === 'es' ? 'RESUMEN DE PRODUCCIÓN KDS' : 'KDS PRODUCTION SUMMARY')
+                    : activeDisplayMode === 'MANUAL'
+                      ? (deviceLanguage === 'es' ? 'COLA MANUAL KDS' : 'KDS MANUAL QUEUE')
+                      : activeDisplayMode === 'AUTO'
+                        ? (deviceLanguage === 'es' ? 'LÍNEA AUTO-DESPACHO KDS' : 'KDS AUTO-DISPATCH LINE')
+                        : (deviceLanguage === 'es' ? 'MATRIZ CUADRÍCULA KDS' : 'KDS GRID MATRIX')}
               </span>
             </h1>
             <p className="text-[10px] text-zinc-300 font-bold hidden 2xl:block truncate max-w-[220px]" style={{ color: '#d4d4d8' }}>
@@ -2122,14 +2116,13 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                 queuedActionsCount > 0
                   ? `${queuedActionsCount} local action(s) stored in IndexedDB`
                   : offlineSeconds >= 60
-                  ? 'All terminals offline >60s: Local hardware fallback engaged'
-                  : 'Working locally - Monitoring offline timer'
+                    ? 'All terminals offline >60s: Local hardware fallback engaged'
+                    : 'Working locally - Monitoring offline timer'
               }
-              className={`flex items-center h-8 gap-1 px-2 border rounded-lg text-xs font-bold shadow-xs animate-pulse shrink-0 ${
-                offlineSeconds >= 60
+              className={`flex items-center h-8 gap-1 px-2 border rounded-lg text-xs font-bold shadow-xs animate-pulse shrink-0 ${offlineSeconds >= 60
                   ? 'bg-red-500/20 border-red-500/80 text-red-300'
                   : 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-              }`}
+                }`}
             >
               <span className={`material-symbols-outlined text-sm ${offlineSeconds >= 60 ? 'text-red-400' : 'text-amber-400'}`}>
                 {offlineSeconds >= 60 ? 'portable_wifi_off' : 'cloud_off'}
@@ -2191,11 +2184,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 1. EXPO (All Stations Master View) */}
             <button
               onClick={() => handleViewSwitch('EXPO')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'EXPO'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'EXPO'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Expediter Master Display: All kitchen stations unified in real-time pass"
             >
               <span className="material-symbols-outlined text-sm">room_service</span>
@@ -2205,11 +2197,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 2. AUTO DISPATCH */}
             <button
               onClick={() => handleViewSwitch('AUTO')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'AUTO'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'AUTO'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Auto Dispatch Mode: Fast-track cooking line with 1-touch auto bump"
             >
               <span className="material-symbols-outlined text-sm">bolt</span>
@@ -2219,11 +2210,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 3. MANUAL QUEUE */}
             <button
               onClick={() => handleViewSwitch('MANUAL')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'MANUAL'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'MANUAL'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Manual Queue Mode: 1-by-1 focus card with FIFO backlog queue"
             >
               <span className="material-symbols-outlined text-sm">queue</span>
@@ -2233,11 +2223,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 4. SUMMARY VIEW */}
             <button
               onClick={() => handleViewSwitch('SUMMARY')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'SUMMARY'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'SUMMARY'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Summary View: Aggregated production batch quantities (Bakery / Mass Prep)"
             >
               <span className="material-symbols-outlined text-sm">summarize</span>
@@ -2247,11 +2236,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             {/* 5. GRID MATRIX */}
             <button
               onClick={() => handleViewSwitch('GRID')}
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${
-                activeKdsView === 'GRID'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black transition-all cursor-pointer ${activeKdsView === 'GRID'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
               title="Grid Matrix Mode: Classic multi-ticket station board with SLA timers"
             >
               <span className="material-symbols-outlined text-sm">grid_view</span>
@@ -2265,11 +2253,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               type="button"
               onClick={() => handleDensityChange('compact')}
               title="Compact Cards (Fits 4-6 on screen)"
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
-                cardDensity === 'compact'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${cardDensity === 'compact'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
             >
               <span className="material-symbols-outlined text-sm">density_small</span>
             </button>
@@ -2277,11 +2264,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               type="button"
               onClick={() => handleDensityChange('normal')}
               title="Normal Cards (Balanced)"
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
-                cardDensity === 'normal'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${cardDensity === 'normal'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
             >
               <span className="material-symbols-outlined text-sm">density_medium</span>
             </button>
@@ -2289,11 +2275,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               type="button"
               onClick={() => handleDensityChange('spacious')}
               title="Wide Cards (Large touch display)"
-              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${
-                cardDensity === 'spacious'
+              className={`flex items-center justify-center h-full gap-1 px-1.5 rounded-md font-black text-[10px] uppercase transition-all cursor-pointer ${cardDensity === 'spacious'
                   ? 'bg-[#ae001a] text-white shadow-xs'
                   : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+                }`}
             >
               <span className="material-symbols-outlined text-sm">density_large</span>
             </button>
@@ -2307,11 +2292,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               if (!audioChimeEnabled) playKitchenFireChime();
             }}
             title={audioChimeEnabled ? 'Audio Chime Enabled' : 'Audio Chime Muted'}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer shrink-0 ${
-              audioChimeEnabled
+            className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer shrink-0 ${audioChimeEnabled
                 ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-xs'
                 : 'bg-zinc-800 text-zinc-500 border-zinc-700'
-            }`}
+              }`}
           >
             <span className="material-symbols-outlined text-base">
               {audioChimeEnabled ? 'notifications_active' : 'notifications_off'}
@@ -2323,17 +2307,15 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             <button
               type="button"
               onClick={() => setIsAllDayBarExpanded((prev) => !prev)}
-              className={`h-8 px-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1 border cursor-pointer shadow-xs shrink-0 ${
-                isAllDayBarExpanded
+              className={`h-8 px-2 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1 border cursor-pointer shadow-xs shrink-0 ${isAllDayBarExpanded
                   ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
                   : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-              }`}
+                }`}
               title="Toggle All-Day Aggregated Prep Bar"
             >
               <span className="material-symbols-outlined text-sm">skillet</span>
-              <span className={`px-1 py-0.1 rounded-full text-[9px] font-black ${
-                allDaySummary.totalNeededCount > 0 ? 'bg-amber-500 text-black' : 'bg-zinc-700 text-zinc-300'
-              }`}>
+              <span className={`px-1 py-0.1 rounded-full text-[9px] font-black ${allDaySummary.totalNeededCount > 0 ? 'bg-amber-500 text-black' : 'bg-zinc-700 text-zinc-300'
+                }`}>
                 {allDaySummary.totalNeededCount}
               </span>
             </button>
@@ -2363,19 +2345,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
           <button
             type="button"
             onClick={() => setIsRerouteModalOpen(true)}
-            className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center border cursor-pointer shadow-xs shrink-0 relative ${
-              hasOfflineStations || hasCapacityOverflowStations
+            className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center border cursor-pointer shadow-xs shrink-0 relative ${hasOfflineStations || hasCapacityOverflowStations
                 ? 'bg-red-500/20 text-red-300 border-red-500/60 ring-2 ring-red-500/40 animate-pulse'
                 : 'bg-zinc-800 hover:bg-zinc-700 text-white border-zinc-700'
-            }`}
+              }`}
             title="Configure Station Fallback Routes, Load Balancing & Thermal Printer Fallback"
           >
             <span
-              className={`material-symbols-outlined text-base ${
-                hasOfflineStations || hasCapacityOverflowStations
+              className={`material-symbols-outlined text-base ${hasOfflineStations || hasCapacityOverflowStations
                   ? 'text-red-400'
                   : 'text-amber-400'
-              }`}
+                }`}
             >
               alt_route
             </span>
@@ -2422,11 +2402,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               <button
                 key={course}
                 onClick={() => setActiveCourseFilter(course)}
-                className={`px-3 py-1 rounded text-xs font-black tracking-wider uppercase transition-all cursor-pointer whitespace-nowrap ${
-                  isActive
+                className={`px-3 py-1 rounded text-xs font-black tracking-wider uppercase transition-all cursor-pointer whitespace-nowrap ${isActive
                     ? 'bg-[#ae001a] text-white shadow-xs'
                     : 'bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700'
-                }`}
+                  }`}
               >
                 {course === 'ALL'
                   ? (deviceLanguage === 'es' ? 'TODOS' : 'ALL COURSES')
@@ -2605,13 +2584,12 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
       {/* 4. Main KDS Workspace Cards Staging Grid */}
       <main
-        className={`flex-1 px-4 py-2 ${
-          activeDisplayMode === 'SUMMARY'
+        className={`flex-1 px-4 py-2 ${activeDisplayMode === 'SUMMARY'
             ? 'overflow-y-auto custom-scrollbar flex flex-col'
             : activeDisplayMode === 'MANUAL'
-            ? 'overflow-hidden flex gap-4 items-stretch'
-            : 'overflow-x-auto overflow-y-hidden flex flex-col custom-scrollbar'
-        }`}
+              ? 'overflow-hidden flex gap-4 items-stretch'
+              : 'overflow-x-auto overflow-y-hidden flex flex-col custom-scrollbar'
+          }`}
       >
         {loading ? (
           <div className="w-full h-full min-h-[400px] flex flex-col items-center justify-center gap-4 text-center">
@@ -2734,11 +2712,10 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                     <div
                       key={t.id}
                       onClick={() => setManualActiveTicketId(t.id)}
-                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                        isSelected
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${isSelected
                           ? 'bg-[#ae001a]/20 border-[#ae001a] ring-1 ring-[#ae001a]'
                           : 'bg-zinc-900/80 hover:bg-zinc-800/80 border-zinc-800'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <span className="w-7 h-7 rounded-lg bg-zinc-800 flex items-center justify-center text-xs font-mono font-black text-zinc-300 shrink-0 border border-zinc-700">
@@ -2761,9 +2738,8 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
 
                       <div className="text-right shrink-0 ml-2">
                         <span
-                          className={`font-mono font-black text-sm ${
-                            t.timeElapsed >= 12 ? 'text-red-400' : t.timeElapsed >= 8 ? 'text-amber-400' : 'text-emerald-400'
-                          }`}
+                          className={`font-mono font-black text-sm ${t.timeElapsed >= 12 ? 'text-red-400' : t.timeElapsed >= 8 ? 'text-amber-400' : 'text-emerald-400'
+                            }`}
                         >
                           {t.timeElapsed}m
                         </span>

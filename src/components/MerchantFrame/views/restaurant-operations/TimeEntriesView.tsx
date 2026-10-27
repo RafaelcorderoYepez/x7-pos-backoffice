@@ -760,7 +760,7 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({ onNavigate }) 
       {selectedPhotoUrl && (
         <div
           onClick={() => setSelectedPhotoUrl(null)}
-          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-pointer"
+          className="fixed inset-0 bg-black/80 z-[9999] flex items-center justify-center p-4 cursor-pointer"
         >
           <div className="bg-white p-4 rounded-xl max-w-md w-full text-center space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center border-b pb-2">

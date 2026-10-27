@@ -70,6 +70,12 @@ const EXACT_ROUTES: Record<string, RouteNav> = Object.fromEntries([
 
   // Commerce
   ...routes('commerce', 'qr-code-locations', '/qr-code/locations', '/dashboard/qr-locations', '/qr-code-locations'),
+  ...routes('commerce', 'qr-code-menus', '/qr-code/menus', '/dashboard/qr-menus', '/qr-code-menus'),
+  ...routes('commerce', 'qr-code-menu-sections', '/qr-code/menu-sections'),
+  ...routes('commerce', 'qr-code-menu-items', '/qr-code/menu-items'),
+  ...routes('commerce', 'qr-code-deployments', '/qr-code/deployments'),
+  ...routes('commerce', 'qr-code-orders', '/qr-code/orders'),
+  ...routes('commerce', 'qr-order-items', '/qr-code/order-items'),
   ...routes('commerce', 'online-ordering-hub', '/online-ordering', '/online-ordering/hub', '/online-ordering/dashboard', '/dashboard/online-ordering'),
   ...routes('commerce', 'online-stores', '/commerce/online-stores', '/dashboard/online-stores', '/online-stores', '/online-ordering/stores'),
   ...routes('commerce', 'online-menus', '/commerce/online-menus', '/dashboard/online-menus', '/online-menus', '/online-ordering/menus'),

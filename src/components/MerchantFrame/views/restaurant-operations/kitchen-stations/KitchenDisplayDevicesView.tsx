@@ -1379,7 +1379,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       {/* Slide-over Drawer to Add / Edit KDS Device */}
       {isDrawerOpen &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex justify-end font-sans">
+          <div className="fixed inset-0 z-[9999] flex justify-end font-sans">
             <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" onClick={() => setIsDrawerOpen(false)} />
             <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col border-l border-[#e8e2d8] animate-slide-in">
               {/* Header Drawer (Estilo Raw Materials 1:1) */}

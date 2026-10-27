@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   OpenShift,
   CollaboratorRole,
@@ -887,328 +888,336 @@ export const OpenShiftsMarketplaceView: React.FC<OpenShiftsMarketplaceViewProps>
       />
 
       {/* Modal: Confirm Shift Claim / Pickup Request */}
-      {confirmClaimShift && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="bg-white border border-[#e8e2d8] rounded-lg shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[450px] p-6 text-[#222222]">
-            <div className="bg-[#222222] text-white -mx-6 -mt-6 p-4 rounded-t-lg mb-4 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#ae001a] text-xl">
-                  {confirmClaimShift.allocationMode === 'FIRST_COME_FIRST_SERVED' ? 'bolt' : 'send'}
-                </span>
-                <h3 className="text-sm font-bold uppercase tracking-widest text-white">
-                  Confirm Shift {confirmClaimShift.allocationMode === 'FIRST_COME_FIRST_SERVED' ? 'Claim' : 'Pickup Request'}
-                </h3>
-              </div>
-              <button
-                onClick={() => setConfirmClaimShift(null)}
-                className="text-white/70 hover:text-white"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            <div className="py-2 space-y-3">
-              <div className="bg-[#f8f6f2] border border-[#e8e2d8] rounded p-3 text-xs space-y-2 font-poppins">
-                <div className="flex justify-between">
-                  <span className="text-[#5f5e5e]">Shift Reference:</span>
-                  <span className="font-mono font-bold text-[#ae001a]">
-                    #{confirmClaimShift.referenceId}
+      {confirmClaimShift &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="bg-white border border-[#e8e2d8] rounded-lg shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[450px] p-6 text-[#222222]">
+              <div className="bg-[#222222] text-white -mx-6 -mt-6 p-4 rounded-t-lg mb-4 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#ae001a] text-xl">
+                    {confirmClaimShift.allocationMode === 'FIRST_COME_FIRST_SERVED' ? 'bolt' : 'send'}
                   </span>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-white">
+                    Confirm Shift {confirmClaimShift.allocationMode === 'FIRST_COME_FIRST_SERVED' ? 'Claim' : 'Pickup Request'}
+                  </h3>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[#5f5e5e]">Operational Date:</span>
-                  <span className="font-semibold text-[#222222]">{confirmClaimShift.date}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#5f5e5e]">Time Window:</span>
-                  <span className="font-semibold text-[#222222]">
-                    {confirmClaimShift.startTime} - {confirmClaimShift.endTime} ({confirmClaimShift.hours}h)
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#5f5e5e]">Floor Zone:</span>
-                  <span className="font-semibold text-[#222222]">{confirmClaimShift.zone}</span>
-                </div>
-                <div className="flex justify-between border-t border-[#e8e2d8] pt-2">
-                  <span className="text-[#5f5e5e]">Est. Gross Base Pay:</span>
-                  <span className="font-bold text-[#ae001a]">
-                    ${confirmClaimShift.estimatedGrossEarnings.toFixed(2)}
-                  </span>
-                </div>
+                <button
+                  onClick={() => setConfirmClaimShift(null)}
+                  className="text-white/70 hover:text-white"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
               </div>
 
-              {/* Overtime Notice in Modal if applicable */}
-              {activeWorkerWeeklyHours + confirmClaimShift.hours > 40 && (
-                <div className="p-3 bg-amber-50 border border-amber-300 rounded text-amber-900 text-xs flex items-start gap-2">
-                  <span className="material-symbols-outlined text-base text-amber-600">warning</span>
-                  <div>
-                    <strong>Overtime Policy Warning:</strong> This shift claim pushes your projected weekly hours to{' '}
-                    {(activeWorkerWeeklyHours + confirmClaimShift.hours).toFixed(1)} hrs (&gt;40h/week). Overtime rates will apply.
+              <div className="py-2 space-y-3">
+                <div className="bg-[#f8f6f2] border border-[#e8e2d8] rounded p-3 text-xs space-y-2 font-poppins">
+                  <div className="flex justify-between">
+                    <span className="text-[#5f5e5e]">Shift Reference:</span>
+                    <span className="font-mono font-bold text-[#ae001a]">
+                      #{confirmClaimShift.referenceId}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5f5e5e]">Operational Date:</span>
+                    <span className="font-semibold text-[#222222]">{confirmClaimShift.date}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5f5e5e]">Time Window:</span>
+                    <span className="font-semibold text-[#222222]">
+                      {confirmClaimShift.startTime} - {confirmClaimShift.endTime} ({confirmClaimShift.hours}h)
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5f5e5e]">Floor Zone:</span>
+                    <span className="font-semibold text-[#222222]">{confirmClaimShift.zone}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-[#e8e2d8] pt-2">
+                    <span className="text-[#5f5e5e]">Est. Gross Base Pay:</span>
+                    <span className="font-bold text-[#ae001a]">
+                      ${confirmClaimShift.estimatedGrossEarnings.toFixed(2)}
+                    </span>
                   </div>
                 </div>
-              )}
-            </div>
 
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e8e2d8] mt-4">
-              <button
-                type="button"
-                onClick={() => setConfirmClaimShift(null)}
-                className="px-4 py-2 text-xs font-bold text-[#5f5e5e] bg-white border border-[#e8e2d8] hover:bg-[#fef9f1] rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isActionLoading}
-                onClick={() => handleExecuteClaim(confirmClaimShift)}
-                className="px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest text-white bg-[#ae001a] hover:bg-[#930015] disabled:opacity-50 rounded transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                {isActionLoading ? (
-                  <span className="material-symbols-outlined text-base animate-spin">refresh</span>
-                ) : (
-                  <span className="material-symbols-outlined text-base">check</span>
+                {/* Overtime Notice in Modal if applicable */}
+                {activeWorkerWeeklyHours + confirmClaimShift.hours > 40 && (
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded text-amber-900 text-xs flex items-start gap-2">
+                    <span className="material-symbols-outlined text-base text-amber-600">warning</span>
+                    <div>
+                      <strong>Overtime Policy Warning:</strong> This shift claim pushes your projected weekly hours to{' '}
+                      {(activeWorkerWeeklyHours + confirmClaimShift.hours).toFixed(1)} hrs (&gt;40h/week). Overtime rates will apply.
+                    </div>
+                  </div>
                 )}
-                {confirmClaimShift.allocationMode === 'FIRST_COME_FIRST_SERVED'
-                  ? 'Confirm Claim'
-                  : 'Submit Request'}
-              </button>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e8e2d8] mt-4">
+                <button
+                  type="button"
+                  onClick={() => setConfirmClaimShift(null)}
+                  className="px-4 py-2 text-xs font-bold text-[#5f5e5e] bg-white border border-[#e8e2d8] hover:bg-[#fef9f1] rounded transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isActionLoading}
+                  onClick={() => handleExecuteClaim(confirmClaimShift)}
+                  className="px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest text-white bg-[#ae001a] hover:bg-[#930015] disabled:opacity-50 rounded transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isActionLoading ? (
+                    <span className="material-symbols-outlined text-base animate-spin">refresh</span>
+                  ) : (
+                    <span className="material-symbols-outlined text-base">check</span>
+                  )}
+                  {confirmClaimShift.allocationMode === 'FIRST_COME_FIRST_SERVED'
+                    ? 'Confirm Claim'
+                    : 'Submit Request'}
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Drawer / Modal: Supervisor Review Pickup Requests */}
-      {reviewRequestsShift && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="bg-white border border-[#e8e2d8] rounded-lg shadow-2xl w-full max-w-xl min-w-[320px] sm:min-w-[550px] p-6 text-[#222222] max-h-[85vh] overflow-y-auto">
-            <div className="bg-[#222222] text-white -mx-6 -mt-6 p-4 rounded-t-lg mb-4 flex justify-between items-center">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-widest text-white flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[#ae001a]">assignment_ind</span>
-                  Review Pickup Requests (#{reviewRequestsShift.referenceId})
-                </h3>
-                <p className="text-xs text-white/70 font-normal mt-0.5">
-                  {reviewRequestsShift.role} • {reviewRequestsShift.date} ({reviewRequestsShift.startTime} - {reviewRequestsShift.endTime})
-                </p>
+      {reviewRequestsShift &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="bg-white border border-[#e8e2d8] rounded-lg shadow-2xl w-full max-w-xl min-w-[320px] sm:min-w-[550px] p-6 text-[#222222] max-h-[85vh] overflow-y-auto">
+              <div className="bg-[#222222] text-white -mx-6 -mt-6 p-4 rounded-t-lg mb-4 flex justify-between items-center">
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-white flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#ae001a]">assignment_ind</span>
+                    Review Pickup Requests (#{reviewRequestsShift.referenceId})
+                  </h3>
+                  <p className="text-xs text-white/70 font-normal mt-0.5">
+                    {reviewRequestsShift.role} • {reviewRequestsShift.date} ({reviewRequestsShift.startTime} - {reviewRequestsShift.endTime})
+                  </p>
+                </div>
+                <button
+                  onClick={() => setReviewRequestsShift(null)}
+                  className="text-white/70 hover:text-white"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
               </div>
-              <button
-                onClick={() => setReviewRequestsShift(null)}
-                className="text-white/70 hover:text-white"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
 
-            <div className="space-y-3">
-              {(reviewRequestsShift.pickupRequests || []).length === 0 ? (
-                <p className="text-xs text-[#5f5e5e] italic py-4 text-center">
-                  No pickup requests submitted for this shift.
-                </p>
-              ) : (
-                (reviewRequestsShift.pickupRequests || []).map((req) => (
-                  <div
-                    key={req.id}
-                    className="bg-[#f8f6f2] border border-[#e8e2d8] rounded p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      {req.avatarUrl ? (
-                        <img
-                          src={req.avatarUrl}
-                          alt={req.collaboratorName}
-                          className="w-10 h-10 rounded-full object-cover border border-[#e8e2d8]"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-[#222222] text-white flex items-center justify-center font-bold text-xs">
-                          {req.collaboratorName.charAt(0)}
+              <div className="space-y-3">
+                {(reviewRequestsShift.pickupRequests || []).length === 0 ? (
+                  <p className="text-xs text-[#5f5e5e] italic py-4 text-center">
+                    No pickup requests submitted for this shift.
+                  </p>
+                ) : (
+                  (reviewRequestsShift.pickupRequests || []).map((req) => (
+                    <div
+                      key={req.id}
+                      className="bg-[#f8f6f2] border border-[#e8e2d8] rounded p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        {req.avatarUrl ? (
+                          <img
+                            src={req.avatarUrl}
+                            alt={req.collaboratorName}
+                            className="w-10 h-10 rounded-full object-cover border border-[#e8e2d8]"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-[#222222] text-white flex items-center justify-center font-bold text-xs">
+                            {req.collaboratorName.charAt(0)}
+                          </div>
+                        )}
+                        <div>
+                          <div className="text-xs font-bold text-[#222222]">{req.collaboratorName}</div>
+                          <div className="text-[11px] text-[#5f5e5e]">
+                            Role: {req.collaboratorRole} • Requested: {new Date(req.requestedAt).toLocaleTimeString()}
+                          </div>
+                          {req.notes && (
+                            <div className="text-[11px] text-[#5f5e5e] italic mt-1">{req.notes}</div>
+                          )}
                         </div>
-                      )}
-                      <div>
-                        <div className="text-xs font-bold text-[#222222]">{req.collaboratorName}</div>
-                        <div className="text-[11px] text-[#5f5e5e]">
-                          Role: {req.collaboratorRole} • Requested: {new Date(req.requestedAt).toLocaleTimeString()}
-                        </div>
-                        {req.notes && (
-                          <div className="text-[11px] text-[#5f5e5e] italic mt-1">{req.notes}</div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {req.status === 'PENDING' ? (
+                          <>
+                            <button
+                              disabled={isActionLoading}
+                              onClick={() =>
+                                setRejectionReasonModal({
+                                  shiftId: reviewRequestsShift.id,
+                                  requestId: req.id,
+                                  collaboratorName: req.collaboratorName,
+                                })
+                              }
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-300 text-xs font-bold rounded transition-colors cursor-pointer"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              disabled={isActionLoading}
+                              onClick={() =>
+                                handleApproveRequest(
+                                  reviewRequestsShift.id,
+                                  req.id,
+                                  req.collaboratorName
+                                )
+                              }
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded transition-colors flex items-center gap-1 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-sm">check</span>
+                              Approve
+                            </button>
+                          </>
+                        ) : (
+                          <span
+                            className={`text-xs font-bold px-2.5 py-1 rounded border ${
+                              req.status === 'APPROVED'
+                                ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                                : 'bg-rose-50 text-rose-900 border-rose-300'
+                            }`}
+                          >
+                            {req.status}
+                          </span>
                         )}
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      {req.status === 'PENDING' ? (
-                        <>
-                          <button
-                            disabled={isActionLoading}
-                            onClick={() =>
-                              setRejectionReasonModal({
-                                shiftId: reviewRequestsShift.id,
-                                requestId: req.id,
-                                collaboratorName: req.collaboratorName,
-                              })
-                            }
-                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-900 border border-rose-300 text-xs font-bold rounded transition-colors cursor-pointer"
-                          >
-                            Reject
-                          </button>
-                          <button
-                            disabled={isActionLoading}
-                            onClick={() =>
-                              handleApproveRequest(
-                                reviewRequestsShift.id,
-                                req.id,
-                                req.collaboratorName
-                              )
-                            }
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded transition-colors flex items-center gap-1 cursor-pointer"
-                          >
-                            <span className="material-symbols-outlined text-sm">check</span>
-                            Approve
-                          </button>
-                        </>
-                      ) : (
-                        <span
-                          className={`text-xs font-bold px-2.5 py-1 rounded border ${
-                            req.status === 'APPROVED'
-                              ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                              : 'bg-rose-50 text-rose-900 border-rose-300'
-                          }`}
-                        >
-                          {req.status}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Modal: Rejection Reason Prompt */}
-      {rejectionReasonModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="bg-white border border-[#e8e2d8] rounded-lg shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[450px] p-6 text-[#222222]">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-[#222222] mb-2">
-              Reject Pickup Request for {rejectionReasonModal.collaboratorName}
-            </h3>
-            <p className="text-xs text-[#5f5e5e] mb-4">
-              Provide an audit reason for rejecting this collaborator's pickup request.
-            </p>
-            <textarea
-              value={rejectReasonText}
-              onChange={(e) => setRejectReasonText(e.target.value)}
-              placeholder="e.g. Schedule capacity limit reached or role qualification mismatch"
-              rows={3}
-              className="w-full bg-[#fef9f1] border border-[#e8e2d8] rounded p-3 text-xs text-[#1d1c17] focus:outline-none focus:border-[#ae001a] mb-4"
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setRejectionReasonModal(null)}
-                className="px-4 py-2 text-xs font-bold text-[#5f5e5e] bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRejectRequestSubmit}
-                disabled={isActionLoading}
-                className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-white bg-rose-700 hover:bg-rose-800 rounded"
-              >
-                Confirm Rejection
-              </button>
+      {rejectionReasonModal &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="bg-white border border-[#e8e2d8] rounded-lg shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[450px] p-6 text-[#222222]">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-[#222222] mb-2">
+                Reject Pickup Request for {rejectionReasonModal.collaboratorName}
+              </h3>
+              <p className="text-xs text-[#5f5e5e] mb-4">
+                Provide an audit reason for rejecting this collaborator's pickup request.
+              </p>
+              <textarea
+                value={rejectReasonText}
+                onChange={(e) => setRejectReasonText(e.target.value)}
+                placeholder="e.g. Schedule capacity limit reached or role qualification mismatch"
+                rows={3}
+                className="w-full bg-[#fef9f1] border border-[#e8e2d8] rounded p-3 text-xs text-[#1d1c17] focus:outline-none focus:border-[#ae001a] mb-4"
+              />
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setRejectionReasonModal(null)}
+                  className="px-4 py-2 text-xs font-bold text-[#5f5e5e] bg-white border border-[#e8e2d8] rounded hover:bg-[#fef9f1]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRejectRequestSubmit}
+                  disabled={isActionLoading}
+                  className="px-4 py-2 text-xs font-bold uppercase tracking-wider text-white bg-rose-700 hover:bg-rose-800 rounded"
+                >
+                  Confirm Rejection
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Modal: Confirm Cancel Open Shift Block */}
-      {cancelConfirmShift && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="bg-white border border-[#e8e2d8] rounded-lg shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[450px] p-6 text-[#222222]">
-            <div className="bg-[#222222] text-white -mx-6 -mt-6 p-4 rounded-t-lg mb-4 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[#ae001a] text-xl">delete_forever</span>
-                <h3 className="text-sm font-bold uppercase tracking-widest text-white">
-                  Cancel Open Shift Block
-                </h3>
-              </div>
-              <button
-                onClick={() => setCancelConfirmShift(null)}
-                className="text-white/70 hover:text-white transition-colors"
-                aria-label="Close modal"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
-            </div>
-
-            <div className="py-2 space-y-3">
-              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded text-xs space-y-1">
-                <div className="flex items-center gap-2 text-rose-950 font-bold">
-                  <span className="material-symbols-outlined text-base text-rose-600">warning</span>
-                  Confirm Shift Block Cancellation
+      {cancelConfirmShift &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="bg-white border border-[#e8e2d8] rounded-lg shadow-2xl w-full max-w-md min-w-[320px] sm:min-w-[450px] p-6 text-[#222222]">
+              <div className="bg-[#222222] text-white -mx-6 -mt-6 p-4 rounded-t-lg mb-4 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[#ae001a] text-xl">delete_forever</span>
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-white">
+                    Cancel Open Shift Block
+                  </h3>
                 </div>
-                <p className="text-rose-900 leading-relaxed">
-                  Are you sure you want to remove unassigned shift block{' '}
-                  <strong className="font-mono font-bold text-[#ae001a]">#{cancelConfirmShift.referenceId}</strong> from the active marketplace directory?
-                </p>
+                <button
+                  onClick={() => setCancelConfirmShift(null)}
+                  className="text-white/70 hover:text-white transition-colors"
+                  aria-label="Close modal"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
               </div>
 
-              <div className="bg-[#f8f6f2] border border-[#e8e2d8] rounded p-3 text-xs space-y-1.5 font-poppins">
-                <div className="flex justify-between">
-                  <span className="text-[#5f5e5e]">Role Required:</span>
-                  <span className="font-bold text-[#ae001a]">{cancelConfirmShift.role}</span>
+              <div className="py-2 space-y-3">
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded text-xs space-y-1">
+                  <div className="flex items-center gap-2 text-rose-950 font-bold">
+                    <span className="material-symbols-outlined text-base text-rose-600">warning</span>
+                    Confirm Shift Block Cancellation
+                  </div>
+                  <p className="text-rose-900 leading-relaxed">
+                    Are you sure you want to remove unassigned shift block{' '}
+                    <strong className="font-mono font-bold text-[#ae001a]">#{cancelConfirmShift.referenceId}</strong> from the active marketplace directory?
+                  </p>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[#5f5e5e]">Department & Zone:</span>
-                  <span className="font-semibold text-[#222222]">{cancelConfirmShift.department} • {cancelConfirmShift.zone}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#5f5e5e]">Date & Time:</span>
-                  <span className="font-semibold text-[#222222]">{cancelConfirmShift.date} ({cancelConfirmShift.startTime} - {cancelConfirmShift.endTime})</span>
+
+                <div className="bg-[#f8f6f2] border border-[#e8e2d8] rounded p-3 text-xs space-y-1.5 font-poppins">
+                  <div className="flex justify-between">
+                    <span className="text-[#5f5e5e]">Role Required:</span>
+                    <span className="font-bold text-[#ae001a]">{cancelConfirmShift.role}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5f5e5e]">Department & Zone:</span>
+                    <span className="font-semibold text-[#222222]">{cancelConfirmShift.department} • {cancelConfirmShift.zone}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#5f5e5e]">Date & Time:</span>
+                    <span className="font-semibold text-[#222222]">{cancelConfirmShift.date} ({cancelConfirmShift.startTime} - {cancelConfirmShift.endTime})</span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e8e2d8] mt-4">
-              <button
-                type="button"
-                onClick={() => setCancelConfirmShift(null)}
-                className="px-4 py-2 text-xs font-bold text-[#5f5e5e] bg-white border border-[#e8e2d8] hover:bg-[#fef9f1] rounded transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isActionLoading}
-                onClick={() => handleCancelOpenShift(cancelConfirmShift)}
-                className="px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest text-white bg-rose-700 hover:bg-rose-800 disabled:opacity-50 rounded transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                {isActionLoading ? (
-                  <span className="material-symbols-outlined text-base animate-spin">refresh</span>
-                ) : (
-                  <span className="material-symbols-outlined text-base">delete</span>
-                )}
-                Confirm Cancellation
-              </button>
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e8e2d8] mt-4">
+                <button
+                  type="button"
+                  onClick={() => setCancelConfirmShift(null)}
+                  className="px-4 py-2 text-xs font-bold text-[#5f5e5e] bg-white border border-[#e8e2d8] hover:bg-[#fef9f1] rounded transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isActionLoading}
+                  onClick={() => handleCancelOpenShift(cancelConfirmShift)}
+                  className="px-5 py-2.5 text-[11px] font-bold uppercase tracking-widest text-white bg-rose-700 hover:bg-rose-800 disabled:opacity-50 rounded transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  {isActionLoading ? (
+                    <span className="material-symbols-outlined text-base animate-spin">refresh</span>
+                  ) : (
+                    <span className="material-symbols-outlined text-base">delete</span>
+                  )}
+                  Confirm Cancellation
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Quick Launch Panel Shortcuts */}
       <StaffManagementQuickLinks

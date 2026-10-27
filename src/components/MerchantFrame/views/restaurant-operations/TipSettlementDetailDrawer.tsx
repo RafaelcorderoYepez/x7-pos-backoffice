@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import type { TipSettlement } from '../../../../types/tip-settlements';
 import {
   SETTLEMENT_METHOD_LABELS,
@@ -30,10 +31,10 @@ export const TipSettlementDetailDrawer: React.FC<TipSettlementDetailDrawerProps>
 
   const authorizerName = settlement.settledByUser?.name || (settlement.settled_by ? `User #${settlement.settled_by}` : 'System Automated');
 
-  return (
+  const content = (
     <div
       aria-label="Tip settlement audit drawer overlay"
-      className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-sm flex justify-end font-poppins transition-opacity duration-300"
+      className="fixed inset-0 z-[9999] overflow-hidden bg-black/40 backdrop-blur-sm flex justify-end font-poppins transition-opacity duration-300"
     >
       <div className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto">
         {/* Header */}
@@ -213,6 +214,8 @@ export const TipSettlementDetailDrawer: React.FC<TipSettlementDetailDrawerProps>
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 };
 
 export default TipSettlementDetailDrawer;

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   OnlineStoreSetupDrawer,
   type OnlineStoreFormData,
@@ -1354,8 +1355,8 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
       />
 
       {/* Delete / Archive Confirmation Modal (Exact ProductsView pattern) */}
-      {isDeleteModalOpen && storeToDelete && (
-        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
+      {isDeleteModalOpen && storeToDelete && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans" role="dialog" aria-modal="true">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
@@ -1420,12 +1421,13 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Restore Confirmation Modal (Exact ProductsView pattern) */}
-      {isRestoreModalOpen && storeToRestore && (
-        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans">
+      {isRestoreModalOpen && storeToRestore && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[10000] overflow-y-auto flex items-center justify-center p-4 font-sans" role="dialog" aria-modal="true">
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300"
@@ -1487,7 +1489,8 @@ export const OnlineStoresView: React.FC<OnlineStoresViewProps> = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

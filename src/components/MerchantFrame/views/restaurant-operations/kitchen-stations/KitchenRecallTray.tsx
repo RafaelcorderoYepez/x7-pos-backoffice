@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { enqueueOfflineAction, isRetryableKdsError } from '../../../../../lib/kds-offline-sync';
 import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
 import { ApiError } from '../../../../../lib/api-error';
@@ -337,8 +338,8 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs transition-opacity animate-fade-in font-sans">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex justify-end bg-black/60 backdrop-blur-xs transition-opacity animate-fade-in font-sans">
       {/* Backdrop click */}
       <div className="flex-1" onClick={onClose} aria-hidden="true" />
 
@@ -568,7 +569,8 @@ export const KitchenRecallTray: React.FC<KitchenRecallTrayProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

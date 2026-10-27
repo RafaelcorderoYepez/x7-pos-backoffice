@@ -1,8 +1,77 @@
 // Domain logic and business rules for QR Location management.
-import type { CreateQRLocationDto, QRLocation, QRMenuType, TableRef } from '../types/qr-location';
-import { generateQrSvgDataUrl } from './qr-generator';
+import type { CreateQRLocationDto, QRLocation, QRLocationStatus, QRMenuType, TableRef } from '../types/qr-location';
+import { generateQrMatrix, generateQrSvgDataUrl } from './qr-generator';
 
 export const BASE_QR_SCAN_URL = 'https://menu.x7pos.com';
+
+/**
+ * Generates a compact deterministic/time-based location hash for URL tracking.
+ */
+export function generateLocHash(name: string, seed?: number | string): string {
+  const str = `${name}_${seed ?? Date.now()}`;
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36).padStart(6, '0').slice(-6);
+}
+
+/**
+ * Target URL Generator formula:
+ * Target URL = base_tenant_domain + "/menu/" + qr_menu_id + "?loc=" + loc_hash + "&table=" + table_id
+ */
+export function buildQrTargetUrl(params: {
+  baseDomain?: string;
+  qrMenuId: number | string;
+  locHash: string;
+  tableId?: number | null;
+}): string {
+  const base = params.baseDomain || BASE_QR_SCAN_URL;
+  const encodedLoc = encodeURIComponent(params.locHash);
+  let url = `${base}/menu/${encodeURIComponent(String(params.qrMenuId))}?loc=${encodedLoc}`;
+  if (params.tableId !== null && params.tableId !== undefined && Number(params.tableId) > 0) {
+    url += `&table=${encodeURIComponent(String(params.tableId))}`;
+  }
+  return url;
+}
+
+/**
+ * Dispatch web URI formula:
+ * https://order.x7pos.com/{merchant_slug}/t/{table_id}?menu={qr_menu_id}
+ */
+export function buildDispatchOrderUrl(params: {
+  merchantSlug?: string;
+  tableId?: number | null;
+  qrMenuId: number | string;
+  locHash?: string;
+}): string {
+  const slug = encodeURIComponent(params.merchantSlug || 'menu');
+  const tablePart = params.tableId ? `/t/${encodeURIComponent(String(params.tableId))}` : '';
+  let url = `https://order.x7pos.com/${slug}${tablePart}?menu=${encodeURIComponent(String(params.qrMenuId))}`;
+  if (params.locHash) {
+    url += `&loc=${encodeURIComponent(params.locHash)}`;
+  }
+  return url;
+}
+
+/**
+ * Returns Google Material Symbol name for a given location type.
+ */
+export function getLocationTypeIcon(type: QRMenuType): string {
+  switch (type) {
+    case 'DINE_IN':
+      return 'table_restaurant';
+    case 'PICKUP':
+      return 'storefront';
+    case 'DELIVERY':
+      return 'local_shipping';
+    case 'ROOM_SERVICE':
+      return 'room_service';
+    default:
+      return 'qr_code_2';
+  }
+}
 
 /**
  * Builds target landing URL stored in qr_code_url:
@@ -44,6 +113,41 @@ export function validateUniqueLocationName(
 }
 
 /**
+ * Duplication Guard: Prevents assigning multiple active deployments of the same qr_menu_id to the exact same physical table_id.
+ */
+export function validateDuplicateActiveTableDeployment(
+  dto: { qr_menu_id: number; table_id?: number | null; status?: QRLocationStatus },
+  locations: QRLocation[],
+  currentId?: number,
+  tables?: TableRef[]
+): { valid: boolean; error?: string } {
+  if (dto.status !== 'active') {
+    return { valid: true };
+  }
+  if (!dto.table_id || Number(dto.table_id) <= 0) {
+    return { valid: true };
+  }
+  const duplicate = locations.find(
+    (loc) =>
+      loc.id !== currentId &&
+      loc.status === 'active' &&
+      Number(loc.qr_menu_id) === Number(dto.qr_menu_id) &&
+      Number(loc.table_id) === Number(dto.table_id)
+  );
+  if (duplicate) {
+    const tableNum =
+      duplicate.table?.number ||
+      tables?.find((t) => t.id === duplicate.table_id)?.number ||
+      duplicate.table_id;
+    return {
+      valid: false,
+      error: `An active deployment for this QR Menu already exists on Table #${tableNum} (Deployment #QR-LOC-${duplicate.id}). A physical table cannot have multiple active deployments of the same menu.`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
  * Table Validation: Ensures table_id belongs to the same merchant_id context.
  */
 export function validateTableMerchantContext(
@@ -71,8 +175,10 @@ export function validateTableMerchantContext(
 }
 
 /**
- * Full Form Payload Validation: Enforces required fields (name, qr_menu_id, location_type, status)
- * and name length <= 100 characters.
+ * Full Form Payload Validation Matrix:
+ * Enforces required fields (name, qr_menu_id, location_type, status),
+ * validates that table_id is supplied if location_type = 'DINE_IN' (or 'dine_in'),
+ * name length <= 100 characters, table merchant context, and duplication guard.
  */
 export function validateQRLocationPayload(
   dto: Partial<CreateQRLocationDto>,
@@ -110,11 +216,36 @@ export function validateQRLocationPayload(
     fieldErrors.status = 'Operational status is required.';
   }
 
+  // Conditional Dining Table Validation: Mandatory when location_type = 'DINE_IN' / 'dine_in'
+  const isDineIn = dto.location_type === 'DINE_IN' || String(dto.location_type || '').toLowerCase() === 'dine_in';
+  if (isDineIn) {
+    if (dto.table_id === null || dto.table_id === undefined || Number(dto.table_id) <= 0) {
+      fieldErrors.table_id = 'A physical dining table is required when location type is Dine-In.';
+    }
+  }
+
   // Table merchant context validation
-  if (dto.table_id) {
+  if (dto.table_id && Number(dto.table_id) > 0) {
     const tableCheck = validateTableMerchantContext(dto.table_id, merchantId, tables);
     if (!tableCheck.valid) {
       fieldErrors.table_id = tableCheck.error!;
+    }
+  }
+
+  // Duplication Guard: Prevents assigning multiple active deployments of the same qr_menu_id to the exact same physical table_id
+  if (dto.qr_menu_id && dto.table_id && dto.status) {
+    const dupCheck = validateDuplicateActiveTableDeployment(
+      {
+        qr_menu_id: Number(dto.qr_menu_id),
+        table_id: Number(dto.table_id),
+        status: dto.status,
+      },
+      locations,
+      currentId,
+      tables
+    );
+    if (!dupCheck.valid) {
+      fieldErrors.table_id = dupCheck.error!;
     }
   }
 
@@ -138,6 +269,56 @@ export function syncLocationTypeWithTable(
     return 'DINE_IN';
   }
   return currentType;
+}
+
+/**
+ * Real-time canvas render that generates QR bitmap / data URI (qr_code_image) whenever URL dependencies change.
+ */
+export function renderQrCodeToCanvas(
+  canvas: HTMLCanvasElement,
+  url: string,
+  title?: string,
+  options?: { size?: number; color?: string; bgColor?: string }
+): string {
+  const size = options?.size || 300;
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+
+  const bgColor = options?.bgColor || '#ffffff';
+  const color = options?.color || '#0f172a';
+
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, size, size);
+
+  const matrix = generateQrMatrix(url, 25);
+  const padding = 20;
+  const qrAreaSize = size - padding * 2;
+  const cellSize = qrAreaSize / 25;
+
+  ctx.fillStyle = color;
+  for (let r = 0; r < 25; r++) {
+    for (let c = 0; c < 25; c++) {
+      if (matrix[r][c]) {
+        ctx.fillRect(
+          padding + c * cellSize,
+          padding + r * cellSize,
+          cellSize + 0.1,
+          cellSize + 0.1
+        );
+      }
+    }
+  }
+
+  if (title) {
+    ctx.fillStyle = color;
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(title.toUpperCase(), size / 2, size - 8);
+  }
+
+  return canvas.toDataURL('image/png');
 }
 
 /**

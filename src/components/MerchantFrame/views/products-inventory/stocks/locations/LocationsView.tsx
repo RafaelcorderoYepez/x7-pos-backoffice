@@ -421,7 +421,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
                 onChangeDensity={setRowDensity}
                 totalItems={filteredLocations.length}
                 pageSize={pageSize}
-                onChangePageSize={(s) => {
+                onChangePageSize={(s: number) => {
                   setPageSize(s);
                   setCurrentPage(1);
                 }}
@@ -886,7 +886,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
 
     {/* Activation / Deactivation Confirmation Modal */}
       {isConfirmModalOpen && confirmTargetLocation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white border border-[#e8e2d8] rounded-xl max-w-sm w-full p-6 shadow-2xl animate-scale-up text-left">
             <div className="flex items-start gap-4">
               <div className={`p-3 rounded-xl text-white ${

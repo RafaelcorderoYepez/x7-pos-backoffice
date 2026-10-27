@@ -106,6 +106,7 @@ describe('QR Location Domain Rules & Helpers', () => {
       {
         name: 'Unique Spot Name',
         qr_menu_id: 101,
+        table_id: 20,
         location_type: 'DINE_IN',
         status: 'active',
       },

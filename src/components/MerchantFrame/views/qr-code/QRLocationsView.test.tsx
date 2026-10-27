@@ -16,7 +16,7 @@ type BackendLocation = {
   qrMenu: { id: number; name: string };
   table: { id: number } | null;
   location_type: 'Table' | 'Pickup' | 'Delivery';
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'suspended' | 'archived';
   qr_code_url: string;
   qr_code_image: string;
 };
@@ -64,6 +64,17 @@ const seedLocations = (): BackendLocation[] => [
     location_type: 'Table',
     status: 'inactive',
     qr_code_url: 'https://order.x7pos.com/m/3/l/3',
+    qr_code_image: 'data:image/svg+xml;base64,AA==',
+  },
+  {
+    id: 5,
+    name: 'Main Bar Stool #05',
+    merchant: MERCHANT,
+    qrMenu: { id: 101, name: 'Main Dinner & Cocktail Menu' },
+    table: null,
+    location_type: 'Table',
+    status: 'suspended',
+    qr_code_url: 'https://order.x7pos.com/m/3/l/5',
     qr_code_image: 'data:image/svg+xml;base64,AA==',
   },
 ];
@@ -228,8 +239,12 @@ describe('QRLocationsView Component', () => {
 
     expect(screen.getByText('Print & Asset Export Controller')).toBeInTheDocument();
     expect(screen.getByText('Table Acrylic (4" x 6")')).toBeInTheDocument();
+    expect(screen.getByText('Table Sticker (8x8cm)')).toBeInTheDocument();
+    expect(screen.getByText('Tent Card (A6)')).toBeInTheDocument();
     expect(screen.getByText('High-Res PNG')).toBeInTheDocument();
     expect(screen.getByText('Vector SVG')).toBeInTheDocument();
+    expect(screen.getByText('Escanea para ordenar')).toBeInTheDocument();
+    expect(screen.getAllByText(/prueba1/i).length).toBeGreaterThan(0);
   });
 
   it('supports batch selecting multiple QR locations and opening batch print package controller', async () => {
@@ -248,6 +263,76 @@ describe('QRLocationsView Component', () => {
 
     expect(screen.getByText('Batch Print & Asset Export Package')).toBeInTheDocument();
     expect(screen.getByText('Print All Cards')).toBeInTheDocument();
+    expect(screen.getAllByText('Escanea para ordenar').length).toBeGreaterThan(0);
+  });
+
+  it('displays relational bindings accurately: anchor badge, table badge, menu pill with theme, and suspended status', async () => {
+    render(<QRLocationsView merchantId={3} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Patio Table #12 Access')).toBeInTheDocument();
+    });
+
+    // Anchor badge #QR-LOC-1
+    expect(screen.getByText('#QR-LOC-1')).toBeInTheDocument();
+
+    // Table association badge #TBL-12 and zone
+    expect(screen.getByText('#TBL-12')).toBeInTheDocument();
+
+    // Assigned Menu with Theme Pill
+    expect(screen.getAllByText('#QRM-101').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('🎨 Modern Elegance').length).toBeGreaterThan(0);
+
+    // Non-table / Global for Curbside
+    expect(screen.getAllByText('Non-table / Global').length).toBeGreaterThan(0);
+
+    // Suspended status badge (#QR-LOC-5)
+    expect(screen.getAllByText('Suspended').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Revoked \/ Archived/i).length).toBeGreaterThan(0);
+  });
+
+  it('triggers instant toast notification upon copying target destination URL', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: writeTextMock,
+      },
+      writable: true,
+      configurable: true,
+    });
+
+    render(<QRLocationsView merchantId={3} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Patio Table #12 Access')).toBeInTheDocument();
+    });
+
+    const copyBtn = screen.getAllByTitle('Copy Target URL')[0];
+    fireEvent.click(copyBtn);
+
+    expect(writeTextMock).toHaveBeenCalled();
+    expect(screen.getByText('URL copied to clipboard!')).toBeInTheDocument();
+  });
+
+  it('opens interactive lightbox preview when clicking 48x48px QR thumbnail', async () => {
+    const user = userEvent.setup();
+    render(<QRLocationsView merchantId={3} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Patio Table #12 Access')).toBeInTheDocument();
+    });
+
+    const qrThumbs = screen.getAllByTitle(/Click to expand QR Lightbox preview/i);
+    await user.click(qrThumbs[0]);
+
+    expect(screen.getByLabelText('QR Code Lightbox Preview')).toBeInTheDocument();
+    expect(screen.getByText('Destination Dispatch URL')).toBeInTheDocument();
+    expect(screen.getByText('Lightbox Preview')).toBeInTheDocument();
+
+    const closeLightboxBtn = screen.getByTitle('Close Lightbox');
+    await user.click(closeLightboxBtn);
+
+    expect(screen.queryByLabelText('QR Code Lightbox Preview')).not.toBeInTheDocument();
   });
 
   it('shows the backend error and does not list the location when saving fails', async () => {
@@ -268,4 +353,5 @@ describe('QRLocationsView Component', () => {
     expect(locations.some((l) => l.name === 'Rooftop Lounge Spot')).toBe(false);
   });
 });
+
 

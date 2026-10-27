@@ -93,6 +93,12 @@ import { DeliveryDriversView } from './delivery/DeliveryDriversView';
 import { DeliveryTrackingView } from './delivery/DeliveryTrackingView';
 import { DeliveryAssignmentsView } from './delivery/DeliveryAssignmentsView';
 import { QRLocationsView } from './qr-code/QRLocationsView';
+import { QRMenusView } from './qr-code/QRMenusView';
+import { QRMenuSectionsView } from './qr-code/QRMenuSectionsView';
+import { QRMenuItemsView } from './qr-code/QRMenuItemsView';
+import { QROrdersView } from './qr-code/QROrdersView';
+import { QROrderItemsView } from './qr-code/QROrderItemsView';
+import { QRDeploymentsView } from './qr-code/QRDeploymentsView';
 import { OnlineOrderingHubView } from './commerce/OnlineOrderingHubView';
 import { OnlineStoresView } from './commerce/online-stores/OnlineStoresView';
 import { OnlineMenusView } from './commerce/online-menus/OnlineMenusView';
@@ -359,6 +365,12 @@ view('delivery-drivers', (ctx) => <DeliveryDriversView onNavigate={ctx.onNavigat
 view('delivery-assignments', (ctx) => <DeliveryAssignmentsView onNavigate={ctx.onNavigate} merchantId={merchantId()} />);
 view('delivery-tracking', (ctx) => <DeliveryTrackingView onNavigate={ctx.onNavigate} merchantId={merchantId()} />);
 view('qr-code-locations', (ctx) => <QRLocationsView onNavigate={ctx.onNavigate} merchantId={merchantId()} />);
+view('qr-code-menus', (ctx) => <QRMenusView onNavigate={ctx.onNavigate} merchantId={merchantId()} />);
+view('qr-code-menu-sections', (ctx) => <QRMenuSectionsView onNavigate={ctx.onNavigate} merchantId={merchantId()} />);
+view('qr-code-menu-items', (ctx) => <QRMenuItemsView onNavigate={ctx.onNavigate} merchantId={merchantId()} />);
+view('qr-code-orders', (ctx) => <QROrdersView onNavigate={ctx.onNavigate} merchantId={merchantId()} />);
+view('qr-order-items', (ctx) => <QROrderItemsView onNavigate={ctx.onNavigate} merchantId={merchantId()} />);
+view('qr-code-deployments', (ctx) => <QRDeploymentsView onNavigate={ctx.onNavigate} merchantId={merchantId()} />);
 
 // ---- Commerce ----
 view(['online-ordering-hub', 'online-ordering-dashboard'], (ctx) => <OnlineOrderingHubView onNavigate={ctx.onNavigate} />);

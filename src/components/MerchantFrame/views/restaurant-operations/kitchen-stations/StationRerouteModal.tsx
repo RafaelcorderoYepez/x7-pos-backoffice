@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { BackendKitchenStation, KitchenTicket } from './kds-monitor-model';
 import { apiRequest } from '../../../../../api/http';
 export interface StationRerouteStatus {
@@ -215,8 +216,8 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
     });
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-hidden animate-fade-in">
+  const content = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-hidden animate-fade-in" role="dialog" aria-modal="true">
       <div className="relative w-full max-w-2xl bg-[#16171c] border border-zinc-700/80 rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-zinc-800 to-zinc-900 border-b border-zinc-700">
@@ -701,4 +702,6 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 };
