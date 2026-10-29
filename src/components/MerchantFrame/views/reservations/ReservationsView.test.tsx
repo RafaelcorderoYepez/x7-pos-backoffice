@@ -74,7 +74,7 @@ const RESERVATIONS = [
 ];
 
 const CUSTOMERS = [
-  { id: 44, name: 'Lucía Prat', email: 'lucia@example.com', phone: '600111222', merchantId: 3 },
+  { id: 44, name: 'Lucia Prat', email: 'lucia@example.com', phone: '600111222', merchantId: 3 },
   { id: 45, name: 'Ana Ruiz', email: 'ana@example.com', phone: '600999888', merchantId: 3 },
 ];
 
@@ -239,7 +239,7 @@ describe('hydration of the reserve book', () => {
 
   it('It displays the CRM client name and the roster name.', async () => {
     await renderView();
-    expect(within(screen.getByTestId('booking-card-1')).getByText('Lucía Prat')).toBeInTheDocument();
+    expect(within(screen.getByTestId('booking-card-1')).getByText('Lucia Prat')).toBeInTheDocument();
     expect(
       within(screen.getByTestId('booking-card-2')).getByText('Carlos Mendoza'),
     ).toBeInTheDocument();

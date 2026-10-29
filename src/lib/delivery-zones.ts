@@ -1,9 +1,9 @@
-// Lógica pura del workspace de zonas de reparto: validación GeoJSON, geocerca
-// (point-in-polygon), plantilla de radio, filtros y KPIs.
+// Pure delivery zone workspace logic: GeoJSON validation, geofence
+// (point-in-polygon), radio template, filters and KPIs.
 //
-// La validación y el point-in-polygon son un espejo EXACTO de
+// Validation and point-in-polygon are an EXACT mirror of
 // x7-pos-back-end/src/commerce/delivery-system/delivery-zone/utils/zone-geojson.util.ts: si
-// divergen, el drawer dejaría guardar un perímetro que el servidor rechaza (o al revés).
+// diverge, the drawer would save a perimeter that the server rejects (or vice versa).
 
 import type {
   DeliveryZone,
@@ -44,13 +44,13 @@ export const ZONE_STATUS_META: Record<
 
 export const zoneCode = (id: number): string => `#ZON-${id}`;
 
-/** Punto en el orden de Leaflet. */
+/** Point in Leaflet order. */
 export interface LatLng {
   lat: number;
   lng: number;
 }
 
-// ================= Validación GeoJSON =================
+// ================= GeoJSON Validation =================
 
 export type ZoneGeoJsonResult =
   | { ok: true; geometry: ZoneGeometry }
@@ -149,7 +149,7 @@ export function parseZoneGeoJson(input: unknown): ZoneGeoJsonResult {
   };
 }
 
-/** Perímetro válido de una zona, o null ("No Boundary Set"). */
+/** Valid perimeter of a zone, or null ("No Boundary Set"). */
 export function zoneGeometry(zone: Pick<DeliveryZone, 'geojson'>): ZoneGeometry | null {
   if (zone.geojson == null || zone.geojson === '') return null;
   const result = parseZoneGeoJson(zone.geojson);
@@ -186,7 +186,7 @@ export function pointInZone(lat: number, lng: number, geometry: ZoneGeometry): b
   );
 }
 
-/** Zonas (con perímetro) que contienen el punto. */
+/** Zones (with perimeter) that contain the point. */
 export function zonesContaining(zones: DeliveryZone[], point: LatLng): DeliveryZone[] {
   return zones.filter((zone) => {
     const geometry = zoneGeometry(zone);
@@ -194,12 +194,12 @@ export function zonesContaining(zones: DeliveryZone[], point: LatLng): DeliveryZ
   });
 }
 
-// ================= Edición de vértices =================
+// ================= Vertex editing =================
 
 /**
- * Vértices editables del perímetro (anillo exterior, sin el cierre) en orden de Leaflet.
- * Un MultiPolygon o un polígono con huecos NO se edita vértice a vértice (se perderían las
- * piezas extra): devuelve null y el drawer ofrece sólo el editor de GeoJSON crudo.
+ * Editable perimeter vertices (outer ring, without the closure) in Leaflet order.
+ * A MultiPolygon or a polygon with holes is NOT edited vertex by vertex (the
+ * extra pieces): returns null and the drawer offers only the raw GeoJSON editor.
  */
 export function editableVertices(geometry: ZoneGeometry | null): LatLng[] | null {
   if (!geometry) return [];
@@ -209,7 +209,7 @@ export function editableVertices(geometry: ZoneGeometry | null): LatLng[] | null
 
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
 
-/** Cierra el anillo a partir de los vértices; null con menos de 3 (no hay polígono aún). */
+/** Close the ring starting from the vertices; null with less than 3 (no polygon yet). */
 export function polygonFromVertices(vertices: LatLng[]): ZoneGeometry | null {
   if (vertices.length < 3) return null;
   const ring: LinearRing = vertices.map((v) => [round6(v.lng), round6(v.lat)] as Position);
@@ -218,8 +218,8 @@ export function polygonFromVertices(vertices: LatLng[]): ZoneGeometry | null {
 }
 
 /**
- * Inserta un vértice en la arista donde menos alarga el perímetro. Añadirlo siempre al
- * final cruzaba el polígono consigo mismo en cuanto se pinchaba "entre" dos vértices.
+ * Insert a vertex on the edge where it lengthens the perimeter the least. Always add it to
+ * final crossed the polygon with itself as soon as it was clicked "between" two vertices.
  */
 export function insertVertex(vertices: LatLng[], point: LatLng): LatLng[] {
   if (vertices.length < 3) return [...vertices, point];
@@ -238,7 +238,7 @@ export function insertVertex(vertices: LatLng[], point: LatLng): LatLng[] {
   return [...vertices.slice(0, bestIndex), point, ...vertices.slice(bestIndex)];
 }
 
-// ================= Plantilla de radio =================
+// ================= Radio Template =================
 
 const EARTH_RADIUS_KM = 6371.0088;
 export const RADIUS_MIN_KM = 0.1;
@@ -255,8 +255,8 @@ export function radiusError(raw: string): string {
 }
 
 /**
- * Aproximación poligonal de un círculo geodésico (fórmula del punto de destino sobre la
- * esfera): a 3 km un círculo "plano" en grados sale ovalado fuera del ecuador.
+ * Polygonal approximation of a geodesic circle (destination point formula on the
+ * sphere): at 3 km a "flat" circle in degrees appears oval outside the equator.
  */
 export function circlePolygon(center: LatLng, radiusKm: number, steps = 48): ZoneGeometry {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -281,7 +281,7 @@ export function circlePolygon(center: LatLng, radiusKm: number, steps = 48): Zon
   return polygonFromVertices(vertices) as ZoneGeometry;
 }
 
-/** Distancia de círculo máximo en km (haversine). */
+/** Great circle distance in km (haversine). */
 export function distanceKm(a: LatLng, b: LatLng): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
@@ -291,7 +291,7 @@ export function distanceKm(a: LatLng, b: LatLng): number {
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/** Centroide simple (media de vértices) para centrar el mapa o la plantilla de radio. */
+/** Simple centroid (mean of vertices) to center the map or radius template. */
 export function geometryCenter(geometry: ZoneGeometry): LatLng {
   const positions = polygonsOf(geometry).flatMap((rings) => rings[0].slice(0, -1));
   const sum = positions.reduce((acc, [lng, lat]) => ({ lat: acc.lat + lat, lng: acc.lng + lng }), {
@@ -301,7 +301,7 @@ export function geometryCenter(geometry: ZoneGeometry): LatLng {
   return { lat: sum.lat / positions.length, lng: sum.lng / positions.length };
 }
 
-/** Anillos en orden Leaflet ([lat, lng]) para dibujar la geometría. */
+/** Rings in Leaflet order ([lat, lng]) to draw the geometry. */
 export function leafletRings(geometry: ZoneGeometry): [number, number][][][] {
   return polygonsOf(geometry).map((rings) =>
     rings.map((ring) => ring.map(([lng, lat]) => [lat, lng] as [number, number])),
@@ -318,7 +318,7 @@ export function parseCoordinate(raw: string, kind: 'lat' | 'lng'): number | null
   return Math.abs(n) <= limit ? n : null;
 }
 
-/** Acepta "18.4662, -69.9384" pegado de Google Maps (lat, lng). */
+/** Accepts "18.4662, -69.9384" pasted from Google Maps (lat, lng). */
 export function parseLatLngPair(raw: string): LatLng | null {
   const parts = raw.split(/[,\s;]+/).filter(Boolean);
   if (parts.length !== 2) return null;
@@ -348,7 +348,7 @@ export function zoneDescriptionError(raw: string): string {
 
 export interface ZoneFilters {
   search: string;
-  /** Vacío = todos los estados. */
+  /** Empty = all states. */
   statuses: DeliveryZoneStatus[];
 }
 
@@ -374,7 +374,7 @@ export function matchesZoneFilters(zone: DeliveryZone, filters: ZoneFilters): bo
 export interface ZoneMetrics {
   total: number;
   active: number;
-  /** Zonas sin un perímetro GeoJSON válido. */
+  /** Zones without a valid GeoJSON perimeter. */
   unassigned: number;
   byStatus: Record<DeliveryZoneStatus, number>;
 }

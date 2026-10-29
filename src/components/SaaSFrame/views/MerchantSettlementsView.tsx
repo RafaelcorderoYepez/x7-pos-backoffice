@@ -285,7 +285,7 @@ export const MerchantSettlementsView: React.FC<MerchantSettlementsViewProps> = (
     }
   };
 
-  // Ejecuta el "pago de caja": transfiere el neto al merchant.
+  // Execute the "cash payment": transfer the net amount to the merchant.
   const handlePayoutConfirm = async () => {
     if (!payingSettlement) return;
     setPaySubmitting(true);

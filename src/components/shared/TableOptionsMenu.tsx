@@ -44,6 +44,7 @@ export interface TableOptionsMenuProps {
   pageSizeOptions?: number[];
   currentPage?: number;
   onPageChange?: (page: number) => void;
+  totalPages?: number;
 }
 
 export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
@@ -66,6 +67,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
   pageSizeOptions = [5, 10, 15, 20, 25, 50, 100],
   currentPage: propCurrentPage,
   onPageChange,
+  totalPages: propTotalPages,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -219,7 +221,9 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
     return !prev || prev < itemsCount;
   });
 
-  const totalPages = pageSize && pageSize < 9999 && totalItems ? Math.ceil(totalItems / pageSize) : 1;
+  const totalPages = propTotalPages !== undefined
+    ? propTotalPages
+    : (pageSize && pageSize < 9999 && totalItems ? Math.ceil(totalItems / pageSize) : 1);
 
   return (
     <div className="relative inline-flex items-center gap-1.5 text-left font-sans" ref={menuRef}>
@@ -441,7 +445,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
             {/* Tab 3: Density & Rows per Page */}
             {activeTab === 'density' && hasDensityTab && (
               <div className="p-3 space-y-4 overflow-y-auto flex-1 overscroll-contain pb-4">
-                {/* Densidad de Fila */}
+                {/* Row Density */}
                 {onChangeDensity && (
                   <div>
                     <div className="text-[10px] font-bold text-secondary uppercase tracking-wider mb-2">
@@ -517,6 +521,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
 export interface NoColumnsEmptyStateProps {
   colSpan?: number;
   asTableRow?: boolean;
+  onReset?: () => void;
 }
 
 export const NoColumnsEmptyState: React.FC<NoColumnsEmptyStateProps> = ({ colSpan, asTableRow }) => {
@@ -601,6 +606,9 @@ export interface TablePaginationFooterProps {
   totalPages?: number;
   onPageSizeChange?: (size: number) => void;
   onChangePageSize?: (size: number) => void;
+  pageSizeOptions?: number[];
+  startItem?: number;
+  endItem?: number;
 }
 
 export const TablePaginationFooter: React.FC<TablePaginationFooterProps> = ({
@@ -609,6 +617,8 @@ export const TablePaginationFooter: React.FC<TablePaginationFooterProps> = ({
   pageSize = DEFAULT_PAGE_SIZE,
   onPageChange,
   totalPages: propTotalPages,
+  startItem: propStartItem,
+  endItem: propEndItem,
 }) => {
   if (!pageSize || pageSize >= 9999 || totalItems === 0) {
     return null;
@@ -619,8 +629,8 @@ export const TablePaginationFooter: React.FC<TablePaginationFooterProps> = ({
     return null;
   }
 
-  const startItem = (currentPage - 1) * pageSize + 1;
-  const endItem = Math.min(currentPage * pageSize, totalItems);
+  const startItem = propStartItem !== undefined ? propStartItem : (currentPage - 1) * pageSize + 1;
+  const endItem = propEndItem !== undefined ? propEndItem : Math.min(currentPage * pageSize, totalItems);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-[#f8f3eb]/60 border-t border-[#e8e2d8] text-xs font-sans select-none">

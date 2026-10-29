@@ -1,5 +1,5 @@
-// Cliente HTTP del radar en vivo (`/api/delivery-tracking`, singular y sin `/v1`). El
-// comercio sale del JWT. Reutiliza `request` de delivery.ts: mismo token y mismo 401.
+// Live radar HTTP client (`/api/delivery-tracking`, singular and without `/v1`). The
+// trade exits the JWT. Reuse `request` from delivery.ts: same token and same 401.
 
 import type { Envelope } from './delivery';
 import { apiRequest } from './http';

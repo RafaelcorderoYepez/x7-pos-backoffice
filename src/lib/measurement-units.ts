@@ -1,7 +1,7 @@
-/** El lienzo se mide en px; ésta es la escala física que asume el editor. */
+/** The canvas is measured in px; This is the physical scale that the editor assumes. */
 export const PX_PER_METER = 100;
 
-/** 1 pie = 0.3048 m por definición internacional (exacto, no es una aproximación). */
+/** 1 foot = 0.3048 m by international definition (exact, not an approximation). */
 const METERS_PER_FOOT = 0.3048;
 const INCHES_PER_FOOT = 12;
 const PX_PER_FOOT = PX_PER_METER * METERS_PER_FOOT;
@@ -22,9 +22,9 @@ export const UNIT_SYSTEM_SHORT: Record<UnitSystem, string> = {
 };
 
 /**
- * Pies y pulgadas ya redondeadas y normalizadas. La normalización es el punto delicado:
- * 11.96" redondea a 12", que NO es una medida válida — son 1' 0". Sin este acarreo el
- * editor mostraría `5' 12"`, que a un gerente de sala le parece (con razón) un error.
+ * Feet and inches already rounded and normalized. Normalization is the delicate point:
+ * 11.96" rounds to 12", which is NOT a valid measurement — it is 1' 0". Without this carry the
+ * editor would show `5' 12"`, which to a room manager (rightly) seems like an error.
  */
 function toFeetAndInches(px: number): { feet: number; inches: number } {
   const totalInches = (px / PX_PER_FOOT) * INCHES_PER_FOOT;
@@ -38,40 +38,40 @@ function toFeetAndInches(px: number): { feet: number; inches: number } {
   return { feet, inches };
 }
 
-/** Longitud: px -> unidad elegida, ya formateada y con su símbolo. */
+/** Length: px -> chosen unit, already formatted and with its symbol. */
 export const formatLength = (px: number, system: UnitSystem): string => {
   if (system === 'imperial') {
     const { feet, inches } = toFeetAndInches(px);
     return `${feet}' ${inches}"`;
   }
 
-  // A 100px = 1m, 1px = 1cm exacto. Se compara sobre los cm YA redondeados para que
-  // 99.6px no se anuncie como "100 cm" (que es un metro escrito de la peor manera).
+  // At 100px = 1m, 1px = 1cm exactly. It is compared on the cm ALREADY rounded so that
+  // 99.6px is not advertised as "100 cm" (which is a meter written in the worst way).
   const cm = Math.round(px);
   if (Math.abs(cm) < 100) {
     return `${cm} cm`;
   }
 
-  // Un decimal, pero sin el `.0` colgando: el lienzo por defecto es de metros redondos
-  // y "10 m" se lee mucho mejor que "10.0 m".
+  // A decimal, but without the `.0` hanging: the default canvas is round meters
+  // and "10 m" reads much better than "10.0 m."
   return `${(px / PX_PER_METER).toFixed(1).replace(/\.0$/, '')} m`;
 };
 
-/** Igual pero SIN símbolo, para meterlo en un <input numérico>. */
+/** The same but WITHOUT a symbol, to put it in a <numeric input>. */
 export const lengthValue = (px: number, system: UnitSystem): number => {
   const raw = system === 'imperial' ? px / PX_PER_FOOT : px / PX_PER_METER;
   return Number(raw.toFixed(2));
 };
 
-/** Inverso de lengthValue: el número que teclea el usuario -> px enteros. */
+/** Inverse of lengthValue: the number the user types -> px integers. */
 export const lengthToPx = (value: number, system: UnitSystem): number =>
   Math.round(value * (system === 'imperial' ? PX_PER_FOOT : PX_PER_METER));
 
-/** Sufijo para las etiquetas de formulario: '(m)' | '(ft)'. */
+/** Suffix for form tags: '(m)' | '(ft)'. */
 export const lengthSuffix = (system: UnitSystem): string =>
   `(${UNIT_SYSTEM_SHORT[system]})`;
 
-/** Área: px² -> superficie formateada. */
+/** Area: px² -> formatted surface. */
 export const formatArea = (pxSquared: number, system: UnitSystem): string => {
   const squareMeters = pxSquared / (PX_PER_METER * PX_PER_METER);
 
@@ -82,14 +82,14 @@ export const formatArea = (pxSquared: number, system: UnitSystem): string => {
   return `${squareMeters.toFixed(1)} m²`;
 };
 
-/** Dimensiones de un lienzo o footprint, ya combinadas. */
+/** Dimensions of a canvas or footprint, already combined. */
 export const formatDimensions = (
   wPx: number,
   hPx: number,
   system: UnitSystem,
 ): string => `${formatLength(wPx, system)} × ${formatLength(hPx, system)}`;
 
-/** Preferencia persistida en localStorage (clave 'x7_unit_system'). */
+/** Persistent preference in localStorage (key 'x7_unit_system'). */
 export const UNIT_STORAGE_KEY = 'x7_unit_system';
 
 function isUnitSystem(value: unknown): value is UnitSystem {
@@ -97,9 +97,9 @@ function isUnitSystem(value: unknown): value is UnitSystem {
 }
 
 export const loadUnitSystem = (): UnitSystem => {
-  // En SSR `localStorage` no existe y con cookies de terceros bloqueadas el mero acceso
-  // tira SecurityError. Una preferencia de unidades jamás debe tumbar el editor: ante
-  // cualquier fallo se cae al sistema métrico.
+  // In SSR `localStorage` does not exist and with third-party cookies blocked mere access
+  // throws SecurityError. A unit preference should never overwhelm the editor: before
+  // any failure falls to the metric system.
   try {
     const stored = localStorage.getItem(UNIT_STORAGE_KEY);
     return isUnitSystem(stored) ? stored : 'metric';
@@ -112,7 +112,7 @@ export const saveUnitSystem = (s: UnitSystem): void => {
   try {
     localStorage.setItem(UNIT_STORAGE_KEY, s);
   } catch {
-    // Guardar es best-effort: si el almacenamiento está bloqueado el usuario conserva su
-    // elección durante la sesión y sólo pierde la persistencia.
+    // Saving is best-effort: if storage is locked the user keeps their
+    // choice during the session and only loses persistence.
   }
 };

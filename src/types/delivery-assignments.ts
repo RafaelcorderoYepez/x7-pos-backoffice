@@ -1,7 +1,7 @@
-// Tipos del tablero de despacho (`/api/delivery-assignment`).
+// Types of the delivery dashboard (`/api/delivery-assignment`).
 //
-// Espejo de los DTO del backend: delivery-assignment-response.dto.ts, query-…dto.ts y el
-// resumen de `GET /delivery-assignment/summary`. Los timestamps los pone el servidor.
+// Mirror of the backend DTOs: delivery-assignment-response.dto.ts, query-…dto.ts and the
+// `GET /delivery-assignment/summary` summary. The timestamps are set by the server.
 
 export type DeliveryStatus =
   | 'pending'
@@ -16,7 +16,7 @@ export type AssignmentType = 'in_house' | 'doordash_drive' | 'uber_direct';
 
 export type DspAssignmentType = Exclude<AssignmentType, 'in_house'>;
 
-/** Subconjunto del pedido que el listado selecciona (order.id, order_number, dirección…). */
+/** Subset of the order that the listing selects (order.id, order_number, address...). */
 export interface AssignmentOrderRef {
   id: number;
   order_number?: string | null;
@@ -25,7 +25,7 @@ export interface AssignmentOrderRef {
   ready_at?: string | null;
 }
 
-/** Subconjunto del repartidor que el listado selecciona. */
+/** Subset of the delivery person that the listing selects. */
 export interface AssignmentDriverRef {
   id: number;
   name: string;
@@ -68,7 +68,7 @@ export interface AssignmentFilters {
   search: string;
 }
 
-/** Repartidor tal como lo devuelve `GET /delivery-driver`. */
+/** Delivery driver as returned by `GET /delivery-driver`. */
 export interface AssignmentDriverOption {
   id: number;
   name: string;
@@ -77,7 +77,7 @@ export interface AssignmentDriverOption {
   status: string;
 }
 
-/** Pedido de reparto listo en cocina, del listado `GET /orders` (camelCase). */
+/** Delivery order ready in kitchen, from the `GET /orders` list (camelCase). */
 export interface ReadyDeliveryOrder {
   id: number;
   orderNumber: string | null;
@@ -88,7 +88,7 @@ export interface ReadyDeliveryOrder {
   readyAt?: string | null;
 }
 
-/** Cuerpo de `POST /delivery-assignment`. */
+/** Body of `POST /delivery-assignment`. */
 export interface AssignmentCreateDraft {
   order: number;
   assignment_type: AssignmentType;
@@ -98,7 +98,7 @@ export interface AssignmentCreateDraft {
   external_dsp_fee?: number;
 }
 
-/** Cuerpo de `PATCH /delivery-assignment/:id`. */
+/** Body of `PATCH /delivery-assignment/:id`. */
 export interface AssignmentPatch {
   deliveryDriver?: number;
   delivery_status?: DeliveryStatus;

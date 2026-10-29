@@ -56,13 +56,13 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Estados de Cajones y Modales
+  // States of Drawers and Manners
   const [isFormModalOpen, setIsFormModalOpen] = useState<boolean>(false);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState<boolean>(false);
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit'>('add');
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
 
-  // Campos del Formulario
+  // Form Fields
   const [formName, setFormName] = useState<string>('');
   const [formTaxId, setFormTaxId] = useState<string>('');
   const [formEmail, setFormEmail] = useState<string>('');
@@ -85,7 +85,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
   const [toggleError, setToggleError] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll al inicio al montar la vista
+  // Auto-scroll at startup when mounting view
   useEffect(() => {
     if (topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'instant' });
@@ -140,7 +140,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     }
   };
 
-  // Validaciones del Formulario
+  // Form Validations
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
     if (!formName.trim() || formName.length < 2) {
@@ -189,7 +189,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
 
   // Toggle supplier active/inactive quickly
   const handleToggleActive = (supplier: Supplier, e: React.MouseEvent) => {
-    e.stopPropagation(); // Evitar abrir el Detail Drawer al hacer clic en activar/desactivar
+    e.stopPropagation(); // Prevent opening Detail Drawer when clicking on/off
     setConfirmTargetSupplier(supplier);
     setToggleError(null);
     setIsConfirmModalOpen(true);
@@ -240,7 +240,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
         email: formEmail || null,
         phone: formPhone || null,
         address: formAddress || null,
-        isActive: formStatus === 'Active', // Mapear estado al payload
+        isActive: formStatus === 'Active', // Map state to payload
       };
 
       let url = '/v1/inventory/suppliers';
@@ -421,7 +421,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
         </div>
       </div>
 
-      {/* Main Table Grid con Encabezado Oscuro Permanente */}
+      {/* Main Table Grid with Permanent Dark Header */}
       <div className="bg-white border border-[#e8e2d8] overflow-hidden rounded shadow-sm animate-fade-in">
         <div className="p-4 bg-[#222222] flex justify-between items-center relative">
           <div className="flex items-center gap-3">
@@ -991,7 +991,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
             onClick={() => setIsConfirmModalOpen(false)}
           />
 
-          {/* Caja del Modal */}
+          {/* Modal Box */}
           <div className="relative bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-zinc-200 animate-scale-in">
             <div className="flex items-start gap-4">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${

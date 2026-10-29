@@ -143,8 +143,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   // fallback to domain minimum so the editor remains usable.
   const canvasW = plan.width > 0 ? plan.width : FLOOR_PLAN_MIN_DIMENSION;
   const canvasH = plan.height > 0 ? plan.height : FLOOR_PLAN_MIN_DIMENSION;
-  // El backend persiste el estado como varchar libre ('inactive'/'deleted' incluidos):
-  // normalizamos antes de indexar los mapas de badge para no pintar "undefined".
+  // The backend persists the state as a free varchar ('inactive'/'deleted' included):
+  // We normalize before indexing the badge maps so as not to paint "undefined".
   const planStatus = normalizeFloorPlanStatus(plan.status);
 
   // Boundary resides on the floor plan itself (`floor_plan.outline`, nullable text column) and not
@@ -452,7 +452,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     if (!selectedTable) return new Set<number>();
     const byId = new Map(tables.map((t) => [t.id, t]));
     let root = selectedTable;
-    // El `climbed` corta la subida si los datos vinieran con un ciclo ya persistido.
+    // The `climbed` cuts the climb if the data came with an already persisted cycle.
     const climbed = new Set<number>([root.id]);
     let pid = parentTableId(root);
     while (pid != null && byId.has(pid) && !climbed.has(pid)) {
@@ -523,7 +523,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     [loadLayout, selectedId],
   );
 
-  // ---------------- Canal en vivo ----------------
+  // ---------------- Live channel ----------------
 
   // Reloading discards unsaved changes, so with pending work we DO NOT reload
   // automatically: prompt the user to make a deliberate decision.
@@ -547,7 +547,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         // Table currently being edited preserves ITS version: incoming events
         // must not overwrite unsaved local work.
         if (!local || dirtyIds.has(p.tableId)) return prev;
-        // Borrada en otra terminal: desaparece del lienzo en vez de quedarse pintada.
+        // Deleted in another terminal: it disappears from the canvas instead of remaining painted.
         if (p.status === 'deleted') return prev.filter((t) => t.id !== p.tableId);
         if (local.status === p.status) return prev;
         return prev.map((t) => (t.id === p.tableId ? { ...t, status: p.status } : t));
@@ -642,7 +642,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         canvasW,
         canvasH,
       );
-      // Un clic sin desplazamiento real no debe ensuciar el layout.
+      // A click without actual scrolling should not dirty the layout.
       if (x === current.pos_x && y === current.pos_y) return;
       setTables((prev) =>
         prev.map((t) => (t.id === id ? { ...t, pos_x: x, pos_y: y } : t)),
@@ -787,7 +787,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   );
 
   // Changing layout preset may orphan tables outside room: user is warned beforehand
-  // continuar, pero nunca en silencio.
+  // continue, but never in silence.
   const requestOutline = useCallback(
     (label: string, candidate: Outline) => {
       const warning = outlineWarning(tablesOutsideOutline(tablesRef.current, candidate));
@@ -986,7 +986,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       const zoneRef = { id: zone.id, name: zone.name, color: zone.color ?? null };
       const tempId = tempIdRef.current;
       tempIdRef.current -= 1;
-      // Leemos el contorno fuera del updater: React puede invocarlo dos veces en modo estricto
+      // We read the outline outside the updater: React can call it twice in strict mode
       // and available space must be computed against the same room geometry.
       const currentOutline = outlineRef.current;
 
@@ -1059,8 +1059,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
       } catch {
-        // jsdom / navegadores antiguos sin pointer capture: el arrastre sigue funcionando
-        // mientras el puntero no salga del elemento.
+        // jsdom/old browsers without pointer capture: dragging still works
+        // as long as the pointer does not leave the element.
       }
       e.preventDefault();
     },
@@ -1164,7 +1164,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {
-        // Ver comentario en pointerdown.
+        // See comment on pointerdown.
       }
       // On release, table center point determines zone: if it lands in a defined
       // zone polygon, table is reassigned to it.
@@ -1246,7 +1246,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         // explicitly so arrow keys work.
         e.currentTarget.focus({ preventScroll: true });
       } catch {
-        // jsdom no implementa focus() en SVGElement.
+        // jsdom does not implement focus() in SVGElement.
       }
       if (e.button !== 0) return;
       const point = toCanvasCoords(e.clientX, e.clientY);
@@ -1514,7 +1514,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         if (t.floorZone?.id && original?.floorZone?.id !== t.floorZone.id) {
           dto.floorZone = t.floorZone.id;
         }
-        // Un PUT sin campos devuelve 400 ("At least one field must be provided").
+        // A PUT without fields returns 400 ("At least one field must be provided").
         if (Object.keys(dto).length === 0) {
           savedUpdates.push(t.id);
           continue;
@@ -1690,7 +1690,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   // ---------------- Render ----------------
 
   // Stable id per plan: two editors for same plan never coexist, avoiding conflicts.
-  // valor generado por React lleva caracteres que ensucian la referencia url(#…) del SVG.
+  // value generated by React carries characters that dirty the url(#…) reference of the SVG.
   const gridPatternId = `floor-grid-${plan.id}`;
 
   return createPortal(
@@ -2261,7 +2261,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
                         backgroundColor: tableColor(t),
                         touchAction: 'none',
                         // Dimmed and inert while editing room boundary: serves as reference.
-                        // referencia visual, pero no capturan el puntero.
+                        // visual reference, but they do not capture the pointer.
                         opacity: mode === 'tables' ? 1 : 0.35,
                         pointerEvents: mode === 'tables' ? undefined : 'none',
                         // Warning highlight for out-of-bounds tables or duplicates: uses

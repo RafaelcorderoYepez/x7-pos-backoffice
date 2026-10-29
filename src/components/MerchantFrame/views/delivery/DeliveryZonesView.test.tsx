@@ -10,8 +10,8 @@ vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
   clearAuthSession: vi.fn(),
 }));
 
-// Leaflet no pinta en jsdom: el mapa se sustituye por un doble que cuenta sus montajes y deja
-// simular clics sobre el mapa.
+// Leaflet does not paint in jsdom: the map is replaced by a double that counts its mounts and leaves
+// simulate clicks on the map.
 const mapMounts = { count: 0 };
 vi.mock('./ZoneMap', async () => {
   const React = await import('react');

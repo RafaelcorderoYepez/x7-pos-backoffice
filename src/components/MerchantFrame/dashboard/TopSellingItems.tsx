@@ -103,7 +103,7 @@ export const TopSellingItems: React.FC<TopSellingItemsProps> = ({ refreshTrigger
         <button
           onClick={handleReload}
           className="text-white/70 hover:text-white transition-colors"
-          title="Refrescar productos"
+          title="Refresh products"
         >
           <span className="material-symbols-outlined text-sm">more_vert</span>
         </button>

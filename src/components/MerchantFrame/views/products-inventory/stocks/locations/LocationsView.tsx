@@ -49,7 +49,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Estados de Cajones Laterales (Drawers)
+  // States of Side Drawers (Drawers)
   const [isFormDrawerOpen, setIsFormDrawerOpen] = useState<boolean>(false);
   const [formDrawerMode, setFormDrawerMode] = useState<'add' | 'edit'>('add');
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
@@ -63,7 +63,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
   const [formIsMainStorage, setFormIsMainStorage] = useState<boolean>(false);
   const [formIsActive, setFormIsActive] = useState<boolean>(true);
 
-  // Avisos y Bloqueos de Seguridad
+  // Notices and Security Blocks
   const [deactivationError, setDeactivationError] = useState<string | null>(null);
 
   // State for activation/deactivation confirmation modal
@@ -76,7 +76,8 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
 
   const topRef = useRef<HTMLDivElement | null>(null);
-  // Auto-scroll al inicio al montar la vista
+
+  // Auto-scroll at startup when mounting view
   useEffect(() => {
     if (topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'instant' });
@@ -193,7 +194,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     try {
       const newIsActive = !confirmTargetLocation.isActive;
 
-      // Guardia contra saldo activo
+      // Guard against active balance
       if (!newIsActive && locationHasActiveStock(confirmTargetLocation)) {
         throw new Error(
           'Cannot deactivate location with active stock balances. Please transfer or adjust remaining inventory to zero first.'
@@ -347,7 +348,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
           />
         </div>
 
-        {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
+        {/* Row 2: Filters on the left, Buttons on the right */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             {/* Status Filter Estandarizado (All Status, Active, Inactive) */}

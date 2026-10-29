@@ -1,10 +1,10 @@
 /**
  * kdsLocalization.ts
  *
- * Motor de Localización (EN / ES), Detección de Alergias Críticas y
- * Parseo Visual de Modificadores (Adiciones vs Remociones) para KDS.
+ * Localization Engine, Critical Allergy Detection and
+ * Visual Modifier Parser (Additions vs Removals) for KDS.
  *
- * Historia X7P-4212: Staff Multi-Language Display Toggle, Modifier Visual Badges & Allergy Alerts
+ * Story X7P-4212: Staff Multi-Language Display Toggle, Modifier Visual Badges & Allergy Alerts
  */
 
 export type KDSLanguage = 'en' | 'es';
@@ -31,153 +31,142 @@ export interface AllergyDetectionResult {
 }
 
 // ====================================================================
-// 1. DICCIONARIO BILINGÜE (INGLÉS ⇋ ESPAÑOL)
+// 1. LOCALIZATION DICTIONARY
 // ====================================================================
 
 export const DISH_TRANSLATIONS: Record<string, { en: string; es: string }> = {
-  'smash burger doble': { en: 'Double Smash Burger', es: 'Smash Burger Doble' },
-  'smash burger': { en: 'Smash Burger', es: 'Hamburguesa Smash' },
-  'double smash burger': { en: 'Double Smash Burger', es: 'Smash Burger Doble' },
-  'tacos al pastor': { en: 'Al Pastor Tacos', es: 'Tacos al Pastor' },
-  'al pastor tacos': { en: 'Al Pastor Tacos', es: 'Tacos al Pastor' },
-  'iced latte': { en: 'Iced Latte', es: 'Latte Helado' },
-  'croissant de mantequilla': { en: 'Butter Croissant', es: 'Croissant de Mantequilla' },
-  'butter croissant': { en: 'Butter Croissant', es: 'Croissant de Mantequilla' },
-  'classic cheeseburger': { en: 'Classic Cheeseburger', es: 'Hamburguesa Clásica con Queso' },
-  'crispy french fries': { en: 'Crispy French Fries', es: 'Papas Fritas Crujientes' },
-  'caesar salad': { en: 'Caesar Salad', es: 'Ensalada César' },
-  'grilled chicken sandwich': { en: 'Grilled Chicken Sandwich', es: 'Sándwich de Pollo a la Plancha' },
-  'ribeye steak': { en: 'Ribeye Steak', es: 'Ojo de Bife / Bife de Chorizo' },
-  'margherita pizza': { en: 'Margherita Pizza', es: 'Pizza Margarita' },
-  'pepperoni pizza': { en: 'Pepperoni Pizza', es: 'Pizza de Pepperoni' },
-  'craft beer': { en: 'Craft Beer', es: 'Cerveza Artesanal' },
-  'sparkling water': { en: 'Sparkling Water', es: 'Agua con Gas' },
-  'chocolate lava cake': { en: 'Chocolate Lava Cake', es: 'Volcán de Chocolate' },
-  'chocolate brownie': { en: 'Chocolate Brownie', es: 'Brownie de Chocolate' },
+  'smash burger doble': { en: 'Double Smash Burger', es: 'Double Smash Burger' },
+  'smash burger': { en: 'Smash Burger', es: 'Smash Burger' },
+  'double smash burger': { en: 'Double Smash Burger', es: 'Double Smash Burger' },
+  'tacos al pastor': { en: 'Tacos al Pastor', es: 'Tacos al Pastor' },
+  'al pastor tacos': { en: 'Tacos al Pastor', es: 'Tacos al Pastor' },
+  'tacos al pastor (3 pcs)': { en: 'Tacos al Pastor (3 pcs)', es: 'Tacos al Pastor (3 pcs)' },
+  'al pastor tacos (3 pcs)': { en: 'Tacos al Pastor (3 pcs)', es: 'Tacos al Pastor (3 pcs)' },
+  'iced latte': { en: 'Iced Latte', es: 'Iced Latte' },
+  'croissant de mantequilla': { en: 'Butter Croissant', es: 'Butter Croissant' },
+  'butter croissant': { en: 'Butter Croissant', es: 'Butter Croissant' },
+  'classic cheeseburger': { en: 'Classic Cheeseburger', es: 'Classic Cheeseburger' },
+  'crispy french fries': { en: 'Crispy French Fries', es: 'Crispy French Fries' },
+  'caesar salad': { en: 'Caesar Salad', es: 'Caesar Salad' },
+  'grilled chicken sandwich': { en: 'Grilled Chicken Sandwich', es: 'Grilled Chicken Sandwich' },
+  'ribeye steak': { en: 'Ribeye Steak', es: 'Ribeye Steak' },
+  'margherita pizza': { en: 'Margherita Pizza', es: 'Margherita Pizza' },
+  'pepperoni pizza': { en: 'Pepperoni Pizza', es: 'Pepperoni Pizza' },
+  'craft beer': { en: 'Craft Beer', es: 'Craft Beer' },
+  'sparkling water': { en: 'Sparkling Water', es: 'Sparkling Water' },
+  'chocolate lava cake': { en: 'Chocolate Lava Cake', es: 'Chocolate Lava Cake' },
+  'chocolate brownie': { en: 'Chocolate Brownie', es: 'Chocolate Brownie' },
 };
 
 const COURSE_TRANSLATIONS: Record<string, { en: string; es: string }> = {
-  appetizer: { en: 'Appetizer', es: 'Entrada' },
-  beverage: { en: 'Beverage', es: 'Bebida' },
-  main_course: { en: 'Main Course', es: 'Plato Principal' },
-  dessert: { en: 'Dessert', es: 'Postre' },
-  drinks: { en: 'Drinks', es: 'Bebidas' },
-  entree: { en: 'Entrée', es: 'Plato Fuerte' },
+  appetizer: { en: 'Appetizer', es: 'Appetizer' },
+  beverage: { en: 'Beverage', es: 'Beverage' },
+  main_course: { en: 'Main Course', es: 'Main Course' },
+  dessert: { en: 'Dessert', es: 'Dessert' },
+  drinks: { en: 'Drinks', es: 'Drinks' },
+  entree: { en: 'Entree', es: 'Entree' },
 };
 
 const UI_STRINGS: Record<string, { en: string; es: string }> = {
-  // Acciones y estados de comandas
-  DONE: { en: 'DONE', es: 'LISTO' },
-  START: { en: 'START', es: 'INICIAR' },
-  STARTED: { en: 'STARTED', es: 'EN COCCIÓN' },
-  PENDING: { en: 'PENDING', es: 'PENDIENTE' },
-  HELD: { en: 'HELD', es: 'RETENIDO' },
-  FIRE: { en: 'FIRE', es: 'A FUEGO' },
-  FIRED: { en: 'FIRED', es: 'EN FUEGO' },
-  RECALL: { en: 'RECALL', es: 'RECUPERAR' },
-  REROUTED: { en: 'REROUTED', es: 'RE-ENRUTADO' },
-  OVERFLOW: { en: 'OVERFLOW', es: 'SOBRECUPO' },
-  OFFLINE: { en: 'OFFLINE', es: 'SIN CONEXIÓN' },
-  ONLINE: { en: 'ONLINE', es: 'EN LÍNEA' },
+  // Actions and command states
+  DONE: { en: 'DONE', es: 'DONE' },
+  START: { en: 'START', es: 'START' },
+  STARTED: { en: 'STARTED', es: 'STARTED' },
+  PENDING: { en: 'PENDING', es: 'PENDING' },
+  HELD: { en: 'HELD', es: 'HELD' },
+  FIRE: { en: 'FIRE', es: 'FIRE' },
+  FIRED: { en: 'FIRED', es: 'FIRED' },
+  RECALL: { en: 'RECALL', es: 'RECALL' },
+  REROUTED: { en: 'REROUTED', es: 'REROUTED' },
+  OVERFLOW: { en: 'OVERFLOW', es: 'OVERFLOW' },
+  OFFLINE: { en: 'OFFLINE', es: 'OFFLINE' },
+  ONLINE: { en: 'ONLINE', es: 'ONLINE' },
 
   // Alergias y Modificadores
-  ALLERGY_ALERT: { en: 'ALLERGY ALERT', es: 'ALERTA DE ALERGIA' },
-  SEVERE_ALLERGY: { en: 'SEVERE ALLERGY', es: 'ALERGIA SEVERA' },
-  DIETARY_RESTRICTION: { en: 'DIETARY RESTRICTION', es: 'RESTRICCIÓN DIETARIA' },
-  GLUTEN_FREE: { en: 'GLUTEN-FREE', es: 'SIN GLUTEN' },
-  CELIAC: { en: 'CELIAC', es: 'CELÍACO' },
-  VEGAN: { en: 'VEGAN', es: 'VEGANO' },
-  NO_PEANUTS: { en: 'NO PEANUTS', es: 'SIN MANÍ' },
-  DAIRY_FREE: { en: 'DAIRY-FREE', es: 'SIN LÁCTEOS' },
+  ALLERGY_ALERT: { en: 'ALLERGY ALERT', es: 'ALLERGY ALERT' },
+  SEVERE_ALLERGY: { en: 'SEVERE ALLERGY', es: 'SEVERE ALLERGY' },
+  DIETARY_RESTRICTION: { en: 'DIETARY RESTRICTION', es: 'DIETARY RESTRICTION' },
+  GLUTEN_FREE: { en: 'GLUTEN-FREE', es: 'GLUTEN-FREE' },
+  CELIAC: { en: 'CELIAC', es: 'CELIAC' },
+  VEGAN: { en: 'VEGAN', es: 'VEGAN' },
+  NO_PEANUTS: { en: 'NO PEANUTS', es: 'NO PEANUTS' },
+  DAIRY_FREE: { en: 'DAIRY-FREE', es: 'DAIRY-FREE' },
 
   // Encabezados y UI
-  Table: { en: 'Table', es: 'Mesa' },
-  Ticket: { en: 'Ticket', es: 'Comanda' },
-  Course: { en: 'Course', es: 'Tiempo' },
-  Pacing_Window: { en: 'Pacing Window:', es: 'Ritmo de Cocina:' },
-  Auto_Fire: { en: 'Auto-Fire:', es: 'Disparo Automático:' },
-  Types: { en: 'Types:', es: 'Tipos:' },
-  All: { en: 'All', es: 'Todos' },
-  Collapse_All: { en: 'Collapse All', es: 'Colapsar Todo' },
-  Expand_All: { en: 'Expand All', es: 'Expandir Todo' },
-  Special_Instructions: { en: 'Special Instructions', es: 'Instrucciones Especiales' },
-  Kitchen_Notes: { en: 'Kitchen Notes', es: 'Notas de Cocina' },
+  Table: { en: 'Table', es: 'Table' },
+  Ticket: { en: 'Ticket', es: 'Ticket' },
+  Course: { en: 'Course', es: 'Course' },
+  Pacing_Window: { en: 'Pacing Window:', es: 'Pacing Window:' },
+  Auto_Fire: { en: 'Auto-Fire:', es: 'Auto-Fire:' },
+  Types: { en: 'Types:', es: 'Types:' },
+  All: { en: 'All', es: 'All' },
+  Collapse_All: { en: 'Collapse All', es: 'Collapse All' },
+  Expand_All: { en: 'Expand All', es: 'Expand All' },
+  Special_Instructions: { en: 'Special Instructions', es: 'Special Instructions' },
+  Kitchen_Notes: { en: 'Kitchen Notes', es: 'Kitchen Notes' },
   Language_Device_Toggle: {
-    en: 'Device Language: English (Click for Spanish)',
-    es: 'Idioma de Pantalla: Español (Clic para Inglés)',
+    en: 'Device Language: English',
+    es: 'Device Language: English',
   },
 };
 
 const COMMON_MODIFIER_TRANSLATIONS: Array<{ regex: RegExp; en: string; es: string }> = [
-  { regex: /severe allergy:?\s*no peanuts/i, en: 'SEVERE ALLERGY: NO PEANUTS', es: 'ALERGIA SEVERA: SIN MANÍ' },
-  { regex: /celiac allergy:?\s*100% gluten-free/i, en: 'CELIAC ALLERGY: 100% Gluten-Free', es: 'ALERGIA CELÍACO: 100% Sin Gluten' },
-  { regex: /dairy allergy:?\s*sub oat milk/i, en: 'DAIRY ALLERGY: Sub Oat Milk', es: 'ALERGIA LÁCTEOS: Cambiar a Leche de Avena' },
-  { regex: /vegan restriction:?\s*no butter glaze/i, en: 'VEGAN: No Butter Glaze', es: 'VEGANO: Sin Glaseado de Manteca' },
-  { regex: /allergy:?\s*dairy/i, en: 'ALLERGY: DAIRY', es: 'ALERGIA: LÁCTEOS' },
-  { regex: /allergy:?\s*peanuts?/i, en: 'ALLERGY: PEANUTS', es: 'ALERGIA: MANÍ' },
-  { regex: /allergy:?\s*celiac/i, en: 'ALLERGY: CELIAC', es: 'ALERGIA: CELÍACO' },
-  { regex: /allergy:?\s*gluten[- ]free/i, en: 'ALLERGY: GLUTEN-FREE', es: 'ALERGIA: SIN GLUTEN' },
-  { regex: /allergy:?\s*shellfish/i, en: 'ALLERGY: SHELLFISH', es: 'ALERGIA: MARISCOS' },
-  { regex: /gluten[- ]free bun/i, en: 'Gluten-Free Bun', es: 'Pan Sin Gluten' },
-  { regex: /corn tortillas only/i, en: 'Corn Tortillas Only', es: 'Solo Tortillas de Maíz' },
-  { regex: /sub oat milk/i, en: 'Sub Oat Milk', es: 'Leche de Avena' },
-  { regex: /no peanuts/i, en: 'No Peanuts', es: 'Sin Maní' },
-  { regex: /no onions?/i, en: 'No Onions', es: 'Sin Cebolla' },
-  { regex: /no cilantro/i, en: 'No Cilantro', es: 'Sin Cilantro' },
-  { regex: /no pickles?/i, en: 'No Pickles', es: 'Sin Pepinillos' },
-  { regex: /no mayo(?:nnaise)?/i, en: 'No Mayo', es: 'Sin Mayonesa' },
-  { regex: /no mustard/i, en: 'No Mustard', es: 'Sin Mostaza' },
-  { regex: /no sugar/i, en: 'No Sugar', es: 'Sin Azúcar' },
-  { regex: /no butter glaze/i, en: 'No Butter Glaze', es: 'Sin Glaseado de Manteca' },
-  { regex: /no whipped cream/i, en: 'No Whipped Cream', es: 'Sin Crema Batida' },
-  { regex: /(?:add\s+)?extra cheese/i, en: 'Extra Cheese', es: 'Extra Queso' },
-  { regex: /(?:add\s+)?extra bacon/i, en: 'Extra Bacon', es: 'Extra Panceta/Bacon' },
-  { regex: /(?:add\s+)?extra lime/i, en: 'Extra Lime', es: 'Extra Limón' },
+  { regex: /severe allergy:?\s*no peanuts/i, en: 'SEVERE ALLERGY: NO PEANUTS', es: 'SEVERE ALLERGY: NO PEANUTS' },
+  { regex: /celiac allergy:?\s*100% gluten-free/i, en: 'CELIAC ALLERGY: 100% Gluten-Free', es: 'CELIAC ALLERGY: 100% Gluten-Free' },
+  { regex: /dairy allergy:?\s*sub oat milk/i, en: 'DAIRY ALLERGY: Sub Oat Milk', es: 'DAIRY ALLERGY: Sub Oat Milk' },
+  { regex: /vegan restriction:?\s*no butter glaze/i, en: 'VEGAN: No Butter Glaze', es: 'VEGAN: No Butter Glaze' },
+  { regex: /allergy:?\s*dairy/i, en: 'ALLERGY: DAIRY', es: 'ALLERGY: DAIRY' },
+  { regex: /allergy:?\s*peanuts?/i, en: 'ALLERGY: PEANUTS', es: 'ALLERGY: PEANUTS' },
+  { regex: /allergy:?\s*celiac/i, en: 'ALLERGY: CELIAC', es: 'ALLERGY: CELIAC' },
+  { regex: /allergy:?\s*gluten[- ]free/i, en: 'ALLERGY: GLUTEN-FREE', es: 'ALLERGY: GLUTEN-FREE' },
+  { regex: /allergy:?\s*shellfish/i, en: 'ALLERGY: SHELLFISH', es: 'ALLERGY: SHELLFISH' },
+  { regex: /gluten[- ]free bun/i, en: 'Gluten-Free Bun', es: 'Gluten-Free Bun' },
+  { regex: /corn tortillas only/i, en: 'Corn Tortillas Only', es: 'Corn Tortillas Only' },
+  { regex: /sub oat milk/i, en: 'Sub Oat Milk', es: 'Sub Oat Milk' },
+  { regex: /no peanuts/i, en: 'No Peanuts', es: 'No Peanuts' },
+  { regex: /no onions?/i, en: 'No Onions', es: 'No Onions' },
+  { regex: /no cilantro/i, en: 'No Cilantro', es: 'No Cilantro' },
+  { regex: /no pickles?/i, en: 'No Pickles', es: 'No Pickles' },
+  { regex: /no mayo(?:nnaise)?/i, en: 'No Mayo', es: 'No Mayo' },
+  { regex: /no mustard/i, en: 'No Mustard', es: 'No Mustard' },
+  { regex: /no sugar/i, en: 'No Sugar', es: 'No Sugar' },
+  { regex: /no butter glaze/i, en: 'No Butter Glaze', es: 'No Butter Glaze' },
+  { regex: /no whipped cream/i, en: 'No Whipped Cream', es: 'No Whipped Cream' },
+  { regex: /(?:add\s+)?extra cheese/i, en: 'Extra Cheese', es: 'Extra Cheese' },
+  { regex: /(?:add\s+)?extra bacon/i, en: 'Extra Bacon', es: 'Extra Bacon' },
+  { regex: /(?:add\s+)?extra lime/i, en: 'Extra Lime', es: 'Extra Lime' },
   { regex: /(?:add\s+)?extra salsa/i, en: 'Extra Salsa', es: 'Extra Salsa' },
-  { regex: /(?:add\s+)?extra ice/i, en: 'Extra Ice', es: 'Extra Hielo' },
-  { regex: /(?:add\s+)?extra warm/i, en: 'Extra Warm', es: 'Bien Caliente' },
-  { regex: /(?:add\s+)?extra shot espresso/i, en: 'Extra Espresso Shot', es: 'Shot Extra de Espresso' },
-  { regex: /(?:add\s+)?extra vanilla syrup/i, en: 'Extra Vanilla Syrup', es: 'Extra Jarabe de Vainilla' },
-  { regex: /well done/i, en: 'Well Done', es: 'Bien Cocido' },
-  { regex: /medium rare/i, en: 'Medium Rare', es: 'A Punto / Término Medio' },
-  { regex: /rare/i, en: 'Rare', es: 'Jugoso' },
-  { regex: /warm and crispy/i, en: 'Warm and Crispy', es: 'Tibio y Crujiente' },
+  { regex: /(?:add\s+)?extra ice/i, en: 'Extra Ice', es: 'Extra Ice' },
+  { regex: /(?:add\s+)?extra warm/i, en: 'Extra Warm', es: 'Extra Warm' },
+  { regex: /(?:add\s+)?extra shot espresso/i, en: 'Extra Espresso Shot', es: 'Extra Espresso Shot' },
+  { regex: /(?:add\s+)?extra vanilla syrup/i, en: 'Extra Vanilla Syrup', es: 'Extra Vanilla Syrup' },
+  { regex: /well done/i, en: 'Well Done', es: 'Well Done' },
+  { regex: /medium rare/i, en: 'Medium Rare', es: 'Medium Rare' },
+  { regex: /rare/i, en: 'Rare', es: 'Rare' },
+  { regex: /warm and crispy/i, en: 'Warm and Crispy', es: 'Warm and Crispy' },
 ];
 
 // ====================================================================
-// 2. DETECCIÓN DE ALERGIAS (ALLERGY HIGHLIGHT ENGINE)
+// 2. ALLERGY HIGHLIGHT ENGINE
 // ====================================================================
 
 const ALLERGY_KEYWORDS = [
-  { keyword: 'peanut', tag: 'PEANUTS', severity: 'critical' as const, labelEn: 'PEANUTS', labelEs: 'MANÍ' },
-  { keyword: 'maní', tag: 'PEANUTS', severity: 'critical' as const, labelEn: 'PEANUTS', labelEs: 'MANÍ' },
-  { keyword: 'cacahuate', tag: 'PEANUTS', severity: 'critical' as const, labelEn: 'PEANUTS', labelEs: 'MANÍ' },
-  { keyword: 'tree nut', tag: 'TREE NUTS', severity: 'critical' as const, labelEn: 'TREE NUTS', labelEs: 'FRUTOS SECOS' },
-  { keyword: 'nut', tag: 'NUTS', severity: 'critical' as const, labelEn: 'NUTS', labelEs: 'NUECES' },
-  { keyword: 'nueces', tag: 'NUTS', severity: 'critical' as const, labelEn: 'NUTS', labelEs: 'NUECES' },
-  { keyword: 'celiac', tag: 'CELIAC', severity: 'critical' as const, labelEn: 'CELIAC', labelEs: 'CELÍACO' },
-  { keyword: 'celíaco', tag: 'CELIAC', severity: 'critical' as const, labelEn: 'CELIAC', labelEs: 'CELÍACO' },
-  { keyword: 'gluten-free', tag: 'GLUTEN-FREE', severity: 'critical' as const, labelEn: 'GLUTEN-FREE', labelEs: 'SIN GLUTEN' },
-  { keyword: 'gluten free', tag: 'GLUTEN-FREE', severity: 'critical' as const, labelEn: 'GLUTEN-FREE', labelEs: 'SIN GLUTEN' },
-  { keyword: 'sin gluten', tag: 'GLUTEN-FREE', severity: 'critical' as const, labelEn: 'GLUTEN-FREE', labelEs: 'SIN GLUTEN' },
-  { keyword: 'tacc', tag: 'GLUTEN-FREE', severity: 'critical' as const, labelEn: 'GLUTEN-FREE', labelEs: 'SIN TACC' },
-  { keyword: 'shellfish', tag: 'SHELLFISH', severity: 'critical' as const, labelEn: 'SHELLFISH', labelEs: 'MARISCOS' },
-  { keyword: 'mariscos', tag: 'SHELLFISH', severity: 'critical' as const, labelEn: 'SHELLFISH', labelEs: 'MARISCOS' },
-  { keyword: 'crustáceo', tag: 'SHELLFISH', severity: 'critical' as const, labelEn: 'SHELLFISH', labelEs: 'CRUSTÁCEOS' },
-  { keyword: 'dairy allergy', tag: 'DAIRY', severity: 'critical' as const, labelEn: 'DAIRY', labelEs: 'LÁCTEOS' },
-  { keyword: 'dairy-free', tag: 'DAIRY-FREE', severity: 'warning' as const, labelEn: 'DAIRY-FREE', labelEs: 'SIN LÁCTEOS' },
-  { keyword: 'sin lácteo', tag: 'DAIRY-FREE', severity: 'warning' as const, labelEn: 'DAIRY-FREE', labelEs: 'SIN LÁCTEOS' },
-  { keyword: 'lactose', tag: 'LACTOSE', severity: 'warning' as const, labelEn: 'LACTOSE', labelEs: 'LACTOSA' },
-  { keyword: 'dairy', tag: 'DAIRY', severity: 'critical' as const, labelEn: 'DAIRY', labelEs: 'LÁCTEOS' },
-  { keyword: 'severe allergy', tag: 'SEVERE ALLERGY', severity: 'critical' as const, labelEn: 'SEVERE ALLERGY', labelEs: 'ALERGIA SEVERA' },
-  { keyword: 'anaphylaxis', tag: 'ANAPHYLAXIS', severity: 'critical' as const, labelEn: 'ANAPHYLAXIS', labelEs: 'ANAFILAXIA' },
-  { keyword: 'allergy', tag: 'ALLERGY', severity: 'critical' as const, labelEn: 'ALLERGY', labelEs: 'ALERGIA' },
-  { keyword: 'alergia', tag: 'ALLERGY', severity: 'critical' as const, labelEn: 'ALLERGY', labelEs: 'ALERGIA' },
-  { keyword: 'alérgica', tag: 'ALLERGY', severity: 'critical' as const, labelEn: 'ALLERGY', labelEs: 'ALERGIA' },
-  { keyword: 'alérgico', tag: 'ALLERGY', severity: 'critical' as const, labelEn: 'ALLERGY', labelEs: 'ALERGIA' },
-  { keyword: 'vegan', tag: 'VEGAN', severity: 'warning' as const, labelEn: 'VEGAN', labelEs: 'VEGANO' },
-  { keyword: 'vegano', tag: 'VEGAN', severity: 'warning' as const, labelEn: 'VEGAN', labelEs: 'VEGANO' },
-];
+  { keyword: 'peanut', tag: 'PEANUTS', severity: 'critical' as const, labelEn: 'PEANUTS', labelEs: 'PEANUTS' },
+      { keyword: 'tree nut', tag: 'TREE NUTS', severity: 'critical' as const, labelEn: 'TREE NUTS', labelEs: 'TREE NUTS' },
+  { keyword: 'nut', tag: 'NUTS', severity: 'critical' as const, labelEn: 'NUTS', labelEs: 'NUTS' },
+    { keyword: 'celiac', tag: 'CELIAC', severity: 'critical' as const, labelEn: 'CELIAC', labelEs: 'CELIAC' },
+    { keyword: 'gluten-free', tag: 'GLUTEN-FREE', severity: 'critical' as const, labelEn: 'GLUTEN-FREE', labelEs: 'GLUTEN-FREE' },
+  { keyword: 'gluten free', tag: 'GLUTEN-FREE', severity: 'critical' as const, labelEn: 'GLUTEN-FREE', labelEs: 'GLUTEN-FREE' },
+      { keyword: 'shellfish', tag: 'SHELLFISH', severity: 'critical' as const, labelEn: 'SHELLFISH', labelEs: 'SHELLFISH' },
+      { keyword: 'dairy allergy', tag: 'DAIRY', severity: 'critical' as const, labelEn: 'DAIRY', labelEs: 'DAIRY' },
+  { keyword: 'dairy-free', tag: 'DAIRY-FREE', severity: 'warning' as const, labelEn: 'DAIRY-FREE', labelEs: 'DAIRY-FREE' },
+    { keyword: 'lactose', tag: 'LACTOSE', severity: 'warning' as const, labelEn: 'LACTOSE', labelEs: 'LACTOSE' },
+  { keyword: 'dairy', tag: 'DAIRY', severity: 'critical' as const, labelEn: 'DAIRY', labelEs: 'DAIRY' },
+  { keyword: 'severe allergy', tag: 'SEVERE ALLERGY', severity: 'critical' as const, labelEn: 'SEVERE ALLERGY', labelEs: 'SEVERE ALLERGY' },
+  { keyword: 'anaphylaxis', tag: 'ANAPHYLAXIS', severity: 'critical' as const, labelEn: 'ANAPHYLAXIS', labelEs: 'ANAPHYLAXIS' },
+  { keyword: 'allergy', tag: 'ALLERGY', severity: 'critical' as const, labelEn: 'ALLERGY', labelEs: 'ALLERGY' },
+        { keyword: 'vegan', tag: 'VEGAN', severity: 'warning' as const, labelEn: 'VEGAN', labelEs: 'VEGAN' },
+  ];
 
 export function detectAllergies(text?: string | null, lang: KDSLanguage = 'en'): AllergyDetectionResult {
   if (!text || !text.trim()) {
@@ -207,16 +196,16 @@ export function detectAllergies(text?: string | null, lang: KDSLanguage = 'en'):
     }
   }
 
-  // Si se especifica una alergia personalizada (ej. "Allergy: Garlic" o "Alergia: Ajo")
+  // If a custom allergy is specified (e.g. "Allergy: Garlic" or "Allergy: Garlic")
   const customAllergyMatches = text.matchAll(/(?:allergy|alergia):\s*([^,;\n]+)/gi);
   for (const match of customAllergyMatches) {
     if (match[1]?.trim()) {
       let specificIngredient = match[1].trim().toUpperCase();
       if (lang === 'es') {
         const lowerIng = specificIngredient.toLowerCase();
-        if (lowerIng === 'dairy' || lowerIng === 'milk') specificIngredient = 'LÁCTEOS';
-        else if (lowerIng === 'peanut' || lowerIng === 'peanuts' || lowerIng === 'no peanuts') specificIngredient = 'MANÍ';
-        else if (lowerIng === 'celiac') specificIngredient = 'CELÍACO';
+        if (lowerIng === 'dairy' || lowerIng === 'milk') specificIngredient = 'DAIRY';
+        else if (lowerIng === 'peanut' || lowerIng === 'peanuts' || lowerIng === 'no peanuts') specificIngredient = 'PEANUTS';
+        else if (lowerIng === 'celiac') specificIngredient = 'CELIAC';
         else if (lowerIng === 'gluten-free' || lowerIng === 'gluten free') specificIngredient = 'SIN GLUTEN';
         else if (lowerIng === 'shellfish') specificIngredient = 'MARISCOS';
         else if (lowerIng === 'tree nut' || lowerIng === 'tree nuts' || lowerIng === 'nut' || lowerIng === 'nuts') specificIngredient = 'NUECES';
@@ -233,21 +222,21 @@ export function detectAllergies(text?: string | null, lang: KDSLanguage = 'en'):
     }
   }
 
-  // Normalización de idioma en matchedTags si lang === 'es'
+  // Tag normalization for matchedTags
   if (lang === 'es') {
     if (matchedTags.has('DAIRY')) {
       matchedTags.delete('DAIRY');
-      matchedTags.add('LÁCTEOS');
+      matchedTags.add('DAIRY');
     }
     if (matchedTags.has('PEANUTS') || matchedTags.has('PEANUT') || matchedTags.has('NO PEANUTS')) {
       matchedTags.delete('PEANUTS');
       matchedTags.delete('PEANUT');
       matchedTags.delete('NO PEANUTS');
-      matchedTags.add('MANÍ');
+      matchedTags.add('PEANUTS');
     }
     if (matchedTags.has('CELIAC')) {
       matchedTags.delete('CELIAC');
-      matchedTags.add('CELÍACO');
+      matchedTags.add('CELIAC');
     }
     if (matchedTags.has('GLUTEN-FREE')) {
       matchedTags.delete('GLUTEN-FREE');
@@ -264,34 +253,34 @@ export function detectAllergies(text?: string | null, lang: KDSLanguage = 'en'):
     }
   }
 
-  // Deduplicación y Consolidación Inteligente de Alérgenos:
-  // 1. Unificar Celíaco y Sin Gluten
-  const hasCeliac = matchedTags.has(lang === 'es' ? 'CELÍACO' : 'CELIAC');
+  // Intelligent Allergen Deduplication & Consolidation:
+  // 1. Unify Celiac and Gluten-Free
+  const hasCeliac = matchedTags.has('CELIAC');
   const hasGlutenFree = matchedTags.has(lang === 'es' ? 'SIN GLUTEN' : 'GLUTEN-FREE') || matchedTags.has(lang === 'es' ? 'SIN TACC' : 'GLUTEN-FREE');
   if (hasCeliac && hasGlutenFree) {
-    matchedTags.delete(lang === 'es' ? 'CELÍACO' : 'CELIAC');
+    matchedTags.delete('CELIAC');
     matchedTags.delete(lang === 'es' ? 'SIN GLUTEN' : 'GLUTEN-FREE');
     matchedTags.delete(lang === 'es' ? 'SIN TACC' : 'GLUTEN-FREE');
-    matchedTags.add(lang === 'es' ? 'CELÍACO / SIN GLUTEN' : 'CELIAC / GLUTEN-FREE');
+    matchedTags.add('CELIAC / GLUTEN-FREE');
   }
 
-  // 2. Unificar Maní y Frutos Secos / Nueces (y evitar match espurio de 'nut' dentro de 'peanut')
-  const hasPeanut = matchedTags.has(lang === 'es' ? 'MANÍ' : 'PEANUTS');
+  // 2. Unify Peanuts & Nuts
+  const hasPeanut = matchedTags.has('PEANUTS');
   const hasTreeNut = matchedTags.has(lang === 'es' ? 'FRUTOS SECOS' : 'TREE NUTS');
   const hasNut = matchedTags.has(lang === 'es' ? 'NUECES' : 'NUTS');
   if (hasPeanut && (hasTreeNut || hasNut)) {
-    matchedTags.delete(lang === 'es' ? 'MANÍ' : 'PEANUTS');
+    matchedTags.delete('PEANUTS');
     matchedTags.delete(lang === 'es' ? 'FRUTOS SECOS' : 'TREE NUTS');
     matchedTags.delete(lang === 'es' ? 'NUECES' : 'NUTS');
-    matchedTags.add(lang === 'es' ? 'MANÍ / NUECES' : 'PEANUTS & NUTS');
+    matchedTags.add('PEANUTS & NUTS');
   } else if (hasPeanut && lower.includes('peanut')) {
-    // Si solo decía peanut, remover 'NUTS' espurio
+    // If only peanut was specified, remove spurious 'NUTS'
     if (!lower.includes('tree nut') && !lower.includes('nueces') && !lower.includes('nut ')) {
       matchedTags.delete(lang === 'es' ? 'NUECES' : 'NUTS');
     }
   }
 
-  // 3. Eliminar etiquetas genéricas ("ALERGIA", "ALERGIA SEVERA") si ya hay alérgenos concretos identificados
+  // 3. Remove generic tags ('ALLERGY', 'SEVERE ALLERGY') if specific allergens identified
   const concreteCount = Array.from(matchedTags).filter(
     (t) =>
       t !== 'ALLERGY' &&
@@ -328,7 +317,7 @@ export function detectAllergies(text?: string | null, lang: KDSLanguage = 'en'):
 }
 
 // ====================================================================
-// 3. PARSER DE MODIFICADORES (MODIFIER PARSING ENGINE)
+// 3. MODIFIER PARSING ENGINE
 // ====================================================================
 
 export function parseItemModifiers(
@@ -337,7 +326,7 @@ export function parseItemModifiers(
 ): ParsedModifierBadge[] {
   if (!rawNotes || !rawNotes.trim()) return [];
 
-  // Dividir por saltos de línea, comas, viñetas o punto y coma
+  // Split by newlines, commas, bullet points, or semicolons
   const rawSegments = rawNotes
     .split(/[\n,;•|]+/)
     .map((s) => s.trim())
@@ -368,7 +357,7 @@ export function parseItemModifiers(
       };
     }
 
-    // 2. Caso: Adición (+ / Extra / Add / Con)
+    // 2. Case: Addition (+ / Extra / Add / With)
     const isAddition =
       segment.startsWith('+') ||
       lower.startsWith('extra ') ||
@@ -385,7 +374,7 @@ export function parseItemModifiers(
           break;
         }
       }
-      // Garantizar texto limpio sin prefijo '+' redundante y normalizar a "Extra "
+      // Ensure clean text without redundant '+' prefix and normalize to "Extra"
       let cleanText = localizedText.replace(/^\+\s*/, '').trim();
       const lowerClean = cleanText.toLowerCase();
       if (lowerClean.startsWith('add extra ')) {
@@ -410,7 +399,7 @@ export function parseItemModifiers(
       };
     }
 
-    // 3. Caso: Remoción (- / No / Without / Sin / Quitar)
+    // 3. Case: Removal (- / No / Without / Remove)
     const isRemoval =
       segment.startsWith('-') ||
       lower.startsWith('no ') ||
@@ -426,7 +415,7 @@ export function parseItemModifiers(
           break;
         }
       }
-      // Garantizar texto limpio sin prefijo '-' redundante
+      // Ensure clean text without redundant '-' prefix
       let cleanText = localizedText.replace(/^-\s*/, '').trim();
       if (lang === 'es' && cleanText.toLowerCase().startsWith('no ')) {
         cleanText = `Sin ${cleanText.slice(3).trim()}`;
@@ -446,7 +435,7 @@ export function parseItemModifiers(
       };
     }
 
-    // 4. Caso: Instrucción especial / Temperatura de cocción / Nota
+    // 4. Case: Special instruction / Cooking temperature / Note
     let localizedText = segment;
     for (const t of COMMON_MODIFIER_TRANSLATIONS) {
       if (t.regex.test(segment)) {
@@ -469,7 +458,7 @@ export function parseItemModifiers(
 }
 
 // ====================================================================
-// 4. MÉTODOS DE TRADUCCIÓN REACTIVA
+// 4. REACTIVE TRANSLATION UTILITIES
 // ====================================================================
 
 export function getLocalizedDishName(originalName: string, lang: KDSLanguage = 'en'): string {
@@ -506,7 +495,7 @@ export function getDeviceLanguage(stationId?: number | string | null): KDSLangua
       return stored;
     }
   } catch {
-    // ignorar error de acceso a localStorage
+    // ignore localStorage access error
   }
   return 'en';
 }
@@ -517,11 +506,10 @@ export function getLocalizedVariantName(variantName?: string | null, lang: KDSLa
   if (!trimmed || trimmed.toLowerCase() === 'estándar' || trimmed.toLowerCase() === 'standard') return '';
   if (lang === 'es') {
     const lower = trimmed.toLowerCase();
-    if (lower === 'small') return 'Pequeño';
-    if (lower === 'medium') return 'Mediano';
-    if (lower === 'large') return 'Grande';
+    if (lower === 'small') return 'Small';
+    if (lower === 'medium') return 'Medium';
+    if (lower === 'large') return 'Large';
   }
-  // Las variantes se mantienen tal cual aparecen en la base de datos
   return trimmed;
 }
 
@@ -537,9 +525,9 @@ export function setDeviceLanguage(lang: KDSLanguage, stationId?: number | string
 }
 
 /**
- * Extrae y limpia las instrucciones de cocina reales de las notas de la orden o ítem,
- * discriminando y descartando la referencia de ticket/mesa ("poo", "Table 4", "Mesa 1", etc.)
- * para que no se muestre falsamente como instrucción de cocina.
+ * Extracts and cleans actual kitchen instructions from order or item notes,
+ * discriminating and discarding the ticket/table reference ("poo", "Table 4", "Table 1", etc.)
+ * preventing spurious non-instruction text from displaying.
  */
 export function extractCleanKitchenInstruction(
   notes?: string | null,
@@ -548,7 +536,7 @@ export function extractCleanKitchenInstruction(
   if (!notes || !notes.trim()) return null;
   let text = notes.trim();
 
-  // 1. Eliminar sufijos o marcas de enrutamiento y contingencia del sistema
+  // 1. Remove routing and contingency suffixes or flags from the system
   text = text
     .replace(/\|\s*\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
     .replace(/\[(?:Auto-)?Rerouted[^\]]*\]/gi, '')
@@ -556,7 +544,7 @@ export function extractCleanKitchenInstruction(
 
   if (!text) return null;
 
-  // 2. Si la nota coincide exactamente con el identificador de mesa / ticket reference, no es una instrucción
+  // 2. If note matches table or ticket reference, it is not an instruction
   if (tableName && tableName.trim()) {
     const rawTable = tableName.trim();
     const lowerTable = rawTable.toLowerCase();
@@ -576,7 +564,7 @@ export function extractCleanKitchenInstruction(
       return null;
     }
 
-    // 3. Si la nota viene compuesta como "[TicketRef] • [Instrucción]", remover el segmento de referencia
+    // 3. If note is formatted as "[TicketRef] • [Instruction]", remove reference segment
     if (text.includes('•')) {
       const parts = text.split('•').map((p) => p.trim()).filter(Boolean);
       if (parts.length > 1) {
@@ -587,11 +575,11 @@ export function extractCleanKitchenInstruction(
           firstLower === lowerTable ||
           firstWithoutPrefix === tableWithoutPrefix ||
           firstLower.startsWith('station #') ||
-          firstLower.startsWith('estación #')
+          firstLower.startsWith('station #')
         ) {
           parts.shift();
-          // Si el siguiente segmento era estación ("Station #KST-1..."), descartarlo también si aplica
-          if (parts.length > 0 && /^(?:station|estación)\s*#[^•]*/i.test(parts[0])) {
+          // If next segment is station reference, discard if applicable
+          if (parts.length > 0 && /^(?:station)\s*#[^•]*/i.test(parts[0])) {
             parts.shift();
           }
           text = parts.join(' • ').trim();
@@ -600,7 +588,7 @@ export function extractCleanKitchenInstruction(
     }
   }
 
-  // 4. Descartar prefijos de mesa restantes tipo "Table 4 • " o "Mesa 4 • "
+  // 4. Discard remaining table prefixes such as "Table 4 • " or "Table 4 • "
   text = text.replace(/^(?:table|mesa)\s+\S+\s*•\s*/i, '').trim();
 
   if (!text) return null;

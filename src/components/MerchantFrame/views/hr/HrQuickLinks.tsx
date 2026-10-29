@@ -23,7 +23,7 @@ const HR_ANCHORS: Array<{ key: HrAnchorKey; label: string; featureId: string }> 
   },
 ];
 
-// Mismo panel compartido que usan Dining System y Accounts Payable: el workspace activo se
+// Same shared dashboard used by Dining System and Accounts Payable: the active workspace is
 // rendered highlighted and non-clickable so user always knows current location.
 export const HrQuickLinks: React.FC<HrQuickLinksProps> = ({ active, onNavigate }) => {
   const actions: QuickLaunchAction[] = HR_ANCHORS.map((anchor) => ({

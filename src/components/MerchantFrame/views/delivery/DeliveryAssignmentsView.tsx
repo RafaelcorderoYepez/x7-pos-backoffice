@@ -1,10 +1,10 @@
-// Tablero de despacho de repartos: KPIs (`GET /api/delivery-assignment/summary`), filtros
-// de estado / tipo de flota / búsqueda (enviados al backend como query), tablero Kanban o
-// tabla, acciones de ciclo de vida (sólo transiciones válidas), alta y reasignación en
-// drawer y seguimiento en vivo (vista de tracking propia o URL del DSP en un iframe).
+// Delivery dispatch dashboard: KPIs (`GET /api/delivery-assignment/summary`), filters
+// status/fleet type/search (sent to backend as query), Kanban board or
+// table, lifecycle actions (valid transitions only), registration and reassignment in
+// drawer and live tracking (own tracking view or DSP URL in an iframe).
 //
-// Tiempo real: `delivery:assignment_changed` / `driver_status_changed` / reconexión → se
-// vuelve a pedir tablero y resumen. Sondeo cada 30 s como respaldo.
+// Real time: `delivery:assignment_changed` / `driver_status_changed` / reconnection → se
+// ask again for dashboard and summary. Poll every 30 s as a backup.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -98,13 +98,13 @@ export const DeliveryAssignmentsView: React.FC<DeliveryAssignmentsViewProps> = (
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Búsqueda con debounce: escribir no dispara una petición por tecla.
+  // Search with debounce: typing does not trigger a request per key.
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
-  // Reloj de los temporizadores relativos ("Assigned 12 mins ago").
+  // Clock relative timers ("Assigned 12 mins ago").
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
     return () => clearInterval(timer);
@@ -120,7 +120,7 @@ export const DeliveryAssignmentsView: React.FC<DeliveryAssignmentsViewProps> = (
     if (!loadedRef.current) setLoading(true);
     try {
       const [boardRows, kpis] = await Promise.all([listDeliveryAssignments(current), getDeliveryAssignmentSummary()]);
-      if (id !== seq.current) return; // respuesta vieja: los filtros cambiaron entretanto
+      if (id !== seq.current) return; // old answer: filters changed in the meantime
       setRows(boardRows);
       setSummary(kpis);
       setError('');
@@ -151,13 +151,13 @@ export const DeliveryAssignmentsView: React.FC<DeliveryAssignmentsViewProps> = (
     void fetchBoard(filtersRef.current);
   }, [fetchBoard]);
 
-  // Respaldo si el listado no trae vehicleType (backend anterior): se cruza con la flota.
+  // Backup if the listing does not have vehicleType (previous backend): crosses with fleet.
   const fetchVehicles = useCallback(async () => {
     try {
       const drivers = await listAllDrivers();
       setVehicleByDriver(new Map(drivers.map((d) => [d.id, d.vehicleType ?? null])));
     } catch {
-      // Sin flota el icono cae en el genérico; el tablero sigue funcionando.
+      // Without fleet the icon falls into the generic; The board still works.
     }
   }, []);
 
@@ -167,7 +167,7 @@ export const DeliveryAssignmentsView: React.FC<DeliveryAssignmentsViewProps> = (
     });
   }, [fetchVehicles]);
 
-  // Respaldo por sondeo.
+  // Polling support.
   useEffect(() => {
     const timer = setInterval(refresh, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
@@ -252,7 +252,7 @@ export const DeliveryAssignmentsView: React.FC<DeliveryAssignmentsViewProps> = (
     try {
       window.sessionStorage.setItem(TRACKING_FOCUS_KEY, String(assignment.id));
     } catch {
-      // Sin sessionStorage la vista de tracking abre sin foco; no es bloqueante.
+      // Without sessionStorage the tracking view opens without focus; It is not blocking.
     }
     onNavigate?.('delivery-tracking');
   };
@@ -567,7 +567,7 @@ export const DeliveryAssignmentsView: React.FC<DeliveryAssignmentsViewProps> = (
                 data-testid={`kanban-column-${column.id}`}
                 className="bg-[#f8f3eb] border border-[#e8e2d8] rounded p-3 flex flex-col gap-3 min-h-[160px]"
               >
-                {/* Misma altura en todas las cabeceras (algunas ocupan dos líneas): subrayados alineados. */}
+                {/* Equal header heights across columns (some wrap to two lines): aligned underlines. */}
                 <div className="flex items-end justify-between gap-2 border-b-2 pb-2 min-h-[2.75rem]" style={{ borderBottomColor: column.color }}>
                   <p className="text-[11px] font-bold uppercase tracking-widest text-[#1d1c17]">{column.label}</p>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-[#5f5e5e] font-sans">

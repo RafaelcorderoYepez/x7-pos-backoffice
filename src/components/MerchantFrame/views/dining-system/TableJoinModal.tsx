@@ -36,7 +36,7 @@ export const TableJoinModal: React.FC<TableJoinModalProps> = ({
   const [selected, setSelected] = useState<number[]>([]);
   useModalDismiss(onCancel);
 
-  // Candidatas: ni la madre, ni su descendencia (candado circular), ni las que ya cuelgan
+  // Candidates: neither the mother, nor her offspring (circular lock), nor those who are already hanging
   // from another table — those must be separated first so they are not stolen from their group.
   const candidates = useMemo(() => {
     const blocked = descendantTableIds(tables, parent.id);

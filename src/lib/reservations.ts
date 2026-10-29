@@ -1,9 +1,9 @@
-// Reglas del libro de reservas: qué transición de estado es legal, cuánta gente se espera en
-// el día, y si el aforo del local aguanta una reserva más en una franja concreta.
+// Reservation book rules: what status transition is legal, how many people are expected in
+// the day, and if the venue's capacity can support one more reservation in a specific slot.
 //
-// Todo lo que decide "esta reserva cuenta" pasa por los helpers de este fichero para que la
-// tira de KPIs, los filtros y la parrilla no puedan discrepar entre sí. El módulo es puro
-// (sin fetch ni React) porque es la parte que se testea de verdad.
+// Everything that decides "this reservation counts" goes through the helpers of this file so that the
+// strip of KPIs, the filters and the grid cannot disagree with each other. The module is pure
+// (without fetch or React) because it is the part that is really tested.
 
 import type {
   Reservation,
@@ -16,24 +16,24 @@ import {
   isReservationStatus,
 } from '../types/reservation';
 
-// ================= Máquina de estados =================
+// ================= State Machine =================
 
-// Grafo de transiciones legales del ciclo de vida. Lo que NO aparece aquí es un salto ilegal:
-// de `cancelled` o `completed` no se sale (son terminales), y a `seated` sólo se llega desde
-// una reserva viva, nunca desde una anulada. El backend no impone nada de esto todavía, así
-// que la guarda de la UI es la única que impide dejar el histórico en un estado imposible.
+// Graph of legal life cycle transitions. What does NOT appear here is an illegal jump:
+// from `cancelled` or `completed` is not exited (they are terminals), and `seated` is only reached from
+// a live reservation, never from a canceled one. The backend doesn't enforce any of this yet, so
+// that the UI save is the only thing that prevents leaving the history in an impossible state.
 export const RESERVATION_TRANSITIONS: Record<ReservationStatus, ReservationStatus[]> = {
   pending: ['confirmed', 'seated', 'cancelled', 'no_show', 'white_list'],
-  // Confirmada puede sentarse, anularse o marcarse ausente pasada la cortesía.
+  // Confirmed it can be seated, canceled or marked absent after the courtesy.
   confirmed: ['seated', 'cancelled', 'no_show'],
-  // Sentada sólo avanza a terminada; anular una mesa que ya está comiendo no tiene sentido
-  // operativo (para eso está cerrar la comanda y completarla).
+  // Sitting only advances to finished; overriding a table that is already eating doesn't make sense
+  // operational (that's what closing the command and completing it is for).
   seated: ['completed'],
-  // Terminales: la reserva ya cerró su historia.
+  // Terminals: the reserve has already closed its history.
   completed: [],
   cancelled: [],
   no_show: [],
-  // La lista de espera entra al libro cuando se libera hueco, o se cae.
+  // The waiting list enters the book when space becomes available, or falls.
   white_list: ['pending', 'confirmed', 'cancelled', 'no_show'],
 };
 
@@ -52,9 +52,9 @@ export const illegalTransitionMessage = (
 ): string =>
   `Illegal lifecycle jump: a ${RESERVATION_STATUS_LABELS[from]} reservation cannot become ${RESERVATION_STATUS_LABELS[to]}.`;
 
-// `seated_at` se sella al entrar en SEATED y NUNCA se reescribe: si la fila ya trae una marca
-// (una reserva que se sentó, se levantó y volvió a sentarse tras una corrección), la primera
-// es la hora real de llegada del grupo.
+// `seated_at` is sealed upon entering SEATED and is NEVER rewritten: if the row already has a flag
+// (a reserve who sat down, stood up and sat down again after a correction), the first
+// is the actual arrival time of the group.
 export const seatedStampFor = (
   reservation: Pick<Reservation, 'status' | 'seated_at'>,
   next: ReservationStatus,
@@ -65,9 +65,9 @@ export const seatedStampFor = (
   return now.toISOString();
 };
 
-// Pasada la cortesía sobre la hora reservada, una reserva que sigue sin sentarse es candidata
-// a no-show. Es una SUGERENCIA para la anfitriona (el badge de la fila), no una transición
-// automática: quien decide que el cliente no vino es una persona.
+// After the courtesy of the reserved time, a reservation that still does not sit down is a candidate
+// to no-show. It is a SUGGESTION to the hostess (the line badge), not a transition
+// automatic: the person who decides that the client did not come is a person.
 export const isNoShowCandidate = (
   reservation: Pick<Reservation, 'status' | 'reservation_date'>,
   now: Date = new Date(),
@@ -88,8 +88,8 @@ export const reservationEnd = (
   reservation: Pick<Reservation, 'reservation_date' | 'duration_minutes'>,
 ): number => reservationStart(reservation) + (reservation.duration_minutes || 0) * 60_000;
 
-// Solape de dos intervalos semiabiertos [inicio, fin): dos reservas que se tocan justo en el
-// borde (una acaba a las 21:00 y la siguiente empieza a las 21:00) NO compiten por la mesa.
+// Overlap of two semi-open intervals [beginning, end): two reserves that touch each other right at the
+// edge (one ends at 9:00 p.m. and the next starts at 9:00 p.m.) They DO NOT compete for the table.
 export const windowsOverlap = (
   aStart: number,
   aEnd: number,
@@ -97,9 +97,9 @@ export const windowsOverlap = (
   bEnd: number,
 ): boolean => aStart < bEnd && bStart < aEnd;
 
-// Rango del día [00:00, 24:00) en HORA LOCAL del local, no en UTC: el servicio de una noche
-// pertenece al día que ve la anfitriona en su reloj, y partirlo por el meridiano de Greenwich
-// movería las cenas tardías al día siguiente en media Europa.
+// Day range [00:00, 24:00) in local LOCAL TIME, not UTC: overnight service
+// belongs to the day that the hostess sees on her watch, and divide it by the Greenwich meridian
+// would move late dinners to the next day in half of Europe.
 export const buildDayRange = (isoDate: string): { from: string; to: string } => {
   const [year, month, day] = isoDate.split('-').map(Number);
   const from = new Date(year, (month ?? 1) - 1, day ?? 1, 0, 0, 0, 0);
@@ -110,9 +110,9 @@ export const buildDayRange = (isoDate: string): { from: string; to: string } => 
 export const todayIsoDate = (now: Date = new Date()): string =>
   `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-// Formato de 12 h construido a mano y no con toLocaleTimeString: el separador que ICU mete
-// antes del AM/PM cambia entre versiones de Node (espacio fino U+202F), y esta cadena se
-// compara en los tests y se lee en la parrilla.
+// 12 h format built by hand and not with toLocaleTimeString: the separator that ICU puts
+// before AM/PM switches between versions of Node (thin space U+202F), and this string is
+// It compares in the tests and is read on the grid.
 export const clockTime = (value?: string | null): string => {
   if (!value) return '';
   const d = new Date(value);
@@ -148,27 +148,27 @@ export const reservationHour = (
 
 export const reservationCode = (id: number): string => `#RES-${id}`;
 
-// ================= KPIs del día =================
+// ================= KPIs of the day =================
 
 export interface DailyReservationMetrics {
-  /** Suma de party_size de todo lo que NO está anulado: la gente que el local espera servir. */
+  /** Sum of party_size of everything that is NOT overridden: the people the venue expects to serve. */
   totalExpectedGuests: number;
   /** Comensales ya sentados o que ya terminaron: cubiertos reales. */
   coveredGuests: number;
-  /** Reservas sin confirmar todavía. */
+  /** Reservations not yet confirmed. */
   pendingConfirmations: number;
-  /** % de no-shows sobre el total de reservas del día (0 si no hay ninguna). */
+  /** % of no-shows of the total reservations for the day (0 if there are none). */
   noShowRate: number;
-  /** % de cubiertos sobre los comensales esperados: ocupación del servicio. */
+  /** % of covers over expected diners: service occupancy. */
   occupancyRate: number;
   totalReservations: number;
   noShowCount: number;
 }
 
-// El denominador del no-show es el TOTAL de reservas del día (anuladas incluidas), tal como
-// pide la historia: "percentage of NO_SHOW bookings relative to total daily reservations".
-// El de la ocupación, en cambio, son los comensales esperados — comparar cubiertos contra un
-// total que incluye anulaciones dejaría la ocupación artificialmente baja.
+// The denominator of the no-show is the TOTAL reservations of the day (cancelled included), as
+// asks the story: "percentage of NO_SHOW bookings relative to total daily reservations".
+// That of the occupation, on the other hand, is the expected diners - comparing cutlery against a
+// total that includes cancellations would leave occupancy artificially low.
 export const computeDailyMetrics = (
   reservations: Reservation[],
 ): DailyReservationMetrics => {
@@ -199,13 +199,13 @@ export const computeDailyMetrics = (
   };
 };
 
-// Un decimal: "12.5%" dice algo en un servicio de 40 reservas, "12.4999%" no.
+// A decimal: "12.5%" says something in a service of 40 reservations, "12.4999%" does not.
 export const formatPercent = (value: number): string => `${value.toFixed(1)}%`;
 
 // ================= Filtros =================
 
 export interface ReservationFilters {
-  /** Vacío = sin filtrar (un grupo de checkboxes sin marcar no esconde nada). */
+  /** Empty = unfiltered (a group of unchecked checkboxes hides nothing). */
   statuses: ReservationStatus[];
   sources: string[];
   search: string;
@@ -216,8 +216,8 @@ export const EMPTY_FILTERS: ReservationFilters = { statuses: [], sources: [], se
 export const hasActiveFilters = (f: ReservationFilters): boolean =>
   f.statuses.length > 0 || f.sources.length > 0 || f.search.trim().length > 0;
 
-// Los tres ejes por los que una encargada busca una reserva: quién viene (nombre del cliente
-// o de cualquier acompañante del roster), cómo contactarlo, y qué pidió.
+// The three axes by which a manager looks for a reservation: who is coming (name of the client
+// or any companion on the roster), how to contact him, and what he requested.
 export const reservationHaystack = (
   reservation: Reservation,
   customerName?: string,
@@ -256,11 +256,11 @@ export const toggleInList = <T,>(list: T[], value: T): T[] =>
 
 // ================= Aforo =================
 //
-// El aforo NO se calcula aquí: lo decide el servidor (`/api/reservation-capacity`, pico de
-// comensales CONFIRMED/SEATED simultáneos + límite de llegadas por franja) dentro de la
-// transacción del alta. Ver src/lib/reservation-capacity.ts.
+// The capacity is NOT calculated here: it is decided by the server (`/api/reservation-capacity`, peak
+// simultaneous CONFIRMED/SEATED diners + limit of arrivals per slot) within the
+// discharge transaction. See src/lib/reservation-capacity.ts.
 
-// ================= Validación del alta =================
+// ================= Registration validation =================
 
 export const partySizeError = (raw: string): string => {
   if (!raw.trim()) return 'Party size is required';
@@ -286,12 +286,12 @@ export const reservationDateError = (date: string, time: string): string => {
   return '';
 };
 
-// El <input type="datetime-local"> entrega hora local sin zona; el contrato pide un instante
-// ISO en UTC, y el Date lo convierte usando la zona del navegador — que es justo la del local.
+// The <input type="datetime-local"> returns local time without zone; the contract asks for a moment
+// ISO in UTC, and Date converts it using the browser zone — which is just the local zone.
 export const composeReservationDate = (date: string, time: string): string =>
   new Date(`${date}T${time}`).toISOString();
 
-// Partes locales de un instante ISO, para rellenar los dos inputs al reabrir el drawer.
+// Local parts of an ISO instant, to fill the two inputs when reopening the drawer.
 export const splitReservationDate = (iso: string): { date: string; time: string } => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return { date: '', time: '' };
@@ -301,15 +301,15 @@ export const splitReservationDate = (iso: string): { date: string; time: string 
   };
 };
 
-// Las reglas de contacto de un invitado (nombre/correo/teléfono, con los topes de columna y
-// el formato internacional que exige @IsPhoneNumber) viven en `reservation-guests.ts`, que es
-// el módulo dueño del roster. Estaban duplicadas aquí y en aquél: dos copias de la misma regla
-// se separan en cuanto una de las dos se ajusta.
+// A guest's contact rules (name/email/phone, with column limits and
+// the international format required by @IsPhoneNumber) live in `reservation-guests.ts`, which is
+// the module that owns the roster. They were duplicated here and there: two copies of the same rule
+// They separate as soon as one of the two adjusts.
 
-// ================= Búsqueda de clientes =================
+// ================= Customer Search =================
 
-// Autocompletado del CRM por nombre, teléfono o correo, los tres identificadores con los que
-// un cliente se presenta al teléfono.
+// CRM autocompletion by name, phone number or email, the three identifiers with which
+// A client shows up on the phone.
 export const searchCustomers = <T extends { name: string; email?: string | null; phone?: string | null }>(
   customers: T[],
   term: string,
@@ -324,10 +324,10 @@ export const searchCustomers = <T extends { name: string; email?: string | null;
     .slice(0, limit);
 };
 
-// ================= Normalización defensiva =================
+// ================= Defensive Normalization =================
 
-// El backend puede devolver un status heredado fuera del enum (o nulo). La fila tiene que
-// seguir siendo visible y filtrable, así que cae a `pending`, que es el estado inicial.
+// The backend can return an inherited status outside the enum (or null). The line has to
+// remain visible and filterable, so it falls to `pending`, which is the initial state.
 export const normalizeReservation = (raw: Reservation): Reservation => ({
   ...raw,
   status: isReservationStatus(raw.status) ? raw.status : 'pending',

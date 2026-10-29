@@ -2,7 +2,7 @@
 //
 // All mutations require justification for payroll audits.
 // overlap guards match backend logic, ensuring the form does not allow invalid input.
-// que la API va a rechazar.
+// that the API is going to reject.
 
 import React, { useMemo, useState } from 'react';
 import type { TimeEntry } from '../../../../types/time-entry';
@@ -40,7 +40,7 @@ interface TimeEntryFormDrawerProps {
   onSubmit: (draft: TimeEntryDraft) => void;
 }
 
-/** ISO -> valor de un <input type="datetime-local">, que trabaja en horario local. */
+/** ISO -> value of a <input type="datetime-local">, which works in local time. */
 const toLocalInput = (iso?: string | null): string => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -119,7 +119,7 @@ export const TimeEntryFormDrawer: React.FC<TimeEntryFormDrawerProps> = ({
   }, [entries, collaboratorId, clockIn, clockOut, initial]);
 
   // Incomplete datetime-local returns empty string; covers missing and partial inputs.
-  // campo en blanco como el que tiene fecha pero no hora.
+  // blank field like the one with date but no time.
   const clockInError = clockIn ? '' : 'Clock-in needs both a date and a time.';
 
   const breakNum = Number(breakMinutes);

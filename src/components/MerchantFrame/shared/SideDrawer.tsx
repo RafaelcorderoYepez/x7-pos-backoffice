@@ -1,8 +1,8 @@
-// Drawer lateral (anclado a la derecha) con la misma cabecera que AppModal.
+// Side drawer (docked to the right) with the same header as AppModal.
 //
-// AppModal es un diálogo centrado de hasta max-w-2xl: se queda corto para un formulario que
-// lleva un mapa al lado. Portal a document.body por el mismo motivo que AppModal (el <main>
-// de MerchantFrame es `fixed` y crea su propio contexto de apilamiento).
+// AppModal is a centered dialog up to max-w-2xl: insufficient for large forms that
+// He has a map at his side. Portal to document.body for the same reason as AppModal (the <main>
+// of MerchantFrame is `fixed` and creates its own stacking context).
 
 import React, { useId } from 'react';
 import { createPortal } from 'react-dom';
@@ -12,7 +12,7 @@ interface SideDrawerProps {
   subtitle?: string;
   onClose: () => void;
   closeDisabled?: boolean;
-  /** Ancho máximo del panel en px. */
+  /** Maximum drawer width in px. */
   maxWidth?: number;
   children: React.ReactNode;
 }
@@ -33,7 +33,7 @@ export const SideDrawer: React.FC<SideDrawerProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="h-full w-full bg-white shadow-2xl flex flex-col animate-fade-in font-sans"
+        className="h-full w-full bg-white shadow-2xl flex flex-col overflow-hidden animate-fade-in font-sans"
         style={{ maxWidth }}
       >
         <div className="bg-[#222222] p-4 text-white flex justify-between items-center gap-4 shrink-0">

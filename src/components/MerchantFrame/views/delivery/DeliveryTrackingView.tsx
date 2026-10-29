@@ -1,10 +1,10 @@
-// Radar en vivo de la flota: KPIs de telemetría, filtros (repartidor/asignación y estado de
-// la señal), mapa Leaflet con un marcador por reparto en curso y la lista de tarjetas.
+// Fleet live radar: telemetry KPIs, filters (delivery/assignment and delivery status)
+// signal), Leaflet map with a marker by current deal and list of cards.
 //
-// Fuentes: `GET /api/delivery-tracking/live` y `/summary` (sondeo cada 15 s como respaldo),
-// el socket de delivery-realtime (posición nueva = mover el marcador al instante) y
-// `/route/:assignmentId` para el rastro del reparto enfocado. La señal perdida se recalcula
-// en el cliente cada segundo: no hace falta esperar al siguiente sondeo para verla.
+// Sources: `GET /api/delivery-tracking/live` and `/summary` (polling every 15s as a backup),
+// the delivery-realtime socket (new position = move marker instantly) and
+// `/route/:assignmentId` for the focused assignment trace. The lost signal is recalculated
+// on the client every second: there is no need to wait for the next poll to see it.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DeliveryZone } from '../../../../types/delivery';
@@ -82,7 +82,7 @@ export const DeliveryTrackingView: React.FC<DeliveryTrackingViewProps> = ({ onNa
     entriesRef.current = entries;
   });
 
-  // El foco viene de otra vista una sola vez: se consume al montar.
+  // Focus comes from another view only once: it is consumed when mounting.
   useEffect(() => {
     clearStoredFocus();
   }, []);
@@ -133,7 +133,7 @@ export const DeliveryTrackingView: React.FC<DeliveryTrackingViewProps> = ({ onNa
     void refresh();
   };
 
-  // Zonas activas como capa tenue: opcional, un fallo no estropea el radar.
+  // Active zones as a faint layer: optional, a failure does not damage the radar.
   useEffect(() => {
     let alive = true;
     listDeliveryZones()
@@ -144,7 +144,7 @@ export const DeliveryTrackingView: React.FC<DeliveryTrackingViewProps> = ({ onNa
     };
   }, []);
 
-  // Sondeo de respaldo + reloj de 1 s (tiempo relativo y detección de señal perdida).
+  // Backup polling + 1s clock (relative timing and lost signal detection).
   useEffect(() => {
     const poll = window.setInterval(() => void refreshRef.current(), LIVE_POLL_MS);
     const tick = window.setInterval(() => setNow(Date.now()), 1000);
@@ -229,7 +229,7 @@ export const DeliveryTrackingView: React.FC<DeliveryTrackingViewProps> = ({ onNa
     return () => connection.close();
   }, [handleLocation]);
 
-  // Esc cierra la pantalla completa.
+  // Esc closes the entire screen.
   useEffect(() => {
     if (!expanded) return;
     const onKey = (event: KeyboardEvent) => {
@@ -401,7 +401,7 @@ export const DeliveryTrackingView: React.FC<DeliveryTrackingViewProps> = ({ onNa
         </span>
       </div>
 
-      {/* ---------- KPIs de telemetría ---------- */}
+      {/* ---------- Telemetry KPIs ---------- */}
       <section
         aria-label="Fleet telemetry metrics"
         data-testid="tracking-kpis"

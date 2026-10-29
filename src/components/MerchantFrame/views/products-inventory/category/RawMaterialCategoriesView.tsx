@@ -274,7 +274,7 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
           />
         </div>
 
-        {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
+        {/* Row 2: Filters on the left, Buttons on the right */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <div className="flex flex-wrap items-center gap-3">
             <select

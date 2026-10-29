@@ -1,14 +1,14 @@
-// Tipos del dominio de RR. HH.: el colaborador es el empleado de sala tal y como lo ve el
-// comercio, enganchado a una cuenta de plataforma (user_id) y opcionalmente a un turno.
+// Types of HR domain HH.: the collaborator is the room employee as seen by the
+// trade, hooked to a platform account (user_id) and optionally to a shift.
 //
-// Los nombres de campo reflejan el contrato real de /api/collaborators: escalares en
-// snake_case (user_id, merchant_id, shift_id, created_at) y relaciones embebidas en
-// camelCase, igual que el resto de la API.
+// Field names reflect the actual contract in /api/collaborators: scalars in
+// snake_case (user_id, merchant_id, shift_id, created_at) and relationships embedded in
+// camelCase, just like the rest of the API.
 
-// ================= Rol de turno =================
+// ================= Shift Role =================
 
-// Espejo exacto del enum ShiftRole del backend. La historia menciona SUPERVISOR, que NO
-// existe en el dominio: el escalón de mando es MANAGER.
+// Exact mirror of the backend ShiftRole enum. The story mentions SUPERVISOR, who DOES NOT
+// exists in the domain: the command level is MANAGER.
 export type ShiftRole =
   | 'waiter'
   | 'cook'
@@ -50,15 +50,15 @@ export const shiftRoleLabel = (raw?: string | null): string => {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || '—';
 };
 
-// ================= Estado del colaborador =================
+// ================= Collaborator Status =================
 
-// El enum real del backend es active | inactive | vacation | deleted (más los legacy en
-// español). La historia pide SUSPENDED y TERMINATED, que no existen en el dominio: aquí se
-// respeta lo que la base sabe persistir. 'deleted' es la baja lógica y no se ofrece como
-// opción editable, pero sí se pinta si llega, para que una fila dada de baja sea legible.
+// The actual backend enum is active | inactive | vacation | deleted (plus legacy in
+// Spanish). The history asks for SUSPENDED and TERMINATED, which do not exist in the domain: here they are
+// respect what the base knows how to persist. 'deleted' is the logical low and is not offered as
+// editable option, but it is painted if it arrives, so that a deleted row is readable.
 export type CollaboratorStatus = 'active' | 'inactive' | 'vacation' | 'deleted';
 
-// Las que el formulario ofrece: la baja se hace borrando, no eligiendo 'deleted' a mano.
+// Those that the form offers: the deletion is done by deleting, not by choosing 'deleted' by hand.
 export const COLLABORATOR_STATUSES: CollaboratorStatus[] = [
   'active',
   'inactive',
@@ -72,7 +72,7 @@ export const COLLABORATOR_STATUS_LABELS: Record<CollaboratorStatus, string> = {
   deleted: 'Terminated',
 };
 
-// Verde en plantilla, gris de baja temporal, ámbar de vacaciones, rojo de baja definitiva.
+// Green in template, gray for temporary leave, amber for vacation, red for permanent leave.
 export const COLLABORATOR_STATUS_BADGE_STYLES: Record<CollaboratorStatus, string> = {
   active: 'bg-green-500/10 text-green-700',
   inactive: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
@@ -80,8 +80,8 @@ export const COLLABORATOR_STATUS_BADGE_STYLES: Record<CollaboratorStatus, string
   deleted: 'bg-red-500/10 text-red-700',
 };
 
-// El backend arrastra datos antiguos en español ('activo', 'vacaciones'): se normalizan
-// para que el filtro y el badge no partan la plantilla en dos vocabularios.
+// Backend drags old data in Spanish ('active', 'vacation') - it is normalized
+// so that the filter and the badge do not split the template into two vocabularies.
 export const normalizeCollaboratorStatus = (raw?: string | null): CollaboratorStatus => {
   const value = (raw ?? '').trim().toLowerCase();
   if (value === 'inactive' || value === 'inactivo') return 'inactive';
@@ -98,8 +98,8 @@ export const collaboratorStatusBadgeStyle = (raw?: string | null): string =>
 
 // ================= Entidades =================
 
-// El turno no tiene columna `name` en la base: la etiqueta se compone del rol y la hora de
-// inicio (ver shiftLabel en lib/table-assignments.ts, que ya resuelve exactamente esto).
+// The shift has no `name` column in the base: the label is made up of the role and the time of
+// startup (see shiftLabel in lib/table-assignments.ts, which already solves exactly this).
 export interface CollaboratorShiftRef {
   id: number;
   role?: string | null;
@@ -121,8 +121,8 @@ export interface Collaborator {
   shift_id?: number | null;
   shift?: CollaboratorShiftRef | null;
   merchant?: { id: number; name?: string } | null;
-  // `firstname`/`lastname` cargan username/email por compatibilidad con el mapeo original
-  // del backend; `username`/`email` son los campos con su nombre real.
+  // `firstname`/`lastname` load username/email for compatibility with the original mapping
+  // from the backend; `username`/`email` are the fields with your real name.
   user?: {
     id: number;
     firstname?: string;
@@ -132,7 +132,7 @@ export interface Collaborator {
   } | null;
 }
 
-// ================= DTOs de escritura =================
+// ================= Write DTOs =================
 
 export interface CreateCollaboratorDto {
   user_id: number;
@@ -143,8 +143,8 @@ export interface CreateCollaboratorDto {
   shift_id?: number | null;
 }
 
-// El backend actualiza con PUT (no PATCH) y con whitelist: merchant_id y user_id no se
-// reasignan al editar, porque cambiarían de dueño la ficha entera.
+// The backend updates with PUT (not PATCH) and with whitelist: merchant_id and user_id are not
+// They are reassigned when editing, because they would change ownership of the entire file.
 export type UpdateCollaboratorDto = Partial<
   Omit<CreateCollaboratorDto, 'merchant_id' | 'user_id'>
 >;

@@ -18,9 +18,9 @@ import { navHubById } from '../../lib/module-nav-hubs';
 import { ModuleNavHubBar } from '../MerchantFrame/layout/ModuleNavHubBar';
 import { ModuleCommandHubView } from '../MerchantFrame/views/ModuleCommandHubView';
 
-// NavHubBar del Subscription System en el panel SaaS. Las opciones son las mismas que en
-// MerchantFrame (module-nav-hubs.ts, featureIds de Features.txt), pero este panel navega con
-// sus propios ids de pestaña: se traducen en los dos sentidos.
+// NavHubBar of the Subscription System in the SaaS panel. The options are the same as in
+// MerchantFrame(module-nav-hubs.ts, featuresIds from Features.txt), but this panel navigates with
+// its own tab IDs: translated in both directions.
 const SUBSCRIPTION_HUB_TAB = 'subscription-hub';
 const SAAS_TAB_BY_FEATURE: Record<string, string> = {
   'apps-config': 'subscription-applications',
@@ -35,7 +35,7 @@ const SAAS_TAB_BY_FEATURE: Record<string, string> = {
 const FEATURE_BY_SAAS_TAB: Record<string, string> = Object.fromEntries(
   Object.entries(SAAS_TAB_BY_FEATURE).map(([feature, tab]) => [tab, feature]),
 );
-// Opciones sin vista todavía en el panel SaaS.
+// Options without a view yet in SaaS panel.
 const SAAS_PENDING_TABS: Record<string, { icon: string; title: string; desc: string }> = {
   'subscription-merchant-subscriptions': {
     icon: 'storefront',
@@ -126,7 +126,7 @@ export const SaaSFrame: React.FC = () => {
       );
     }
 
-    // Desde la NavHubBar se llega sin plan elegido: estas dos vistas lo necesitan.
+    // From the NavHubBar you arrive without a chosen plan: these two views need it.
     if (
       (activeTab === 'subscription-plan-applications' || activeTab === 'subscription-plan-features') &&
       !selectedPlan
@@ -290,7 +290,7 @@ export const SaaSFrame: React.FC = () => {
 
         <nav className="flex-1 px-2 space-y-1 overflow-y-auto sidebar-scroll">
           <div>
-            {/* Header de Categoria */}
+            {/* Category Header */}
             <div className="border-l-2 border-[#d51f2c] bg-white/10 text-white font-semibold pl-3 py-2.5 flex items-center gap-3 cursor-pointer">
               <span className="material-symbols-outlined text-[#d51f2c]">dashboard</span>
               <span className="font-sans text-[13px] tracking-wide uppercase">Platform SaaS</span>
@@ -543,7 +543,7 @@ export const SaaSFrame: React.FC = () => {
           {renderContent()}
           {showSubscriptionBar && subscriptionHub ? (
             <>
-              {/* La barra es `fixed`: este hueco evita que tape el final de la vista. */}
+              {/* The bar is `fixed`: this gap prevents it from covering the end of the view. */}
               <div aria-hidden="true" className="h-16 shrink-0" />
               <ModuleNavHubBar
                 hub={subscriptionHub}

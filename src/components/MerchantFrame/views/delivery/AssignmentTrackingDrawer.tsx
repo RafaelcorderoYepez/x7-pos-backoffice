@@ -1,6 +1,6 @@
-// Seguimiento de un reparto DSP: la URL del proveedor en un iframe dentro del drawer, con
-// el enlace "Open in new tab" bien visible porque algunos proveedores bloquean el embebido
-// (X-Frame-Options / CSP frame-ancestors) y el iframe quedaría en blanco.
+// Tracking a DSP delivery: the supplier URL in an iframe inside the drawer, with
+// the "Open in new tab" link clearly visible because some providers block embedding
+// (X-Frame-Options / CSP frame-ancestors) and the iframe would be blank.
 
 import React from 'react';
 import type { DeliveryAssignment } from '../../../../types/delivery-assignments';

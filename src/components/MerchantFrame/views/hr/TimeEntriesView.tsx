@@ -144,7 +144,7 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
       const collaborator = collaborators.find((c) => c.id === draft.collaborator_id);
       const body: CreateTimeEntryDto = {
         // DTO requires company; taken from collaborator record,
-        // conoce, y se cae al comercio activo si la fila no la trae hidratada.
+        // knows, and falls into active commerce if the line does not bring her hydrated.
         company_id: collaborator?.merchant?.id ?? activeMerchantId,
         merchant_id: activeMerchantId,
         collaborator_id: draft.collaborator_id,

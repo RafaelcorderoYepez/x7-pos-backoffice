@@ -811,7 +811,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
       {/* 1.5 Story 4203: Real-Time Event Metrics Velocity KPI Bar (4 identical cards in static row with Incident Detection) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Events Today */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 transition-all duration-200 hover:border-[#d5cfc4]">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-zinc-100 text-zinc-800 border border-zinc-300 shrink-0 whitespace-nowrap">
             {velocityMetrics.isShowingTodaySubset ? 'TODAY' : 'SERVICE SHIFT'}
           </span>
@@ -836,7 +836,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         </div>
 
         {/* KPI 2: Order Starts (STARTED) */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 transition-all duration-200 hover:border-blue-200">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-blue-100 text-blue-800 border border-blue-200 shrink-0 whitespace-nowrap">
             STARTED
           </span>
@@ -857,7 +857,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         </div>
 
         {/* KPI 3: Orders Completed (READY) */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 transition-all duration-200 hover:border-emerald-200">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 whitespace-nowrap">
             READY
           </span>
@@ -877,18 +877,12 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
           </div>
         </div>
 
-        {/* KPI 4: Kitchen Cancellations (CANCELADO) with Dynamic Spike Warning Threshold Alert (>5%) */}
-        <div
-          className={`relative p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 transition-all duration-200 ${
-            velocityMetrics.isSpikeAlert
-              ? 'bg-red-50/40 border-2 border-red-300 ring-1 ring-red-200'
-              : 'bg-white border border-[#e8e2d8] hover:border-red-200'
-          }`}
-        >
+        {/* KPI 4: Kitchen Cancellations (CANCELADO) */}
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span
             className={`absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase shrink-0 whitespace-nowrap ${
               velocityMetrics.isSpikeAlert
-                ? 'bg-red-100 text-[#ae001a] border border-red-300 animate-pulse font-extrabold'
+                ? 'bg-red-100 text-[#ae001a] border border-red-300 font-extrabold'
                 : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
             }`}
             title={
@@ -1113,7 +1107,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
         {/* ROW 3: Event Type Multi-Select Pills */}
         <div className="flex items-center gap-1 pt-2.5 border-t border-[#f0ede6] overflow-x-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-0.5">
-            Types:
+            STATUS:
           </span>
 
           {/* All Pill */}
@@ -1141,7 +1135,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
             className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('reroute')
                 ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                : 'bg-amber-50/50 text-amber-800 border-amber-200 hover:bg-amber-100/50 hover:text-amber-900'
+                : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
             }`}
           >
             <span className="material-symbols-outlined text-[12px]">alt_route</span>
@@ -1161,7 +1155,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
             className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('inicio')
                 ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                : 'bg-blue-50/50 text-blue-800 border-blue-200 hover:bg-blue-100/50 hover:text-blue-900'
+                : 'bg-white text-blue-800 border-blue-200 hover:bg-blue-50'
             }`}
           >
             <span className="material-symbols-outlined text-[12px]">play_circle</span>
@@ -1181,7 +1175,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
             className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('listo')
                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                : 'bg-emerald-50/50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/50 hover:text-emerald-900'
+                : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
             }`}
           >
             <span className="material-symbols-outlined text-[12px]">check_circle</span>
@@ -1201,7 +1195,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
             className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('servido')
                 ? 'bg-zinc-700 text-white border-zinc-700 shadow-xs'
-                : 'bg-zinc-100 text-zinc-700 border-zinc-300 hover:bg-zinc-200 hover:text-zinc-900'
+                : 'bg-white text-zinc-700 border-zinc-300 hover:bg-zinc-50'
             }`}
           >
             <span className="material-symbols-outlined text-[12px]">local_shipping</span>
@@ -1221,7 +1215,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
             className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('recall')
                 ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100/60 hover:text-purple-900'
+                : 'bg-white text-purple-800 border-purple-200 hover:bg-purple-50'
             }`}
           >
             <span className="material-symbols-outlined text-[12px]">replay</span>
@@ -1241,7 +1235,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
             className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
               selectedEventTypes.includes('cancelado')
                 ? 'bg-[#ae001a] text-white border-[#ae001a] shadow-xs'
-                : 'bg-red-50 text-[#ae001a] border-red-200 hover:bg-red-100/60 hover:text-[#900015]'
+                : 'bg-white text-[#ae001a] border-red-200 hover:bg-red-50'
             }`}
           >
             <span className="material-symbols-outlined text-[12px]">cancel</span>
@@ -1418,7 +1412,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                               isExpanded ? 'bg-[#fef9f1]' : 'hover:bg-[#f8f3eb] bg-white'
                             }`}
                           >
-                            {/* Columna 1: Timestamp de llegada con Chevron */}
+                            {/* Column 1: Arrival timestamp with Chevron */}
                             {visibleColumns.eventTime && (
                               <td className={`${densityPadding} truncate`}>
                                 <div className="flex items-center gap-2 min-w-0">
@@ -1477,7 +1471,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                               </td>
                             )}
 
-                            {/* Columna 3: Order Ref y conteo de eventos */}
+                            {/* Column 3: Order Ref and event count */}
                             {visibleColumns.orderRef && (
                               <td className={`${densityPadding} truncate`}>
                                 <div className="flex items-center gap-1.5 min-w-0">
@@ -1540,7 +1534,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                             )}
                           </tr>
 
-                          {/* Subfilas con los eventos individuales desglosados */}
+                          {/* Subrows with individual events broken down */}
                           {isExpanded &&
                             group.events.map((record) => (
                               <tr
@@ -1654,7 +1648,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                                   </td>
                                 )}
 
-                                {/* Actions: solo el icono */}
+                                {/* Actions: icon only */}
                                 {visibleColumns.actions && (
                                   <td className={`${densityPadding} text-right whitespace-nowrap`}>
                                     <button

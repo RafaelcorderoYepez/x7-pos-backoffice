@@ -77,7 +77,7 @@ const CONTRACTS = [
     base_salary: 0,
     working_hours_per_week: 30,
     active: true,
-    // Ya vencido: sigue marcado activo en base, que es justo la fila a renovar.
+    // Already expired: it is still marked active on base, which is exactly the line to renew.
     start_date: '2025-11-01',
     end_date: '2026-05-01',
     document_url: '/uploads/contracts/contract-14.pdf',
@@ -179,7 +179,7 @@ const renderView = async (overrides: Overrides = {}) => {
 };
 
 // input[type=date] not portably typed: field order depends on browser locale.
-// idioma del navegador. Se fija el valor y se emite el change, que es lo que React escucha.
+// browser language. The value is set and the change is emitted, which is what React listens to.
 const fireDate = (input: HTMLElement, value: string) =>
   fireEvent.change(input, { target: { value } });
 
@@ -240,7 +240,7 @@ describe('ContractsView — directory grid', () => {
 
     expect(screen.getByText('#CTR-12')).toBeInTheDocument();
     expect(screen.getByText('#CTR-13')).toBeInTheDocument();
-    // Vencido y rescindido quedan fuera del filtro por defecto.
+    // Expired and terminated are left out of the filter by default.
     expect(screen.queryByText('#CTR-14')).not.toBeInTheDocument();
     expect(screen.queryByText('#CTR-15')).not.toBeInTheDocument();
   });

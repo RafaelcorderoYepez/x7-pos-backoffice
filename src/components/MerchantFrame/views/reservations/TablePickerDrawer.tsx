@@ -1,13 +1,13 @@
-// Selector de mesas para una reserva concreta.
+// Table selector for a specific reservation.
 //
-// Dos cosas gobiernan el diseño:
+// Two things govern the design:
 //
-// 1. Lo que se guarda es el CONJUNTO completo de mesas, no un diff. La anfitriona marca y
-//    desmarca hasta que le cuadra y pulsa una vez; el workspace traduce eso a las altas y
-//    bajas necesarias. Guardar mesa a mano por mesa dejaría estados intermedios visibles en
-//    las otras tablets del atril.
-// 2. Una mesa ocupada en la franja se muestra, pero NO se puede marcar: esconderla haría
-//    pensar que no existe, y lo útil es ver quién la tiene.
+// 1. What is saved is the complete SET of tables, not a diff. The hostess marks and
+//    unmark until it fits and press once; the workspace translates that to the discharges and
+//    necessary casualties. Saving table by hand by table would leave intermediate states visible in
+//    the other tablets on the lectern.
+// 2. An occupied table in the strip is shown, but CANNOT be marked: hiding it would
+//    think that it does not exist, and the useful thing is to see who has it.
 
 import React, { useMemo, useState } from 'react';
 import type { DiningTable } from '../../../../types/dining-system';
@@ -30,7 +30,7 @@ import { AppModal, ModalFormError, ModalFormFooter } from '../../shared/AppModal
 interface TablePickerDrawerProps {
   reservation: Reservation;
   tables: DiningTable[];
-  /** El libro del día completo: es lo que permite detectar el solape antes de enviar. */
+  /** The complete day book: it is what allows you to detect the overlap before sending. */
   book: Reservation[];
   guestName: string;
   submitting: boolean;
@@ -60,8 +60,8 @@ export const TablePickerDrawer: React.FC<TablePickerDrawerProps> = ({
 
   const party = Number(reservation.party_size) || 0;
 
-  // Conflictos precalculados una vez por mesa: recorrer el libro dentro del render de cada
-  // fila convertiría una sala de 60 mesas en 60 recorridos por pulsación de tecla.
+  // Precalculated conflicts once per table: loop through the book within each render
+  // row would turn a room of 60 tables into 60 paths per keystroke.
   const conflictByTable = useMemo(() => {
     const map = new Map<number, Reservation | undefined>();
     tables.forEach((t) => {
@@ -134,7 +134,7 @@ export const TablePickerDrawer: React.FC<TablePickerDrawerProps> = ({
       <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-5 overflow-y-auto font-sans">
         {formError ? <ModalFormError message={formError} /> : null}
 
-        {/* ---------- Sugerencias automáticas ---------- */}
+        {/* ---------- Automatic suggestions ---------- */}
         <section className="flex flex-col gap-2">
           <h3 className="text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider flex items-center gap-1.5">
             <span className="material-symbols-outlined text-base text-[#ae001a]" aria-hidden="true">
@@ -192,7 +192,7 @@ export const TablePickerDrawer: React.FC<TablePickerDrawerProps> = ({
           )}
         </section>
 
-        {/* ---------- Selección actual ---------- */}
+        {/* ---------- Current selection ---------- */}
         <section
           data-testid="picker-summary"
           className={`p-3 rounded border flex items-center gap-2 text-body-sm ${
@@ -218,7 +218,7 @@ export const TablePickerDrawer: React.FC<TablePickerDrawerProps> = ({
           )}
         </section>
 
-        {/* ---------- Filtros del catálogo ---------- */}
+        {/* ---------- Catalog filters ---------- */}
         <section className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px]">
             <span
@@ -263,7 +263,7 @@ export const TablePickerDrawer: React.FC<TablePickerDrawerProps> = ({
           ))}
         </section>
 
-        {/* ---------- Catálogo de mesas ---------- */}
+        {/* ---------- Table catalog ---------- */}
         <section
           data-testid="table-catalog"
           className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2 max-h-72 overflow-y-auto pr-1"

@@ -9,8 +9,12 @@ import type { KitchenStationType } from './KitchenStationsView';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
 import { KitchenSlaConfigModal } from './KitchenSlaConfigModal';
-import { KitchenDevResetButton } from './KitchenDevResetButton';
 import { KitchenAllergyModifierPicker } from './KitchenAllergyModifierPicker';
+
+const devToolModules = import.meta.glob<{
+  KitchenDevResetButton?: React.ComponentType<{ onResetComplete?: () => void }>;
+}>('./KitchenDevResetButton.tsx', { eager: true });
+const KitchenDevResetButton = devToolModules['./KitchenDevResetButton.tsx']?.KitchenDevResetButton;
 import {
   enqueueOfflineAction,
   flushOfflineQueue,
@@ -115,7 +119,7 @@ const DEFAULT_MENU_PRODUCTS = [
   'Double Smash Burger',
   'Caesar Salad with Grilled Chicken',
   'Pizza Margherita',
-  'Al Pastor Tacos (3 pcs)',
+  'Tacos al Pastor (3 pcs)',
   'California Sushi Roll',
   'Italian Cappuccino 12oz',
   'Iced Latte',
@@ -138,6 +142,11 @@ const DEFAULT_PRODUCT_VARIANTS: Record<string, string[]> = {
     'Medium 12"',
     'Large 16"',
     'Extra Cheese',
+  ],
+  'Tacos al Pastor (3 pcs)': [
+    'Traditional',
+    'With Cheese (Gringas)',
+    'No Pineapple',
   ],
   'Al Pastor Tacos (3 pcs)': [
     'Traditional',
@@ -169,8 +178,15 @@ const DEFAULT_PRODUCT_VARIANTS: Record<string, string[]> = {
 const suggestCourseForProduct = (productName: string): 'beverage' | 'appetizer' | 'main_course' | 'dessert' => {
   const p = (productName || '').toLowerCase().trim();
   if (
+    p.includes('taco') || p.includes('pastor') || p.includes('burger') ||
+    p.includes('pizza') || p.includes('steak') || p.includes('ribeye') ||
+    p.includes('sandwich') || p.includes('pasta')
+  ) {
+    return 'main_course';
+  }
+  if (
     p.includes('cappuccino') || p.includes('latte') || p.includes('cafe') || p.includes('coffee') ||
-    p.includes('espresso') || p.includes('tea') || p.includes('tea') || p.includes('beer') ||
+    p.includes('espresso') || p.includes('tea') || p.includes('beer') ||
     p.includes('cerveza') || p.includes('vino') || p.includes('wine') || p.includes('soda') ||
     p.includes('juice') || p.includes('jugo') || p.includes('water') || p.includes('agua') ||
     p.includes('cocktail') || p.includes('drink') || p.includes('beverage') || p.includes('limonada')
@@ -188,7 +204,7 @@ const suggestCourseForProduct = (productName: string): 'beverage' | 'appetizer' 
     p.includes('salad') || p.includes('ensalada') || p.includes('bruschetta') || p.includes('nacho') ||
     p.includes('soup') || p.includes('sopa') || p.includes('wings') || p.includes('alitas') ||
     p.includes('calamari') || p.includes('fries') || p.includes('papas') || p.includes('carpaccio') ||
-    p.includes('taco') || p.includes('sushi') || p.includes('roll')
+    p.includes('sushi') || p.includes('roll')
   ) {
     return 'appetizer';
   }
@@ -237,7 +253,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
     return 'ALL';
   });
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'pending' | 'started' | 'completed' | 'cancelled'>('ALL');
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>(() => {
     const saved = sessionStorage.getItem('kds_orders_search_query');
     if (saved) {
@@ -254,26 +270,28 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     setDatePreset(preset);
     setCurrentPage(1);
     const now = new Date();
-    const toISOStringWithTZ = (d: Date) => {
-      const offset = d.getTimezoneOffset() * 60000;
-      return new Date(d.getTime() - offset).toISOString().slice(0, 16);
+    const toDateInputString = (d: Date) => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     };
 
     if (preset === 'all') {
       setStartTime('');
       setEndTime('');
     } else if (preset === 'today') {
-      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-      setStartTime(toISOStringWithTZ(start));
-      setEndTime(toISOStringWithTZ(now));
+      const todayStr = toDateInputString(now);
+      setStartTime(todayStr);
+      setEndTime(todayStr);
     } else if (preset === 'last24h') {
-      const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      setStartTime(toISOStringWithTZ(start));
-      setEndTime(toISOStringWithTZ(now));
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      setStartTime(toDateInputString(yesterday));
+      setEndTime(toDateInputString(now));
     } else if (preset === 'last7d') {
-      const start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      setStartTime(toISOStringWithTZ(start));
-      setEndTime(toISOStringWithTZ(now));
+      const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      setStartTime(toDateInputString(last7Days));
+      setEndTime(toDateInputString(now));
     }
   };
   const [cancellationFilter, setCancellationFilter] = useState<'ALL' | KitchenCancellationReason>('ALL');
@@ -285,12 +303,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
     orderRef: true,
     stationPriority: true,
+    items: true,
     lifecycleStatus: true,
     createdTimestamp: true,
-    startedDelay: true,
-    completedPrepTime: true,
-    cancellationAudit: true,
-    items: true,
+    startedDelay: false,
+    completedPrepTime: false,
+    cancellationAudit: false,
     actions: true,
   });
 
@@ -299,6 +317,24 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [selectedReason, setSelectedReason] = useState<KitchenCancellationReason>('data_entry_error');
   const [cancellationNotes, setCancellationNotes] = useState<string>('');
   const [cancelSubmitting, setCancelSubmitting] = useState<boolean>(false);
+
+  const handleToggleStatus = (statusKey: string) => {
+    if (statusKey === 'ALL') {
+      setSelectedStatuses([]);
+      setCancellationFilter('ALL');
+    } else {
+      setSelectedStatuses(prev => {
+        const next = prev.includes(statusKey)
+          ? prev.filter(s => s !== statusKey)
+          : [...prev, statusKey];
+        if (!next.includes('cancelled')) {
+          setCancellationFilter('ALL');
+        }
+        return next;
+      });
+    }
+    setCurrentPage(1);
+  };
 
   // Detail Inspection Modal (Audit Trail & Line-Items)
   const [inspectingTicket, setInspectingTicket] = useState<KitchenOrderTicket | null>(null);
@@ -525,7 +561,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     return () => clearInterval(timer);
   }, [autoRefreshInterval, loadOrders]);
 
-  // Escuchar evento global de reinicio KDS
+  // Listen to global KDS reset event
   useEffect(() => {
     const handleReset = () => {
       loadOrders(true);
@@ -685,9 +721,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const filteredOrders = useMemo(() => {
     let result = stationOrders;
 
-    // 1. Status Filter
-    if (statusFilter !== 'ALL') {
-      result = result.filter(o => o.businessStatus === statusFilter);
+    // 1. Status Filter (Multi-select)
+    if (selectedStatuses.length > 0) {
+      result = result.filter(o => selectedStatuses.includes(o.businessStatus));
     }
 
     // 2. Cancellation Reason Filter (Audit)
@@ -699,12 +735,20 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
     // 3. Date Range Filter
     if (startTime) {
-      const s = new Date(startTime).getTime();
-      result = result.filter(o => new Date(o.createdAt).getTime() >= s);
+      const s = startTime.includes('T')
+        ? new Date(startTime).getTime()
+        : new Date(`${startTime}T00:00:00`).getTime();
+      if (!isNaN(s)) {
+        result = result.filter(o => new Date(o.createdAt).getTime() >= s);
+      }
     }
     if (endTime) {
-      const e = new Date(endTime).getTime();
-      result = result.filter(o => new Date(o.createdAt).getTime() <= e);
+      const e = endTime.includes('T')
+        ? new Date(endTime).getTime()
+        : new Date(`${endTime}T23:59:59.999`).getTime();
+      if (!isNaN(e)) {
+        result = result.filter(o => new Date(o.createdAt).getTime() <= e);
+      }
     }
 
     // 4. Universal Search Input
@@ -726,10 +770,10 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       });
     }
 
-    // 5. Dynamic Sorting (Option 1):
-    // Tier 1: Active Orders (started / pending) -> Start of queue, arrival order (oldest first)
-    // Tier 2: Completed Orders (completed / ready) -> Below active, arrival order (oldest first)
-    // Tier 3: Cancelled Orders (cancelled) -> Bottom of queue, arrival order
+    // 5. Dynamic Sorting:
+    // Tier 1: Active Orders (started / pending) -> Prioridad más alta por delante, y a igual prioridad orden de llegada (FIFO)
+    // Tier 2: Completed Orders (completed / ready) -> Después de las órdenes activas
+    // Tier 3: Cancelled Orders (cancelled) -> DE ÚLTIMO al final de la tabla
     const getStatusTier = (status: KitchenOrderBusinessStatus | string): number => {
       switch (status) {
         case 'started':
@@ -756,67 +800,34 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       else cancelledOrders.push(o);
     });
 
-    // 1. Sort active orders chronologically (arrival order in system)
+    // 1. Órdenes activas: mayor prioridad por delante (priority DESC), luego más antiguas (FIFO)
     activeOrders.sort((a, b) => {
+      const pDiff = (b.priority ?? 0) - (a.priority ?? 0);
+      if (pDiff !== 0) return pDiff;
       const timeA = new Date(a.createdAt).getTime();
       const timeB = new Date(b.createdAt).getTime();
       if (timeA !== timeB) return timeA - timeB;
       return a.id - b.id;
     });
 
-    // 2. Real-time queue simulation with SLA Shield:
-    // - Existing orders DO NOT jump ahead upon reaching 15 min; they remain exactly where they are.
-    // - Once an order has SLA shield (waiting >= 15 min), NO order created later can be placed ahead of it.
-    const activeQueue: KitchenOrderTicket[] = [];
-
-    for (const item of activeOrders) {
-      const itemTime = new Date(item.createdAt).getTime();
-      const isPreparingItem = item.items.some((it) => it.preparationStatus === 'in_preparation');
-      const itemScore = (item.priority ?? 0) * 10 + (isPreparingItem ? 1 : 0);
-
-      // Determinar la barrera mínima permitida: debe ser posterior a cualquier orden que YA tenía SLA
-      // (espera >= criticalSlaMinutes) al momento en que esta nueva orden fue creada.
-      let minInsertIndex = 0;
-      for (let i = 0; i < activeQueue.length; i++) {
-        const qTime = new Date(activeQueue[i].createdAt).getTime();
-        const waitingAtArrival = itemTime - qTime;
-        if (waitingAtArrival >= criticalSlaMinutes * 60 * 1000) {
-          minInsertIndex = i + 1;
-        }
-      }
-
-      // Dentro del rango permitido (>= minInsertIndex), si la orden entrante tiene MAYOR prioridad
-      // que la orden en esa posición, se adelanta a ella. Si tiene igual o menor prioridad, se ubica detrás (FIFO).
-      let insertIndex = activeQueue.length;
-      for (let i = minInsertIndex; i < activeQueue.length; i++) {
-        const q = activeQueue[i];
-        const isPreparingQ = q.items.some((it) => it.preparationStatus === 'in_preparation');
-        const qScore = (q.priority ?? 0) * 10 + (isPreparingQ ? 1 : 0);
-        if (itemScore > qScore) {
-          insertIndex = i;
-          break;
-        }
-      }
-
-      activeQueue.splice(insertIndex, 0, item);
-    }
-
-    // Tier 2 and Tier 3: Completed and cancelled in chronological FIFO order
+    // 2. Órdenes completadas: después de activas
     completedOrders.sort((a, b) => {
-      const timeA = new Date(a.createdAt).getTime();
-      const timeB = new Date(b.createdAt).getTime();
-      if (timeA !== timeB) return timeA - timeB;
-      return a.id - b.id;
-    });
-    cancelledOrders.sort((a, b) => {
-      const timeA = new Date(a.createdAt).getTime();
-      const timeB = new Date(b.createdAt).getTime();
-      if (timeA !== timeB) return timeA - timeB;
-      return a.id - b.id;
+      const timeA = new Date(a.completedAt || a.createdAt).getTime();
+      const timeB = new Date(b.completedAt || b.createdAt).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return b.id - a.id;
     });
 
-    return [...activeQueue, ...completedOrders, ...cancelledOrders];
-  }, [stationOrders, statusFilter, cancellationFilter, startTime, endTime, searchQuery, criticalSlaMinutes]);
+    // 3. Órdenes canceladas: AL FINAL DE TODO (de último)
+    cancelledOrders.sort((a, b) => {
+      const timeA = new Date(a.cancelledAt || a.createdAt).getTime();
+      const timeB = new Date(b.cancelledAt || b.createdAt).getTime();
+      if (timeB !== timeA) return timeB - timeA;
+      return b.id - a.id;
+    });
+
+    return [...activeOrders, ...completedOrders, ...cancelledOrders];
+  }, [stationOrders, selectedStatuses, cancellationFilter, startTime, endTime, searchQuery]);
 
   // Paginated records for table view
   const paginatedOrders = useMemo(() => {
@@ -1469,7 +1480,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
       )}
 
-      {/* 1. Header Card Workspace (Title only) */}
+      {/* 1. Header Card Workspace */}
       <div className="bg-white border border-[#e8e2d8] rounded-xl p-6 shadow-sm">
         <div>
           <div className="flex items-center gap-2.5">
@@ -1489,7 +1500,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       {/* 1.5 Real-Time Summary KPI Banner (4 identical cards to Kitchen Stations without text clipping) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Active Kitchen Orders */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-red-100 text-[#ae001a] border border-red-200 shrink-0 whitespace-nowrap">
             ACTIVE
           </span>
@@ -1509,7 +1520,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
 
         {/* KPI 2: Avg Preparation Time */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className={`absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase border shrink-0 whitespace-nowrap ${
             avgPreparationTime.isBottleneck ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-blue-100 text-blue-800 border-blue-200'
           }`}>
@@ -1533,7 +1544,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
 
         {/* KPI 3: Cancellation Count */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-200 shrink-0 whitespace-nowrap">
             {cancelledOrdersCount > 0 ? 'VOID/WASTE' : 'ZERO VOIDS'}
           </span>
@@ -1553,7 +1564,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         </div>
 
         {/* KPI 4: Dispatched Orders */}
-        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0">
+        <div className="relative bg-white border border-[#e8e2d8] p-3.5 sm:p-4 rounded-xl shadow-xs min-w-0 cursor-default">
           <span className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 whitespace-nowrap">
             DISPATCHED
           </span>
@@ -1696,12 +1707,17 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           </div>
         </div>
 
-        {/* ROW 2: Date & Time Range Controls + Presets */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#f0ede6]">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-1">
+        {/* ROW 2: Date & Time Range Controls + Presets (Single Row Layout) */}
+        <div className="flex items-center gap-3 pt-3 border-t border-[#f0ede6] overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="material-symbols-outlined text-sm text-[#5f5e5e]">calendar_today</span>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#5f5e5e]">
               Date Range:
             </span>
+          </div>
+
+          {/* Compact Segmented Switcher for Date Presets */}
+          <div className="inline-flex items-center bg-[#f2ede5] p-0.5 rounded-lg border border-[#e8e2d8] shrink-0">
             {([
               { id: 'all', label: 'All Time' },
               { id: 'today', label: 'Today' },
@@ -1715,10 +1731,10 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   key={p.id}
                   type="button"
                   onClick={() => handlePresetChange(p.id)}
-                  className={`h-[34px] px-3 rounded-lg text-xs font-semibold transition-all duration-200 cursor-pointer border flex items-center justify-center ${
+                  className={`h-[28px] px-2.5 rounded-md text-xs font-bold transition-all cursor-pointer font-sans ${
                     isActive
-                      ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
-                      : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
+                      ? 'bg-white text-[#1d1c17] shadow-xs border border-[#e8e2d8]'
+                      : 'text-[#5f5e5e] hover:text-[#ae001a]'
                   }`}
                 >
                   {p.label}
@@ -1727,32 +1743,39 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             })}
           </div>
 
-          {/* Custom Date & Time Inputs */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Divider */}
+          <div className="h-4 w-px bg-[#e8e2d8] shrink-0" />
+
+          {/* Inline Custom Date Inputs (Date only) */}
+          <div className="flex items-center gap-2 shrink-0">
             <div className="flex items-center gap-1.5 text-xs text-[#5f5e5e]">
-              <span className="text-[11px] font-medium">From:</span>
+              <span className="text-[11px] font-semibold text-[#5f5e5e]">From:</span>
               <input
-                type="datetime-local"
+                type="date"
                 value={startTime}
                 onChange={(e) => {
                   setStartTime(e.target.value);
                   setDatePreset('custom');
                   setCurrentPage(1);
                 }}
-                className="h-[34px] px-2.5 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#1d1c17] text-xs focus:outline-none focus:border-[#ae001a] cursor-pointer"
+                className={`h-[30px] px-2 rounded-lg border bg-[#fcfcfb] text-[#1d1c17] text-xs focus:outline-none focus:border-[#ae001a] cursor-pointer font-sans transition-colors ${
+                  datePreset === 'custom' || startTime ? 'border-[#ae001a]' : 'border-[#d5cfc4]'
+                }`}
               />
             </div>
             <div className="flex items-center gap-1.5 text-xs text-[#5f5e5e]">
-              <span className="text-[11px] font-medium">To:</span>
+              <span className="text-[11px] font-semibold text-[#5f5e5e]">To:</span>
               <input
-                type="datetime-local"
+                type="date"
                 value={endTime}
                 onChange={(e) => {
                   setEndTime(e.target.value);
                   setDatePreset('custom');
                   setCurrentPage(1);
                 }}
-                className="h-[34px] px-2.5 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#1d1c17] text-xs focus:outline-none focus:border-[#ae001a] cursor-pointer"
+                className={`h-[30px] px-2 rounded-lg border bg-[#fcfcfb] text-[#1d1c17] text-xs focus:outline-none focus:border-[#ae001a] cursor-pointer font-sans transition-colors ${
+                  datePreset === 'custom' || endTime ? 'border-[#ae001a]' : 'border-[#d5cfc4]'
+                }`}
               />
             </div>
             {(startTime || endTime) && (
@@ -1764,19 +1787,20 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   setDatePreset('all');
                   setCurrentPage(1);
                 }}
-                className="h-[34px] text-[11px] text-[#ae001a] hover:underline font-semibold cursor-pointer ml-1 flex items-center"
+                className="h-[30px] px-2 text-[11px] text-[#ae001a] hover:bg-red-50 rounded-lg font-bold cursor-pointer flex items-center gap-0.5 transition-colors"
                 title="Clear date filter"
               >
+                <span className="material-symbols-outlined text-[14px]">close</span>
                 Clear
               </button>
             )}
           </div>
         </div>
 
-        {/* ROW 3: Status Multi-Select Pills (Event Log Pattern) & Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#f0ede6]">
+        {/* ROW 3: Status Multi-Select Pills (Left) & Action Buttons (Right) */}
+        <div className="flex items-center justify-between gap-4 pt-3 border-t border-[#f0ede6] overflow-x-auto scrollbar-none py-0.5">
           {/* Left: Status Filter Pills */}
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span className="text-[9.5px] font-bold uppercase tracking-wider text-[#5f5e5e] shrink-0 mr-0.5">
               Status:
             </span>
@@ -1784,12 +1808,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* All Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('ALL');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('ALL')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'ALL'
+                selectedStatuses.length === 0
                   ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
                   : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
               }`}
@@ -1797,7 +1818,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
               <span>All</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
+                  selectedStatuses.length === 0 ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
                 }`}
               >
                 {statusCounts.all}
@@ -1807,21 +1828,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* PENDING Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('pending');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('pending')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'pending'
+                selectedStatuses.includes('pending')
                   ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                  : 'bg-amber-50/50 text-amber-800 border-amber-200 hover:bg-amber-100/50 hover:text-amber-900'
+                  : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">schedule</span>
               <span>PENDING</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'pending' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  selectedStatuses.includes('pending') ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 {statusCounts.pending}
@@ -1831,21 +1849,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* STARTED Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('started');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('started')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'started'
+                selectedStatuses.includes('started')
                   ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                  : 'bg-blue-50/50 text-blue-800 border-blue-200 hover:bg-blue-100/50 hover:text-blue-900'
+                  : 'bg-white text-blue-800 border-blue-200 hover:bg-blue-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">play_circle</span>
               <span>STARTED</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'started' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+                  selectedStatuses.includes('started') ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
                 }`}
               >
                 {statusCounts.started}
@@ -1855,21 +1870,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* COMPLETED Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('completed');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('completed')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'completed'
+                selectedStatuses.includes('completed')
                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                  : 'bg-emerald-50/50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/50 hover:text-emerald-900'
+                  : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">check_circle</span>
               <span>COMPLETED</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'completed' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                  selectedStatuses.includes('completed') ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
                 }`}
               >
                 {statusCounts.completed}
@@ -1879,55 +1891,62 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {/* CANCELLED Pill */}
             <button
               type="button"
-              onClick={() => {
-                setStatusFilter('cancelled');
-                setCurrentPage(1);
-              }}
+              onClick={() => handleToggleStatus('cancelled')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                statusFilter === 'cancelled'
+                selectedStatuses.includes('cancelled')
                   ? 'bg-[#ae001a] text-white border-[#ae001a] shadow-xs'
-                  : 'bg-red-50 text-[#ae001a] border-red-200 hover:bg-red-100/60 hover:text-[#900015]'
+                  : 'bg-white text-[#ae001a] border-red-200 hover:bg-red-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">cancel</span>
               <span>CANCELLED</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  statusFilter === 'cancelled' ? 'bg-white/20 text-white' : 'bg-red-100 text-[#ae001a]'
+                  selectedStatuses.includes('cancelled') ? 'bg-white/20 text-white' : 'bg-red-100 text-[#ae001a]'
                 }`}
               >
                 {statusCounts.cancelled}
               </span>
             </button>
 
-            {/* Cancellation Reasons Filter when Cancelled or Audit */}
-            {(statusFilter === 'cancelled' || workspaceMode === 'audit') && (
-              <div className="flex items-center gap-1.5 ml-1 text-xs text-[#5f5e5e]">
-                <span className="material-symbols-outlined text-sm text-amber-600">warning</span>
-                <select
-                  value={cancellationFilter}
-                  onChange={e => setCancellationFilter(e.target.value as KitchenCancellationReason | 'ALL')}
-                  className="h-[28px] px-2 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#1d1c17] focus:outline-none focus:border-[#ae001a] text-xs cursor-pointer"
-                  aria-label="Filter by cancellation reason"
-                >
-                  <option value="ALL">All Reasons</option>
-                  {CANCELLATION_REASONS.map(r => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Cancellation Reasons Filter ONLY when Cancelled filter is active */}
+            {selectedStatuses.includes('cancelled') && (
+              <select
+                value={cancellationFilter}
+                onChange={e => setCancellationFilter(e.target.value as KitchenCancellationReason | 'ALL')}
+                className="h-[28px] px-2 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#1d1c17] focus:outline-none focus:border-[#ae001a] text-xs cursor-pointer font-medium max-w-[170px] shrink-0 ml-1"
+                aria-label="Filter by cancellation reason"
+              >
+                <option value="ALL">All Reasons</option>
+                {CANCELLATION_REASONS.map(r => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
 
-          {/* Right: Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Right: Action Buttons (Always pinned right on the same line) */}
+          <div className="flex items-center gap-2 shrink-0 ml-auto pl-4">
+            {/* Recall Button */}
+            {lastBumpedOrder && (
+              <button
+                type="button"
+                onClick={() => void handleRecallOrder()}
+                className="h-[32px] px-3 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#5f5e5e] text-xs font-bold uppercase tracking-wider hover:bg-[#f2ede5] hover:text-[#1d1c17] transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                title="Undo last bumped ticket"
+              >
+                <span className="material-symbols-outlined text-sm text-amber-700">undo</span>
+                RECALL #KO-{lastBumpedOrder.id}
+              </button>
+            )}
+
             {/* SLA Configuration Button */}
             <button
               type="button"
               onClick={() => setIsSlaModalOpen(true)}
-              className="h-[34px] px-3 bg-[#fcfcfb] border border-[#d5cfc4] hover:border-[#ae001a] text-[#1d1c17] rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs group"
+              className="h-[32px] px-2.5 bg-[#fcfcfb] border border-[#d5cfc4] hover:border-[#ae001a] text-[#1d1c17] rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs group"
               title="Configure Kitchen SLA Threshold"
             >
               <span className="material-symbols-outlined text-[16px] text-red-600 group-hover:scale-110 transition-transform">
@@ -1951,7 +1970,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                 setCreateError(null);
                 setIsCreateModalOpen(true);
               }}
-              className="h-[34px] px-4 rounded-lg bg-[#ae001a] text-white font-bold text-xs hover:bg-[#d2272f] transition-colors flex items-center gap-1.5 font-sans cursor-pointer shadow-xs"
+              className="h-[32px] px-4 rounded-lg bg-[#ae001a] text-white font-bold text-xs hover:bg-[#d2272f] transition-colors flex items-center gap-1.5 font-sans cursor-pointer shadow-xs"
               title="Create new kitchen ticket"
             >
               <span className="material-symbols-outlined text-[18px]">add</span>
@@ -1990,12 +2009,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                 columns={[
                   { key: 'orderRef', label: 'Order Reference' },
                   { key: 'stationPriority', label: 'Station & Priority' },
+                  { key: 'items', label: 'Items & Dishes' },
                   { key: 'lifecycleStatus', label: 'Lifecycle Status' },
                   { key: 'createdTimestamp', label: 'Created Timestamp' },
                   { key: 'startedDelay', label: 'Started / Delay' },
                   { key: 'completedPrepTime', label: 'Completed / Prep Time' },
                   { key: 'cancellationAudit', label: 'Cancellation Audit' },
-                  { key: 'items', label: 'Items' },
                   { key: 'actions', label: 'Actions' },
                 ]}
                 visibleColumns={visibleColumns}
@@ -2046,19 +2065,19 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             <NoColumnsEmptyState />
           ) : (
             <>
-              <div className="overflow-x-auto scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                <table className="w-full table-fixed text-left text-xs border-collapse font-sans">
+              <div className="overflow-x-auto border-t border-[#e8e2d8]">
+                <table className="w-full text-left text-xs border-collapse font-sans">
                   <thead>
                     <tr className="bg-[#ece8e0] text-[#5f5e5e] font-sans font-semibold text-label-caps text-xs border-b border-[#e8e2d8]">
                       {visibleColumns.orderRef && <th className={`${densityPadding} w-36 min-w-[120px]`}>Order Reference</th>}
                       {visibleColumns.stationPriority && <th className={`${densityPadding} w-44 min-w-[130px]`}>Station &amp; Priority</th>}
-                      {visibleColumns.lifecycleStatus && <th className={`${densityPadding} text-center w-32 min-w-[100px]`}>Lifecycle Status</th>}
-                      {visibleColumns.createdTimestamp && <th className={`${densityPadding} w-36 min-w-[110px]`}>Created Timestamp</th>}
-                      {visibleColumns.startedDelay && <th className={`${densityPadding} w-36 min-w-[110px]`}>Started / Delay</th>}
-                      {visibleColumns.completedPrepTime && <th className={`${densityPadding} w-36 min-w-[110px]`}>Completed / Prep Time</th>}
-                      {visibleColumns.cancellationAudit && <th className={`${densityPadding} w-40 min-w-[120px]`}>Cancellation Audit</th>}
-                      {visibleColumns.items && <th className={`${densityPadding} text-center w-24 min-w-[70px]`}>Items</th>}
-                      {visibleColumns.actions && <th className={`${densityPadding} text-right w-28 min-w-[90px]`}>Actions</th>}
+                      {visibleColumns.items && <th className={`${densityPadding} w-36 min-w-[160px]`}>Items &amp; Dishes</th>}
+                      {visibleColumns.lifecycleStatus && <th className={`${densityPadding} text-center w-28 min-w-[90px]`}>Status</th>}
+                      {visibleColumns.createdTimestamp && <th className={`${densityPadding} w-36 min-w-[110px]`}>Created</th>}
+                      {visibleColumns.startedDelay && <th className={`${densityPadding} w-32 min-w-[100px]`}>Started / Delay</th>}
+                      {visibleColumns.completedPrepTime && <th className={`${densityPadding} w-32 min-w-[100px]`}>Completed / Prep Time</th>}
+                      {visibleColumns.cancellationAudit && <th className={`${densityPadding} w-32 min-w-[100px]`}>Cancellation Audit</th>}
+                      {visibleColumns.actions && <th className={`${densityPadding} text-right w-20 min-w-[70px]`}>Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#e8e2d8] text-xs font-sans">
@@ -2109,26 +2128,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                     const isTableAllHeld = order.items.length > 0 && order.items.every(it => it.preparationStatus === 'held');
                     const elapsedMinutes = Math.floor(Math.max(0, (currentTime - new Date(order.createdAt).getTime()) / 1000) / 60);
 
-                    const prepDuration =
-                      isCompleted && order.completedAt && order.createdAt
-                        ? formatDuration(order.createdAt, order.completedAt)
-                        : null;
-
-                    const waitDelay =
-                      (isStarted || isCompleted) && order.startedAt && order.createdAt
-                        ? formatDuration(order.createdAt, order.startedAt)
-                        : null;
+                    const totalPieces = order.items?.reduce((acc, curr) => acc + curr.quantity, 0) || 0;
 
                     return (
                       <tr
                         key={order.id}
-                        className={`transition-colors duration-150 group ${
-                          isCancelled
-                            ? 'bg-stone-50/60 opacity-60 hover:opacity-100 hover:bg-[#f8f3eb]'
-                            : isCompleted
-                            ? 'bg-white hover:bg-[#f8f3eb]'
-                            : 'bg-white hover:bg-[#f8f3eb]'
-                        }`}
+                        className="bg-white hover:bg-[#f8f3eb] transition-colors duration-150 group"
                       >
                         {/* Order Reference */}
                         {visibleColumns.orderRef && (
@@ -2138,85 +2143,104 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                 #KO-{order.id}
                               </span>
                               {order.priority > 0 && (
-                                <span className="material-symbols-outlined text-xs text-[#ae001a]">
+                                <span className="material-symbols-outlined text-xs text-[#ae001a]" title={`Priority Rush +${order.priority}`}>
                                   flag
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 text-[11px] text-[#5f5e5e] font-mono">
+                            <div className="flex items-center gap-2 text-[11px] text-[#5f5e5e] font-mono mt-0.5">
                               {order.orderId ? (
                                 <span>#ORD-{order.orderId}</span>
                               ) : order.onlineOrderId ? (
                                 <span>#ONL-{order.onlineOrderId}</span>
-                              ) : order.notes ? (
-                                <span className="text-[#854d0e] font-semibold">{order.notes.split('•')[0].trim()}</span>
                               ) : (
-                                <span>Direct POS</span>
+                                <span>Direct KDS</span>
                               )}
                             </div>
+                            {order.notes && (
+                              <div className="text-[11px] text-[#854d0e] font-semibold mt-0.5 truncate max-w-[150px]" title={order.notes}>
+                                {order.notes.split('•')[0].trim()}
+                              </div>
+                            )}
                           </td>
                         )}
 
                         {/* Station & Priority */}
                         {visibleColumns.stationPriority && (
                           <td className={densityPadding}>
-                            <span className="font-normal text-[#1d1c17] text-xs block">
+                            <span className="font-medium text-[#1d1c17] text-xs block leading-tight">
                               {order.stationName || 'Unassigned Station'}
                             </span>
-                            <div className="flex items-center gap-1 mt-0.5">
+                            <div className="flex items-center gap-1 mt-1">
                               {order.priority >= 3 ? (
-                                <span className="text-[10px] font-normal uppercase px-1.5 py-0.2 rounded border bg-purple-50 text-purple-700 border-purple-200">
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border bg-purple-50 text-purple-700 border-purple-200">
                                   VIP Rush (+3)
                                 </span>
                               ) : order.priority === 2 ? (
-                                <span className="text-[10px] font-normal uppercase px-1.5 py-0.2 rounded border bg-red-50 text-red-700 border-red-200">
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border bg-red-50 text-red-700 border-red-200">
                                   Urgent (+2)
                                 </span>
                               ) : order.priority === 1 ? (
-                                <span className="text-[10px] font-normal uppercase px-1.5 py-0.2 rounded border bg-amber-50 text-amber-700 border-amber-200">
+                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border bg-amber-50 text-amber-700 border-amber-200">
                                   High (+1)
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-normal uppercase px-1.5 py-0.2 rounded border bg-zinc-100 text-zinc-600 border-zinc-200">
+                                <span className="text-[10px] font-semibold uppercase px-1.5 py-0.2 rounded border bg-zinc-100 text-zinc-600 border-zinc-200">
                                   Normal (0)
                                 </span>
                               )}
                               {elapsedMinutes >= criticalSlaMinutes && !isCompleted && !isCancelled && (
-                                <span className="text-[10px] bg-red-600 text-white border border-red-700 px-1.5 py-0.2 rounded font-bold tracking-wide flex items-center gap-0.5 shadow-xs animate-pulse">
+                                <span className="text-[10px] bg-red-600 text-white px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5 animate-pulse">
                                   <span className="material-symbols-outlined text-[10px]">shield</span>
-                                  SLA
+                                  SLA {elapsedMinutes}m
                                 </span>
                               )}
                             </div>
                           </td>
                         )}
 
-                        {/* Lifecycle Status */}
+                        {/* Items & Dishes breakdown */}
+                        {visibleColumns.items && (
+                          <td className={densityPadding}>
+                            {order.items && order.items.length > 0 ? (
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-xs text-[#1d1c17]">
+                                  {totalPieces} pc{totalPieces === 1 ? '' : 's'} • {order.items.length} dish{order.items.length === 1 ? '' : 'es'}
+                                </span>
+                                <span
+                                  className="text-[11px] text-[#5f5e5e] truncate max-w-[280px]"
+                                  title={order.items.map(i => `${i.quantity}x ${i.productName}${i.variantName ? ` (${i.variantName})` : ''}`).join(', ')}
+                                >
+                                  {order.items.map(i => `${i.quantity}x ${i.productName}`).join(' • ')}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[#8a857a] italic text-xs">—</span>
+                            )}
+                          </td>
+                        )}
+
+                        {/* Lifecycle Status (Standardized Flat Badge) */}
                         {visibleColumns.lifecycleStatus && (
                           <td className={`${densityPadding} text-center`}>
                             {isCompleted ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 uppercase">
-                                <span className="material-symbols-outlined text-xs">check_circle</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
                                 Completed
                               </span>
                             ) : isStarted ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 uppercase">
-                                <span className="material-symbols-outlined text-xs animate-spin">skillet</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
                                 Started
                               </span>
                             ) : isCancelled ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200 uppercase">
-                                <span className="material-symbols-outlined text-xs">cancel</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-red-50 text-red-700 border border-red-200">
                                 Cancelled
                               </span>
                             ) : isTableAllHeld ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 uppercase">
-                                <span className="material-symbols-outlined text-xs">pause_circle</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">
                                 Held
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-100 text-zinc-700 border border-zinc-300 uppercase">
-                                <span className="material-symbols-outlined text-xs">schedule</span>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-zinc-100 text-zinc-600 border border-zinc-200">
                                 Pending
                               </span>
                             )}
@@ -2226,98 +2250,62 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                         {/* Created At */}
                         {visibleColumns.createdTimestamp && (
                           <td className={`${densityPadding} font-mono text-[11px] text-[#1d1c17]`}>
-                            {formatDateClock(order.createdAt)}
+                            <div>{formatDateClock(order.createdAt)}</div>
+                            <span className="text-[10px] text-[#5f5e5e] font-sans">
+                              ({elapsedMinutes}m ago)
+                            </span>
                           </td>
                         )}
 
-                        {/* Started At / Delay */}
+                        {/* Started At / Delay (Optional) */}
                         {visibleColumns.startedDelay && (
                           <td className={`${densityPadding} font-mono text-[11px]`}>
-                            {order.startedAt ? (
-                              <div>
-                                <span className="text-[#1d1c17]">{formatDateClock(order.startedAt)}</span>
-                                {waitDelay && (
-                                  <span className="block text-[10px] text-[#5f5e5e]">
-                                    Wait: {waitDelay}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-[#8a857a]">—</span>
-                            )}
+                            {order.startedAt ? formatDateClock(order.startedAt) : <span className="text-[#8a857a]">—</span>}
                           </td>
                         )}
 
-                        {/* Completed At / Total Duration */}
+                        {/* Completed At / Prep Time (Optional) */}
                         {visibleColumns.completedPrepTime && (
                           <td className={`${densityPadding} font-mono text-[11px]`}>
-                            {order.completedAt ? (
-                              <div>
-                                <span className="text-emerald-700 font-semibold">{formatDateClock(order.completedAt)}</span>
-                                {prepDuration && (
-                                  <span className="block text-[10px] text-emerald-600 font-bold">
-                                    Prep: {prepDuration}
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-[#8a857a]">—</span>
-                            )}
+                            {order.completedAt ? formatDateClock(order.completedAt) : <span className="text-[#8a857a]">—</span>}
                           </td>
                         )}
 
-                        {/* Cancellation Audit */}
+                        {/* Cancellation Audit (Optional) */}
                         {visibleColumns.cancellationAudit && (
                           <td className={densityPadding}>
-                            {isCancelled ? (
-                              <div className="text-xs">
-                                <span className="inline-block bg-red-50 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold border border-red-200">
-                                  {order.cancellationReason
-                                    ? order.cancellationReason.replace(/_/g, ' ')
-                                    : 'unspecified'}
-                                </span>
-                                {order.cancelledByUserId && (
-                                  <span className="block text-[10px] text-[#8a857a] mt-0.5">
-                                    By User #{order.cancelledByUserId}
-                                  </span>
-                                )}
-                              </div>
+                            {isCancelled && order.cancellationReason ? (
+                              <span className="inline-block bg-red-50 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-semibold border border-red-200">
+                                {order.cancellationReason.replace(/_/g, ' ')}
+                              </span>
                             ) : (
                               <span className="text-[#8a857a] text-xs">—</span>
                             )}
                           </td>
                         )}
 
-                        {/* Items Count */}
-                        {visibleColumns.items && (
-                          <td className={`${densityPadding} text-center font-mono font-bold text-xs`}>
-                            <span className="inline-block px-2 py-0.5 rounded bg-zinc-100 text-[#1d1c17] border border-zinc-200">
-                              {order.items.length} items
-                            </span>
-                          </td>
-                        )}
-
-                        {/* Actions */}
+                        {/* Actions (Inspect and Cancel Icon Buttons) */}
                         {visibleColumns.actions && (
-                          <td className={`${densityPadding} text-right space-x-1.5`}>
-                            {order.businessStatus === 'completed' && (
+                          <td className={`${densityPadding} text-right whitespace-nowrap`}>
+                            <div className="flex items-center justify-end gap-1">
                               <button
-                                onClick={() => handleRecallOrder(order.id)}
-                                className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer shadow-2xs"
-                                title="Recall order back to active kitchen board"
+                                type="button"
+                                onClick={() => setInspectingTicket(order)}
+                                className="p-1.5 text-zinc-600 hover:text-[#ae001a] hover:bg-[#fef9f1] rounded transition-colors cursor-pointer"
+                                title="Inspect ticket details"
                               >
-                                <span className="material-symbols-outlined text-[14px]">replay</span>
-                                <span>Recall</span>
+                                <span className="material-symbols-outlined text-[18px]">manage_search</span>
                               </button>
-                            )}
-                            <button
-                              onClick={() => setInspectingTicket(order)}
-                              className="px-2.5 py-1 bg-[#f4efe6] hover:bg-[#ae001a] hover:text-white text-[#1d1c17] border border-[#e8e2d8] rounded text-xs font-bold transition-colors inline-flex items-center gap-1 cursor-pointer"
-                              title="Inspect Order Details &amp; Line Items"
-                            >
-                              <span className="material-symbols-outlined text-sm">manage_search</span>
-                              <span>Inspect</span>
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => setCancellingTicket(order)}
+                                disabled={isCompleted || isCancelled}
+                                className="p-1.5 text-zinc-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors disabled:opacity-20 disabled:cursor-not-allowed cursor-pointer"
+                                title={isCancelled ? 'Order already cancelled' : isCompleted ? 'Completed order cannot be cancelled' : 'Cancel Kitchen Order'}
+                              >
+                                <span className="material-symbols-outlined text-[18px]">cancel</span>
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -2547,7 +2535,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
                           {/* Status badge & Item actions */}
                           <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
-                            {/* Botón POUR / PREP (o FIRE) individual en el artículo si hay más de 1 artículo */}
+                            {/* Individual POUR / PREP (or FIRE) button on item if more than 1 item */}
                             {order.items.length > 1 && !isCompleted && !isCancelled && (
                               <>
                                 {it.preparationStatus === 'held' && (
@@ -2580,7 +2568,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               </>
                             )}
 
-                            {/* Botón READY individual para marcar listo si está en preparación */}
+                            {/* Individual READY button to mark item ready if in preparation */}
                             {!isCompleted && !isCancelled && it.preparationStatus === 'in_preparation' && (
                               <button
                                 onClick={(e) => {
@@ -2595,7 +2583,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                               </button>
                             )}
 
-                            {/* Botón UNDO en el artículo (después de haber iniciado: in_preparation o ready) */}
+                            {/* Item UNDO button (after started: in_preparation or ready) */}
                             {!isCompleted && !isCancelled && (it.preparationStatus === 'in_preparation' || it.preparationStatus === 'ready') && (
                               <button
                                 onClick={(e) => {
@@ -2730,7 +2718,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                       })()
                     )}
 
-                    {/* Botón Undo general en la comanda (después de haber dado Start) */}
+                    {/* General Undo button on order (after giving Start) */}
                     {(isStarted || hasActivePrep) && !isCompleted && !isCancelled && (
                       <button
                         onClick={() => handleUndoOrder(order)}
@@ -3130,7 +3118,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider mb-1">
-                        Table / Ticket Reference (Name or #)
+                        Table / Ticket (Name or #)
                       </label>
                       <input
                         type="text"
@@ -3214,11 +3202,15 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                   value={
                                     item.isCustomProduct
                                       ? '__custom__'
-                                      : catalogProducts.includes(item.productName)
-                                      ? item.productName
-                                      : item.productName === ''
-                                      ? ''
-                                      : '__custom__'
+                                      : (() => {
+                                          const norm = (item.productName === 'Al Pastor Tacos (3 pcs)' || item.productName === 'Al Pastor Tacos')
+                                            ? 'Tacos al Pastor (3 pcs)'
+                                            : item.productName;
+                                          const catalog = Array.from(new Set(catalogProducts.map(p => 
+                                            (p === 'Al Pastor Tacos (3 pcs)' || p === 'Al Pastor Tacos') ? 'Tacos al Pastor (3 pcs)' : p
+                                          )));
+                                          return catalog.includes(norm) ? norm : norm === '' ? '' : '__custom__';
+                                        })()
                                   }
                                   onChange={e => {
                                     const val = e.target.value;
@@ -3237,7 +3229,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                         )
                                       );
                                     } else {
-                                      const available = productVariantsMap[val] || [];
+                                      const available = productVariantsMap[val] || productVariantsMap['Tacos al Pastor (3 pcs)'] || [];
                                       const suggested = suggestCourseForProduct(val);
                                       setFormItems(prev =>
                                         prev.map((it, i) => {
@@ -3259,7 +3251,9 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                                 >
                                   <option value="">-- Select Dish / Product --</option>
                                   <optgroup label="Store Catalog / Menu">
-                                    {catalogProducts.map(p => (
+                                    {Array.from(new Set(catalogProducts.map(p => 
+                                      (p === 'Al Pastor Tacos (3 pcs)' || p === 'Al Pastor Tacos') ? 'Tacos al Pastor (3 pcs)' : p
+                                    ))).map(p => (
                                       <option key={p} value={p}>{p}</option>
                                     ))}
                                   </optgroup>
@@ -3501,7 +3495,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         onClose={() => setIsSlaModalOpen(false)}
         onSavedToast={(msg) => showToast(msg, 'success')}
       />
-      <KitchenDevResetButton onResetComplete={() => loadOrders(true)} />
+      {KitchenDevResetButton && <KitchenDevResetButton onResetComplete={() => loadOrders(true)} />}
     </div>
   );
 };

@@ -25,7 +25,7 @@ const summary = (id: number, hour: number, guest: string, status = 'pending') =>
 });
 
 const RES_1 = summary(1, 19, 'Carlos Mendoza', 'completed');
-const RES_2 = summary(2, 20, 'Lucía Prat', 'cancelled');
+const RES_2 = summary(2, 20, 'Lucia Prat', 'cancelled');
 const RES_3 = summary(3, 21, 'Marta Gil', 'no_show');
 
 const row = (

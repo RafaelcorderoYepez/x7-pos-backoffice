@@ -63,7 +63,7 @@ describe('buildSettlementsFromOrders', () => {
     expect(s.refunds).toBe(50);
     expect(s.platform_fee).toBe(50); // 500 * 0.1
     expect(s.net_payout).toBe(400); // 500 - 50 - 50
-    expect(s.orders_count).toBe(1); // sólo la completada cuenta como orden recaudada
+    expect(s.orders_count).toBe(1); // only the completed one counts as a collected order
   });
 
   it('excludes voided and pending orders from the money', () => {

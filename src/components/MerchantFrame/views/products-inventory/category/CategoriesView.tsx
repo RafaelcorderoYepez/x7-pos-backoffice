@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
 import { InventoryNavHubBar } from '../InventoryNavHubBar';
@@ -58,7 +58,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
 
   const topRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll al inicio al montar la vista
+  // Auto-scroll at startup when mounting view
   useEffect(() => {
     if (topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'instant' });
@@ -129,15 +129,25 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     navigator.clipboard.writeText(`Product Categories: ${filteredCategories.length} total, ${active} active, ${filteredCategories.length - active} inactive.`);
   };
 
-  // Reactive list filtering
-  const filteredCategories = categories.filter((cat) => {
-    const matchesSearch = cat.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          cat.id.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus = statusFilter === 'All Status' || cat.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
+  // Reactive list filtering and ordering (Active first, Inactive last)
+  const filteredCategories = useMemo(() => {
+    return categories
+      .filter((cat) => {
+        const matchesSearch =
+          cat.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+          cat.id.toLowerCase().includes(searchQuery.toLowerCase());
+        
+        const matchesStatus = statusFilter === 'All Status' || cat.status === statusFilter;
+        
+        return matchesSearch && matchesStatus;
+      })
+      .sort((a, b) => {
+        if (a.status !== b.status) {
+          return a.status === 'Active' ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+  }, [categories, searchQuery, statusFilter]);
 
   const totalPages = Math.ceil(filteredCategories.length / pageSize) || 1;
   const paginatedCategories = filteredCategories.slice(
@@ -274,7 +284,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
           />
         </div>
 
-        {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
+        {/* Row 2: Filters on the left, Buttons on the right */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <select

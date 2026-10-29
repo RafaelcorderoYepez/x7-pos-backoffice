@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
 import { InventoryNavHubBar } from '../InventoryNavHubBar';
@@ -76,7 +76,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   const [toggleError, setToggleError] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement | null>(null);
 
-  // Estado para Personalizar Columnas
+  // Status to Customize Columns
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
     product: true,
     category: true,
@@ -90,7 +90,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Auto-scroll al inicio al montar la vista
+  // Auto-scroll at startup when mounting view
   useEffect(() => {
     if (topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'instant' });
@@ -117,7 +117,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
       const productsData = productsJson.data || [];
       const categoriesData = categoriesJson.data || [];
 
-      // Mapear y asegurar que los campos existan y tengan el tipo correcto
+      // Map and ensure that fields exist and have the correct type
       const mappedProducts = productsData.map((p: {
         id: number;
         name: string;
@@ -154,23 +154,34 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     });
   }, [fetchAllData]);
 
-  // Client-side reactive product filtering
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch =
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku.toLowerCase().includes(searchQuery.toLowerCase());
+  // Client-side reactive product filtering and ordering (Active first, Inactive last)
+  const filteredProducts = useMemo(() => {
+    return products
+      .filter((p) => {
+        const matchesSearch =
+          p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          p.sku.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesCategory =
-      categoryFilter === 'All Categories' ||
-      p.category?.name === categoryFilter;
+        const matchesCategory =
+          categoryFilter === 'All Categories' ||
+          p.category?.name === categoryFilter;
 
-    const matchesStatus =
-      statusFilter === 'All Status' ||
-      (statusFilter === 'Active' && p.isActive) ||
-      (statusFilter === 'Inactive' && !p.isActive);
+        const matchesStatus =
+          statusFilter === 'All Status' ||
+          (statusFilter === 'Active' && p.isActive) ||
+          (statusFilter === 'Inactive' && !p.isActive);
 
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
+        return matchesSearch && matchesCategory && matchesStatus;
+      })
+      .sort((a, b) => {
+        const aActive = a.isActive !== false;
+        const bActive = b.isActive !== false;
+        if (aActive !== bActive) {
+          return aActive ? -1 : 1; // Active first, Inactive last
+        }
+        return a.name.localeCompare(b.name);
+      });
+  }, [products, searchQuery, categoryFilter, statusFilter]);
 
   const formatPrice = (price: number | string) => {
     const num = typeof price === 'number' ? price : parseFloat(price);
@@ -245,7 +256,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formSku.trim() || !formPrice.trim()) {
-      alert('Por favor, completa todos los campos obligatorios.');
+      alert('Please fill in all required fields.');
       return;
     }
 
@@ -376,7 +387,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
           />
         </div>
 
-        {/* Fila 2: Filtros a la izquierda, Botones a la derecha */}
+        {/* Row 2: Filters on the left, Buttons on the right */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             {/* Category Filter */}
@@ -393,7 +404,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
               ))}
             </select>
 
-            {/* Filtro por Estado */}
+            {/* Filter by State */}
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}

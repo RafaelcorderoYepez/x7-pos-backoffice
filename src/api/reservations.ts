@@ -1,12 +1,12 @@
-// Cliente HTTP del módulo de Reservas.
+// HTTP Client of the Reservations module.
 //
-// La ruta real es `/api/reservation` — SINGULAR y sin `/v1`, al contrario de lo que dicen los
-// textos de las historias (`/api/v1/reservations`, que devuelve 404). Y la actualización va
-// por **PATCH**, no por PUT como el resto de módulos del backoffice.
+// The actual path is `/api/reservation` — SINGULAR and without `/v1`, contrary to what the
+// story texts (`/api/v1/reservations`, which returns 404). And the update goes
+// by **PATCH**, not by PUT like the rest of the backoffice modules.
 //
-// El backend valida con `forbidNonWhitelisted: true`, así que cualquier campo que no esté en
-// el DTO tumba la petición con un 400: los cuerpos se construyen explícitos, nunca a base de
-// esparcir el estado del formulario.
+// The backend validates with `forbidNonWhitelisted: true`, so any fields not in
+// the DTO knocks down the request with a 400: the bodies are constructed explicitly, never based on
+// spread form state.
 
 import { apiRequest } from './http';
 import type {
@@ -27,7 +27,7 @@ import type {
 } from '../lib/reservation-capacity';
 import { normalizeGuestPhone } from '../lib/reservation-guests';
 
-// El tope de `limit` del DTO de consulta es 100 en todo el backend: pedir más devuelve un 400
+// Query DTO `limit` is capped at 100 across the entire backend: requesting more returns 400
 // "limit must not be greater than 100".
 export const MAX_PAGE_LIMIT = 100;
 
@@ -41,9 +41,9 @@ interface Envelope<T> {
 }
 
 export interface ReservationQuery {
-  /** Día concreto (YYYY-MM-DD). El backend lo resuelve como rango semiabierto sobre el índice. */
+  /** Specific day (YYYY-MM-DD). The backend resolves it as a semi-open range over the index. */
   date?: string;
-  /** Rango explícito para las vistas de semana/mes; ISO completo. */
+  /** Explicit range for week/month views; Full ISO. */
   dateFrom?: string;
   dateTo?: string;
   status?: ReservationStatus;
@@ -52,9 +52,9 @@ export interface ReservationQuery {
   limit?: number;
 }
 
-// El filtro de día viaja al servidor (es el que usa el índice compuesto
-// [merchant_id, reservation_date]); el de estado/origen/texto se resuelve en cliente porque la
-// tira de filtros es multi-selección y el DTO sólo acepta un estado suelto.
+// The day filter travels to the server (it is the one that uses the composite index
+// [merchant_id, reservation_date]); the status/origin/text one resolves to client because the
+// Filter strip is multi-select and the DTO only accepts a loose state.
 export async function listReservations(
   query: ReservationQuery = {},
 ): Promise<{ reservations: Reservation[]; total: number }> {
@@ -84,8 +84,8 @@ export async function createReservation(draft: ReservationDraft): Promise<Reserv
     reservation_date: draft.reservation_date,
     party_size: draft.party_size,
   };
-  // Sólo se mandan los opcionales con valor: un `customer_id: null` lo rechaza @IsInt, y un
-  // `source: ''` guardaría una cadena vacía como canal de origen.
+  // Only optional ones with a value are sent: a `customer_id: null` is rejected by @IsInt, and a
+  // `source: ''` would save an empty string as the source channel.
   if (draft.customer_id != null) body.customer_id = draft.customer_id;
   if (draft.duration_minutes != null) body.duration_minutes = draft.duration_minutes;
   if (draft.status) body.status = draft.status;
@@ -107,7 +107,7 @@ export async function createReservation(draft: ReservationDraft): Promise<Reserv
   return normalizeReservation(json.data);
 }
 
-// PATCH, no PUT: el controlador de reservas es el único del backoffice que actualiza así.
+// PATCH, not PUT: the reservation controller is the only one in the backoffice that updates like this.
 export async function updateReservation(
   id: number,
   patch: Partial<ReservationDraft> & { seated_at?: string; manager_override?: ManagerOverride },
@@ -120,7 +120,7 @@ export async function updateReservation(
   return normalizeReservation(json.data);
 }
 
-// Anular tiene endpoint propio (deja rastro en el histórico de estados con un solo viaje).
+// Cancel has its own endpoint (it leaves a trace in the state history with a single trip).
 export async function cancelReservation(id: number): Promise<Reservation> {
   const json = await apiRequest<Envelope<Reservation>>(
     `/reservation/${id}/cancel`,
@@ -130,7 +130,7 @@ export async function cancelReservation(id: number): Promise<Reservation> {
   return normalizeReservation(json.data);
 }
 
-// DELETE es un borrado LÓGICO (is_active = false) que arrastra mesas, invitados y notas.
+// DELETE is a LOGICAL delete (is_active = false) that drags tables, guests, and notes.
 export async function deleteReservation(id: number): Promise<void> {
   await apiRequest<Envelope<Reservation>>(
     `/reservation/${id}`,
@@ -139,8 +139,8 @@ export async function deleteReservation(id: number): Promise<void> {
   );
 }
 
-// Alta rápida del acompañante principal cuando la reserva se toma sin ficha de CRM: el
-// "lightweight guest record" de la historia es exactamente un reservation_guest.
+// Quick registration of the main companion when the reservation is made without a CRM file: the
+// "lightweight guest record" in history is exactly a reservation_guest.
 export async function createReservationGuest(payload: {
   reservation_id: number;
   name: string;
@@ -154,7 +154,7 @@ export async function createReservationGuest(payload: {
     is_primary: payload.is_primary ?? true,
   };
   if (payload.email?.trim()) body.email = payload.email.trim();
-  // Sin separadores: es lo que espera @IsPhoneNumber y lo que cabe en varchar(20).
+  // Without separators: this is what @IsPhoneNumber expects and what fits in varchar(20).
   const phone = normalizeGuestPhone(payload.phone ?? '');
   if (phone) body.phone = phone;
 
@@ -165,9 +165,9 @@ export async function createReservationGuest(payload: {
   );
 }
 
-// OJO: `GET /api/customers` devuelve un ARRAY PELADO (sin envoltorio {data}) y NO filtra por
-// comercio — el servicio hace un find() sin scope. El filtrado por merchant se hace aquí, o el
-// autocompletado ofrecería clientes de otros locales.
+// NOTE: `GET /api/customers` returns a BARE ARRAY (without {data} wrapper) and does NOT filter by
+// commerce — the service does a find() without scope. Filtering by merchant is done here, or
+// autocomplete would offer customers from other locations.
 export async function listCustomers(merchantId?: number): Promise<CustomerRef[]> {
   const json = await apiRequest<CustomerRef[] | Envelope<CustomerRef[]>>(
     '/customers',
@@ -179,8 +179,8 @@ export async function listCustomers(merchantId?: number): Promise<CustomerRef[]>
   return rows.filter((c) => c.merchantId == null || c.merchantId === merchantId);
 }
 
-// Ficha completa del CRM. El DTO exige rut/address/city/state/country además del correo, así
-// que el drawer los pide cuando la anfitriona elige crear perfil en vez de invitado suelto.
+// Complete CRM file. The DTO requires rut/address/city/state/country in addition to the email, so
+// that the drawer requests them when the hostess chooses to create a profile instead of an individual guest.
 export async function createCustomer(payload: {
   name: string;
   email: string;
@@ -202,7 +202,7 @@ export async function createCustomer(payload: {
   return (json as Envelope<CustomerRef>)?.data ?? (json as CustomerRef);
 }
 
-// Inventario de mesas: alimenta el aforo total del salón para el aviso de sobreventa.
+// Table inventory: feeds the total capacity of the room for the oversale notice.
 export async function listTablesForCapacity(): Promise<
   Array<{ id: number; number: string; capacity: number; status: string }>
 > {
@@ -214,15 +214,15 @@ export async function listTablesForCapacity(): Promise<
   return (json?.data ?? []).filter((t) => t.status !== 'deleted');
 }
 
-// ================= Asignación de mesas =================
+// ================= Table assignment =================
 
 /**
- * Vincula varias mesas a una reserva en una sola transacción.
+ * Link multiple tables to a reservation in a single transaction.
  *
- * Se usa incluso para una mesa suelta: el endpoint simple (`POST /api/reservation-table`) no
- * es transaccional y devuelve 200 "already assigned" en vez de fallar, así que el camino de
- * escritura del workspace es siempre éste. Un 409 significa que la mesa se ocupó entre que se
- * pintó el tablero y se pulsó guardar.
+ * Used even for a loose table: the simple endpoint (`POST /api/reservation-table`) does not
+ * is transactional and returns 200 "already assigned" instead of failing, so the path
+ * writing workspace is always this one. A 409 means that the table was occupied between
+ * painted the board and pressed save.
  */
 export async function assignTables(
   reservationId: number,
@@ -239,8 +239,8 @@ export async function assignTables(
   return json?.data ?? [];
 }
 
-// Soltar una mesa es un borrado LÓGICO (is_active = false): la traza de quién estuvo dónde se
-// conserva para el histórico del servicio.
+// Dropping a table is a LOGICAL delete (is_active = false): the trace of who was where
+// preserved for service history.
 export async function unassignTable(
   reservationId: number,
   tableId: number,
@@ -252,7 +252,7 @@ export async function unassignTable(
   );
 }
 
-// Asignaciones hidratadas con número, aforo y zona (relación `eager` a Table en la entidad).
+// Hydrated assignments with number, capacity and area (`eager` relationship to Table in the entity).
 export async function listReservationTables(
   reservationId?: number,
 ): Promise<ReservationTableLink[]> {
@@ -269,7 +269,7 @@ export async function listReservationTables(
 
 // ================= Notas =================
 
-// `created_by` NO viaja en el cuerpo: el controlador lo sella con `user.id` del token.
+// `created_by` does NOT travel in the body: the driver stamps it with the `user.id` of the token.
 export async function createReservationNote(
   reservationId: number,
   note: string,
@@ -297,7 +297,7 @@ export async function updateReservationNote(
   return json.data;
 }
 
-// Borrado lógico: la nota deja de listarse pero el histórico del servicio la conserva.
+// Logical deletion: the note is no longer listed but the service history preserves it.
 export async function deleteReservationNote(id: number): Promise<void> {
   await apiRequest<Envelope<ReservationNote>>(
     `/reservation-note/${id}`,
@@ -306,8 +306,8 @@ export async function deleteReservationNote(id: number): Promise<void> {
   );
 }
 
-// Catálogo de personal para firmar las notas. Falla en silencio (403 si el plan no incluye
-// colaboradores): sin él la firma cae a "Staff #<id>", que sigue siendo una atribución válida.
+// Staff catalog to sign the notes. Fails silently (403 if the plan does not include
+// collaborators): without it the signature falls to "Staff #<id>", which is still a valid attribution.
 export async function listStaff(): Promise<
   Array<{ id: number; user_id?: number; name?: string; role?: string }>
 > {
@@ -319,7 +319,7 @@ export async function listStaff(): Promise<
   return json?.data ?? [];
 }
 
-// ================= Roster de comensales =================
+// ================= Roster of diners =================
 
 export interface GuestDraft {
   reservation_id: number;
@@ -329,8 +329,8 @@ export interface GuestDraft {
   is_primary?: boolean;
 }
 
-// Marcar `is_primary` degrada al principal anterior EN EL SERVIDOR, dentro de la misma
-// transacción: la exclusividad no se puede sostener con dos llamadas desde el cliente.
+// Checking `is_primary` downgrades to previous primary ON THE SERVER, within it
+// transaction: exclusivity cannot be sustained with two calls from the client.
 export async function createGuest(draft: GuestDraft): Promise<ReservationGuest> {
   const body: Record<string, unknown> = {
     reservation_id: draft.reservation_id,
@@ -349,7 +349,7 @@ export async function createGuest(draft: GuestDraft): Promise<ReservationGuest> 
   return json.data;
 }
 
-// PATCH, como el resto del épico. Un campo ausente se deja como está.
+// PATCH, like the rest of the epic. A missing field is left as is.
 export async function updateGuest(
   id: number,
   patch: Partial<Omit<GuestDraft, 'reservation_id'>>,
@@ -368,8 +368,8 @@ export async function updateGuest(
   return json.data;
 }
 
-// Baja lógica (is_active = false). Si el que se va era el principal, el servidor eleva al
-// siguiente del roster en la misma transacción.
+// Low logic (is_active = false). If the one who leaves was the main one, the server raises the
+// next on the roster in the same transaction.
 export async function removeGuest(id: number): Promise<void> {
   await apiRequest<Envelope<ReservationGuest>>(
     `/reservation-guest/${id}`,
@@ -378,8 +378,8 @@ export async function removeGuest(id: number): Promise<void> {
   );
 }
 
-// Búsqueda global por nombre, correo o teléfono en todo el comercio — la que localiza a un
-// cliente que llama sin recordar el día de su reserva.
+// Global search by name, email or phone throughout the business — the one that locates a
+// customer who calls without remembering the day of his reservation.
 export async function searchGuests(term: string): Promise<ReservationGuest[]> {
   const params = new URLSearchParams({ limit: String(MAX_PAGE_LIMIT) });
   if (term.trim()) params.set('search', term.trim());
@@ -392,10 +392,10 @@ export async function searchGuests(term: string): Promise<ReservationGuest[]> {
   return json?.data ?? [];
 }
 
-// ================= Histórico de estados =================
+// ================= Status History =================
 
-// Techo de páginas por consulta: un día de mucho servicio son unos cientos de transiciones;
-// si alguna vez hay más, se corta aquí en vez de encadenar peticiones sin fin.
+// Ceiling of pages per query: a day of a lot of service is a few hundred transitions;
+// If there are ever more, it cuts off here instead of chaining endless requests.
 const MAX_HISTORY_PAGES = 20;
 
 async function fetchAllHistoryPages(
@@ -419,9 +419,9 @@ async function fetchAllHistoryPages(
 }
 
 /**
- * Todas las transiciones REGISTRADAS en un día local (`changed_at`), en changed_at DESC.
- * Se trae el día entero y se filtra en cliente: los KPI del turno tienen que sumar el día
- * completo aunque la lista esté filtrada por estado o por empleado.
+ * All transitions RECORDED on a local day (`changed_at`), in changed_at DESC.
+ * The entire day is brought in and filtered to the client: the KPIs of the shift have to add up to the day
+ * complete even if the list is filtered by status or employee.
  */
 export async function listStatusHistoryForDay(day: string): Promise<StatusHistoryFeedEntry[]> {
   return fetchAllHistoryPages(
@@ -431,7 +431,7 @@ export async function listStatusHistoryForDay(day: string): Promise<StatusHistor
   );
 }
 
-/** Ciclo de vida completo de una reserva, sea del día que sea. 404 si no existe. */
+/** Complete life cycle of a reservation, whatever day it is. 404 if it does not exist. */
 export async function listReservationLifecycle(
   reservationId: number,
 ): Promise<StatusHistoryFeedEntry[]> {
@@ -445,9 +445,9 @@ export async function listReservationLifecycle(
 // ================= Aforo y ritmo =================
 
 /**
- * Matriz de franjas de un día para un grupo concreto. La calcula el servidor (pico de
- * comensales CONFIRMED/SEATED simultáneos y límite de llegadas por franja); el drawer sólo
- * la pinta.
+ * Matrix of one-day slots for a specific group. It is calculated by the server (peak
+ * simultaneous CONFIRMED/SEATED diners and limit of arrivals per slot); the drawer only
+ * the pint.
  */
 export async function getAvailability(query: {
   date: string;
@@ -480,7 +480,7 @@ export async function getCapacitySettings(): Promise<CapacitySettings> {
   return json.data;
 }
 
-// PUT (no PATCH): es un documento de ajustes único por comercio. null = valor por defecto.
+// PUT (not PATCH): It is a unique adjustment document per business. null = default value.
 export async function updateCapacitySettings(payload: {
   seat_capacity: number | null;
   slot_interval_minutes: number;

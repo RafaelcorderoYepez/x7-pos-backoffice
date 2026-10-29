@@ -1,21 +1,21 @@
-// Reglas del control de fichajes: horas netas, clasificación de la jornada, guardas del
-// formulario y armado del export de nómina.
+// Transfer control rules: net hours, classification of the day, guards of the
+// payroll export form and assembly.
 //
-// Todo esto vive fuera de React porque es aritmética con dinero detrás: son las horas que
-// se pagan. El backend calcula las suyas al persistir; aquí se recalcula para pintar y para
-// exportar, con la MISMA definición (intervalo bruto − descanso no retribuido).
+// All of this lives outside of React because it is arithmetic with money behind it: it is the hours that
+// are paid. The backend calculates its own when persisting; here it is recalculated to paint and to
+// export, with the SAME definition (gross interval − unpaid rest).
 
 import type { PunchStatus, TimeEntry } from '../types/time-entry';
 
 // ================= Umbrales =================
 
-// Jornada estándar a partir de la cual las horas cuentan como extra. Debe coincidir con
-// DAILY_OVERTIME_THRESHOLD_HOURS del backend; el dueño natural del número es el módulo
-// merchant-overtime-rule, que aún no está enganchado a los fichajes.
+// Standard day from which the hours count as overtime. Must match
+// DAILY_OVERTIME_THRESHOLD_HOURS from backend; the natural owner of the number is the module
+// merchant-overtime-rule, which is not yet hooked on signings.
 export const DAILY_OVERTIME_THRESHOLD_HOURS = 8;
 
-// Margen de cortesía antes de considerar tarde una entrada. Sin él, fichar a las 08:00:12
-// saldría en rojo y la parrilla se volvería inútil de tanto ruido.
+// Courtesy margin before considering an entry late. Without it, clock in at 08:00:12
+// It would come out red and the grill would become useless from so much noise.
 export const TARDY_GRACE_MINUTES = 5;
 
 // ================= Referencias visibles =================
@@ -27,7 +27,7 @@ export const collaboratorRefOf = (collaboratorId: number): string => `#CLB-${col
 
 const MS_PER_HOUR = 3_600_000;
 
-/** Horas de reloj entre las dos marcas. Una jornada abierta todavía no mide nada. */
+/** Clock hours between the two marks. An open day still doesn't measure anything. */
 export const rawHours = (entry: Pick<TimeEntry, 'clock_in' | 'clock_out'>): number => {
   if (!entry.clock_out) return 0;
   const start = new Date(entry.clock_in).getTime();
@@ -37,10 +37,10 @@ export const rawHours = (entry: Pick<TimeEntry, 'clock_in' | 'clock_out'>): numb
 };
 
 /**
- * Horas pagables: el intervalo bruto menos el descanso no retribuido.
+ * Payable hours: the gross interval minus unpaid rest.
  *
- * Nunca baja de cero por mucho descanso que se teclee: un neto negativo no significa nada
- * en una nómina y arrastraría el error hasta el total exportado.
+ * It never goes below zero no matter how much rest you type: a net negative means nothing
+ * in a payroll and would drag the error into the exported total.
  */
 export const netHours = (entry: Pick<TimeEntry, 'clock_in' | 'clock_out' | 'break_minutes'>): number => {
   const raw = rawHours(entry);
@@ -60,9 +60,9 @@ export const formatHours = (hours: number): string => `${hours.toFixed(2)} hrs`;
 export const formatBreak = (minutes: number): string =>
   minutes > 0 ? `${minutes} min` : '—';
 
-// ================= Estado de la jornada =================
+// ================= Status of the day =================
 
-/** Minutos de retraso respecto al turno programado. Sin turno no hay con qué comparar. */
+/** Minutes late with respect to the scheduled shift. Without a turn there is nothing to compare with. */
 export const tardyMinutes = (entry: TimeEntry): number => {
   const scheduled = entry.shift?.startTime;
   if (!scheduled) return 0;
@@ -73,14 +73,14 @@ export const tardyMinutes = (entry: TimeEntry): number => {
 };
 
 /**
- * Estado de una jornada, en orden de gravedad.
+ * State of a day, in order of severity.
  *
- * `now` se inyecta en vez de leer el reloj dentro: una jornada abierta es normal a media
- * tarde e incidencia al cerrar el día, y esa diferencia hay que poder probarla.
+ * `now` is injected instead of reading the clock inside: an open day is normal at half
+ * afternoon and incidence at the end of the day, and that difference must be proven.
  */
 export const classifyEntry = (entry: TimeEntry, now: Date = new Date()): PunchStatus => {
   if (!entry.clock_out) {
-    // Sin salida: sigue trabajando mientras sea el mismo día; a partir de ahí, incidencia.
+    // No way out: keep working as long as it is the same day; From there, incidence.
     const startedOn = new Date(entry.clock_in);
     const sameDay =
       startedOn.getFullYear() === now.getFullYear() &&
@@ -95,16 +95,16 @@ export const classifyEntry = (entry: TimeEntry, now: Date = new Date()): PunchSt
 
 export const isOnDuty = (entry: TimeEntry): boolean => !entry.clock_out;
 
-/** "+15m Late" — el detalle que acompaña al badge ámbar. */
+/** "+15m Late" — the detail that accompanies the amber badge. */
 export const tardyLabel = (entry: TimeEntry): string => {
   const late = tardyMinutes(entry);
   return late > TARDY_GRACE_MINUTES ? `+${late}m Late` : '';
 };
 
-// ================= Presentación de marcas =================
+// ================= Presentation of brands =================
 
-// Formato de 12 h construido a mano: el separador que ICU mete antes del AM/PM cambia entre
-// versiones de Node y esta cadena se compara en los tests.
+// Hand-built 12-hour format: the separator that ICU inserts before the AM/PM switches between
+// versions of Node and this string is compared in the tests.
 export const clockTime = (iso?: string | null): string => {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -124,7 +124,7 @@ export const entryDate = (iso?: string | null): string => {
   return `${MONTHS[d.getMonth()]} ${String(d.getDate()).padStart(2, '0')}, ${d.getFullYear()}`;
 };
 
-/** Clave YYYY-MM-DD en horario LOCAL: toISOString() desplazaría el día según la zona. */
+/** Key YYYY-MM-DD in LOCAL time: toISOString() would shift the day according to the zone. */
 export const dateKey = (value: Date | string): string => {
   const d = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(d.getTime())) return '';
@@ -141,10 +141,10 @@ export interface TimeEntryFilters {
   status: string;
 }
 
-/** Semana en curso (lunes a domingo), que es el periodo con el que se revisa a diario. */
+/** Current week (Monday to Sunday), which is the period with which it is reviewed daily. */
 export const currentWeekRange = (today: Date = new Date()): { from: string; to: string } => {
   const day = today.getDay();
-  // getDay() da 0 para domingo: se retrocede 6 días para que la semana empiece en lunes.
+  // getDay() returns 0 for Sunday: goes back 6 days so the week starts on Monday.
   const monday = new Date(today);
   monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
   const sunday = new Date(monday);
@@ -159,7 +159,7 @@ export const defaultTimeEntryFilters = (today: Date = new Date()): TimeEntryFilt
   status: '',
 });
 
-// Nombre del colaborador, #CLB-{id} y #TME-{id}: los tres ejes de búsqueda de la historia.
+// Name of the collaborator, #CLB-{id} and #TME-{id}: the three search axes of the story.
 export const timeEntryHaystack = (entry: TimeEntry): string =>
   [
     entry.collaborator?.name ?? '',
@@ -184,8 +184,8 @@ export const filterTimeEntries = (
       return false;
     }
     if (filters.status && classifyEntry(e, now) !== filters.status) return false;
-    // El rango se compara por día local, no por instante: un fichaje de las 23:50 pertenece
-    // a su día, no al siguiente.
+    // The range is compared by local day, not by instant: a clocking in at 11:50 p.m. belongs
+    // to your day, not the next.
     const key = dateKey(e.clock_in);
     if (filters.from && key < filters.from) return false;
     if (filters.to && key > filters.to) return false;
@@ -207,7 +207,7 @@ export const hasActiveTimeFilters = (
   );
 };
 
-// ================= Guardas del formulario =================
+// ================= Form guards =================
 
 export const CHRONOLOGY_ERROR = 'Clock-Out timestamp must be after Clock-In timestamp.';
 export const REASON_REQUIRED_ERROR = 'An adjustment reason is required.';
@@ -221,11 +221,11 @@ export const chronologyError = (clockIn: string, clockOut: string): string => {
 };
 
 /**
- * Solapamiento con otro fichaje del mismo colaborador.
+ * Overlap with another signing of the same collaborator.
  *
- * Una jornada abierta se trata como "hasta el infinito": mientras no se cierre, cualquier
- * fichaje posterior choca con ella — que es justamente la incidencia a resolver. Misma
- * definición que la guarda del backend, para que el formulario no prometa lo que la API
+ * An open day is treated as "to infinity": as long as it is not closed, any
+ * Subsequent signing collides with it — which is precisely the incident to be resolved. Same
+ * definition that saves it from the backend, so that the form does not promise what the API
  * va a rechazar.
  */
 export const overlappingEntry = (
@@ -254,7 +254,7 @@ export const overlappingEntry = (
 export const overlapError = (clash: TimeEntry): string =>
   `This time range overlaps time entry ${timeEntryRef(clash.id)} for the same collaborator.`;
 
-// ================= Export de nómina =================
+// ================= Payroll export =================
 
 export interface TimesheetRow {
   collaboratorId: number;
@@ -268,11 +268,11 @@ export interface TimesheetRow {
 }
 
 /**
- * Agrega por colaborador lo que la nómina necesita.
+ * Add per employee what the payroll needs.
  *
- * Las horas se suman desde las marcas, no desde las columnas persistidas: si alguien
- * corrigió un fichaje, el total exportado tiene que reflejar la corrección aunque la fila
- * guardada se hubiera quedado atrás.
+ * Hours are summed from ticks, not from persisted columns: if someone
+ * corrected a signing, the exported total must reflect the correction even if the row
+ * saved would have been left behind.
  */
 export const buildTimesheet = (
   entries: TimeEntry[],
@@ -317,8 +317,8 @@ export const TIMESHEET_HEADERS = [
   'Missed Punches',
 ];
 
-// Un campo con coma, comilla o salto de línea rompe el CSV si va crudo: se entrecomilla y
-// se duplican las comillas internas, que es lo que Excel espera.
+// A field with a comma, quote or line break breaks the CSV if it is raw: it is enclosed in quotes and
+// inner quotes are duplicated, which is what Excel expects.
 const csvCell = (value: string | number): string => {
   const raw = String(value ?? '');
   return /[",\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;

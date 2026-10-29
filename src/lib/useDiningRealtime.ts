@@ -1,15 +1,15 @@
-// Suscripción de una vista al canal de tiempo real del dining system.
+// Subscription of a view to the real-time channel of the dining system.
 //
-// Los manejadores viven en una ref para que el socket se abra UNA vez por montaje: si el
-// efecto dependiera de ellos, cada render de la vista (y hay uno por tecla del buscador)
-// tiraría la conexión y abriría otra.
+// The handlers live in a ref so that the socket is opened ONCE per mount: if the
+// effect depended on them, each render of the view (and there is one per browser key)
+// I would throw away the connection and open another one.
 
 import { useEffect, useRef, useState } from 'react';
 import { getAccessToken } from './auth-storage';
 import { connectDiningRealtime, type DiningRealtimeHandlers } from './dining-realtime';
 
 export interface UseDiningRealtimeOptions extends DiningRealtimeHandlers {
-  // Permite apagar el canal sin desmontar la vista (por ejemplo mientras carga la sesión).
+  // Allows you to turn off the channel without unmounting the view (for example while loading the session).
   enabled?: boolean;
 }
 
@@ -20,15 +20,15 @@ export const useDiningRealtime = ({
   const [connected, setConnected] = useState(false);
   const handlersRef = useRef<DiningRealtimeHandlers>(handlers);
 
-  // Se sincroniza tras cada render, no durante: escribir una ref mientras se pinta es
-  // justo lo que React no garantiza en modo concurrente.
+  // It is synchronized after each render, not during: writing a ref while painting is
+  // just what React does not guarantee in concurrent mode.
   useEffect(() => {
     handlersRef.current = handlers;
   });
 
   useEffect(() => {
     if (!enabled) return;
-    // Sin sesión no hay sala a la que entrar: el gateway rechazaría el handshake.
+    // Without a session there is no room to enter: the gateway would reject the handshake.
     const token = getAccessToken();
     if (!token) return;
 

@@ -83,7 +83,7 @@ const AllocationFormDrawer: React.FC<AllocationFormDrawerProps> = ({
 
   useModalDismiss(onCancel);
 
-  // Cambiar de fuente resetea la otra: nunca pueden coexistir las dos.
+  // Changing the source resets the other: the two can never coexist.
   const selectPaymentSource = () => {
     setSourceKind('payment');
     setCreditNoteId('');
@@ -629,7 +629,7 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
     setLoading(true);
     setError(null);
     try {
-      // payment_id/credit_note_id son filtros reales del backend; document_number
+      // payment_id/credit_note_id are actual backend filters; document_number
       // is not, so context is applied client-side.
       const params = new URLSearchParams({ limit: '100' });
       if (payment) params.set('payment_id', String(payment.id));
@@ -719,7 +719,7 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
   const filteredAllocations = useMemo(() => {
     const term = searchQuery.trim().toLowerCase();
     return allocations.map(withSources).filter((a) => {
-      // Contexto por documento destino (no existe como filtro server-side).
+      // Context per destination document (does not exist as a server-side filter).
       if (documentNumber && a.document_number !== documentNumber) return false;
       if (term) {
         const haystack = [

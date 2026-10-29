@@ -1,9 +1,9 @@
-// Alta y edición de un repartidor.
+// Registration and editing of a delivery person.
 //
-// Mismos límites que CreateDeliveryDriverDto (nombre ≤100, teléfono ≤20 y 4-19 dígitos). El
-// estado sólo ofrece active / inactive / off_duty: `on_delivery` lo pone el flujo de
-// asignaciones, así que con el repartidor en reparto se muestra de sólo lectura y el cuerpo
-// del PATCH no lleva `status` (el backend respondería 409).
+// Same limits as CreateDeliveryDriverDto (name ≤100, phone ≤20 and 4-19 digits). The
+// status only offers active/inactive/off_duty: `on_delivery` puts it in the flow
+// assignments, so with the dealer in delivery it is shown read-only and the body
+// of PATCH does not have `status` (the backend would respond 409).
 
 import React, { useState } from 'react';
 import type { DeliveryDriver, DeliveryDriverDraft, EditableDriverStatus, VehicleType } from '../../../../types/delivery-drivers';
@@ -61,7 +61,7 @@ export const DriverFormDrawer: React.FC<DriverFormDrawerProps> = ({
   const { errors, draft } = validateDriverForm(values, { lockStatus: onDelivery });
   const set = (patch: Partial<DriverFormValues>) => setValues((v) => ({ ...v, ...patch }));
   const touch = (key: keyof DriverFormValues) => setTouched((t) => ({ ...t, [key]: true }));
-  // Los límites de longitud se avisan en cuanto se superan; "obligatorio" tras salir del campo.
+  // Length limits are notified as soon as they are exceeded; "mandatory" after leaving the field.
   const show = (key: keyof DriverFormValues) =>
     (submitted || touched[key] || (key === 'name' && values.name.trim().length > DRIVER_NAME_MAX) ||
       (key === 'phone' && values.phone.trim().length > DRIVER_PHONE_MAX)) && errors[key];

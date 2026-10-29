@@ -1,9 +1,9 @@
-// Command Hub genérico de un módulo: el destino del botón de regreso de su NavHubBar. Usa el
-// StandardDashboardHub estándar (el mismo del KDS) con una tarjeta por opción de 3er nivel.
+// Generic Command Hub for a module: target of its NavHubBar back button.
+// Uses standard StandardDashboardHub (same as KDS) with one card per 3rd-level option.
 //
-// Los KPI son datos estructurales del módulo (cuántos espacios de trabajo tiene y cuántos
-// están ya disponibles), no métricas de negocio inventadas: cada módulo tiene su propio
-// backend y un hub genérico no puede afirmar cifras que no consulta.
+// KPIs reflect structural module metrics (workspace counts and availability),
+// not synthetic business metrics: each module has its own backend and a generic hub
+// does not guess unverified figures.
 
 import React from 'react';
 import {

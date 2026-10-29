@@ -1,16 +1,16 @@
-// Tipos del contrato de colaborador: el acuerdo laboral que Legal audita y del que la
-// nómina saca sus cifras.
+// Types of collaborator contract: the employment agreement that Legal audits and of which the
+// payroll draws its figures.
 //
-// El backend guarda dos cosas distintas bajo nombres parecidos y conviene no mezclarlas:
-//   · `employment_type`  — la relación laboral (jornada completa, parcial, temporal…).
-//     Es lo que la historia llama "contract type" y lo que se pinta como píldora.
-//   · `contract_type`    — el modelo de nómina (hourly | salary | mixed). Lo consume el
-//     motor de pagos y se deriva solo de la frecuencia elegida, así que el formulario no
-//     lo pide.
-// `wage_rate` es el importe pactado para un periodo y el backend lo reparte entre
-// `hourly_rate` y `base_salary` según `pay_frequency`.
+// The backend stores two different things under similar names and it is advisable not to mix them:
+//   · `employment_type` — the employment relationship (full-time, part-time, temporary...).
+//     It is what history calls "contract type" and what is painted as a pill.
+//   · `contract_type` — the payroll model (hourly | salary | mixed). He consumes it
+//     payment engine and is derived only from the chosen frequency, so the form does not
+//     asks for it.
+// `wage_rate` is the agreed amount for a period and the backend distributes it between
+// `hourly_rate` and `base_salary` according to `pay_frequency`.
 
-// ================= Relación laboral =================
+// ================= Employment relationship =================
 
 export type EmploymentType =
   | 'full_time'
@@ -57,7 +57,7 @@ export const employmentTypeLabel = (raw?: string | null): string =>
 export const employmentTypeBadgeStyle = (raw?: string | null): string =>
   EMPLOYMENT_TYPE_BADGE_STYLES[normalizeEmploymentType(raw)];
 
-// ================= Frecuencia de pago =================
+// ================= Payment Frequency =================
 
 export type PayFrequency = 'hourly' | 'weekly' | 'biweekly' | 'monthly';
 
@@ -75,7 +75,7 @@ export const PAY_FREQUENCY_LABELS: Record<PayFrequency, string> = {
   monthly: 'Monthly',
 };
 
-// Sufijo con el que se lee la retribución en la parrilla: "$22.50 / hr".
+// Suffix with which the remuneration is read on the grid: "$22.50 / hr".
 export const PAY_FREQUENCY_SUFFIXES: Record<PayFrequency, string> = {
   hourly: 'hr',
   weekly: 'week',
@@ -94,10 +94,10 @@ export const normalizePayFrequency = (raw?: string | null): PayFrequency => {
 export const payFrequencyLabel = (raw?: string | null): string =>
   PAY_FREQUENCY_LABELS[normalizePayFrequency(raw)];
 
-// ================= Estado de cumplimiento =================
+// ================= Compliance Status =================
 
-// No es una columna: se deriva de `active` y de `end_date` contra la fecha del sistema.
-// Guardarlo sería tener dos verdades y que una envejeciera sola cada noche.
+// It is not a column: it is derived from `active` and `end_date` against the system date.
+// To keep it would be to have two truths and one to grow old alone every night.
 export type ContractStatus =
   | 'active'
   | 'pending_renewal'
@@ -125,7 +125,7 @@ export const CONTRACT_STATUS_BADGE_STYLES: Record<ContractStatus, string> = {
   terminated: 'bg-[#5f5e5e]/20 text-[#5f5e5e]',
 };
 
-// ================= Modelo de nómina =================
+// ================= Payroll model =================
 
 export type PayrollModel = 'hourly' | 'salary' | 'mixed';
 
@@ -168,7 +168,7 @@ export interface CollaboratorContract {
   collaborator?: ContractCollaboratorRef | null;
 }
 
-// Una enmienda registrada: un campo, su valor anterior y el nuevo.
+// A recorded amendment: a field, its old value, and the new value.
 export interface ContractRevision {
   id: number;
   contract_id: number;
@@ -179,7 +179,7 @@ export interface ContractRevision {
   created_at: string;
 }
 
-// ================= DTOs de escritura =================
+// ================= Write DTOs =================
 
 export interface CreateContractDto {
   company_id: number;
@@ -197,7 +197,7 @@ export interface CreateContractDto {
   tips_included_in_payroll?: boolean;
 }
 
-// La enmienda no reasigna comercio ni empresa: eso cambiaría de dueño el acuerdo entero.
+// The amendment does not reallocate trade or business: that would change ownership of the entire agreement.
 export type UpdateContractDto = Partial<
   Omit<CreateContractDto, 'company_id' | 'merchant_id'>
 >;

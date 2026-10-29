@@ -92,6 +92,10 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     { id: 'company-profile', name: 'Company Profile', categoryId: 'saas', categoryName: 'Platform SaaS' },
     { id: 'company-configurations', name: 'Company Configurations', categoryId: 'saas', categoryName: 'Platform SaaS' },
     { id: 'online-stores', name: 'Online Stores Workspace', categoryId: 'commerce', categoryName: 'Commerce' },
+    { id: 'online-menus', name: 'Online Menus Workspace', categoryId: 'commerce', categoryName: 'Commerce' },
+    { id: 'online-menu-categories', name: 'Menu Categories Directory', categoryId: 'commerce', categoryName: 'Commerce' },
+    { id: 'online-menu-items', name: 'Online Menu Items Catalog', categoryId: 'commerce', categoryName: 'Commerce' },
+    { id: 'online-orders', name: 'Online Orders Dispatch', categoryId: 'commerce', categoryName: 'Commerce' },
   ];
 
   const menuSearchResults = menuSearchQuery.trim() === '' ? [] : ALL_BACKOFFICE_FEATURES.filter(item =>
@@ -322,7 +326,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
   if (!categoryName) categoryName = 'SYSTEM';
   if (!activeFeatureName) activeFeatureName = activeTab.replace(/-/g, ' ').toUpperCase();
 
-  // Breadcrumb: Solo primero (Categoría L1) y tercero (Feature L3 activa), saltándose la aplicación intermedia
+  // Breadcrumb: Only first (L1 Category) and third (Active L3 Feature), skipping intermediate application
   const rawBreadcrumbItems: string[] = [];
   if (categoryName) rawBreadcrumbItems.push(categoryName);
   if (activeFeatureName) rawBreadcrumbItems.push(activeFeatureName);
@@ -407,7 +411,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
 
   return (
     <header className="fixed top-0 left-0 right-0 h-header-height z-50 flex border-b border-[#e8e2d8] select-none font-sans overflow-hidden">
-      {/* Apartado del Logo con su nombre, con su background de color negro (#222222) */}
+      {/* Logo section with your name, with its black background (#222222) */}
       <div className="w-64 h-full bg-[#222222] flex items-center justify-between px-3 shrink-0 border-r border-white/10 relative">
         {!isMenuSearchOpen ? (
           <>
@@ -422,7 +426,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
                 <span className="material-symbols-outlined text-[24px]">menu</span>
               </button>
 
-              {/* Logo / Branding Completo del Backoffice */}
+              {/* Logo / Complete Backoffice Branding */}
               <div 
                 onClick={onLogoClick}
                 className="flex items-center gap-2 cursor-pointer hover:opacity-90 active:scale-98 transition-all select-none min-w-0"
@@ -447,7 +451,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
               </div>
             </div>
 
-            {/* Lupa a la derecha (espacio reservado de forma fija para evitar saltos del logo) */}
+            {/* Magnifying glass on the right (fixed space reserved to avoid logo jumps) */}
             <button
               type="button"
               onClick={() => setIsMenuSearchOpen(true)}
@@ -591,7 +595,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
                 )}
               </button>
 
-              {/* Dropdown de Notificaciones */}
+              {/* Notification Dropdown */}
               {showNotifications && (
                 <div className="absolute right-0 mt-2 w-80 bg-white border border-[#e8e2d8] shadow-2xl z-50 text-left rounded-sm">
                   <div className="p-3 bg-[#222222] text-white text-xs font-bold uppercase rounded-t-sm flex justify-between items-center">

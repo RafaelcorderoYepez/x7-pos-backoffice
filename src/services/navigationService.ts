@@ -16,7 +16,7 @@ export interface NavApplication {
 }
 
 export interface NavCategory {
-  id: string; // Clave única en minúsculas (ej: 'saas', 'core', 'finance')
+  id: string; // Unique lowercase key (e.g., 'saas', 'core', 'finance')
   name: string;
   icon: string;
   sortOrder: number;
@@ -41,7 +41,7 @@ const MERCHANT_COMPANY_FEATURE_IDS = new Set([
 export const navigationService = {
   async loadAndParseNavigation(userPlanId: number, userRole: string): Promise<NavCategory[]> {
     try {
-      // 1. Cargar los tres archivos planos de base de datos desde public/
+      // 1. Load the three database flat files from public/
       const [subsRes, appsRes, featsRes] = await Promise.all([
         fetch('/Subscriptions.txt').then(r => r.text()),
         fetch('/Applications.txt').then(r => r.text()),
@@ -52,7 +52,7 @@ export const navigationService = {
       const appsData = parseTextFile(appsRes);
       const featsData = parseTextFile(featsRes);
 
-      // Mapeo de suscripciones por si es necesario
+      // Subscription mapping if necessary
       const plansMap = new Map<number, string>();
       subsData.forEach(row => {
         if (row.length >= 2) {
@@ -63,7 +63,7 @@ export const navigationService = {
       const isSaaSMode = userRole === 'SaaS Owner';
       const isGodMode = userRole === 'Super Admin (All Access)' || userRole === 'God Mode';
 
-      // 2. Parsear y filtrar características (L3)
+      // 2. Parse and filter features (L3)
       const features: NavFeature[] = featsData
         .map(row => {
           if (row.length < 5) return null;
@@ -78,18 +78,18 @@ export const navigationService = {
         .filter((f): f is NavFeature => f !== null)
         .filter(f => {
           if (isGodMode) {
-            // El rol Super Admin (All Access) ve absolutamente todas las opciones de menú
+            // The Super Admin (All Access) role sees absolutely all menu options
             return true;
           }
           if (isSaaSMode) {
-            // SaaS Owner ve únicamente características marcadas como SaaS
+            // SaaS Owner sees only features marked as SaaS
             return f.isSaaS;
           } else {
-            // Admin de company/merchants: visible en todos los planes de merchant
+            // company/merchants admin: visible on all merchant plans
             if (MERCHANT_COMPANY_FEATURE_IDS.has(f.id)) {
               return true;
             }
-            // Merchant ve características si no son exclusivas del SaaS Owner y entran en su plan
+            // Merchant sees features if they are not exclusive to the SaaS Owner and fall into their plan
             const exclusiveSaaS = [
               'saas-dashboard',
               'companies-dashboard',
@@ -100,11 +100,11 @@ export const navigationService = {
               'sub-plans-core',
               'sub-apps-mapping'
             ];
-            // Los planes son ACUMULATIVOS (1 Quick Service ⊂ 2 Full Restaurant ⊂ 3
-            // Enterprise), así que un plan superior incluye las features de los inferiores.
-            // Con la igualdad exacta que había aquí, un Full Restaurant se quedaba sin las
-            // 36 features de plan 1 —mesas, productos, categorías, comandas, clientes— y
-            // esos workspaces existían pero no había forma de llegar a ellos desde el menú.
+            // The plans are CUMULATIVE (1 Quick Service ⊂ 2 Full Restaurant ⊂ 3
+            // Enterprise), so a higher plan includes the features of the lower ones.
+            // With the exact equality that existed here, a Full Restaurant was left without the
+            // 36 features of plan 1—tables, products, categories, orders, customers—and
+            // Those workspaces existed but there was no way to get to them from the menu.
             return !exclusiveSaaS.includes(f.id) && f.planId <= userPlanId;
           }
         });
@@ -124,7 +124,7 @@ export const navigationService = {
         })
         .filter((app): app is NavApplication => app !== null);
 
-      // Asignar características a sus aplicaciones (KDS y Products/Inventory abren sus hubs operacionales)
+      // Assign features to your applications (KDS and Products/Inventory open their operational hubs)
       applications.forEach(app => {
         if (app.id === 'kitchen-display-system') {
           app.features = [
@@ -191,10 +191,10 @@ export const navigationService = {
         }
       });
 
-      // Regla de Supresión de Padres Vacíos (Nivel 2: Aplicaciones sin características válidas)
+      // Empty Parent Suppression Rule (Level 2: Applications without valid features)
       const visibleApps = applications.filter(app => app.features.length > 0);
 
-      // 4. Agrupar aplicaciones en categorías (L1)
+      // 4. Group applications into categories (L1)
       const categoriesMap = new Map<string, NavCategory>();
 
       visibleApps.forEach(app => {
@@ -211,14 +211,14 @@ export const navigationService = {
         categoriesMap.get(catId)!.applications.push(app);
       });
 
-      // Convertir a array y ordenar por Category_SortOrder
+      // Convert to array and sort by Category_SortOrder
       const categoriesList = Array.from(categoriesMap.values()).sort(
         (a, b) => a.sortOrder - b.sortOrder
       );
 
       return categoriesList;
     } catch (error) {
-      console.error('Error cargando y parseando el menú de navegación:', error);
+      console.error('Error loading and parsing navigation menu:', error);
       return [];
     }
   }

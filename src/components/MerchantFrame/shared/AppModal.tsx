@@ -1,12 +1,14 @@
 import React, { useId } from 'react';
 import { createPortal } from 'react-dom';
 
-type AppModalSize = 'md' | 'lg' | '2xl';
+export type AppModalSize = 'md' | 'lg' | '2xl' | '3xl' | '4xl';
 
 const SIZE_CLASSES: Record<AppModalSize, string> = {
   md: 'max-w-md',
   lg: 'max-w-lg',
   '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
+  '4xl': 'max-w-4xl',
 };
 
 export type AppModalProps = {

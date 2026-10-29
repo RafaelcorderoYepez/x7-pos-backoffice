@@ -1,9 +1,9 @@
-// Workspace de tarifas de reparto: KPIs de precio, aviso de zonas sin tarifa, matriz de
-// tarifas y calculadora de checkout contra `POST /api/delivery-fee/quote`.
+// Distribution rates workspace: price KPIs, notification of tariff-free zones, matrix
+// fees and checkout calculator against `POST /api/delivery-fee/quote`.
 //
-// Se hidrata con tarifas Y zonas: el desplegable del drawer necesita las zonas activas. Los
-// KPIs salen de `GET /delivery-fee/summary` (con respaldo en cliente si no responde). Buscar y
-// marcar estados filtra la lista ya cargada: no hay recargas.
+// It is hydrated with rates AND zones: the drawer drop-down needs the active zones. The
+// KPIs come from `GET /delivery-fee/summary` (with fallback to client if not responding). Search and
+// check states filters the list already loaded: no reloads.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
@@ -81,7 +81,7 @@ export const DeliveryFeesView: React.FC<DeliveryFeesViewProps> = ({ onNavigate }
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // El summary no debe tumbar el workspace: si falla, los KPIs se calculan en cliente.
+  // The summary should not bring down the workspace: if it fails, the KPIs are calculated on the client.
   const fetchSummary = useCallback(async () => {
     try {
       setSummary(await getDeliveryFeeSummary());
@@ -291,7 +291,7 @@ export const DeliveryFeesView: React.FC<DeliveryFeesViewProps> = ({ onNavigate }
         </button>
       </div>
 
-      {/* ---------- KPIs de tarifas ---------- */}
+      {/* ---------- Rate KPIs ---------- */}
       <section
         aria-label="Delivery fee metrics"
         data-testid="fee-kpis"
@@ -316,7 +316,7 @@ export const DeliveryFeesView: React.FC<DeliveryFeesViewProps> = ({ onNavigate }
         ))}
       </section>
 
-      {/* ---------- Aviso de zonas sin tarifa ---------- */}
+      {/* ---------- Notice of tariff-free zones ---------- */}
       {!loading && lacking.length ? (
         <section
           role="alert"
@@ -398,7 +398,7 @@ export const DeliveryFeesView: React.FC<DeliveryFeesViewProps> = ({ onNavigate }
         ) : null}
       </section>
 
-      {/* ---------- Matriz de tarifas ---------- */}
+      {/* ---------- Rate matrix ---------- */}
       <section aria-label="Delivery fee matrix" className="bg-white border border-[#e8e2d8] rounded shadow-sm overflow-x-auto">
         {loading ? (
           <div className="p-6 flex flex-col gap-3">
@@ -540,7 +540,7 @@ export const DeliveryFeesView: React.FC<DeliveryFeesViewProps> = ({ onNavigate }
         )}
       </section>
 
-      {/* ---------- Calculadora de checkout ---------- */}
+      {/* ---------- Checkout Calculator ---------- */}
       <form
         onSubmit={(e) => void runQuote(e)}
         aria-label="Delivery fee calculator"

@@ -192,7 +192,7 @@ export const ContractsView: React.FC<ContractsViewProps> = ({
     }
 
     // Company missing from session; DTO requires it, resolved from
-    // el propio comercio en lugar de inventarla a partir del merchant_id.
+    // the merchant itself instead of inventing it from the merchant_id.
     try {
       const json = await apiRequest<{
         data?: { company_id?: number | null; company?: { id?: number } | null };

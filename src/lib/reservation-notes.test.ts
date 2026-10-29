@@ -29,28 +29,28 @@ const note = (over: Partial<NoteWithContext> & { id: number; note: string }): No
   ...over,
 });
 
-describe('etiquetas rápidas', () => {
-  it('inserta el prefijo delante de una nota vacía', () => {
+describe('quick tags', () => {
+  it('insert the prefix in front of an empty note', () => {
     expect(applyQuickTag('', tagBy('Allergy'))).toBe('[ALLERGY] ');
   });
 
-  it('conserva el texto ya escrito', () => {
+  it('preserves the already written text', () => {
     expect(applyQuickTag('Peanut allergy on seat 2', tagBy('Allergy'))).toBe(
       '[ALLERGY] Peanut allergy on seat 2',
     );
   });
 
-  it('no duplica el prefijo al pulsar dos veces la misma etiqueta', () => {
+  it('does not duplicate the prefix when clicking the same label twice', () => {
     const once = applyQuickTag('Quiet booth', tagBy('Seating'));
     expect(applyQuickTag(once, tagBy('Seating'))).toBe(once);
   });
 
-  it('sustituye la etiqueta anterior: una nota tiene una sola categoría', () => {
+  it('replaces the previous tag: a note has only one category', () => {
     const allergy = applyQuickTag('Table by the window', tagBy('Allergy'));
     expect(applyQuickTag(allergy, tagBy('Seating'))).toBe('[SEATING] Table by the window');
   });
 
-  it('ofrece las cuatro categorías de la historia', () => {
+  it('offers the four categories of history', () => {
     expect(QUICK_TAGS.map((t) => t.prefix)).toEqual([
       '[ALLERGY]',
       '[OCCASION]',
@@ -60,29 +60,29 @@ describe('etiquetas rápidas', () => {
   });
 });
 
-describe('clasificación de la nota', () => {
-  it('reconoce el prefijo de la etiqueta rápida', () => {
+describe('note classification', () => {
+  it('recognize quick tag prefix', () => {
     expect(categoryOf({ note: '[ALLERGY] peanut' })).toBe('allergy');
     expect(categoryOf({ note: '[OCCASION] 10th anniversary' })).toBe('occasion');
     expect(categoryOf({ note: '[SEATING] quiet booth' })).toBe('seating');
     expect(categoryOf({ note: '[VIP] corporate exec' })).toBe('vip');
   });
 
-  it('reconoce también una nota escrita a mano', () => {
-    // Nadie escribe siempre el prefijo; la palabra tiene que bastar para que salte el aviso.
+  it('also recognizes a handwritten note', () => {
+    // Nobody always writes the prefix; The word has to be enough for the warning to go off.
     expect(categoryOf({ note: 'Guest is coeliac, no gluten please' })).toBe('allergy');
     expect(categoryOf({ note: "It's her birthday, bring a candle" })).toBe('occasion');
   });
 
-  it('una nota corriente cae en general', () => {
+  it('an ordinary note generally falls', () => {
     expect(categoryOf({ note: 'Paying by company card' })).toBe('general');
   });
 
-  it('una alergia gana a cualquier otra categoría en la misma nota', () => {
+  it('an allergy beats any other category on the same score', () => {
     expect(categoryOf({ note: 'Birthday dinner, severe nut allergy on seat 3' })).toBe('allergy');
   });
 
-  it('sólo alergia y VIP/urgente son de prioridad', () => {
+  it('only allergy and VIP/urgent are priority', () => {
     expect(isPriorityNote({ note: '[ALLERGY] shellfish' })).toBe(true);
     expect(isPriorityNote({ note: '[VIP] priority service' })).toBe(true);
     expect(isPriorityNote({ note: 'URGENT: table must be ready at 8' })).toBe(true);
@@ -91,29 +91,29 @@ describe('clasificación de la nota', () => {
   });
 });
 
-describe('validación', () => {
-  it('rechaza una nota vacía', () => {
+describe('validation', () => {
+  it('reject an empty note', () => {
     expect(noteTextError('')).toBe('The note cannot be empty');
   });
 
-  it('rechaza una nota de puros espacios', () => {
-    // @IsNotEmpty por sí solo la daría por buena; el DTO recorta antes justamente por esto.
+  it('rejects a note of pure spaces', () => {
+    // @IsNotEmpty by itself I would consider it good; The DTO cuts earlier precisely for this.
     expect(noteTextError('    \n\t  ')).toBe('The note cannot be empty');
   });
 
-  it('acepta cualquier nota con contenido', () => {
+  it('accept any note with content', () => {
     expect(noteTextError('  ok  ')).toBe('');
   });
 });
 
-describe('sellos de tiempo', () => {
+describe('time stamps', () => {
   const base = new Date(2026, 3, 16, 18, 45, 0);
 
   it('dice "Just now" en el primer minuto', () => {
     expect(relativeTime(base.toISOString(), new Date(2026, 3, 16, 18, 45, 30))).toBe('Just now');
   });
 
-  it('cuenta minutos, horas y días', () => {
+  it('counts minutes, hours and days', () => {
     expect(relativeTime(base.toISOString(), new Date(2026, 3, 16, 18, 55))).toBe('10 mins ago');
     expect(relativeTime(base.toISOString(), new Date(2026, 3, 16, 19, 45))).toBe('1 hour ago');
     expect(relativeTime(base.toISOString(), new Date(2026, 3, 18, 18, 45))).toBe('2 days ago');
@@ -123,40 +123,40 @@ describe('sellos de tiempo', () => {
     expect(relativeTime(base.toISOString(), new Date(2026, 3, 16, 18, 40))).toBe('Just now');
   });
 
-  it('formatea el sello exacto en día/mes/año y 24 h', () => {
+  it('formats the exact stamp in day/month/year and 24 hours', () => {
     expect(exactTimestamp(base.toISOString())).toBe('16/04/2026 18:45');
   });
 
-  it('compone la etiqueta que pide la historia', () => {
+  it('compose the label that history asks for', () => {
     expect(noteTimestampLabel(base.toISOString(), new Date(2026, 3, 16, 18, 55))).toBe(
       '10 mins ago • 16/04/2026 18:45',
     );
   });
 
-  it('sin fecha no inventa nada', () => {
+  it('without a date it does not invent anything', () => {
     expect(noteTimestampLabel(null)).toBe('—');
   });
 });
 
-describe('firma del autor', () => {
-  it('usa el nombre y el rol del colaborador cuando se conoce', () => {
+describe('author signature', () => {
+  it('uses the collaborator name and role when known', () => {
     const staff = new Map([[4, { name: 'Ana Ruiz', role: 'host' }]]);
     expect(authorLabel(4, staff)).toBe('Ana Ruiz (Host)');
   });
 
-  it('cae al id cuando el catálogo de personal no está disponible', () => {
-    // 403 si el plan no incluye colaboradores: la nota sigue atribuida.
+  it('drops to id when staff catalog is not available', () => {
+    // 403 if the plan does not include collaborators: the grade remains attributed.
     expect(authorLabel(4, new Map())).toBe('Staff #4');
     expect(authorLabel(4)).toBe('Staff #4');
   });
 
-  it('una nota sin autor se atribuye al sistema', () => {
+  it('a note without an author is attributed to the system', () => {
     expect(authorLabel(null)).toBe('System');
   });
 });
 
-describe('orden del feed', () => {
-  it('ordena en cronológico inverso estricto', () => {
+describe('feed order', () => {
+  it('arranged in strict reverse chronological order', () => {
     const rows = [
       note({ id: 1, note: 'first', created_at: new Date(2026, 3, 16, 18, 0).toISOString() }),
       note({ id: 2, note: 'third', created_at: new Date(2026, 3, 16, 20, 0).toISOString() }),
@@ -165,7 +165,7 @@ describe('orden del feed', () => {
     expect(sortNotesByRecency(rows).map((n) => n.id)).toEqual([2, 3, 1]);
   });
 
-  it('desempata por id cuando dos notas comparten sello', () => {
+  it('break ties by id when two notes share a stamp', () => {
     const stamp = new Date(2026, 3, 16, 18, 0).toISOString();
     const rows = [
       note({ id: 5, note: 'a', created_at: stamp }),
@@ -174,47 +174,47 @@ describe('orden del feed', () => {
     expect(sortNotesByRecency(rows).map((n) => n.id)).toEqual([9, 5]);
   });
 
-  it('no muta el array original', () => {
+  it('does not mutate the original array', () => {
     const rows = [note({ id: 1, note: 'a' }), note({ id: 2, note: 'b' })];
     sortNotesByRecency(rows);
     expect(rows.map((n) => n.id)).toEqual([1, 2]);
   });
 });
 
-describe('filtros del feed', () => {
+describe('feed filters', () => {
   const allergy = note({ id: 1, note: '[ALLERGY] peanut on seat 2' });
   const seating = note({
     id: 2,
     note: '[SEATING] quiet booth',
-    reservationLabel: 'Lucía Prat',
+    reservationLabel: 'Lucia Prat',
     reservation_id: 7,
   });
 
-  it('sin filtros no esconde nada', () => {
+  it('without filters it hides nothing', () => {
     expect(hasActiveNoteFilters(EMPTY_NOTE_FILTERS)).toBe(false);
     expect(matchesNoteFilters(allergy, EMPTY_NOTE_FILTERS)).toBe(true);
   });
 
-  it('filtra por categoría', () => {
+  it('filter by category', () => {
     const filters = { ...EMPTY_NOTE_FILTERS, categories: ['allergy' as const] };
     expect(matchesNoteFilters(allergy, filters)).toBe(true);
     expect(matchesNoteFilters(seating, filters)).toBe(false);
   });
 
-  it('busca en el cuerpo de la nota', () => {
+  it('search in the body of the note', () => {
     expect(matchesNoteFilters(allergy, { ...EMPTY_NOTE_FILTERS, search: 'peanut' })).toBe(true);
   });
 
-  it('busca por nombre del comensal', () => {
-    expect(matchesNoteFilters(seating, { ...EMPTY_NOTE_FILTERS, search: 'lucía' })).toBe(true);
+  it('search by diner name', () => {
+    expect(matchesNoteFilters(seating, { ...EMPTY_NOTE_FILTERS, search: 'lucia' })).toBe(true);
   });
 
-  it('busca por código de reserva', () => {
+  it('search by reservation code', () => {
     expect(matchesNoteFilters(seating, { ...EMPTY_NOTE_FILTERS, search: '#res-7' })).toBe(true);
   });
 });
 
-describe('KPIs del turno', () => {
+describe('Shift KPIs', () => {
   const shift = [
     note({ id: 1, note: '[ALLERGY] peanut' }),
     note({ id: 2, note: '[ALLERGY] gluten' }),
@@ -223,18 +223,18 @@ describe('KPIs del turno', () => {
     note({ id: 5, note: 'Paying by card' }),
   ];
 
-  it('agrega el total, las alergias y las ocasiones', () => {
+  it('add the total, allergies and occasions', () => {
     const m = computeNotesMetrics(shift);
     expect(m.totalNotes).toBe(5);
     expect(m.allergyAlerts).toBe(2);
     expect(m.specialOccasions).toBe(1);
   });
 
-  it('cuenta como prioritarias las alergias y los VIP', () => {
+  it('Allergies and VIPs count as priorities', () => {
     expect(computeNotesMetrics(shift).priorityNotes).toBe(3);
   });
 
-  it('un turno sin notas da ceros', () => {
+  it('a turn without marks gives zeros', () => {
     expect(computeNotesMetrics([])).toEqual({
       totalNotes: 0,
       allergyAlerts: 0,

@@ -1,7 +1,7 @@
-// Tipos del épico Delivery Management (zonas y tarifas).
+// Types of epic Delivery Management (zones and rates).
 //
-// Coordenadas en orden GeoJSON: [longitud, latitud]. Leaflet trabaja al revés ([lat, lng]);
-// la conversión vive en src/lib/delivery-zones.ts y en ningún otro sitio.
+// Coordinates in GeoJSON order: [longitude, latitude]. Leaflet works backwards ([lat, lng]);
+// the conversion lives in src/lib/delivery-zones.ts and nowhere else.
 
 export type DeliveryZoneStatus = 'active' | 'inactive' | 'maintenance';
 export type DeliveryFeeStatus = 'active' | 'inactive';
@@ -25,12 +25,12 @@ export interface DeliveryZone {
   id: number;
   name: string;
   description: string | null;
-  /** Lo que devuelve la API: normalmente un objeto; filas antiguas pueden traer una cadena. */
+  /** What the API returns: Typically an object; old rows can bring a chain. */
   geojson: ZoneGeometry | string | null;
   status: DeliveryZoneStatus;
   created_at: string;
   updated_at: string;
-  /** Relación eager: el listado trae sólo {id, name}; el detalle, el comercio completo. */
+  /** Eager relationship: listing brings only {id, name}; the detail, the complete trade. */
   merchant?: { id: number; name: string } | null;
 }
 
@@ -79,12 +79,12 @@ export interface ZoneCoverage {
   delivery_orders: number;
   matched_orders: number;
   coverage_pct: number | null;
-  /** Añadidos después: un backend antiguo puede no mandarlos. */
+  /** Added later: an old backend may not send them. */
   active_zones?: number;
   zones_without_geojson?: number;
 }
 
-/** `GET /api/delivery-zone/radius-polygon`: plantilla circular, no guarda nada. */
+/** `GET /api/delivery-zone/radius-polygon`: circular template, does not save anything. */
 export interface RadiusPolygonResult {
   center: { lat: number; lng: number };
   radius_km: number;
@@ -92,7 +92,7 @@ export interface RadiusPolygonResult {
   geojson: ZonePolygon;
 }
 
-/** `GET /api/delivery-fee/summary`: KPIs del workspace de tarifas calculados en servidor. */
+/** `GET /api/delivery-fee/summary`: KPIs of the fee workspace calculated on the server. */
 export interface DeliveryFeeSummary {
   active_zones: number;
   active_fees: number;

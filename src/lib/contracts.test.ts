@@ -34,7 +34,7 @@ import {
   weeklyHoursError,
 } from './contracts';
 
-// Reloj fijo: las reglas de caducidad se miden contra este día, no contra el de la máquina.
+// Fixed clock: expiration rules are measured against this day, not the machine's day.
 const NOW = new Date('2026-06-15T10:00:00');
 
 const contract = (
@@ -61,7 +61,7 @@ const contract = (
   end_date: null,
   created_at: '2026-01-01T09:00:00.000Z',
   updated_at: '2026-01-01T09:00:00.000Z',
-  collaborator: { id: 4, name: 'Juan Pérez', role: 'waiter' },
+  collaborator: { id: 4, name: 'Juan Perez', role: 'waiter' },
   ...overrides,
 });
 
@@ -72,8 +72,8 @@ describe('contract references', () => {
 });
 
 describe('todayIso', () => {
-  // toISOString() en husos negativos devuelve el día siguiente a partir de media tarde y
-  // adelantaría un día todas las caducidades.
+  // toISOString() in negative time zones returns the next day starting at mid-afternoon and
+  // I would advance all expirations by one day.
   it('uses the local calendar day, not UTC', () => {
     expect(todayIso(new Date(2026, 5, 15, 23, 30))).toBe('2026-06-15');
     expect(todayIso(new Date(2026, 0, 1, 0, 5))).toBe('2026-01-01');
@@ -133,7 +133,7 @@ describe('contractStatus', () => {
     );
   });
 
-  // Rescindir gana sobre la fecha: da igual que la vigencia siguiera abierta.
+  // Terminate wins over the date: it does not matter if the validity period was still open.
   it('reports a terminated agreement regardless of dates', () => {
     expect(
       contractStatus(contract({ active: false, end_date: '2027-01-01' }), NOW),
@@ -249,8 +249,8 @@ describe('search', () => {
 });
 
 describe('status filter', () => {
-  // Si "Active" excluyera los que caducan pronto, el filtro por defecto escondería
-  // justamente las filas que hay que renovar.
+  // If "Active" excluded those that expire soon, the default filter would hide
+  // precisely the lines that need to be renewed.
   it('keeps expiring agreements inside Active', () => {
     expect(matchesStatusFilter('pending_renewal', 'active')).toBe(true);
     expect(matchesStatusFilter('active', 'active')).toBe(true);
@@ -411,7 +411,7 @@ describe('overlap guard', () => {
     expect(blockingActiveContract([soon], 4, null, NOW)?.id).toBe(7);
   });
 
-  // La renovación es justo el caso en el que hace falta registrar el siguiente.
+  // Renewal is just the case in which it is necessary to register the next one.
   it('lets a renewal through once the previous one expired', () => {
     expect(blockingActiveContract([expired], 5, null, NOW)).toBeNull();
   });
@@ -430,7 +430,7 @@ describe('overlap guard', () => {
 
   it('names the blocking agreement in the warning', () => {
     expect(overlapWarning(inForce)).toContain('#CTR-1');
-    expect(overlapWarning(inForce)).toContain('Juan Pérez');
+    expect(overlapWarning(inForce)).toContain('Juan Perez');
     expect(overlapWarning(inForce)).toContain('Dec 31, 2026');
   });
 
@@ -447,7 +447,7 @@ describe('collaboratorOptions', () => {
   it('marks who already has an agreement in force', () => {
     const options = collaboratorOptions(
       [
-        { id: 4, name: 'Juan Pérez', role: 'waiter' },
+        { id: 4, name: 'Juan Perez', role: 'waiter' },
         { id: 5, name: 'Ana Ruiz', role: 'cook' },
       ],
       [contract({ id: 1, collaborator_id: 4 })],
@@ -460,7 +460,7 @@ describe('collaboratorOptions', () => {
 
   it('unblocks the collaborator of the contract being amended', () => {
     const options = collaboratorOptions(
-      [{ id: 4, name: 'Juan Pérez', role: 'waiter' }],
+      [{ id: 4, name: 'Juan Perez', role: 'waiter' }],
       [contract({ id: 1, collaborator_id: 4 })],
       1,
       NOW,

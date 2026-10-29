@@ -10,7 +10,7 @@ vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
   clearAuthSession: vi.fn(),
 }));
 
-// El socket se sustituye por un doble que guarda los manejadores para dispararlos a mano.
+// The socket is replaced by a double that stores the handles for hand firing.
 const realtime = vi.hoisted(() => ({ handlers: null as DeliveryRealtimeHandlers | null, closed: 0 }));
 vi.mock('../../../../lib/delivery-realtime', () => ({
   connectDeliveryRealtime: (_token: string, handlers: DeliveryRealtimeHandlers) => {
@@ -19,7 +19,7 @@ vi.mock('../../../../lib/delivery-realtime', () => ({
   },
 }));
 
-// Leaflet no pinta en jsdom: doble mínimo que registra marcadores, polilíneas y encuadres.
+// Leaflet not painting in jsdom: double minimum registering markers, polylines and panes.
 const leaflet = vi.hoisted(() => {
   type LatLng = { lat: number; lng: number };
   const toLatLng = (p: [number, number] | LatLng): LatLng =>
@@ -265,7 +265,7 @@ describe('DeliveryTrackingView', () => {
     expect(stale.html).toContain('pedal_bike');
     expect(stale.html).toContain('#f59e0b');
     expect(stale.html).not.toContain('animate-ping');
-    // Sin posición no hay marcador.
+    // Without position there is no marker.
     expect(markerFor(11)).toBeUndefined();
   });
 
@@ -326,7 +326,7 @@ describe('DeliveryTrackingView', () => {
     expect(screen.getByTestId('card-status-7')).toHaveAttribute('data-status', 'signal_lost');
     expect(markerFor(7)!.html).toContain('#f59e0b');
 
-    // El sondeo de 15 s trae una antigüedad > 6 min: el marcador pasa a rojo.
+    // The 15 s poll returns an age > 6 min: the marker turns red.
     live = [{ ...LIVE[0], seconds_since_update: 400 }];
     await act(async () => {
       vi.advanceTimersByTime(4_000);

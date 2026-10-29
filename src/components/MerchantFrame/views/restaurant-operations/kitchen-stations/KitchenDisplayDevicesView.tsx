@@ -86,7 +86,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   // Filters and view
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [stationFilter, setStationFilter] = useState<string>('All');
-  const [connectivityFilter, setConnectivityFilter] = useState<string>('All');
+  const [selectedConnectivityFilters, setSelectedConnectivityFilters] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(10);
@@ -120,7 +120,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   const [prevFilterState, setPrevFilterState] = useState({
     searchQuery,
     stationFilter,
-    connectivityFilter,
+    selectedConnectivityFilters,
     statusFilter,
     pageSize,
   });
@@ -128,19 +128,30 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
   if (
     searchQuery !== prevFilterState.searchQuery ||
     stationFilter !== prevFilterState.stationFilter ||
-    connectivityFilter !== prevFilterState.connectivityFilter ||
+    selectedConnectivityFilters !== prevFilterState.selectedConnectivityFilters ||
     statusFilter !== prevFilterState.statusFilter ||
     pageSize !== prevFilterState.pageSize
   ) {
     setPrevFilterState({
       searchQuery,
       stationFilter,
-      connectivityFilter,
+      selectedConnectivityFilters,
       statusFilter,
       pageSize,
     });
     setCurrentPage(1);
   }
+
+  const handleToggleConnectivityFilter = (key: string) => {
+    if (key === 'All') {
+      setSelectedConnectivityFilters([]);
+    } else {
+      setSelectedConnectivityFilters((prev) =>
+        prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+      );
+    }
+    setCurrentPage(1);
+  };
 
   // Edit and Create Drawer
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
@@ -325,13 +336,19 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
     if (stationFilter === 'Unassigned' && effectiveStationId !== null) return false;
     if (stationFilter !== 'All' && stationFilter !== 'Unassigned' && String(effectiveStationId) !== stationFilter) return false;
 
-    if (connectivityFilter === 'Online' && !dev.is_online) return false;
-    if (connectivityFilter === 'Offline' && dev.is_online) return false;
-    if (connectivityFilter === 'Unassigned' && effectiveStationId !== null) return false;
-    if (connectivityFilter === 'SyncDelay') {
-      if (!dev.last_sync) return false;
-      const syncTime = new Date(dev.last_sync).getTime();
-      if (currentNow - syncTime <= FIVE_MINS_MS) return false;
+    if (selectedConnectivityFilters.length > 0) {
+      const matchesAny = selectedConnectivityFilters.some((f) => {
+        if (f === 'Online') return dev.is_online;
+        if (f === 'Offline') return !dev.is_online;
+        if (f === 'Unassigned') return effectiveStationId === null;
+        if (f === 'SyncDelay') {
+          if (!dev.last_sync) return false;
+          const syncTime = new Date(dev.last_sync).getTime();
+          return currentNow - syncTime > FIVE_MINS_MS;
+        }
+        return false;
+      });
+      if (!matchesAny) return false;
     }
 
     if (statusFilter === 'Active' && dev.status !== 'active') return false;
@@ -559,7 +576,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
       {/* 1.5 Real-Time Health Summary KPI Banner (Strictly 4 cards in 1 horizontal row) */}
       <div className="grid grid-cols-4 gap-4 w-full">
         {/* KPI 1: Total Registered Active Devices */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-zinc-100 text-zinc-700 flex items-center justify-center border border-zinc-200 shrink-0">
               <span className="material-symbols-outlined text-xl">desktop_windows</span>
@@ -579,7 +596,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
 
         {/* KPI 2: Online Devices Gauge */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-200 shrink-0">
               <span className="material-symbols-outlined text-xl">wifi</span>
@@ -599,7 +616,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
 
         {/* KPI 3: Unassigned Floating Devices */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center border border-amber-200 shrink-0">
               <span className="material-symbols-outlined text-xl">soup_kitchen</span>
@@ -619,7 +636,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
         </div>
 
         {/* KPI 4: Out-of-Sync Warning Gauge */}
-        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0">
+        <div className="bg-white border border-[#e8e2d8] p-4 rounded-xl shadow-xs flex items-center justify-between min-w-0 cursor-default">
           <div className="flex items-center gap-3 min-w-0">
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center border shrink-0 ${
               outOfSyncCount > 0 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -770,9 +787,9 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             {/* All Pill */}
             <button
               type="button"
-              onClick={() => setConnectivityFilter('All')}
+              onClick={() => handleToggleConnectivityFilter('All')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                connectivityFilter === 'All'
+                selectedConnectivityFilters.length === 0
                   ? 'bg-[#1d1c17] text-white border-[#1d1c17] shadow-xs'
                   : 'bg-white text-[#5f5e5e] border-[#d5cfc4] hover:bg-[#fcfcfb] hover:text-[#ae001a]'
               }`}
@@ -780,7 +797,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
               <span>All</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  connectivityFilter === 'All' ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
+                  selectedConnectivityFilters.length === 0 ? 'bg-white/20 text-white' : 'bg-zinc-100 text-[#5f5e5e]'
                 }`}
               >
                 {deviceCounts.all}
@@ -790,18 +807,18 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             {/* ONLINE Pill (Icon: wifi) */}
             <button
               type="button"
-              onClick={() => setConnectivityFilter('Online')}
+              onClick={() => handleToggleConnectivityFilter('Online')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                connectivityFilter === 'Online'
+                selectedConnectivityFilters.includes('Online')
                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                  : 'bg-emerald-50/50 text-emerald-800 border-emerald-200 hover:bg-emerald-100/50 hover:text-emerald-900'
+                  : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">wifi</span>
               <span>ONLINE</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  connectivityFilter === 'Online' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                  selectedConnectivityFilters.includes('Online') ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
                 }`}
               >
                 {deviceCounts.online}
@@ -811,18 +828,18 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             {/* OFFLINE Pill (Icon: wifi_off) */}
             <button
               type="button"
-              onClick={() => setConnectivityFilter('Offline')}
+              onClick={() => handleToggleConnectivityFilter('Offline')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                connectivityFilter === 'Offline'
+                selectedConnectivityFilters.includes('Offline')
                   ? 'bg-[#ae001a] text-white border-[#ae001a] shadow-xs'
-                  : 'bg-red-50 text-[#ae001a] border-red-200 hover:bg-red-100/60 hover:text-[#900015]'
+                  : 'bg-white text-[#ae001a] border-red-200 hover:bg-red-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">wifi_off</span>
               <span>OFFLINE</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  connectivityFilter === 'Offline' ? 'bg-white/20 text-white' : 'bg-red-100 text-[#ae001a]'
+                  selectedConnectivityFilters.includes('Offline') ? 'bg-white/20 text-white' : 'bg-red-100 text-[#ae001a]'
                 }`}
               >
                 {deviceCounts.offline}
@@ -832,18 +849,18 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             {/* UNASSIGNED Pill (Icon: soup_kitchen) */}
             <button
               type="button"
-              onClick={() => setConnectivityFilter('Unassigned')}
+              onClick={() => handleToggleConnectivityFilter('Unassigned')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                connectivityFilter === 'Unassigned'
+                selectedConnectivityFilters.includes('Unassigned')
                   ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                  : 'bg-amber-50/50 text-amber-800 border-amber-200 hover:bg-amber-100/50 hover:text-amber-900'
+                  : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">soup_kitchen</span>
               <span>UNASSIGNED</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  connectivityFilter === 'Unassigned' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  selectedConnectivityFilters.includes('Unassigned') ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 {deviceCounts.unassigned}
@@ -853,18 +870,18 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             {/* SYNC DELAY Pill (Icon: published_with_changes) */}
             <button
               type="button"
-              onClick={() => setConnectivityFilter('SyncDelay')}
+              onClick={() => handleToggleConnectivityFilter('SyncDelay')}
               className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold transition-all duration-200 cursor-pointer whitespace-nowrap shrink-0 border ${
-                connectivityFilter === 'SyncDelay'
+                selectedConnectivityFilters.includes('SyncDelay')
                   ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                  : 'bg-amber-50/50 text-amber-800 border-amber-200 hover:bg-amber-100/50 hover:text-amber-900'
+                  : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
               }`}
             >
               <span className="material-symbols-outlined text-[12px]">published_with_changes</span>
               <span>SYNC DELAY</span>
               <span
                 className={`text-[8.5px] px-1 py-0 rounded-full font-bold ${
-                  connectivityFilter === 'SyncDelay' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                  selectedConnectivityFilters.includes('SyncDelay') ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 {deviceCounts.syncDelay}
@@ -929,7 +946,7 @@ export const KitchenDisplayDevicesView: React.FC<KitchenDisplayDevicesViewProps>
             description="No display hardware units match your current search criteria or filter matrix. Try resetting your search query or station filters."
           />
         ) : (
-          /* Quick-Launch Cards Mode: Estrictamente 2 tarjetas por fila horizontal */
+          /* Quick-Launch Cards Mode: Strictly 2 cards per horizontal row */
           <div className="grid grid-cols-2 gap-3.5">
           {filteredDevices.map((device) => {
             const isInactive = device.status === 'deleted';

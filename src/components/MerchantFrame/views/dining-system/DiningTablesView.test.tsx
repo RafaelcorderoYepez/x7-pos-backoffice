@@ -24,8 +24,8 @@ vi.mock('./FloorPlanEditor', () => ({
   ),
 }));
 
-// El canal en vivo se sustituye por un testigo: guardamos los manejadores que registra la
-// vista para poder disparar eventos del gateway a mano.
+// The live channel is replaced by a witness: we save the handlers recorded by the
+// view to be able to trigger gateway events manually.
 let live: UseDiningRealtimeOptions = {};
 vi.mock('../../../../lib/useDiningRealtime', () => ({
   useDiningRealtime: (opts: UseDiningRealtimeOptions) => {
@@ -75,7 +75,7 @@ const TABLES = [
     pos_y: 150,
     floorPlan: { id: 1, name: 'Main Floor Plan' },
     floorZone: { id: 10, name: 'VIP Lounge', color: '#D97706' },
-    // Unida a T-01: la respuesta del backend embebe la madre, no el escalar.
+    // Bound to T-01: the backend response embeds the mother, not the scalar.
     parent_table: { id: 1, number: 'T-01' },
   },
   {
@@ -123,7 +123,7 @@ interface FetchOverrides {
 function defaultFetch({ tables = TABLES, assignments = [], delta = [] }: FetchOverrides = {}) {
   return vi.fn((url: string | URL | Request) => {
     const u = String(url);
-    // El delta y la transferencia comparten prefijo con /tables: se resuelven primero.
+    // Delta and transfer share prefix with /tables: they are resolved first.
     if (u.includes('/tables/status-delta')) return jsonRes({ data: delta });
     if (u.includes('/tables/transfer')) return jsonRes({ data: { ok: true } });
     if (u.includes('/table-assignments')) return jsonRes({ data: assignments });
@@ -248,7 +248,7 @@ describe('DiningTablesView', () => {
     });
   });
 
-  describe('guarda de servicio vivo', () => {
+  describe('live duty guard', () => {
     it('blocks deleting occupied table and explains why', async () => {
       const user = userEvent.setup();
       await renderView();
@@ -317,7 +317,7 @@ describe('DiningTablesView', () => {
       expect(within(dialog).getByRole('button', { name: /save table/i })).toBeDisabled();
     });
 
-    it('rechaza un giro fuera de 0-360', async () => {
+    it('rejects a turn outside 0-360', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -388,7 +388,7 @@ describe('DiningTablesView', () => {
 
       await user.click(screen.getByRole('button', { name: 'Join tables to T-01' }));
       const dialog = await screen.findByRole('dialog', { name: /join tables to t-01/i });
-      // T-02 ya cuelga de T-01: no vuelve a ofrecerse.
+      // T-02 already hangs on T-01: it is not offered again.
       expect(within(dialog).queryByLabelText('Join table T-02')).not.toBeInTheDocument();
 
       await user.click(within(dialog).getByLabelText('Join table T-03'));
@@ -411,7 +411,7 @@ describe('DiningTablesView', () => {
       expect(callsTo('PUT', '/tables/2')[0].body).toEqual({ parent_table_id: null });
     });
 
-    it('libera el grupo entero devolviendo madre e hijas a limpieza', async () => {
+    it('free the entire group by returning mother and daughters to cleaning', async () => {
       const user = userEvent.setup();
       await renderView();
 
@@ -491,7 +491,7 @@ describe('DiningTablesView', () => {
       );
     });
 
-    it('ignora eventos de otro comercio', async () => {
+    it('ignore events from another trade', async () => {
       await renderView();
 
       live.onTableStatusChanged?.({
@@ -523,7 +523,7 @@ describe('DiningTablesView', () => {
       ).toBe(true);
     });
 
-    it('recarga la parrilla entera si el backend no expone el delta', async () => {
+    it('reloads the entire grid if the backend does not expose the delta', async () => {
       vi.stubGlobal(
         'fetch',
         vi.fn((url: string | URL | Request) => {

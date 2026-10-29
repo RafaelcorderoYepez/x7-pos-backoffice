@@ -241,14 +241,14 @@ export const StandardDashboardHub: React.FC<StandardDashboardHubProps> = ({
           let positioningClass = 'dashboard-card-span md:col-span-2';
 
           if (remainder === 1 && idx === modules.length - 1) {
-            // Si hay 1 en la última fila: centrada al mismo nivel que el segundo cuadro (cols 3 y 4)
+            // If 1 card on the last row: centered aligned with second card (cols 3 and 4)
             positioningClass = 'dashboard-card-single-center md:col-start-3 md:col-span-2';
           } else if (remainder === 2) {
             if (idx === modules.length - 2) {
-              // Si hay 2: la 1ª se coloca entre el 1° y 2° cuadro (cols 2 y 3)
+              // If there are 2: the 1st is placed between the 1st and 2nd square (cols 2 and 3)
               positioningClass = 'dashboard-card-pair-first md:col-start-2 md:col-span-2';
             } else if (idx === modules.length - 1) {
-              // Si hay 2: la 2ª se coloca entre el 2° y 3° cuadro (cols 4 y 5)
+              // If there are 2: the 2nd is placed between the 2nd and 3rd square (cols 4 and 5)
               positioningClass = 'dashboard-card-pair-second md:col-start-4 md:col-span-2';
             }
           }

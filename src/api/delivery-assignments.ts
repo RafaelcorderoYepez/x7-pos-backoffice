@@ -1,8 +1,8 @@
-// Cliente HTTP del tablero de despacho (`/api/delivery-assignment`, SINGULAR y sin `/v1`).
+// Dispatch Dashboard HTTP Client (`/api/delivery-assignment`, SINGULAR and without `/v1`).
 //
-// Usa `apiRequest` de api/http (token, 401 → login, mensaje de error del backend).
-// `forbidNonWhitelisted: true` → los cuerpos se construyen explícitos y NUNCA llevan
-// timestamps ni delivery_status en el alta: los pone el servidor. El comercio sale del JWT.
+// Use `apiRequest` from api/http (handles tokens, 401 → login, and backend error messages).
+// `forbidNonWhitelisted: true` → request bodies must be explicitly defined and must NEVER 
+// include timestamps or `delivery_status` during creation—these are added by the server. The merchant is derived from the JWT.
 
 import { MAX_PAGE_LIMIT, type Envelope } from './delivery';
 import { apiRequest } from './http';
@@ -81,7 +81,7 @@ export async function updateDeliveryAssignment(id: number, patch: AssignmentPatc
   return normalizeAssignment(json.data);
 }
 
-// Hoy ambos responden 503 (proveedor sin configurar); la vista lo traduce a un aviso.
+// Today both respond 503 (provider not configured); The sight translates it into a warning.
 export async function requestExternalQuote(orderId: number, provider: DspAssignmentType): Promise<unknown> {
   const json = await apiRequest<Envelope<unknown>>(
     '/delivery-assignment/external-quote',
@@ -107,7 +107,7 @@ export async function requestExternalDispatch(
   return normalizeAssignment(json.data);
 }
 
-// ================= Repartidores (cliente mínimo propio) =================
+// ================= Delivery drivers (own minimum customer) =================
 
 async function listDriversPaged(statusFilter?: string): Promise<AssignmentDriverOption[]> {
   const rows: AssignmentDriverOption[] = [];
@@ -125,19 +125,19 @@ async function listDriversPaged(statusFilter?: string): Promise<AssignmentDriver
   return rows;
 }
 
-/** Sólo repartidores `active`: off_duty / inactive / on_delivery no pueden recibir pedidos. */
+/** Only `active` delivery drivers: off_duty / inactive / on_delivery cannot receive orders. */
 export async function listActiveDrivers(): Promise<AssignmentDriverOption[]> {
   const rows = await listDriversPaged('active');
-  // Defensa extra: aunque el backend filtre, nunca se ofrece un repartidor no activo.
+  // Extra defense: even if the backend filters, a non-active dealer is never offered.
   return rows.filter((d) => d.status === 'active');
 }
 
-/** Todos los repartidores vivos: el listado de asignaciones no trae vehicleType. */
+/** All live delivery drivers: the assignment list does not include vehicleType. */
 export function listAllDrivers(): Promise<AssignmentDriverOption[]> {
   return listDriversPaged();
 }
 
-// ================= Pedidos de reparto listos =================
+// ================= Delivery orders ready =================
 
 interface OrdersEnvelope {
   data: Array<{
@@ -153,10 +153,10 @@ interface OrdersEnvelope {
 }
 
 /**
- * `GET /orders?type=delivery` no filtra por kitchen_status ni por asignación abierta: se
- * filtra en cliente (listo en cocina, no cancelado) y se quitan los pedidos que ya tienen
- * una asignación abierta (pending/assigned/picked_up/in_transit). Mismo criterio que el KPI
- * `pending_dispatch` del backend.
+ * `GET /orders?type=delivery` does not filter by kitchen_status or open assignment:
+ * filters on customer (ready in kitchen, not canceled) and the orders that already have are removed
+ * an open assignment (pending/assigned/picked_up/in_transit). Same criteria as the KPI
+ * `pending_dispatch` from backend.
  */
 export async function listReadyDeliveryOrders(): Promise<ReadyDeliveryOrder[]> {
   const orders: ReadyDeliveryOrder[] = [];

@@ -55,8 +55,8 @@ const link = (tableId: number, reservationId = 1, is_active = true) => ({
   is_active,
 });
 
-describe('mesas asignables', () => {
-  it('una mesa fuera de servicio o borrada no se ofrece', () => {
+describe('assignable tables', () => {
+  it('a table out of service or cleared is not offered', () => {
     expect(isAssignableTable(table({ id: 1, capacity: 4, status: 'available' }))).toBe(true);
     expect(isAssignableTable(table({ id: 2, capacity: 4, status: 'occupied' }))).toBe(true);
     expect(isAssignableTable(table({ id: 3, capacity: 4, status: 'out_of_service' }))).toBe(false);
@@ -65,28 +65,28 @@ describe('mesas asignables', () => {
 });
 
 describe('enlaces vivos', () => {
-  it('ignora los enlaces desactivados', () => {
+  it('ignore disabled links', () => {
     const r = booking({ id: 1, tables: [link(10), link(11, 1, false)] });
     expect(activeLinks(r)).toHaveLength(1);
     expect(assignedTableIds(r)).toEqual([10]);
   });
 
-  it('una reserva cuyos enlaces están todos sueltos está sin asignar', () => {
+  it('a reservation whose links are all loose is unassigned', () => {
     expect(isUnassigned(booking({ id: 1, tables: [link(10, 1, false)] }))).toBe(true);
   });
 
-  it('sólo las reservas vivas y sin mesa necesitan atención', () => {
+  it('only live reservations without a table need attention', () => {
     expect(needsTable(booking({ id: 1, status: 'confirmed', tables: [] }))).toBe(true);
     expect(needsTable(booking({ id: 2, status: 'pending', tables: [] }))).toBe(true);
-    // Ya sentada: tiene mesa por definición del flujo, no es un hueco que resolver.
+    // Already seated: it has a table by definition of the flow, it is not a gap to solve.
     expect(needsTable(booking({ id: 3, status: 'seated', tables: [] }))).toBe(false);
     expect(needsTable(booking({ id: 4, status: 'cancelled', tables: [] }))).toBe(false);
     expect(needsTable(booking({ id: 5, status: 'confirmed', tables: [link(10, 5)] }))).toBe(false);
   });
 });
 
-describe('estados que sueltan la mesa', () => {
-  it('anulada, ausente y terminada liberan el sitio', () => {
+describe('states that drop the table', () => {
+  it('voided, absent and terminated release the site', () => {
     expect(holdsItsTable(booking({ id: 1, status: 'cancelled' }))).toBe(false);
     expect(holdsItsTable(booking({ id: 2, status: 'no_show' }))).toBe(false);
     expect(holdsItsTable(booking({ id: 3, status: 'completed' }))).toBe(false);
@@ -94,10 +94,10 @@ describe('estados que sueltan la mesa', () => {
   });
 });
 
-describe('detección de doble reserva', () => {
+describe('double booking detection', () => {
   const target = booking({ id: 1, reservation_date: at(19), duration_minutes: 90 });
 
-  it('detecta el solape de otra reserva sobre la misma mesa', () => {
+  it('detects the overlap of another reservation on the same table', () => {
     const other = booking({
       id: 2,
       reservation_date: at(20),
@@ -108,8 +108,8 @@ describe('detección de doble reserva', () => {
     expect(isTableFreeFor(10, target, [target, other])).toBe(false);
   });
 
-  it('dos reservas consecutivas que se tocan en el borde no chocan', () => {
-    // La primera acaba a las 20:30, la segunda empieza a las 20:30.
+  it('two consecutive reserves that touch at the edge do not collide', () => {
+    // The first ends at 8:30 p.m., the second starts at 8:30 p.m.
     const other = booking({
       id: 2,
       reservation_date: at(20, 30),
@@ -119,7 +119,7 @@ describe('detección de doble reserva', () => {
     expect(isTableFreeFor(10, target, [target, other])).toBe(true);
   });
 
-  it('una reserva anulada no retiene la mesa', () => {
+  it('a canceled reservation does not retain the table', () => {
     const other = booking({
       id: 2,
       reservation_date: at(19),
@@ -129,7 +129,7 @@ describe('detección de doble reserva', () => {
     expect(isTableFreeFor(10, target, [target, other])).toBe(true);
   });
 
-  it('una reserva ya terminada libera la mesa', () => {
+  it('a reservation already completed frees the table', () => {
     const other = booking({
       id: 2,
       reservation_date: at(19),
@@ -139,7 +139,7 @@ describe('detección de doble reserva', () => {
     expect(isTableFreeFor(10, target, [target, other])).toBe(true);
   });
 
-  it('una reserva no choca consigo misma', () => {
+  it('a reservation does not clash with itself', () => {
     const self = booking({ id: 1, reservation_date: at(19), tables: [link(10)] });
     expect(isTableFreeFor(10, self, [self])).toBe(true);
   });
@@ -151,7 +151,7 @@ describe('aforo asignado', () => {
     [11, table({ id: 11, capacity: 2 })],
   ]);
 
-  it('suma el aforo de las mesas combinadas', () => {
+  it('add the capacity of the combined tables', () => {
     const r = booking({ id: 1, party_size: 6, tables: [link(10), link(11)] });
     const capacity = assignedCapacity(r, tableById);
     expect(capacity.seats).toBe(6);
@@ -160,7 +160,7 @@ describe('aforo asignado', () => {
     expect(capacity.shortfall).toBe(0);
   });
 
-  it('marca la falta de aforo cuando las mesas no cubren al grupo', () => {
+  it('marks the lack of capacity when the tables do not cover the group', () => {
     const r = booking({ id: 1, party_size: 8, tables: [link(10)] });
     const capacity = assignedCapacity(r, tableById);
     expect(capacity.sufficient).toBe(false);
@@ -172,7 +172,7 @@ describe('aforo asignado', () => {
     expect(capacity.sufficient).toBe(false);
   });
 
-  it('etiqueta una mesa suelta y una combinación como pide la historia', () => {
+  it('tag a loose table and a join as the story asks', () => {
     expect(assignmentLabel(booking({ id: 1, tables: [link(10)] }), tableById)).toBe(
       'Table #T10 (Cap: 4)',
     );
@@ -183,7 +183,7 @@ describe('aforo asignado', () => {
   });
 });
 
-describe('motor de sugerencias', () => {
+describe('suggestion engine', () => {
   const zoneA = { id: 1, name: 'Main Dining', color: '#123456' };
   const zoneB = { id: 2, name: 'Terrace', color: '#654321' };
 
@@ -194,31 +194,31 @@ describe('motor de sugerencias', () => {
     table({ id: 4, capacity: 2, floorZone: zoneB, pos_x: 0, pos_y: 500 }),
   ];
 
-  it('propone primero la coincidencia exacta', () => {
+  it('proposes the exact match first', () => {
     const [best] = suggestTables(floor, 4);
     expect(best.kind).toBe('exact');
     expect(best.tables.map((t) => t.id)).toEqual([2]);
     expect(best.wastedSeats).toBe(0);
   });
 
-  it('sin coincidencia exacta propone la menor que se pasa', () => {
+  it('without exact match proposes the minor that is passed', () => {
     const [best] = suggestTables(floor, 3);
     expect(best.kind).toBe('oversize');
-    // La de 4, no la de 8: sentar a 3 en una mesa de 8 inmoviliza 5 sitios.
+    // The one of 4, not the one of 8: seating 3 at a table of 8 immobilizes 5 seats.
     expect(best.tables.map((t) => t.id)).toEqual([2]);
     expect(best.wastedSeats).toBe(1);
   });
 
-  it('combina mesas sólo cuando ninguna suelta llega', () => {
-    // Nada suelto cubre a 10; 8 + 2 de la misma zona sí.
+  it('combines tables only when no table arrives', () => {
+    // Nothing loose covers 10; 8 + 2 from the same area yes.
     const [best] = suggestTables(floor, 10);
     expect(best.kind).toBe('combination');
     expect(best.totalCapacity).toBeGreaterThanOrEqual(10);
     expect(best.tables.map((t) => t.id).sort()).toEqual([1, 3]);
   });
 
-  it('no combina mesas de zonas distintas', () => {
-    // 2 (terraza) + 2 (comedor) cubrirían a 4, pero el grupo quedaría partido en dos salas.
+  it('does not combine tables from different areas', () => {
+    // 2 (terrace) + 2 (dining room) would cover 4, but the group would be divided into two rooms.
     const twoZones = [
       table({ id: 1, capacity: 2, floorZone: zoneA }),
       table({ id: 4, capacity: 2, floorZone: zoneB }),
@@ -227,7 +227,7 @@ describe('motor de sugerencias', () => {
     expect(combos).toHaveLength(0);
   });
 
-  it('prefiere la combinación que menos plazas desperdicia', () => {
+  it('prefer the combination that wastes the least seats', () => {
     const many = [
       table({ id: 1, capacity: 2, floorZone: zoneA }),
       table({ id: 2, capacity: 4, floorZone: zoneA }),
@@ -239,16 +239,16 @@ describe('motor de sugerencias', () => {
     expect(best.wastedSeats).toBe(0);
   });
 
-  it('ignora las mesas fuera de servicio', () => {
+  it('ignore tables out of service', () => {
     const broken = [table({ id: 9, capacity: 4, status: 'out_of_service', floorZone: zoneA })];
     expect(suggestTables(broken, 4)).toHaveLength(0);
   });
 
-  it('sin grupo no sugiere nada', () => {
+  it('without a group it does not suggest anything', () => {
     expect(suggestTables(floor, 0)).toEqual([]);
   });
 
-  it('resume la sugerencia de forma legible', () => {
+  it('summarize the suggestion legibly', () => {
     const [best] = suggestTables(floor, 4);
     expect(suggestionSummary(best)).toBe('#T2 · 4 seats · no seats wasted');
   });
@@ -262,18 +262,18 @@ describe('zonas', () => {
     table({ id: 3, capacity: 4, floorZone: null }),
   ];
 
-  it('deriva las zonas del inventario y cuenta sus mesas', () => {
+  it('derive zones from inventory and count their tables', () => {
     const zones = zoneOptions(tables);
     expect(zones.map((z) => z.name)).toEqual(['Main Dining', 'Unzoned']);
     expect(zones[0].tableCount).toBe(2);
   });
 
-  it('deja las mesas sin zona al final de la lista', () => {
+  it('leave the tables without zone at the end of the list', () => {
     expect(zoneOptions(tables).at(-1)?.id).toBeNull();
   });
 
   it('desambigua dos zonas distintas que comparten nombre', () => {
-    // El catálogo real tiene varias zonas llamadas "General"; chips idénticos no filtran nada.
+    // The actual catalog has several areas called "General"; Identical chips do not filter anything.
     const duplicated = [
       table({ id: 1, capacity: 2, floorZone: { id: 20, name: 'General' } }),
       table({ id: 2, capacity: 4, floorZone: { id: 23, name: 'General' } }),
@@ -281,11 +281,11 @@ describe('zonas', () => {
     expect(zoneOptions(duplicated).map((z) => z.name)).toEqual(['General #20', 'General #23']);
   });
 
-  it('no toca el nombre cuando la zona es única', () => {
+  it('does not touch the name when the area is unique', () => {
     expect(zoneOptions(tables)[0].name).toBe('Main Dining');
   });
 
-  it('una reserva pertenece a la zona de cualquiera de sus mesas', () => {
+  it('a reservation belongs to the area of any of your tables', () => {
     const byId = new Map(tables.map((t) => [t.id, t]));
     const r = booking({ id: 1, tables: [link(1), link(3)] });
     expect(reservationInZone(r, 1, byId)).toBe(true);
@@ -294,7 +294,7 @@ describe('zonas', () => {
   });
 });
 
-describe('KPIs de ocupación', () => {
+describe('Occupancy KPIs', () => {
   const tables = [
     table({ id: 10, capacity: 4 }),
     table({ id: 11, capacity: 2 }),
@@ -308,22 +308,22 @@ describe('KPIs de ocupación', () => {
     booking({ id: 4, status: 'cancelled', party_size: 8, tables: [link(10, 4)] }),
   ];
 
-  it('cuenta las mesas asignadas de las reservas que aún las retienen', () => {
-    // La anulada no cuenta aunque conserve su fila.
+  it('counts the assigned tables of the reservations that still hold them', () => {
+    // The canceled one does not count even if it retains its row.
     expect(computeSeatingMetrics(day, tables).totalTablesAssigned).toBe(2);
   });
 
-  it('suma el aforo asignado', () => {
+  it('add the assigned capacity', () => {
     expect(computeSeatingMetrics(day, tables).assignedSeatCapacity).toBe(6);
   });
 
-  it('cuenta las reservas vivas sin mesa y sus comensales', () => {
+  it('counts live reservations without a table and their diners', () => {
     const m = computeSeatingMetrics(day, tables);
     expect(m.unassignedBookings).toBe(1);
     expect(m.unassignedGuests).toBe(5);
   });
 
-  it('el aforo del salón excluye las mesas fuera de servicio', () => {
+  it('The capacity of the room excludes tables out of service', () => {
     expect(computeSeatingMetrics(day, tables).floorSeatCapacity).toBe(6);
   });
 });

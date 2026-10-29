@@ -1,10 +1,10 @@
-// Tablero de asignación de mesas del servicio.
+// Service table assignment board.
 //
-// Se hidrata con DOS llamadas y no con el listado de `/api/reservation-table`: el día de
-// reservas (`/api/reservation?date=`) ya embebe los enlaces de mesa de cada reserva, y
-// `/api/tables` da el inventario con número, aforo y zona. Con eso el tablero puede pintar
-// también las reservas SIN mesa — que son justo las que hay que resolver, y que un listado de
-// asignaciones, por definición, no contiene.
+// It is hydrated with TWO calls and not with the listing of `/api/reservation-table`: the day of
+// reservations (`/api/reservation?date=`) already embeds the table links for each reservation, and
+// `/api/tables` gives the inventory with number, capacity and area. With that the board can paint
+// also the reservations WITHOUT a table — which are exactly the ones that must be resolved, and that a list of
+// assignments, by definition, does not contain.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DiningTable } from '../../../../types/dining-system';
@@ -47,11 +47,11 @@ interface ReservationTablesViewProps {
   merchantId?: number;
 }
 
-// `/api/tables` devuelve el inventario completo; el tablero necesita número, aforo y zona.
+// `/api/tables` returns the entire inventory; The board needs number, capacity and area.
 type FloorTable = DiningTable;
 
-// `onNavigate` sigue en las props (MerchantFrame lo pasa a todas las vistas), pero la
-// navegación entre sub-módulos la hace ya la NavHubBar del módulo, montada por MerchantFrame.
+// `onNavigate` is still in the props (MerchantFrame passes it to all views), but the
+// Navigation between sub-modules is already done by the module's NavHubBar, mounted by MerchantFrame.
 export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ merchantId }) => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [tables, setTables] = useState<FloorTable[]>([]);
@@ -100,8 +100,8 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
     });
   }, [fetchDay]);
 
-  // Inventario y CRM: fallan por separado y en silencio. Sin inventario no hay tablero, pero
-  // sin nombres de cliente el tablero sigue siendo utilizable con el código de reserva.
+  // Inventory and CRM: Fail separately and silently. Without inventory there is no board, but
+  // Without customer names the dashboard is still usable with the reservation code.
   useEffect(() => {
     let cancelled = false;
 
@@ -155,8 +155,8 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
 
   const zones = useMemo(() => zoneOptions(tables), [tables]);
 
-  // Sólo entran al tablero las reservas que todavía retienen (o necesitan) una mesa: una
-  // anulada no ocupa sitio y llenaría la parrilla de ruido.
+  // Only reservations that still retain (or need) a table enter the board: one
+  // Canceled it does not take up space and would fill the grill with noise.
   const seatable = useMemo(
     () => reservations.filter((r) => holdsItsTable(r)),
     [reservations],
@@ -168,9 +168,9 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
       .filter((r) => (unassignedOnly ? isUnassigned(r) : true))
       .filter((r) => {
         if (zoneFilter === 'all') return true;
-        // Con un filtro de zona activo, una reserva sin mesa no pertenece a ninguna: se
-        // muestra igualmente cuando además se pide "sólo sin asignar", que es el flujo real
-        // de "enséñame lo que falta por sentar en la terraza".
+        // With an active zone filter, a reservation without a table does not belong to any: it is
+        // It also shows when "only unassigned" is requested, which is the real flow
+        // of "show me what's left to sit on the terrace."
         if (isUnassigned(r)) return unassignedOnly;
         return reservationInZone(r, zoneFilter, tableById);
       })
@@ -201,8 +201,8 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
     setSubmitting(true);
     setFormError('');
     try {
-      // Las bajas van primero: liberar antes de ocupar evita que una reasignación dentro de la
-      // misma reserva choque consigo misma en la guarda de solape del servidor.
+      // Casualties go first: release before occupy prevents a reassignment within the
+      // same reservation clashes with itself in the server's overlap guard.
       for (const tableId of toRemove) {
         await unassignTable(picking.id, tableId);
       }
@@ -221,8 +221,8 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
       });
     } catch (err) {
       console.error('Error assigning tables:', err);
-      // El 409 del backend trae el nombre de la mesa y la reserva que la retiene: se enseña
-      // tal cual, que es más útil que un "no se pudo guardar".
+      // The 409 from the backend brings the name of the table and the reservation that holds it: it is shown
+      // as is, which is more useful than a "could not save".
       setFormError(
         err instanceof ApiError ? err.message : 'Failed to save the table assignment.',
       );
@@ -331,7 +331,7 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
         </div>
       </div>
 
-      {/* ---------- Ocupación del salón ---------- */}
+      {/* ---------- Dining room occupancy ---------- */}
       <section
         aria-label="Seating occupancy metrics"
         data-testid="seating-kpis"
@@ -364,7 +364,7 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
         ))}
       </section>
 
-      {/* ---------- Alerta de reservas sin mesa ---------- */}
+      {/* ---------- Reservation alert without table ---------- */}
       {!loading && unassignedList.length > 0 ? (
         <div
           data-testid="unassigned-alert"
@@ -543,7 +543,7 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
                     </span>
                     Party of {reservation.party_size}
                   </span>
-                  {/* Indicador de aforo: verde si las mesas cubren al grupo, ámbar si no. */}
+                  {/* Capacity indicator: green if tables cover party, amber otherwise. */}
                   <span
                     data-testid={`capacity-badge-${reservation.id}`}
                     className={`inline-flex items-center gap-1 px-2 py-1 rounded font-medium ${
@@ -565,7 +565,7 @@ export const ReservationTablesView: React.FC<ReservationTablesViewProps> = ({ me
                   </span>
                 </div>
 
-                {/* Grupo de mesas asignadas, cada una soltable por separado. */}
+                {/* Group of assigned tables, each droppable separately. */}
                 {links.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {links.map((link) => {

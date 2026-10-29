@@ -1,10 +1,10 @@
-// Roster de repartidores: KPIs de flota (`GET /api/delivery-driver/summary`), filtros que van
-// al backend como query params (status múltiple, vehicleType, búsqueda con debounce),
-// tabla con click-to-call, interruptor rápido de turno (`PATCH /:id/shift`), alta/edición
-// en drawer y borrado suave con confirmación en la página.
+// Delivery drivers roster: fleet KPIs (`GET /api/delivery-driver/summary`), filters that go
+// to the backend as query params (multiple status, vehicleType, search with debounce),
+// table with click-to-call, quick shift switch (`PATCH /:id/shift`), registration/edit
+// in drawer and soft erase with confirmation on the page.
 //
-// Tiempo real: los cambios de estado de la flota y de asignaciones vuelven a pedir lista y
-// KPIs (un repartidor pasa a "En route" al aceptar un pedido sin que nadie toque esta vista).
+// Real time: changes in fleet status and assignments reorder the list and
+// KPIs (a delivery person goes to "En route" when accepting an order without anyone touching this view).
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -56,7 +56,7 @@ const inputClass =
 
 const errorMessage = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
 
-// ================= Confirmación de borrado =================
+// ================= Deletion confirmation =================
 
 const ConfirmDeleteDriver: React.FC<{
   driver: DeliveryDriver;
@@ -152,7 +152,7 @@ export const DeliveryDriversView: React.FC<DeliveryDriversViewProps> = () => {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // Búsqueda en tiempo real: una petición cuando se deja de teclear, no una por tecla.
+  // Real-time search: a request when you stop typing, not one per key.
   useEffect(() => {
     if (searchInput.trim() === search) return;
     const timer = setTimeout(() => {
@@ -176,7 +176,7 @@ export const DeliveryDriversView: React.FC<DeliveryDriversViewProps> = () => {
     setError('');
     try {
       const next = await listDeliveryDrivers({ statuses, vehicleType, search, page, limit: DRIVER_PAGE_SIZE });
-      if (seq !== requestSeq.current) return; // respuesta de un filtro ya obsoleto
+      if (seq !== requestSeq.current) return; // response from an already obsolete filter
       setResult(next);
     } catch (err) {
       if (seq !== requestSeq.current) return;
@@ -185,7 +185,7 @@ export const DeliveryDriversView: React.FC<DeliveryDriversViewProps> = () => {
     } finally {
       if (seq === requestSeq.current) setLoading(false);
     }
-    // reloadKey fuerza una recarga con los mismos filtros.
+    // reloadKey forces a reload with the same filters.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statuses, vehicleType, search, page, reloadKey]);
 
@@ -365,7 +365,7 @@ export const DeliveryDriversView: React.FC<DeliveryDriversViewProps> = () => {
         </button>
       </div>
 
-      {/* ---------- KPIs de flota ---------- */}
+      {/* ---------- Fleet KPIs ---------- */}
       <section
         aria-label="Fleet metrics"
         data-testid="driver-kpis"
@@ -590,7 +590,7 @@ export const DeliveryDriversView: React.FC<DeliveryDriversViewProps> = () => {
                         </span>
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap">
-                        {/* Recortado: el nombre del local puede ser largo y empujaba las acciones fuera. */}
+                        {/* Shortened: the name of the place can be long and pushed the actions outside. */}
                         <span
                           title={driver.merchant?.name ?? undefined}
                           className="inline-flex max-w-[11rem] items-center gap-1 px-2 py-0.5 rounded border border-[#e8e2d8] text-[11px] text-[#5f5e5e]"
@@ -634,7 +634,7 @@ export const DeliveryDriversView: React.FC<DeliveryDriversViewProps> = () => {
                                 }`}
                               />
                             </span>
-                            {/* La píldora de estado ya dice si está de turno: aquí sólo el texto accesible. */}
+                            {/* Status pill indicates active shift: accessible text only here. */}
                             <span className="sr-only">{busy ? 'Updating…' : shift.onShift ? 'On shift' : 'Off shift'}</span>
                           </button>
                         </span>

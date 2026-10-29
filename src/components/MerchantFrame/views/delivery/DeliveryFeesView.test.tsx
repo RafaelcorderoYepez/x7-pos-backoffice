@@ -16,7 +16,7 @@ const zone = (id: number, name: string, status = 'active') => ({
 
 const ZONES = [zone(1, 'Centro, Zona Norte'), zone(2, 'Sur'), zone(3, 'Playa', 'maintenance')];
 
-// Postgres manda los decimal como cadena: el cliente tiene que normalizarlos.
+// Postgres sends decimals as a string: the client has to normalize them.
 const FEES = [
   {
     id: 1, deliveryZone: { id: 1, name: 'Centro, Zona Norte', status: 'active' },
@@ -30,7 +30,7 @@ const FEES = [
   },
 ];
 
-// `GET /delivery-fee/summary`; null = el endpoint falla (500) y la vista calcula en cliente.
+// `GET /delivery-fee/summary`; null = endpoint fails (500) and view computes on client.
 let summary: Record<string, unknown> | null = null;
 let createStatus = 201;
 
@@ -111,7 +111,7 @@ describe('DeliveryFeesView', () => {
     const alert = screen.getByTestId('missing-fee-alert');
     expect(alert).toHaveTextContent('1 active zone has no active fee');
     expect(within(alert).getByRole('button', { name: /#ZON-2 Sur/ })).toBeInTheDocument();
-    // La zona en mantenimiento no cuenta como "sin tarifa".
+    // The area under maintenance does not count as "no tariff".
     expect(within(alert).queryByText(/Playa/)).not.toBeInTheDocument();
   });
 
@@ -192,7 +192,7 @@ describe('DeliveryFeesView', () => {
     const dialog = await screen.findByRole('dialog');
     await user.selectOptions(within(dialog).getByLabelText(/delivery zone/i), '1');
     expect(within(dialog).getByTestId('single-active-error')).toHaveTextContent('#FEE-1 is already the active fee');
-    // Sólo lista zonas activas (la de mantenimiento no se ofrece para una tarifa nueva).
+    // It only lists active zones (the maintenance zone is not offered for a new rate).
     expect(within(within(dialog).getByLabelText(/delivery zone/i)).queryByText(/Playa/)).not.toBeInTheDocument();
   });
 

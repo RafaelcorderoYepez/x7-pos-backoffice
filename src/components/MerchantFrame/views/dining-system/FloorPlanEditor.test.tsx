@@ -12,7 +12,7 @@ vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
   clearAuthSession: vi.fn(),
 }));
 
-// El canal en vivo se sustituye por un testigo: guardamos los manejadores que registra el
+// The live channel is replaced by a witness: we save the handlers recorded by the
 // editor to trigger gateway events manually (and prevents tests from opening socket).
 let live: UseDiningRealtimeOptions = {};
 vi.mock('../../../../lib/useDiningRealtime', () => ({
@@ -238,9 +238,9 @@ function renderEditor(props: Partial<React.ComponentProps<typeof FloorPlanEditor
 /**
  * Selection/drag via raw pointer events: jsdom exposes constructor
  * `PointerEvent` and `getBoundingClientRect()` returns zeroed rect, so
- * `toCanvasCoords` degrada a `clientX / zoom` — coordenadas de lienzo reales y
- * deterministas mientras el zoom siga a 1 (el efecto de "fit" aborta porque el
- * viewport mide 0px sin layout).
+ * `toCanvasCoords` downgrades to `clientX/zoom` — actual canvas coordinates and
+ * deterministic as long as the zoom remains at 1 (the "fit" effect aborts because the
+ * viewport measures 0px without layout).
  */
 const selectTable = (id: number, clientX = 0, clientY = 0) => {
   const el = screen.getByTestId(`floor-table-${id}`);
@@ -557,7 +557,7 @@ describe('FloorPlanEditor', () => {
 
       expect(screen.queryByTestId('floor-table-102')).not.toBeInTheDocument();
       expect(saveButton()).toBeEnabled();
-      // El borrado se encola: nada viaja hasta pulsar "Save layout".
+      // The deletion is queued: nothing travels until you press "Save layout".
       expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false);
 
       await user.click(saveButton());
@@ -662,7 +662,7 @@ describe('FloorPlanEditor', () => {
       fireEvent.change(screen.getByLabelText('Y (m)'), { target: { value: '99.99' } });
       fireEvent.change(screen.getByLabelText('X (m)'), { target: { value: '-0.4' } });
 
-      // 400px de alto - 80px de huella cuadrada = 320; nunca por debajo de 0.
+      // 400px height - 80px square footprint = 320; never below 0.
       expect(screen.getByLabelText('Y (m)')).toHaveValue(3.2);
       expect(screen.getByLabelText('X (m)')).toHaveValue(0);
     });
@@ -672,7 +672,7 @@ describe('FloorPlanEditor', () => {
 
       await screen.findByTestId('floor-table-101');
       const table = screen.getByTestId('floor-table-101');
-      // Origen del lienzo en (0,0) sin layout: el desplazamiento del puntero es 1:1.
+      // Canvas origin at (0,0) without layout: pointer offset is 1:1.
       fireEvent.pointerDown(table, { clientX: 100, clientY: 100, pointerId: 1 });
       fireEvent.pointerMove(table, { clientX: 254, clientY: 196, pointerId: 1 });
       fireEvent.pointerUp(table, { clientX: 254, clientY: 196, pointerId: 1 });
@@ -786,7 +786,7 @@ describe('FloorPlanEditor', () => {
   // ================= Table Merging on Canvas =================
 
   describe('table joining', () => {
-    // A2 cuelga de A1, tal y como lo devuelve el backend: objeto embebido, no escalar.
+    // A2 hangs from A1, as returned by the backend: embedded object, not scalar.
     const JOINED: DiningTable[] = TABLES.map((t) =>
       t.id === 102 ? { ...t, parent_table: { id: 101, number: 'A1' } } : t,
     );
@@ -879,7 +879,7 @@ describe('FloorPlanEditor', () => {
       expect(call?.body.parent_table_id).toBe(101);
     });
 
-    it('al unirse a una madre ocupada, la hija hereda el estado', async () => {
+    it('by joining a busy mother, the daughter inherits the status', async () => {
       const user = userEvent.setup();
       // A2 is occupied in fixture: used as parent and A1 (available) joined to it.
       renderEditor();
@@ -913,7 +913,7 @@ describe('FloorPlanEditor', () => {
 
     it('an unsaved table can be parent: temporary id maps to real id', async () => {
       const user = userEvent.setup();
-      // El alta devuelve id 501 (ver el router de `backend`), que es el id real que la hija
+      // The registration returns id 501 (see the `backend` router), which is the actual id that the daughter
       // debe acabar apuntando.
       renderEditor();
 
@@ -1023,7 +1023,7 @@ describe('FloorPlanEditor', () => {
     });
   });
 
-  // ================= Canal en vivo =================
+  // ================= Live Channel =================
 
   describe('live floor updates', () => {
     it('repaints status received from gateway', async () => {
@@ -1080,7 +1080,7 @@ describe('FloorPlanEditor', () => {
       );
     });
 
-    it('ignora eventos de otro comercio', async () => {
+    it('ignore events from another trade', async () => {
       renderEditor();
       await screen.findByTestId('floor-table-101');
 
@@ -1146,7 +1146,7 @@ describe('FloorPlanEditor', () => {
 
       const panel = screen.getByTestId('floor-plan-multi-inspector');
       expect(panel).toHaveTextContent('2 tables');
-      // A1 tiene 4 asientos y A2 dos: el panel suma la capacidad del grupo.
+      // A1 has 4 seats and A2 two: the panel adds the group's capacity.
       expect(panel).toHaveTextContent('6 seats combined');
     });
 
@@ -1205,7 +1205,7 @@ describe('FloorPlanEditor', () => {
       expect(screen.getByTestId('floor-plan-inspector-empty')).toBeInTheDocument();
     });
 
-    it('fusiona TODAS las seleccionadas bajo la madre en un solo gesto', async () => {
+    it('merges ALL selected ones under the mother in a single gesture', async () => {
       const user = userEvent.setup();
       renderEditor();
       await screen.findByTestId('floor-table-101');

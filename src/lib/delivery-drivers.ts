@@ -1,5 +1,5 @@
-// Lógica pura del roster de repartidores: vocabulario de estados y vehículos, validación del
-// formulario (mismos límites que CreateDeliveryDriverDto) y construcción de la query string.
+// Pure logic of the delivery roster: vocabulary of states and vehicles, validation of the
+// form (same limits as CreateDeliveryDriverDto) and construction of the query string.
 
 import type {
   DeliveryDriver,
@@ -12,7 +12,7 @@ import type {
 
 export const DRIVER_NAME_MAX = 100;
 export const DRIVER_PHONE_MAX = 20;
-/** Igual que PHONE_PATTERN del backend, aplicado sobre el teléfono normalizado. */
+/** Same as PHONE_PATTERN from the backend, applied to the normalized phone. */
 export const DRIVER_PHONE_PATTERN = /^\+?[0-9]{4,19}$/;
 
 export const DRIVER_STATUSES: DriverStatus[] = ['active', 'on_delivery', 'off_duty', 'inactive'];
@@ -43,17 +43,17 @@ export const isDriverStatus = (value: string): value is DriverStatus =>
 export const isVehicleType = (value: string): value is VehicleType =>
   (VEHICLE_TYPES as string[]).includes(value);
 
-/** Estado desconocido → píldora neutra con el valor tal cual. */
+/** Unknown status → neutral pill with value as is. */
 export function statusMeta(status: string): { label: string; color: string; icon: string } {
   return isDriverStatus(status) ? DRIVER_STATUS_META[status] : { label: status, color: '#64748b', icon: 'help' };
 }
 
-/** Las filas antiguas pueden traer texto libre: se muestran tal cual con un icono genérico. */
+/** Old rows can have free text: they are shown as is with a generic icon. */
 export function vehicleMeta(vehicle: string): { label: string; icon: string } {
   return isVehicleType(vehicle) ? VEHICLE_META[vehicle] : { label: vehicle || 'Unknown', icon: 'local_shipping' };
 }
 
-/** Misma normalización que el backend: "+1 (809) 555-1234" → "+18095551234". */
+/** Same normalization as the backend: "+1 (809) 555-1234" → "+18095551234". */
 export function normalizePhone(raw: string): string {
   const trimmed = raw.trim();
   const plus = trimmed.startsWith('+') ? '+' : '';
@@ -63,8 +63,8 @@ export function normalizePhone(raw: string): string {
 // ================= Turno =================
 
 /**
- * El interruptor rápido sólo alterna active ↔ off_duty. En reparto o suspendido el backend
- * responde 409, así que se deshabilita con el motivo como tooltip.
+ * The quick switch just toggles active ↔ off_duty. In distribution or suspended the backend
+ * It responds 409, so it is disabled with the reason as a tooltip.
  */
 export function shiftToggleState(driver: Pick<DeliveryDriver, 'status'>): {
   onShift: boolean;
@@ -129,7 +129,7 @@ export function validateDriverForm(
 export const DRIVER_PAGE_SIZE = 25;
 export const SEARCH_DEBOUNCE_MS = 300;
 
-/** Query string del listado: status y vehicleType van separados por comas (el DTO lo acepta). */
+/** Query string of the list: status and vehicleType are separated by commas (the DTO accepts it). */
 export function buildDriverQuery(query: DriverQuery): string {
   const params = new URLSearchParams();
   params.set('page', String(query.page));

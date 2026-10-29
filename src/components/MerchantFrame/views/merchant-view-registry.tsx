@@ -102,6 +102,9 @@ import { QRDeploymentsView } from './qr-code/QRDeploymentsView';
 import { OnlineOrderingHubView } from './commerce/OnlineOrderingHubView';
 import { OnlineStoresView } from './commerce/online-stores/OnlineStoresView';
 import { OnlineMenusView } from './commerce/online-menus/OnlineMenusView';
+import { OnlineMenuCategoriesView } from './commerce/online-menu-categories/OnlineMenuCategoriesView';
+import { OnlineMenuItemsView } from './commerce/online-menu-items/OnlineMenuItemsView';
+import { OnlineOrdersView } from './commerce/online-orders/OnlineOrdersView';
 
 export interface AllocationsContext {
   payment?: SupplierPayment | null;
@@ -376,6 +379,9 @@ view('qr-code-deployments', (ctx) => <QRDeploymentsView onNavigate={ctx.onNaviga
 view(['online-ordering-hub', 'online-ordering-dashboard'], (ctx) => <OnlineOrderingHubView onNavigate={ctx.onNavigate} />);
 view('online-stores', (ctx) => <OnlineStoresView onNavigate={ctx.onNavigate} />);
 view('online-menus', (ctx) => <OnlineMenusView onNavigate={ctx.onNavigate} />);
+view('online-menu-categories', (ctx) => <OnlineMenuCategoriesView onNavigate={ctx.onNavigate} />);
+view('online-menu-items', (ctx) => <OnlineMenuItemsView onNavigate={ctx.onNavigate} />);
+view('online-orders', (ctx) => <OnlineOrdersView onNavigate={ctx.onNavigate} />);
 
 // ---- Cocina (KDS) ----
 view(['kds-dashboard', 'kitchen-kds-hub'], (ctx) => (

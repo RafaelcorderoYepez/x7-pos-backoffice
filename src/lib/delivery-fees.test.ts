@@ -122,7 +122,7 @@ describe('validateFeeForm', () => {
     const fees = [fee({ id: 7, deliveryZone: { id: 2, name: 'Sur' } })];
     expect(validateFeeForm(form(), { fees }).errors.status).toMatch(/#FEE-7 is already the active fee/);
     expect(validateFeeForm(form({ status: 'inactive' }), { fees }).parsed).not.toBeNull();
-    // Editar la propia tarifa activa no choca consigo misma.
+    // Editing the active rate itself does not clash with itself.
     expect(validateFeeForm(form(), { fees, editingId: 7 }).errors.status).toBeUndefined();
   });
 
@@ -150,7 +150,7 @@ describe('filters and KPIs', () => {
     ];
     const metrics = computeFeeMetrics(fees, zones);
     expect(metrics.averageBaseFee).toBe(5);
-    // La zona 4 está inactiva: su free_above no cuenta (igual que el summary del backend).
+    // Zone 4 is down: its free_above doesn't count (same as the backend summary).
     expect(metrics.freeShippingZones).toBe(1);
     expect(metrics.zonesLackingFees.map((z) => z.id)).toEqual([3]);
   });

@@ -1,20 +1,20 @@
-// Reglas operativas de las mesas: unión padre-hijo, guardas de mutación con servicio vivo,
-// validación espacial contra el lienzo y elegibilidad de transferencia.
+// Table operating rules: parent-child union, mutation guards with live service,
+// spatial validation against the canvas and transfer eligibility.
 //
-// Vive fuera de la vista a propósito: son las reglas que las historias exigen demostrar
-// (unicidad, límites del plano, bloqueo circular, guarda de orden activa) y aquí se pueden
-// probar sin montar React ni simular fetch.
+// Live out of sight on purpose: these are the rules that stories demand to prove
+// (uniqueness, plane limits, circular lock, active order guard) and here you can
+// try without mounting React or simulating fetch.
 
 import type { DiningTable, FloorPlan, TableStatus } from '../types/dining-system';
 import { tableFootprint } from '../types/dining-system';
 import type { UnitSystem } from './measurement-units';
 import { formatLength } from './measurement-units';
 
-// ================= Jerarquía padre-hijo =================
+// ================= Father-son hierarchy =================
 
-// La respuesta de /api/tables embebe `parent_table: {id, number}` y los DTO de escritura
-// hablan de `parent_table_id`. Leer siempre por aquí evita que media UI vea la unión y la
-// otra mitad no, según de qué endpoint venga la fila.
+// /api/tables response embeds `parent_table: {id, number}` and writing DTOs
+// they talk about `parent_table_id`. Always reading here prevents half UI from seeing the union and the
+// another half does not, depending on which endpoint the queue comes from.
 export const parentTableId = (t: Pick<DiningTable, 'parent_table' | 'parent_table_id'>): number | null =>
   t.parent_table?.id ?? t.parent_table_id ?? null;
 
@@ -23,10 +23,10 @@ export const isJoined = (t: DiningTable): boolean => parentTableId(t) != null;
 export const childTablesOf = (tables: DiningTable[], parentId: number): DiningTable[] =>
   tables.filter((t) => parentTableId(t) === parentId);
 
-// Toda la descendencia de una mesa, no sólo sus hijos directos: es lo que hace falta para
-// cerrar el candado circular en cadenas de tres o más (A -> B -> C -> A).
-// El `seen` corta el recorrido si los datos ya vienen con un ciclo del backend, para no
-// colgar la UI en un bucle infinito mientras se pinta un select.
+// All the offspring of a table, not just its direct children: this is what is needed to
+// close the circular lock in chains of three or more (A -> B -> C -> A).
+// The `seen` cuts the traversal if the data already comes with a backend loop, so as not to
+// hang the UI in an infinite loop while a select is painted.
 export const descendantTableIds = (tables: DiningTable[], rootId: number): Set<number> => {
   const found = new Set<number>();
   const queue: number[] = [rootId];
@@ -44,8 +44,8 @@ export const descendantTableIds = (tables: DiningTable[], rootId: number): Set<n
 export const CIRCULAR_PARENT_ERROR =
   'A table cannot be joined to itself or to one of its own child tables.';
 
-// El backend sólo comprueba el ciclo de un salto (padre.parent_table_id === id), así que
-// las cadenas largas se bloquean aquí antes de llegar a persistirse.
+// The backend only checks the one-hop cycle (parent.parent_table_id === id), so
+// long chains are blocked here before being persisted.
 export const wouldCreateCycle = (
   tables: DiningTable[],
   tableId: number,
@@ -53,13 +53,13 @@ export const wouldCreateCycle = (
 ): boolean =>
   candidateParentId === tableId || descendantTableIds(tables, tableId).has(candidateParentId);
 
-// Candidatas a mesa madre: todas menos ella misma y su propia descendencia.
+// Candidates for mother table: all except herself and her own offspring.
 export const eligibleParentTables = (tables: DiningTable[], tableId: number): DiningTable[] => {
   const blocked = descendantTableIds(tables, tableId);
   return tables.filter((t) => t.id !== tableId && !blocked.has(t.id));
 };
 
-// Etiqueta del badge de unión de una fila hija: "Joined to T-01".
+// Label of the joining badge of a daughter row: "Joined to T-01".
 export const joinedToLabel = (
   tables: DiningTable[],
   table: DiningTable,
@@ -70,21 +70,21 @@ export const joinedToLabel = (
   return `Joined to ${parent?.number ?? table.parent_table?.number ?? `#${parentId}`}`;
 };
 
-// Etiqueta del badge de una fila madre: "2 tables joined".
+// Badge label of a mother row: "2 tables joined".
 export const joinedChildrenLabel = (tables: DiningTable[], parentId: number): string => {
   const n = childTablesOf(tables, parentId).length;
   if (n === 0) return '';
   return `${n} ${n === 1 ? 'table' : 'tables'} joined`;
 };
 
-// ================= Unicidad del número =================
+// ================= Uniqueness of the number =================
 
 export const duplicateTableNumberError = (number: string): string =>
   `Table number '${number.trim()}' already exists for this merchant.`;
 
-// Compara sin distinguir mayúsculas ni espacios sobrantes: el índice único de base es
-// sensible a esas diferencias, pero para el operador 'a1' y 'A1' son la misma mesa y
-// dejarle guardar ambas convierte la parrilla en un campo de minas.
+// Compares without considering capital letters or extra spaces: the base unique index is
+// sensitive to those differences, but for the operator 'a1' and 'A1' they are the same table and
+// Letting you save both turns the grill into a minefield.
 export const isDuplicateTableNumber = (
   tables: DiningTable[],
   candidate: string,
@@ -97,10 +97,10 @@ export const isDuplicateTableNumber = (
   );
 };
 
-// ================= Validación espacial contra el lienzo =================
+// ================= Spatial validation against the canvas =================
 
-// pos_x/pos_y son la esquina superior izquierda de la mesa, en píxeles del lienzo. Fuera
-// de [0, width] × [0, height] la mesa desaparece del plano aunque la fila exista.
+// pos_x/pos_y are the top left corner of the table, in canvas pixels. out
+// of [0, width] × [0, height] the table disappears from the plane even if the row exists.
 export const positionBoundsError = (
   pos_x: number,
   pos_y: number,
@@ -116,8 +116,8 @@ export const positionBoundsError = (
   return `Table position must stay inside '${plan.name}': X between 0 and ${w}, Y between 0 and ${h}.`;
 };
 
-// Aviso blando: la coordenada cae dentro, pero la huella de la mesa sobresale por el borde.
-// No bloquea el guardado — la mesa sigue siendo alcanzable y recolocable en el editor.
+// Soft notice: the coordinate falls inside, but the table footprint sticks out over the edge.
+// Does not block saving — the table is still reachable and repositionable in the editor.
 export const footprintClipWarning = (
   table: Pick<DiningTable, 'pos_x' | 'pos_y' | 'shape'> & {
     width?: number | null;
@@ -138,18 +138,18 @@ export const rotationError = (rotation: number): string =>
     ? ''
     : 'Rotation must be a whole number of degrees between 0 and 360.';
 
-// ================= Guarda de servicio vivo =================
+// ================= Live Duty Guard =================
 
 export interface ActiveServiceContext {
-  // Asignaciones sin releasedAt sobre esta mesa: hay un camarero con la mesa a su cargo.
+  // UnreleasedAt assignments on this table: There is a waiter with the table in charge.
   activeAssignments?: number;
-  // Comandas abiertas sobre la mesa. El backend aún no las expone en /api/tables, así que
-  // por defecto es 0 y el estado 'occupied' es la señal que sí tenemos.
+  // Commands open on the table. The backend doesn't expose them in /api/tables yet, so
+  // By default it is 0 and the 'occupied' state is the signal that we do have.
   openOrders?: number;
 }
 
-// Una mesa ocupada (o con camarero/comanda viva) no se borra ni se muda de plano o zona:
-// el POS perdería de vista una comanda abierta.
+// An occupied table (or one with a live waiter/order) is not deleted or moved from plane to zone:
+// the POS would lose track of an open order.
 export const activeServiceGuard = (
   table: Pick<DiningTable, 'number' | 'status'>,
   ctx: ActiveServiceContext = {},
@@ -163,9 +163,9 @@ export const activeServiceGuard = (
     : '';
 };
 
-// Qué cambios cuentan como "mover la mesa de sitio" y por tanto quedan bajo la guarda.
-// Renombrar, resituar en el lienzo o cambiar de forma sigue permitido con la mesa ocupada:
-// no rompe la relación con la comanda.
+// What changes count as "moving the table" and therefore remain under guard.
+// Renaming, relocating on the canvas, or changing shape is still allowed with the table occupied:
+// It does not break the relationship with the command.
 export const changesTableLayout = (
   table: DiningTable,
   next: { floorPlan?: number | null; floorZone?: number | null },
@@ -177,10 +177,10 @@ export const changesTableLayout = (
   return planChanged || zoneChanged;
 };
 
-// ================= Transferencia de comensales =================
+// ================= Transfer of diners =================
 
-// Sólo una mesa libre puede recibir una transferencia: ocupada duplicaría comandas y
-// fuera de servicio o en limpieza no debería sentar a nadie.
+// Only a free table can receive a transfer: busy would duplicate orders and
+// out of order or in cleaning should not seat anyone.
 export const canReceiveTransfer = (t: Pick<DiningTable, 'status'>): boolean =>
   t.status === 'available';
 
@@ -190,25 +190,25 @@ export const transferTargetError = (target: Pick<DiningTable, 'number'>): string
 export const transferSourceError = (source: Pick<DiningTable, 'number'>): string =>
   `Table ${source.number} has no seated party to transfer.`;
 
-// El origen tiene que estar ocupado (hay comensales que mover) y el destino libre.
+// The origin has to be busy (there are diners to move) and the destination free.
 export const eligibleTransferTargets = (
   tables: DiningTable[],
   sourceId: number,
 ): DiningTable[] => tables.filter((t) => t.id !== sourceId && canReceiveTransfer(t));
 
-// ================= Liberación del grupo unido =================
+// ================= Liberation of the united group =================
 
-// Al cerrar la cuenta, la mesa madre y sus hijas vuelven a limpieza: nadie se sienta en
-// una mesa que aún no ha pasado el trapo, y así ninguna queda 'occupied' huérfana.
+// When the account is closed, the mother and daughters table returns to cleanliness: no one sits at
+// a table that has not yet been wiped, and thus no one is left 'occupied' orphaned.
 export const GROUP_RELEASE_STATUS: TableStatus = 'cleaning';
 
-// Estado que hereda una hija al unirse a una madre ocupada (historia 7).
+// Status that a daughter inherits when joining a busy mother (story 7).
 export const inheritedChildStatus = (parentStatus: string): TableStatus | null =>
   parentStatus === 'occupied' ? 'occupied' : null;
 
-// ================= Presentación espacial =================
+// ================= Spatial presentation =================
 
-// "Pos: [100, 150] | Circle | 90°" — la lectura compacta que pide la parrilla.
+// "Pos: [100, 150] | Circle | 90°" — the compact reading that the grid asks for.
 export const formatSpatialSummary = (
   t: Pick<DiningTable, 'pos_x' | 'pos_y' | 'shape' | 'rotation'>,
 ): string => {

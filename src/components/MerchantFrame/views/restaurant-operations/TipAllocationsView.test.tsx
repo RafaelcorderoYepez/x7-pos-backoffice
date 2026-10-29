@@ -120,7 +120,7 @@ describe('Tip Allocations Directory Workspace & Form Drawer', () => {
     ]);
     vi.spyOn(tipPoolMembersApi, 'fetchCollaboratorOptions').mockResolvedValue([
       { id: 101, name: 'Mateo Silva (WAITER)' },
-      { id: 102, name: 'Sofia Rodríguez (BARTENDER)' },
+      { id: 102, name: 'Sofia Rodriguez (BARTENDER)' },
       { id: 103, name: 'Carlos Mendoza (RUNNER)' },
     ]);
   });

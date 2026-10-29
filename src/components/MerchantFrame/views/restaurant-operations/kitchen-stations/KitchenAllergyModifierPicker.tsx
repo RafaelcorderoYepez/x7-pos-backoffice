@@ -31,35 +31,35 @@ const CRITICAL_ALLERGY_OPTIONS: AllergyQuickOption[] = [
     id: 'celiac',
     label: 'Gluten-Free / Celiac',
     insertValue: 'Gluten-Free, Celiac',
-    matchPattern: /(celiac|celíaco|sin gluten|gluten-free)/i,
+    matchPattern: /(celiac|gluten-free)/i,
     icon: 'warning',
   },
   {
     id: 'peanuts',
     label: 'Peanuts / Tree Nuts',
     insertValue: 'Severe Allergy: No Peanuts',
-    matchPattern: /(peanut|maní|cacahuate|tree nut|nut|nueces)/i,
+    matchPattern: /(peanut|tree nut|nut)/i,
     icon: 'warning',
   },
   {
     id: 'dairy',
     label: 'Dairy-Free',
     insertValue: 'Dairy-Free',
-    matchPattern: /(dairy|sin lácteo|dairy-free|lactosa|lactose)/i,
+    matchPattern: /(dairy|dairy-free|lactose)/i,
     icon: 'warning',
   },
   {
     id: 'shellfish',
     label: 'Shellfish',
     insertValue: 'Shellfish Allergy',
-    matchPattern: /(shellfish|mariscos|crustáceo)/i,
+    matchPattern: /(shellfish)/i,
     icon: 'warning',
   },
   {
     id: 'vegan',
     label: 'Vegan',
     insertValue: 'Vegan',
-    matchPattern: /(vegan|vegano)/i,
+    matchPattern: /(vegan)/i,
     icon: 'eco',
   },
 ];
@@ -361,14 +361,10 @@ export const KitchenAllergyModifierPicker: React.FC<KitchenAllergyModifierPicker
             const lower = segment.toLowerCase();
             const isAllergy =
               lower.includes('allergy') ||
-              lower.includes('alergia') ||
               lower.includes('celiac') ||
-              lower.includes('celíaco') ||
               lower.includes('gluten') ||
               lower.includes('peanut') ||
-              lower.includes('maní') ||
               lower.includes('dairy') ||
-              lower.includes('lácteo') ||
               lower.includes('vegan');
 
             const isAddition =
@@ -376,8 +372,7 @@ export const KitchenAllergyModifierPicker: React.FC<KitchenAllergyModifierPicker
             const isRemoval =
               segment.startsWith('-') ||
               lower.startsWith('no ') ||
-              lower.startsWith('without ') ||
-              lower.startsWith('sin ');
+              lower.startsWith('without ');
 
             let badgeStyle =
               'bg-zinc-100 text-zinc-800 border-zinc-300 font-semibold';

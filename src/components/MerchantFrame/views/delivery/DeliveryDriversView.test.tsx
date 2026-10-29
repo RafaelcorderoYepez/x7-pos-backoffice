@@ -27,8 +27,8 @@ const driver = (id: number, name: string, phone: string, vehicleType: string, st
 const DRIVERS = [
   driver(1, 'Mario Lopez', '+18095551234', 'car', 'active'),
   driver(2, 'Ana Ruiz', '+18095550000', 'e_scooter', 'on_delivery'),
-  driver(3, 'Luis Peña', '8095559999', 'bicycle', 'off_duty'),
-  driver(4, 'Carla Díaz', '+34600111222', 'on_foot', 'inactive'),
+  driver(3, 'Luis Pena', '8095559999', 'bicycle', 'off_duty'),
+  driver(4, 'Carla Diaz', '+34600111222', 'on_foot', 'inactive'),
 ];
 
 const SUMMARY = { total: 4, available: 1, en_route: 1, unavailable: 2 };
@@ -106,7 +106,7 @@ describe('DeliveryDriversView', () => {
     expect(screen.getByTestId('driver-status-2')).toHaveTextContent('En route');
     expect(screen.getByTestId('driver-status-3')).toHaveTextContent('Off shift');
     expect(screen.getByTestId('driver-status-4')).toHaveTextContent('Suspended');
-    // El color va en la variable --pill (el hover lo cambia a fondo blanco + texto rojo).
+    // The color goes in the --pill variable (the hover changes it to white background + red text).
     expect(screen.getByTestId('driver-status-1').style.getPropertyValue('--pill')).toBe('#10b981');
     expect(screen.getByTestId('driver-status-4').style.getPropertyValue('--pill')).toBe('#ef4444');
     expect(screen.getByTestId('driver-status-1')).toHaveClass('bg-[var(--pill)]', 'hover:bg-white!', 'hover:text-primary!');
@@ -168,7 +168,7 @@ describe('DeliveryDriversView', () => {
     await user.type(within(dialog).getByLabelText(/full name/i), '  Pedro Gil ');
     await user.type(within(dialog).getByLabelText(/phone/i), '+1 809 555 7777');
     await user.selectOptions(within(dialog).getByLabelText(/vehicle type/i), 'motorcycle');
-    // on_delivery nunca se ofrece.
+    // on_delivery is never offered.
     expect(within(within(dialog).getByLabelText(/status/i)).queryByText('En route')).not.toBeInTheDocument();
     await user.selectOptions(within(dialog).getByLabelText(/status/i), 'off_duty');
     await user.click(within(dialog).getByRole('button', { name: 'Create driver' }));
@@ -225,7 +225,7 @@ describe('DeliveryDriversView', () => {
     const enRoute = screen.getByRole('switch', { name: 'Shift for Ana Ruiz' });
     expect(enRoute).toBeDisabled();
     expect(enRoute).toHaveAttribute('title', expect.stringMatching(/on a delivery/i));
-    expect(screen.getByRole('switch', { name: 'Shift for Carla Díaz' })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'Shift for Carla Diaz' })).toBeDisabled();
 
     await user.click(screen.getByRole('switch', { name: 'Shift for Mario Lopez' }));
     await waitFor(() => expect(calls.some((c) => c.url.endsWith('/delivery-driver/1/shift'))).toBe(true));
@@ -234,7 +234,7 @@ describe('DeliveryDriversView', () => {
     expect(shift.body).toEqual({ on_shift: false });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('switch', { name: 'Shift for Luis Peña' }));
+    await user.click(screen.getByRole('switch', { name: 'Shift for Luis Pena' }));
     await waitFor(() => expect(calls.some((c) => c.url.endsWith('/delivery-driver/3/shift'))).toBe(true));
     expect(calls.find((c) => c.url.endsWith('/3/shift'))!.body).toEqual({ on_shift: true });
   });

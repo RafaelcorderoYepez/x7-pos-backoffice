@@ -416,7 +416,7 @@ export const FloorZonesView: React.FC<FloorZonesViewProps> = ({ onNavigate, merc
      
   }, [activeMerchantId]);
 
-  // Aislamiento multi-tenant: /api/floor-zone no filtra por comercio, pero embebe `merchant`.
+  // Multi-tenant isolation: /api/floor-zone does not filter by merchant, but embeds `merchant`.
   const merchantZones = useMemo(
     () => zones.filter((z) => z.merchant?.id == null || z.merchant.id === activeMerchantId),
     [zones, activeMerchantId],

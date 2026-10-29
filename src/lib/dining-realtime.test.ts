@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Testigo del socket: guardamos los manejadores que registra el cliente para poder
-// disparar los eventos del gateway a mano.
+// Socket witness: we save the handlers that the client registers so that we can
+// trigger gateway events by hand.
 const { ioMock, socket, listeners } = vi.hoisted(() => {
   const listeners = new Map<string, (payload?: unknown) => void>();
   const socket = {
@@ -33,7 +33,7 @@ describe('connectDiningRealtime', () => {
     vi.clearAllMocks();
   });
 
-  it('apunta al namespace del gateway con el token en el handshake', () => {
+  it('points to the gateway namespace with the token in the handshake', () => {
     connectDiningRealtime('jwt-123', {});
 
     expect(ioMock).toHaveBeenCalledWith(
@@ -43,7 +43,7 @@ describe('connectDiningRealtime', () => {
     expect(realtimeUrl()).toMatch(/\/realtime$/);
   });
 
-  it('entrega cada evento de sala a su manejador', () => {
+  it('delivers each room event to its handler', () => {
     const onTableStatusChanged = vi.fn();
     const onTableTransferred = vi.fn();
     const onAssignmentChanged = vi.fn();
@@ -66,7 +66,7 @@ describe('connectDiningRealtime', () => {
     expect(onFloorPlanUpdated).toHaveBeenCalledWith({ floorPlanId: 3 });
   });
 
-  it('reporta la conexión y la caída', () => {
+  it('reports the connection and the drop', () => {
     const onConnectionChange = vi.fn();
     connectDiningRealtime('jwt', { onConnectionChange });
 
@@ -77,7 +77,7 @@ describe('connectDiningRealtime', () => {
     expect(onConnectionChange).toHaveBeenLastCalledWith(false);
   });
 
-  it('un error de transporte se reporta como desconexión, no revienta la vista', () => {
+  it('a transport error is reported as a disconnection, it does not burst the view', () => {
     const onConnectionChange = vi.fn();
     connectDiningRealtime('jwt', { onConnectionChange });
 
@@ -85,7 +85,7 @@ describe('connectDiningRealtime', () => {
     expect(onConnectionChange).toHaveBeenLastCalledWith(false);
   });
 
-  it('no pide reconciliar en la primera conexión', () => {
+  it('does not ask to reconcile on first connection', () => {
     const onReconnect = vi.fn();
     connectDiningRealtime('jwt', { onReconnect });
 
@@ -94,7 +94,7 @@ describe('connectDiningRealtime', () => {
     expect(onReconnect).not.toHaveBeenCalled();
   });
 
-  it('pide reconciliar al volver de una caída, con la marca del último evento visto', () => {
+  it('asks to reconcile when returning from a fall, with the mark of the last event seen', () => {
     const onReconnect = vi.fn();
     connectDiningRealtime('jwt', { onReconnect });
 
@@ -103,12 +103,12 @@ describe('connectDiningRealtime', () => {
     fire('connect');
 
     expect(onReconnect).toHaveBeenCalledTimes(1);
-    // La marca es un instante ISO anterior a la reconexión.
+    // The mark is an ISO instant prior to reconnection.
     const since = onReconnect.mock.calls[0][0] as string;
     expect(Number.isNaN(Date.parse(since))).toBe(false);
   });
 
-  it('cierra el socket y suelta los manejadores', () => {
+  it('close the socket and release the handlers', () => {
     const connection = connectDiningRealtime('jwt', {});
 
     connection.close();
@@ -117,7 +117,7 @@ describe('connectDiningRealtime', () => {
     expect(socket.disconnect).toHaveBeenCalled();
   });
 
-  it('si el transporte no arranca, degrada a sin tiempo real en vez de propagar', () => {
+  it('if the transport does not start, it degrades to non-realtime instead of propagating', () => {
     ioMock.mockImplementationOnce(() => {
       throw new Error('no transport');
     });

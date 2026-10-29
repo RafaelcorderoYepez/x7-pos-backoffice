@@ -62,9 +62,9 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
     return () => observer.disconnect();
   }, [propIsSidebarCollapsed]);
 
-  // Mismo desplazamiento que el <main> de MerchantFrame (`left-64` sin prefijo): las
-  // variantes responsive (`md:`) no generan CSS en esta app, así que `md:left-64` dejaba la
-  // barra siempre en left-0, metida bajo el menú lateral.
+  // Same offset as MerchantFrame's <main> (`left-64` without prefix): responsive
+  // variants (`md:`) do not generate CSS in this app, so `md:left-64` kept the
+  // bar always at left-0, underneath the sidebar.
   const leftOffsetClass = collapsed ? 'left-0' : 'left-64';
 
   const scrollToPageTop = () => {
@@ -101,34 +101,40 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
     <div
       className={`fixed bottom-0 ${leftOffsetClass} right-0 z-40 bg-[#222222] border-t-2 border-[#ae001a] text-white py-2 px-4 shadow-2xl font-sans transition-all duration-300 ease-in-out ${className}`}
     >
-      <div className="w-full flex items-center justify-center relative min-h-[36px]">
-        {/* Back Button on the left (Compact Arrow Only) */}
-        {handleBack ? (
-          <button
-            type="button"
-            onClick={() => {
-              scrollToPageTop();
-              handleBack();
-            }}
-            className="flex items-center justify-center w-8 h-8 bg-[#ae001a] hover:bg-[#900015] text-white rounded transition-all shadow-xs cursor-pointer absolute left-2 sm:left-4 select-none shrink-0"
-            title={backToDashboardLabel || 'Return to Main Dashboard'}
-            aria-label={backToDashboardLabel || 'Return to Main Dashboard'}
-          >
-            <span className="material-symbols-outlined text-base" aria-hidden="true">arrow_back</span>
-          </button>
-        ) : title ? (
-          <div className="hidden lg:flex items-center gap-2 text-xs font-bold tracking-wider text-[#e8e2d8] uppercase absolute left-4">
-            {titleIcon && (
-              <span className="material-symbols-outlined text-[#ae001a] text-lg" aria-hidden="true">
-                {titleIcon}
-              </span>
-            )}
-            <span>{title}</span>
-          </div>
-        ) : null}
+      <div className="w-full flex items-center justify-between relative min-h-[36px] gap-2 sm:gap-4">
+        {/* Left Slot: Back Button (or Module Title) with Distinct Separation */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 z-10">
+          {handleBack ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  scrollToPageTop();
+                  handleBack();
+                }}
+                className="flex items-center justify-center w-8 h-8 bg-[#ae001a] hover:bg-[#900015] text-white rounded transition-all shadow-xs cursor-pointer select-none shrink-0"
+                title={backToDashboardLabel || 'Return to Main Dashboard'}
+                aria-label={backToDashboardLabel || 'Return to Main Dashboard'}
+              >
+                <span className="material-symbols-outlined text-base" aria-hidden="true">arrow_back</span>
+              </button>
+              <div className="h-5 w-px bg-zinc-700/80 ml-1 mr-2 hidden sm:block" aria-hidden="true" />
+            </>
+          ) : title ? (
+            <div className="hidden lg:flex items-center gap-2 text-xs font-bold tracking-wider text-[#e8e2d8] uppercase mr-2">
+              {titleIcon && (
+                <span className="material-symbols-outlined text-[#ae001a] text-lg" aria-hidden="true">
+                  {titleIcon}
+                </span>
+              )}
+              <span>{title}</span>
+              <div className="h-5 w-px bg-zinc-700/80 ml-2" aria-hidden="true" />
+            </div>
+          ) : null}
+        </div>
 
-        {/* Navigation Buttons Array PERFECTLY CENTERED */}
-        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+        {/* Center Slot: Navigation Buttons Array (Spaced & Centered) */}
+        <div className="flex items-center justify-center gap-1.5 flex-wrap flex-1 min-w-0">
           {items.map((item) => {
             const isActive = item.active || (activeModuleId ? item.id === activeModuleId : false);
             return (
@@ -154,6 +160,11 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
             );
           })}
         </div>
+
+        {/* Right Slot: Optical Balance Spacer */}
+        {handleBack ? (
+          <div className="hidden lg:flex items-center shrink-0 w-8 mr-1" aria-hidden="true" />
+        ) : null}
       </div>
     </div>
   );
