@@ -184,7 +184,7 @@ describe('form rules', () => {
 
 describe('filters and KPIs', () => {
   it('searches name, description and code, accent-insensitive', () => {
-    const z = zone({ name: 'Petal Zone' });
+    const z = zone({ name: 'Pétalo Zone' });
     expect(matchesZoneFilters(z, { search: 'petalo', statuses: [] })).toBe(true);
     expect(matchesZoneFilters(z, { search: 'downtown', statuses: [] })).toBe(true);
     expect(matchesZoneFilters(z, { search: zoneCode(1), statuses: [] })).toBe(true);

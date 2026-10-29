@@ -90,9 +90,12 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     { id: 'merchant-directory', name: 'Merchant Directory', categoryId: 'saas', categoryName: 'Platform SaaS' },
     { id: 'user-management', name: 'User Management', categoryId: 'saas', categoryName: 'Platform SaaS' },
     { id: 'company-profile', name: 'Company Profile', categoryId: 'saas', categoryName: 'Platform SaaS' },
+    { id: 'company-configurations', name: 'Company Configurations', categoryId: 'saas', categoryName: 'Platform SaaS' },
     { id: 'online-stores', name: 'Online Stores Workspace', categoryId: 'commerce', categoryName: 'Commerce' },
     { id: 'online-menus', name: 'Online Menus Workspace', categoryId: 'commerce', categoryName: 'Commerce' },
     { id: 'online-menu-categories', name: 'Menu Categories Directory', categoryId: 'commerce', categoryName: 'Commerce' },
+    { id: 'online-menu-items', name: 'Online Menu Items Catalog', categoryId: 'commerce', categoryName: 'Commerce' },
+    { id: 'online-orders', name: 'Online Orders Dispatch', categoryId: 'commerce', categoryName: 'Commerce' },
   ];
 
   const menuSearchResults = menuSearchQuery.trim() === '' ? [] : ALL_BACKOFFICE_FEATURES.filter(item =>

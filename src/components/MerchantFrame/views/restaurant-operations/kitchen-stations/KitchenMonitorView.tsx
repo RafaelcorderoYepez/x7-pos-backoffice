@@ -1701,7 +1701,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   title="Click to view allergy details"
                 >
                   <span className="material-symbols-outlined text-[10px]">emergency</span>
-                  'ALLERGY ALERT'
+                  ALLERGY ALERT
                 </button>
               )}
               {activeDisplayMode === 'AUTO' && (
@@ -1721,7 +1721,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   cleanOrderNotes.includes('[Rerouted')) && (
                   <span className="text-[8px] px-1.5 py-0.2 rounded font-black uppercase tracking-wider bg-purple-600/30 text-purple-300 border border-purple-500/50 flex items-center gap-0.5">
                     <span className="material-symbols-outlined text-[9px]">alt_route</span>
-                    'REROUTED'
+                    REROUTED
                   </span>
                 )}
               {effectiveStationRerouteStatuses.find(
@@ -1766,7 +1766,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               {ticket.timeElapsed}m
             </p>
             <p className="text-[8px] uppercase font-black tracking-wider text-zinc-500">
-              'ELAPSED'
+              ELAPSED
             </p>
           </div>
         </div>
@@ -1902,7 +1902,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                 <div className="flex items-center gap-1">
                                   <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/15 text-amber-300 border border-amber-500/30 rounded text-[8px] font-black uppercase tracking-wider">
                                     <span className="material-symbols-outlined text-[9px]">lock</span>
-                                    'HELD'
+                                    HELD
                                   </span>
                                   <button
                                     onClick={() => handleFireSingleItem(ticket.id, item.id, item.name)}
@@ -1910,7 +1910,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="px-2 py-0.5 bg-gradient-to-r from-amber-600 to-red-600 hover:from-amber-500 hover:to-red-500 text-white rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-0.5 cursor-pointer shadow-xs active:scale-95"
                                   >
                                     <span className="material-symbols-outlined text-[9px]">local_fire_department</span>
-                                    'FIRE'
+                                    FIRE
                                   </button>
                                 </div>
                               ) : isPending ? (
@@ -1932,7 +1932,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="h-6 px-2 rounded text-[8.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
                                   >
                                     <span className="material-symbols-outlined text-[10px]">check_circle</span>
-                                    <span>'READY'</span>
+                                    <span>READY</span>
                                   </button>
                                   <button
                                     onClick={() => handleRevertItemToPending(ticket.id, item.id, item.name, item.course)}
@@ -1950,7 +1950,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                                     className="h-6 px-2 rounded text-[8.5px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer shadow-xs active:scale-95 bg-emerald-700/50 hover:bg-emerald-600 text-emerald-200 border border-emerald-500/40"
                                   >
                                     <span className="material-symbols-outlined text-[10px]">check_circle</span>
-                                    <span>'DONE'</span>
+                                    <span>DONE</span>
                                   </button>
                                 </div>
                               )}
@@ -2045,11 +2045,11 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                             <div className={`${isCompact ? 'mt-1 pt-1 text-[9px]' : 'mt-1.5 pt-1 text-[9.5px]'} border-t border-amber-500/20 flex items-center justify-between`}>
                               <span className="text-zinc-400 font-medium flex items-center gap-1">
                                 <span className="material-symbols-outlined text-[11px] text-amber-400">schedule</span>
-                                'Pacing Window:'
+                                Pacing Window:
                               </span>
                               <span className="font-mono font-bold text-amber-300 text-[9px] flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-                                'Auto-Fire:' {formatCountdown(item.holdRemainingSeconds)}
+                                Auto-Fire: {formatCountdown(item.holdRemainingSeconds)}
                               </span>
                             </div>
                           )}
@@ -2070,7 +2070,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             className={`w-full ${isCompact ? 'py-1 text-[10px]' : 'py-1.5 text-[11px]'} bg-zinc-800 hover:bg-emerald-600 text-white font-black uppercase tracking-wider rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-inner`}
           >
             <span className="material-symbols-outlined text-xs">done_all</span>
-            <span>'BUMP & SERVE TICKET'</span>
+            <span>BUMP & SERVE TICKET</span>
           </button>
         </div>
       </div>
@@ -2104,7 +2104,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               </span>
             </h1>
             <p className="text-[10px] text-zinc-300 font-bold hidden 2xl:block truncate max-w-[220px]" style={{ color: '#d4d4d8' }}>
-              'View:' <strong className="text-amber-400">{activeKdsView}</strong> • 'Mode:' <strong className="text-emerald-400">{activeDisplayMode}</strong> • 'Hold/Fire Engine'
+              View: <strong className="text-amber-400">{activeKdsView}</strong> • Mode: <strong className="text-emerald-400">{activeDisplayMode}</strong> • Hold/Fire Engine
             </p>
           </div>
         </div>
@@ -2166,7 +2166,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               className="bg-transparent text-white font-bold outline-none cursor-pointer text-xs max-w-[85px] sm:max-w-[110px] md:max-w-[130px] lg:max-w-[150px] truncate"
             >
               <option value="ALL" className="bg-zinc-900 text-white">
-                'All Stations (Expo)'
+                All Stations (Expo)
               </option>
               {visibleStations.map((st) => {
                 const matched = kitchenStations.find((s) => s.name.trim().toLowerCase() === st.trim().toLowerCase());
@@ -2396,7 +2396,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
       <div className="bg-[#18191e] border-b border-zinc-800 px-6 py-2 flex items-center justify-between gap-4 shrink-0 overflow-x-auto">
         <div className="flex items-center gap-2">
           <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mr-1">
-            'COURSE STAGE:'
+            COURSE STAGE:
           </span>
           {(['ALL', 'APPETIZER', 'MAIN_COURSE', 'DESSERT', 'BEVERAGE'] as const).map((course) => {
             const isActive = activeCourseFilter === course;
@@ -2421,17 +2421,17 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
         <div className="flex items-center gap-4 text-xs font-bold text-zinc-400 shrink-0">
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <span>'ACTIVE:' <strong className="text-white">{tickets.length}</strong></span>
+            <span>ACTIVE: <strong className="text-white">{tickets.length}</strong></span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-            <span>'HELD ITEMS:' <strong className="text-amber-400">
+            <span>HELD ITEMS: <strong className="text-amber-400">
               {tickets.reduce((sum, t) => sum + t.items.filter((i) => i.preparationStatus === 'HELD').length, 0)}
             </strong></span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-blue-400"></span>
-            <span>'AUTO-FIRE PACING:' <strong className="text-blue-300">{autoFireEnabled ? 'ON' : 'OFF'}</strong></span>
+            <span>AUTO-FIRE PACING: <strong className="text-blue-300">{autoFireEnabled ? 'ON' : 'OFF'}</strong></span>
           </div>
         </div>
       </div>
@@ -2460,7 +2460,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
-                <span className="shrink-0">'🚨 HARDWARE FAILURE:'</span>
+                <span className="shrink-0">🚨 HARDWARE FAILURE:</span>
                 <span className="text-red-400 underline decoration-red-500 truncate max-w-[180px] sm:max-w-[280px]">
                   {isMultipleFailuresInAll
                     ? `${failingStations.length} STATIONS OFFLINE`
@@ -2515,14 +2515,14 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
               className="h-8 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
             >
               <span className="material-symbols-outlined text-sm text-amber-400">print</span>
-              <span>'Thermal Ticket'</span>
+              <span>Thermal Ticket</span>
             </button>
             <button
               type="button"
               onClick={() => setIsRerouteModalOpen(true)}
               className="h-8 px-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center active:scale-95 shrink-0"
             >
-              <span>'Configure'</span>
+              <span>Configure</span>
             </button>
           </div>
         </div>
@@ -2537,7 +2537,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2 whitespace-nowrap">
-                <span className="shrink-0">'⚠️ CAPACITY OVERFLOW:'</span>
+                <span className="shrink-0">⚠️ CAPACITY OVERFLOW:</span>
                 <span className="text-amber-400 underline decoration-amber-500 truncate max-w-[180px] sm:max-w-[280px]">
                   {getLocalizedStationName(activeStationStatus.stationName, deviceLanguage)}
                 </span>
@@ -2700,7 +2700,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                   </h3>
                 </div>
                 <span className="text-[10px] font-bold text-zinc-400 uppercase">
-                  'FIFO PIPELINE'
+                  FIFO PIPELINE
                 </span>
               </div>
 
@@ -2731,7 +2731,7 @@ export const KitchenMonitorView: React.FC<KitchenMonitorViewProps> = ({ onBackTo
                             </span>
                           </div>
                           <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                            Ticket #{t.id} • {t.items.length} 'items'{t.server && t.server !== 'Kitchen Staff' ? ` • ${t.server}` : ''}
+                            Ticket #{t.id} • {t.items.length} items{t.server && t.server !== 'Kitchen Staff' ? ` • ${t.server}` : ''}
                           </p>
                         </div>
                       </div>
