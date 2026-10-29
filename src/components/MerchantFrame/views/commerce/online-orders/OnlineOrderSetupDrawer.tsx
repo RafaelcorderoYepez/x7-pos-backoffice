@@ -96,8 +96,8 @@ export const OnlineOrderSetupDrawer: React.FC<OnlineOrderSetupDrawerProps> = ({
   // Order Line Items State
   const [items, setItems] = useState<OrderItemDraft[]>([]);
   const [selectedItemKey, setSelectedItemKey] = useState<string>('');
-  const [itemDraftProductId, setItemDraftProductId] = useState<number | ''>('');
-  const [itemDraftVariantId, setItemDraftVariantId] = useState<number | ''>('');
+  const [, setItemDraftProductId] = useState<number | ''>('');
+  const [, setItemDraftVariantId] = useState<number | ''>('');
   const [itemDraftQty, setItemDraftQty] = useState<number>(1);
   const [itemDraftNotes, setItemDraftNotes] = useState<string>('');
 

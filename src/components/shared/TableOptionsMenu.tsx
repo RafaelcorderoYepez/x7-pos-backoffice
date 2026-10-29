@@ -521,6 +521,7 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
 export interface NoColumnsEmptyStateProps {
   colSpan?: number;
   asTableRow?: boolean;
+  onReset?: () => void;
 }
 
 export const NoColumnsEmptyState: React.FC<NoColumnsEmptyStateProps> = ({ colSpan, asTableRow }) => {
@@ -605,6 +606,9 @@ export interface TablePaginationFooterProps {
   totalPages?: number;
   onPageSizeChange?: (size: number) => void;
   onChangePageSize?: (size: number) => void;
+  pageSizeOptions?: number[];
+  startItem?: number;
+  endItem?: number;
 }
 
 export const TablePaginationFooter: React.FC<TablePaginationFooterProps> = ({

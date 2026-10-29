@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getAccessToken } from '../../../../../lib/auth-storage';
 
@@ -307,7 +307,7 @@ const OnlineMenuItemSetupDrawerContent: React.FC<ContentProps> = ({
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
-      const payload: Record<string, any> = {
+      const payload: Record<string, unknown> = {
         menuId: Number(selectedMenuId),
         productId: Number(selectedProductId),
         variantId: selectedVariantId === 'none' ? null : Number(selectedVariantId),

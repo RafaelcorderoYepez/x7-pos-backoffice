@@ -59,7 +59,7 @@ describe('horas', () => {
     expect(rawHours(entry({ id: 1 }))).toBe(8);
   });
 
-  it('an open day still doesn't measure anything', () => {
+  it('an open day still does not measure anything', () => {
     expect(rawHours(entry({ id: 1, clock_out: null }))).toBe(0);
     expect(netHours(entry({ id: 1, clock_out: null }))).toBe(0);
   });

@@ -59,7 +59,8 @@ interface OnlineMenuItemsViewProps {
   onNavigate?: (view: string) => void;
 }
 
-export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavigate }) => {
+export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavigate: _onNavigate }) => {
+  void _onNavigate;
   const [menuItems, setMenuItems] = useState<OnlineMenuItem[]>([]);
   const [menus, setMenus] = useState<OnlineMenuOption[]>([]);
   const [products, setProducts] = useState<InventoryProductOption[]>([]);
@@ -1873,7 +1874,7 @@ export const OnlineMenuItemsView: React.FC<OnlineMenuItemsViewProps> = ({ onNavi
                     {isExpanded && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pl-4 border-l-2 border-purple-200">
                         {group.items.map((item) => {
-                          const { basePrice, hasOverride, activePrice } = getItemPricingInfo(item);
+                          const { hasOverride, activePrice } = getItemPricingInfo(item);
                           const isArchived = item.status === 'deleted';
 
                           return (

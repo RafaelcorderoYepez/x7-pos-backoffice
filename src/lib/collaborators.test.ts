@@ -105,7 +105,7 @@ describe('search', () => {
     expect(matchesCollaboratorSearch(c, '   ')).toBe(true);
   });
 
-  it('discard what doesn't fit', () => {
+  it('discards what does not fit', () => {
     expect(matchesCollaboratorSearch(c, 'zzz')).toBe(false);
   });
 });

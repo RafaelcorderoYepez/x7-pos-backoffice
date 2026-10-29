@@ -109,7 +109,7 @@ describe('candado circular', () => {
     expect(eligibleParentTables(tables, 1).map((t) => t.id)).not.toContain(2);
   });
 
-  it('exclude granddaughters: close strings that the backend doesn't see', () => {
+  it('excludes granddaughters: closes chains that the backend does not see', () => {
     // The backend only compares parent.parent_table_id === id, so A3 would appear valid.
     expect(eligibleParentTables(tables, 1).map((t) => t.id)).not.toContain(3);
     expect(eligibleParentTables(tables, 1)).toHaveLength(0);

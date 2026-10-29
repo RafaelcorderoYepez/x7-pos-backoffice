@@ -7,7 +7,6 @@ import {
   NoColumnsEmptyState,
   type TableDensity,
 } from '../../../../shared/TableOptionsMenu';
-import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import {
   OnlineOrderDetailsDrawer,
   isOnlineOrderEditable,
@@ -92,16 +91,9 @@ interface OnlineOrdersViewProps {
 
 type OrderTypeFilter = 'all' | 'delivery' | 'pickup' | 'dine_in';
 type PaymentStatusFilter = 'all' | 'paid' | 'pending' | 'failed' | 'refunded';
-type FulfillmentFilter =
-  | 'ALL'
-  | 'RECEIVED'
-  | 'ACCEPTED'
-  | 'IN_PREPARATION'
-  | 'READY'
-  | 'COMPLETED'
-  | 'CANCELLED';
 
-export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }) => {
+export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate: _onNavigate }) => {
+  void _onNavigate;
   const [orders, setOrders] = useState<OnlineOrderDetailData[]>([]);
   const [stores, setStores] = useState<OnlineStoreOption[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -290,15 +282,20 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
         const json = await itemRes.json();
         const rawItems = Array.isArray(json) ? json : json.data || [];
         setOnlineMenuItems(
-          rawItems.map((item: any) => ({
+          rawItems.map((item: Partial<OnlineMenuItemOption> & Record<string, unknown>) => ({
             id: Number(item.id),
             menuId: Number(item.menuId ?? item.menu_id ?? item.menu?.id ?? 0),
             productId: Number(item.productId ?? item.product_id ?? item.product?.id ?? 0),
             variantId: item.variantId ? Number(item.variantId) : item.variant_id ? Number(item.variant_id) : null,
-            isAvailable: item.isAvailable ?? item.is_available ?? true,
-            priceOverride: item.priceOverride ?? item.price_override ?? null,
+            isAvailable: Boolean(item.isAvailable ?? item.is_available ?? true),
+            priceOverride:
+              item.priceOverride !== undefined && item.priceOverride !== null
+                ? Number(item.priceOverride)
+                : item.price_override !== undefined && item.price_override !== null
+                  ? Number(item.price_override)
+                  : null,
             displayOrder: Number(item.displayOrder ?? item.display_order ?? 0),
-            status: item.status || 'active',
+            status: typeof item.status === 'string' ? item.status : 'active',
             product: item.product,
             variant: item.variant,
             menu: item.menu,
@@ -463,36 +460,6 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
     }
   };
 
-  // 3b. Operational Actions: Reassign Kitchen Station
-  const handleReassignStation = async (orderId: number, stationId: number) => {
-    try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/online-orders/${orderId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ stationId: Number(stationId) }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.message || 'Failed to reassign kitchen station');
-      }
-
-      const updated = await res.json();
-      showToast(`Order #ONL-${orderId} kitchen station reallocated successfully!`);
-      await fetchOrders(true);
-      if (updated.data) setSelectedOrder(updated.data);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to reassign station';
-      showToast(msg);
-    }
-  };
-
   // 4. Operational Actions: Cancel Order
   const handleCancelOrder = async (orderId: number) => {
     try {
@@ -599,8 +566,7 @@ export const OnlineOrdersView: React.FC<OnlineOrdersViewProps> = ({ onNavigate }
   const handleOpenEditOrder = (order: OnlineOrderDetailData) => {
     if (!isOnlineOrderEditable(order)) {
       showToast(
-        `Orders in '${order.fulfillmentStatus?.replace(/_/g, ' ')}' stage cannot be edited.`,
-        'warning'
+        `Orders in '${order.fulfillmentStatus?.replace(/_/g, ' ')}' stage cannot be edited.`
       );
       return;
     }

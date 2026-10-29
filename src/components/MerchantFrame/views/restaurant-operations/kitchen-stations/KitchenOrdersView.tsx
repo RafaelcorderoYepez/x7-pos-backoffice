@@ -1933,7 +1933,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
             {lastBumpedOrder && (
               <button
                 type="button"
-                onClick={handleRecallOrder}
+                onClick={() => void handleRecallOrder()}
                 className="h-[32px] px-3 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#5f5e5e] text-xs font-bold uppercase tracking-wider hover:bg-[#f2ede5] hover:text-[#1d1c17] transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
                 title="Undo last bumped ticket"
               >

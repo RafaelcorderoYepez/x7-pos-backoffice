@@ -239,7 +239,6 @@ const OnlineMenuCategorySetupDrawerContent: React.FC<ContentProps> = ({
   };
 
   const selectedCategoryObj = categories.find((c) => c.id === categoryId);
-  const selectedMenuObj = menus.find((m) => m.id === menuId);
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] overflow-hidden font-sans">

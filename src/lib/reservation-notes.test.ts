@@ -138,8 +138,8 @@ describe('time stamps', () => {
   });
 });
 
-describe('author's signature', () => {
-  it('uses the collaborator's name and role when known', () => {
+describe('author signature', () => {
+  it('uses the collaborator name and role when known', () => {
     const staff = new Map([[4, { name: 'Ana Ruiz', role: 'host' }]]);
     expect(authorLabel(4, staff)).toBe('Ana Ruiz (Host)');
   });

@@ -151,12 +151,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
     setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       // 1. Upload master list of locations to check actual active status by ID
       const locationsMap = new Map<string, Record<string, unknown>>();
       const locationsNameMap = new Map<string, Record<string, unknown>>();

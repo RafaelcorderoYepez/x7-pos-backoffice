@@ -76,7 +76,6 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
 
   const topRef = useRef<HTMLDivElement | null>(null);
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
   // Auto-scroll at startup when mounting view
   useEffect(() => {

@@ -14,14 +14,6 @@ interface OnlineOrdersDevSimulatorProps {
   stores?: OnlineStoreOption[];
 }
 
-const PRESET_CUSTOMERS = [
-  { id: 1, name: 'Carlos Mendoza', email: 'carlos.mendoza@email.com', phone: '+1 555-0192' },
-  { id: 2, name: 'Sofia Valenzuela', email: 'sofia.v@email.com', phone: '+1 555-0144' },
-  { id: 3, name: 'Mateo Silva', email: 'mateo.silva@email.com', phone: '+1 555-0187' },
-  { id: 4, name: 'Valentina Rojas', email: 'v.rojas@email.com', phone: '+1 555-0123' },
-  { id: 5, name: 'Andres Morales', email: 'andres.m@email.com', phone: '+1 555-0165' },
-];
-
 export const OnlineOrdersDevSimulator: React.FC<OnlineOrdersDevSimulatorProps> = ({
   onComplete,
   stores = [],
@@ -251,7 +243,10 @@ export const OnlineOrdersDevSimulator: React.FC<OnlineOrdersDevSimulatorProps> =
             setStatusType('success');
             setStatusMessage(`Quick ${mode.toUpperCase()} order created in RECEIVED state!`);
           } catch (stdErr) {
-            throw new Error(lastError || (stdErr instanceof Error ? stdErr.message : 'Failed to create order'));
+            throw new Error(
+              lastError || (stdErr instanceof Error ? stdErr.message : 'Failed to create order'),
+              { cause: stdErr }
+            );
           }
         }
       }

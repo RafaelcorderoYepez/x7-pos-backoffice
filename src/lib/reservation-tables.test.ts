@@ -244,7 +244,7 @@ describe('suggestion engine', () => {
     expect(suggestTables(broken, 4)).toHaveLength(0);
   });
 
-  it('without a group it doesn't suggest anything', () => {
+  it('without a group it does not suggest anything', () => {
     expect(suggestTables(floor, 0)).toEqual([]);
   });
 

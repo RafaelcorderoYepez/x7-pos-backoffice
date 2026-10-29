@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { SideDrawer } from '../../../shared/SideDrawer';
 import { ModalFormError } from '../../../shared/AppModal';
 
@@ -186,9 +186,6 @@ export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> =
       setIsProcessing(false);
     }
   };
-
-  const isCancelled = order.fulfillmentStatus === 'cancelled';
-  const isCompleted = order.fulfillmentStatus === 'completed';
 
   return (
     <SideDrawer

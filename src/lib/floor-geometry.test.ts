@@ -343,7 +343,7 @@ describe('floor-geometry — tableInsideOutline', () => {
     expect(tableInsideOutline({ pos_x: 680, pos_y: 100, shape: 'Rectangle' }, rect)).toBe(true);
   });
 
-  it('an unknown shape falls into Square's footprint', () => {
+  it('an unknown shape falls into Square footprint', () => {
     expect(tableInsideOutline({ pos_x: 720, pos_y: 100, shape: 'Hexagon' }, rect)).toBe(true);
     expect(tableInsideOutline({ pos_x: 760, pos_y: 100, shape: 'Hexagon' }, rect)).toBe(false);
   });

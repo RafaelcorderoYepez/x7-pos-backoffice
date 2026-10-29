@@ -218,7 +218,7 @@ describe('preferencia persistida', () => {
     expect(loadUnitSystem()).toBe('metric');
   });
 
-  it('save also doesn't launch with storage locked', () => {
+  it('save also does not throw with storage locked', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('quota', 'QuotaExceededError');
     });

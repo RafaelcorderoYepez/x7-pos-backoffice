@@ -47,7 +47,8 @@ interface OnlineMenuCategoriesViewProps {
   onNavigate?: (view: string) => void;
 }
 
-export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> = ({ onNavigate }) => {
+export const OnlineMenuCategoriesView: React.FC<OnlineMenuCategoriesViewProps> = ({ onNavigate: _onNavigate }) => {
+  void _onNavigate;
   const [categoriesBound, setCategoriesBound] = useState<OnlineMenuCategoryItem[]>([]);
   const [menus, setMenus] = useState<OnlineMenuOption[]>([]);
   const [inventoryCategories, setInventoryCategories] = useState<InventoryCategoryOption[]>([]);

@@ -12,6 +12,7 @@ import {
   type KitchenTicket,
   type PreparationStatus,
   type RawKitchenOrder,
+  type TicketItem,
 } from './kds-monitor-model';
 import { formatCountdown, getCourseTheme, getPriorityBadge } from './kds-monitor-display';
 import { playKitchenFireChime } from '../../../../../lib/kds-chime';
@@ -53,51 +54,12 @@ import {
   getLocalizedDishName,
   getLocalizedCourse,
   getLocalizedVariantName,
-  getDeviceLanguage,
   setDeviceLanguage,
   extractCleanKitchenInstruction,
   getLocalizedStationName,
 } from './kdsLocalization';
 
-const getLocalizedStationName = (name: string, _lang?: 'en' | 'es'): string => {
-  return name;
-};
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-export type CourseType = 'APPETIZER' | 'MAIN_COURSE' | 'DESSERT' | 'BEVERAGE';
-export type PreparationStatus = 'HELD' | 'PENDING' | 'IN_PREPARATION' | 'READY';
-
-export interface TicketItem {
-  id: number;
-  name: string;
-  variantName?: string;
-  qty: number;
-  preparedQuantity?: number;
-  notes?: string;
-  course: CourseType;
-  preparationStatus: PreparationStatus;
-  holdRemainingSeconds?: number;
-  firedAt?: string | null;
-}
-
-export interface KitchenTicket {
-  id: string;
-  backendOrderId?: number;
-  table: string;
-  timeElapsed: number; // minutes
-  createdAtMs?: number;
-  server: string;
-  stationName?: string;
-  stationId?: number;
-  priority: 'normal' | 'high' | 'urgent' | 'vip';
-  items: TicketItem[];
-  orderNotes?: string | null;
-  isPulsing?: boolean;
-  alertMessage?: string | null;
-}
-
-export type KdsView = 'EXPO' | 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID';
+export type { CourseType, PreparationStatus, TicketItem, KitchenTicket, KdsView };
 
 interface KitchenMonitorViewProps {
   onBackToDashboard: () => void;

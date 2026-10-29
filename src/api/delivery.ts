@@ -7,7 +7,8 @@
 // `forbidNonWhitelisted: true` in the backend → bodies are constructed explicit.
 
 import { apiRequest } from './http';
-import { ApiError } from '../lib/api-error';
+import { ApiError, getApiErrorDetails } from '../lib/api-error';
+import { getAccessToken, clearAuthSession } from '../lib/auth-storage';
 import type {
   DeliveryFee,
   DeliveryFeeDraft,
