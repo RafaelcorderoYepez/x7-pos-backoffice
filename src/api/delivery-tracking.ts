@@ -1,7 +1,8 @@
 // Live radar HTTP client (`/api/delivery-tracking`, singular and without `/v1`). The
 // trade exits the JWT. Reuse `request` from delivery.ts: same token and same 401.
 
-import { request, type Envelope } from './delivery';
+import type { Envelope } from './delivery';
+import { apiRequest } from './http';
 import type {
   DeliveryRoute,
   LiveTrackingEntry,
@@ -20,7 +21,7 @@ export const buildLiveTrackingQuery = (query: LiveTrackingQuery = {}): string =>
 };
 
 export async function getLiveTracking(query: LiveTrackingQuery = {}): Promise<LiveTrackingEntry[]> {
-  const json = await request<Envelope<LiveTrackingEntry[]>>(
+  const json = await apiRequest<Envelope<LiveTrackingEntry[]>>(
     `/delivery-tracking/live${buildLiveTrackingQuery(query)}`,
     { method: 'GET' },
     'Failed to load live tracking. Please try again.',
@@ -29,7 +30,7 @@ export async function getLiveTracking(query: LiveTrackingQuery = {}): Promise<Li
 }
 
 export async function getTelemetrySummary(): Promise<TelemetrySummary> {
-  const json = await request<Envelope<TelemetrySummary>>(
+  const json = await apiRequest<Envelope<TelemetrySummary>>(
     '/delivery-tracking/summary',
     { method: 'GET' },
     'Failed to load the telemetry summary.',
@@ -38,7 +39,7 @@ export async function getTelemetrySummary(): Promise<TelemetrySummary> {
 }
 
 export async function getDeliveryRoute(assignmentId: number): Promise<DeliveryRoute> {
-  const json = await request<Envelope<DeliveryRoute>>(
+  const json = await apiRequest<Envelope<DeliveryRoute>>(
     `/delivery-tracking/route/${assignmentId}`,
     { method: 'GET' },
     'Failed to load the route trail.',

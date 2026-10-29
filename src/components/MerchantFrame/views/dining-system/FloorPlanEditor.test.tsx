@@ -4,8 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { FloorPlanEditor } from './FloorPlanEditor';
 import type { DiningTable, FloorPlan, FloorZone } from '../../../../types/dining-system';
 import type { UseDiningRealtimeOptions } from '../../../../lib/useDiningRealtime';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -119,11 +121,7 @@ const TABLES: DiningTable[] = [
 type Body = Record<string, unknown>;
 
 function jsonRes(body: unknown, status = 200) {
-  return Promise.resolve({
-    ok: status >= 200 && status < 300,
-    status,
-    json: () => Promise.resolve(body),
-  } as Response);
+  return Promise.resolve(jsonResponse(body, status));
 }
 
 const bodyOf = (init?: RequestInit): Body =>
@@ -570,6 +568,36 @@ describe('FloorPlanEditor', () => {
           expect.objectContaining({ method: 'DELETE' }),
         ),
       );
+    });
+
+    it('stops the batch and redirects to login when the session expires mid-save', async () => {
+      const originalLocation = window.location;
+      // @ts-expect-error overriding for test
+      delete window.location;
+      // @ts-expect-error partial mock
+      window.location = { href: '' };
+      const base = backend();
+      fetchMock = vi.fn((url: string, init?: RequestInit) =>
+        init?.method === 'DELETE' ? Promise.resolve(jsonResponse({}, 401)) : base(url, init),
+      ) as unknown as typeof fetchMock;
+      vi.stubGlobal('fetch', fetchMock);
+      const user = userEvent.setup();
+      const { onSaved } = renderEditor();
+
+      await screen.findByTestId('floor-table-101');
+      selectTable(101);
+      await user.click(screen.getByRole('button', { name: 'Delete table A1' }));
+      selectTable(102);
+      await user.click(screen.getByRole('button', { name: 'Delete table A2' }));
+      await user.click(saveButton());
+
+      await waitFor(() => expect(window.location.href).toBe('/login'));
+      const deletes = fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE');
+      expect(deletes).toHaveLength(1);
+      expect(onSaved).not.toHaveBeenCalled();
+
+      // @ts-expect-error restoring original Location object
+      window.location = originalLocation;
     });
 
     it('issues no request for a table added and deleted before saving', async () => {

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   DiningTable,
   FloorPlan,
@@ -59,8 +58,7 @@ import { FloorPlanEditor } from './FloorPlanEditor';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter, ModalFormError } from '../../shared/AppModal';
 import { Toast } from '../../shared/Toast';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 // 'deleted' is logical deletion of a table: never an operational status nor offered
 // in the form. The remaining status vocabulary lives in types/dining-system.
@@ -627,26 +625,15 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchTables = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/tables?limit=100`, { headers: authHeaders() });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading tables');
-      const json = await res.json();
+      const json = await apiRequest<{ data?: DiningTable[] }>(
+        '/tables?limit=100',
+        { method: 'GET' },
+        'Error loading tables',
+      );
       // Deletion of tables is logical via status: 'deleted' are not part of live inventory.
       setTables(((json.data ?? []) as DiningTable[]).filter((t) => t.status !== DELETED_STATUS));
     } catch (err) {
@@ -659,16 +646,18 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
 
   const fetchContext = async () => {
     try {
-      const [planRes, zoneRes, asgRes] = await Promise.all([
-        fetch(`${API_BASE}/floor-plan?limit=100`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/floor-zone?limit=100`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/table-assignments?limit=100`, { headers: authHeaders() }),
+      const optionalList = <T,>(path: string) =>
+        apiRequest<{ data?: T[] }>(path, { method: 'GET' }, '').catch(() => null);
+      const [planJson, zoneJson, asgJson] = await Promise.all([
+        optionalList<FloorPlan>('/floor-plan?limit=100'),
+        optionalList<FloorZone>('/floor-zone?limit=100'),
+        optionalList<TableAssignment>('/table-assignments?limit=100'),
       ]);
-      if (planRes.ok) setPlans(((await planRes.json()).data ?? []) as FloorPlan[]);
-      if (zoneRes.ok) setZones(((await zoneRes.json()).data ?? []) as FloorZone[]);
+      if (planJson) setPlans(planJson.data ?? []);
+      if (zoneJson) setZones(zoneJson.data ?? []);
       // If tenant plan lacks feature, backend returns 403: grid falls back
       // safely to table status without waiter metadata.
-      if (asgRes.ok) setAssignments(((await asgRes.json()).data ?? []) as TableAssignment[]);
+      if (asgJson) setAssignments(asgJson.data ?? []);
     } catch (err) {
       console.error('Error fetching plans/zones for tables:', err);
     }
@@ -690,7 +679,7 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
       fetchTables();
       fetchContext();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeMerchantId]);
 
   const merchantPlans = useMemo(
@@ -799,14 +788,11 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
         floorZone: dto.floorZone ?? 0,
         floorPlan: dto.floorPlan ?? 0,
       };
-      const res = await fetch(`${API_BASE}/tables`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to create table');
+      await apiRequest<void>(
+        '/tables',
+        { method: 'POST', body: JSON.stringify(body) },
+        'Failed to create table',
+      );
       await fetchTables();
       setFormDrawer(null);
       setToast({ message: 'Table created successfully', type: 'success' });
@@ -822,14 +808,11 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     setFormError('');
     try {
       // Tables use PUT (not PATCH), unlike floor plans and zones.
-      const res = await fetch(`${API_BASE}/tables/${id}`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to update table');
+      await apiRequest<void>(
+        `/tables/${id}`,
+        { method: 'PUT', body: JSON.stringify(dto) },
+        'Failed to update table',
+      );
       await fetchTables();
       setFormDrawer(null);
       setToast({ message: 'Table updated successfully', type: 'success' });
@@ -844,15 +827,11 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     if (!deletingTable) return;
     setDeleteSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/tables/${deletingTable.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to delete table');
-      }
+      await apiRequest<void>(
+        `/tables/${deletingTable.id}`,
+        { method: 'DELETE' },
+        'Failed to delete table',
+      );
       setTables((prev) => prev.filter((t) => t.id !== deletingTable.id));
       setDeletingTable(null);
       setToast({ message: 'Table deleted successfully', type: 'success' });
@@ -869,16 +848,11 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
 
   // Partial PUT on table. Tables use PUT (not PATCH) and reject merchant_id.
   const putTable = async (id: number, dto: UpdateDiningTableDto): Promise<void> => {
-    const res = await fetch(`${API_BASE}/tables/${id}`, {
-      method: 'PUT',
-      headers: authHeaders(),
-      body: JSON.stringify(dto),
-    });
-    if (res.status === 401) return handleUnauthorized();
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      throw new Error(json.message || 'Failed to update table');
-    }
+    await apiRequest<void>(
+      `/tables/${id}`,
+      { method: 'PUT', body: JSON.stringify(dto) },
+      'Failed to update table',
+    );
   };
 
   // Join tables for a party: each child points to parent and, if parent has seated
@@ -964,14 +938,15 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
     if (!transferSource) return;
     setLinkSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/tables/transfer`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ sourceTableId: transferSource.id, targetTableId: target.id }),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to transfer the table');
+      await apiRequest<void>(
+        '/tables/transfer',
+        {
+          method: 'POST',
+          body: JSON.stringify({ sourceTableId: transferSource.id,
+          targetTableId: target.id }),
+        },
+        'Failed to transfer the table',
+      );
       await fetchTables();
       await fetchContext();
       setTransferSource(null);
@@ -993,16 +968,13 @@ export const DiningTablesView: React.FC<DiningTablesViewProps> = ({ onNavigate, 
   // reload the entire grill. If the backend does not expose the delta, it reloads completely.
   const resyncFromDelta = async (since: string) => {
     try {
-      const res = await fetch(
-        `${API_BASE}/tables/status-delta?since=${encodeURIComponent(since)}`,
-        { headers: authHeaders() },
+      const json = await apiRequest<{ data?: DiningTable[] }>(
+        `/tables/status-delta?since=${encodeURIComponent(since)}`,
+        { method: 'GET' },
+        'Failed to load table status changes.',
       );
-      if (res.status === 401) return handleUnauthorized();
-      if (res.ok) {
-        const json = await res.json().catch(() => ({}));
-        mergeTables((json.data ?? []) as DiningTable[]);
-        return;
-      }
+      mergeTables(json.data ?? []);
+      return;
     } catch (err) {
       console.error('Error reconciling table status delta:', err);
     }

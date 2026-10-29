@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   CashDrawer,
   CashDrawerStatus,
@@ -8,8 +7,7 @@ import type {
   CloseCashDrawerDto,
 } from '../../../../types/cash-drawer';
 import { CashManagementQuickLinks } from './CashManagementQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 const STATUS_BADGE_CLASSES: Record<CashDrawerStatus, string> = {
   Open: 'bg-green-500/10 text-green-600',
@@ -334,26 +332,14 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
     setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
       const params = new URLSearchParams({ limit: '100', sortBy: 'createdAt', sortOrder: 'DESC' });
       if (effectiveStatus) params.set('status', effectiveStatus);
       if (effectiveShiftId.trim()) params.set('shiftId', effectiveShiftId.trim());
-      const res = await fetch(`${API_BASE}/cash-drawers?${params.toString()}`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading cash drawer sessions');
-      }
-
-      const json = await res.json();
+      const json = await apiRequest<{ data?: Parameters<typeof normalizeDrawer>[0][] }>(
+        `/cash-drawers?${params.toString()}`,
+        { method: 'GET' },
+        'Error loading cash drawer sessions',
+      );
       // A slower, superseded request must not clobber a fresher one's result.
       if (requestId !== latestRequestIdRef.current) return;
       setDrawers((json.data ?? []).map(normalizeDrawer));
@@ -475,26 +461,11 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
     setFormSubmitting(true);
     setCreateError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/cash-drawers`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to open cash drawer');
-      }
+      await apiRequest<void>(
+        '/cash-drawers',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to open cash drawer',
+      );
 
       // Refetch instead of splicing the raw response into state: the list may
       // currently reflect active server-side filters (status/shiftId), and only
@@ -529,26 +500,11 @@ export const CashDrawersView: React.FC<CashDrawersViewProps> = ({ onNavigate }) 
     setCloseSubmitting(true);
     setCloseError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/cash-drawers/${closingDrawer.id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to close cash drawer');
-      }
+      await apiRequest<void>(
+        `/cash-drawers/${closingDrawer.id}`,
+        { method: 'PUT', body: JSON.stringify(dto) },
+        'Failed to close cash drawer',
+      );
 
       // Same reasoning as create: refetch so the list stays correct under
       // whatever status/shiftId filters are currently active.

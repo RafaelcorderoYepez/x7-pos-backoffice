@@ -1,6 +1,4 @@
-import { getAccessToken } from './auth-storage';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../api/http';
 
 /**
  * Sends a station keepalive heartbeat to ensure kitchen stations and display devices
@@ -12,16 +10,11 @@ export async function sendStationKeepaliveHeartbeat(
 ): Promise<void> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return;
   try {
-    const token = getAccessToken();
-    if (!token) return;
-
-    await fetch(`${API_BASE}/kitchen-station/${stationId}/heartbeat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    await apiRequest<void>(
+      `/kitchen-station/${stationId}/heartbeat`,
+      { method: 'POST' },
+      'Failed to send station keepalive heartbeat',
+    );
   } catch (err) {
     console.warn('Failed to send station keepalive heartbeat:', err);
   }

@@ -1,10 +1,11 @@
 // Dispatch Dashboard HTTP Client (`/api/delivery-assignment`, SINGULAR and without `/v1`).
 //
-// Reuse `request` from api/delivery (token, 401 → login, backend error message).
-// `forbidNonWhitelisted: true` → bodies are constructed explicit and NEVER carry
-// timestamps or delivery_status in the registration: they are set by the server. The trade exits the JWT.
+// Use `apiRequest` from api/http (handles tokens, 401 → login, and backend error messages).
+// `forbidNonWhitelisted: true` → request bodies must be explicitly defined and must NEVER 
+// include timestamps or `delivery_status` during creation—these are added by the server. The merchant is derived from the JWT.
 
-import { MAX_PAGE_LIMIT, request, type Envelope } from './delivery';
+import { MAX_PAGE_LIMIT, type Envelope } from './delivery';
+import { apiRequest } from './http';
 import { buildAssignmentQuery, normalizeAssignment, OPEN_DELIVERY_STATUSES } from '../lib/delivery-assignments';
 import type {
   AssignmentCreateDraft,
@@ -24,7 +25,7 @@ const MAX_PAGES = 20;
 export async function listDeliveryAssignments(filters: AssignmentFilters): Promise<DeliveryAssignment[]> {
   const rows: DeliveryAssignment[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const json = await request<Envelope<DeliveryAssignment[]>>(
+    const json = await apiRequest<Envelope<DeliveryAssignment[]>>(
       `/delivery-assignment?${buildAssignmentQuery(filters, page, MAX_PAGE_LIMIT)}`,
       { method: 'GET' },
       'Failed to load delivery assignments. Please try again.',
@@ -36,7 +37,7 @@ export async function listDeliveryAssignments(filters: AssignmentFilters): Promi
 }
 
 export async function getDeliveryAssignmentSummary(): Promise<DeliveryAssignmentSummary> {
-  const json = await request<Envelope<DeliveryAssignmentSummary>>(
+  const json = await apiRequest<Envelope<DeliveryAssignmentSummary>>(
     '/delivery-assignment/summary',
     { method: 'GET' },
     'Failed to load the dispatch summary.',
@@ -57,7 +58,7 @@ const createBody = (draft: AssignmentCreateDraft): Record<string, unknown> => {
 };
 
 export async function createDeliveryAssignment(draft: AssignmentCreateDraft): Promise<DeliveryAssignment> {
-  const json = await request<Envelope<DeliveryAssignment>>(
+  const json = await apiRequest<Envelope<DeliveryAssignment>>(
     '/delivery-assignment',
     { method: 'POST', body: JSON.stringify(createBody(draft)) },
     'Failed to create the delivery assignment.',
@@ -72,7 +73,7 @@ export async function updateDeliveryAssignment(id: number, patch: AssignmentPatc
   if (patch.external_delivery_id !== undefined) body.external_delivery_id = patch.external_delivery_id;
   if (patch.external_tracking_url !== undefined) body.external_tracking_url = patch.external_tracking_url;
   if (patch.external_dsp_fee !== undefined) body.external_dsp_fee = patch.external_dsp_fee;
-  const json = await request<Envelope<DeliveryAssignment>>(
+  const json = await apiRequest<Envelope<DeliveryAssignment>>(
     `/delivery-assignment/${id}`,
     { method: 'PATCH', body: JSON.stringify(body) },
     'Failed to update the delivery assignment.',
@@ -82,7 +83,7 @@ export async function updateDeliveryAssignment(id: number, patch: AssignmentPatc
 
 // Today both respond 503 (provider not configured); The sight translates it into a warning.
 export async function requestExternalQuote(orderId: number, provider: DspAssignmentType): Promise<unknown> {
-  const json = await request<Envelope<unknown>>(
+  const json = await apiRequest<Envelope<unknown>>(
     '/delivery-assignment/external-quote',
     { method: 'POST', body: JSON.stringify({ order_id: orderId, provider }) },
     'Failed to request a quote from the provider.',
@@ -95,7 +96,7 @@ export async function requestExternalDispatch(
   provider: DspAssignmentType,
   quoteId?: string,
 ): Promise<DeliveryAssignment> {
-  const json = await request<Envelope<DeliveryAssignment>>(
+  const json = await apiRequest<Envelope<DeliveryAssignment>>(
     '/delivery-assignment/external-dispatch',
     {
       method: 'POST',
@@ -113,7 +114,7 @@ async function listDriversPaged(statusFilter?: string): Promise<AssignmentDriver
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const qs = new URLSearchParams({ page: String(page), limit: String(MAX_PAGE_LIMIT) });
     if (statusFilter) qs.set('status', statusFilter);
-    const json = await request<Envelope<AssignmentDriverOption[]>>(
+    const json = await apiRequest<Envelope<AssignmentDriverOption[]>>(
       `/delivery-driver?${qs.toString()}`,
       { method: 'GET' },
       'Failed to load delivery drivers.',
@@ -160,7 +161,7 @@ interface OrdersEnvelope {
 export async function listReadyDeliveryOrders(): Promise<ReadyDeliveryOrder[]> {
   const orders: ReadyDeliveryOrder[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const json = await request<OrdersEnvelope>(
+    const json = await apiRequest<OrdersEnvelope>(
       `/orders?type=delivery&page=${page}&limit=${MAX_PAGE_LIMIT}`,
       { method: 'GET' },
       'Failed to load delivery orders.',

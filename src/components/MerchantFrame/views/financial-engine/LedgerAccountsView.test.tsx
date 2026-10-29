@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { LedgerAccountsView } from './LedgerAccountsView';
 import type { LedgerAccount } from '../../../../types/accounting';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -30,17 +32,13 @@ const pettyCashAccount: LedgerAccount = {
 function mockFetchOnce(data: LedgerAccount[], status = 200) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      status,
-      ok: status >= 200 && status < 300,
-      json: async () => ({
+    vi.fn().mockImplementation(async () => jsonResponse({
         data,
         total: data.length,
         page: 1,
         limit: 100,
         totalPages: 1,
-      }),
-    }),
+      }, status)),
   );
 }
 
@@ -205,13 +203,9 @@ describe('LedgerAccountsView — create workflow', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 201,
-        ok: true,
-        json: async () => ({
+      vi.fn().mockImplementation(async () => jsonResponse({
           data: { id: 9, code: '4000', name: 'Sales', type: 'REVENUE', is_active: true, parent_account_id: null },
-        }),
-      }),
+        }, 201)),
     );
 
     await user.type(within(dialog).getByLabelText(/account code/i), '4000');
@@ -281,11 +275,7 @@ describe('LedgerAccountsView — edit workflow', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 200,
-        ok: true,
-        json: async () => ({ data: { ...cashAccount, name: 'Cash and Equivalents' } }),
-      }),
+      vi.fn().mockImplementation(async () => jsonResponse({ data: { ...cashAccount, name: 'Cash and Equivalents' } })),
     );
 
     await user.clear(screen.getByLabelText(/account name/i));
@@ -464,11 +454,7 @@ describe('LedgerAccountsView — status toggle', () => {
     render(<LedgerAccountsView />);
     const row = (await screen.findByText('Cash')).closest('tr')!;
 
-    const fetchSpy = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => ({ data: { ...cashAccount, is_active: false } }),
-    });
+    const fetchSpy = vi.fn().mockImplementation(async () => jsonResponse({ data: { ...cashAccount, is_active: false } }));
     vi.stubGlobal('fetch', fetchSpy);
 
     await user.click(within(row).getByLabelText('Deactivate Cash'));
@@ -492,11 +478,7 @@ describe('LedgerAccountsView — status toggle', () => {
     render(<LedgerAccountsView />);
     const row = (await screen.findByText('Petty Cash')).closest('tr')!;
 
-    const fetchSpy = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => ({ data: { ...pettyCashAccount, is_active: true } }),
-    });
+    const fetchSpy = vi.fn().mockImplementation(async () => jsonResponse({ data: { ...pettyCashAccount, is_active: true } }));
     vi.stubGlobal('fetch', fetchSpy);
 
     await user.click(within(row).getByLabelText('Activate Petty Cash'));
@@ -518,11 +500,7 @@ describe('LedgerAccountsView — status toggle', () => {
     render(<LedgerAccountsView />);
     const row = (await screen.findByText('Cash')).closest('tr')!;
 
-    const fetchSpy = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => ({ data: [cashAccount] }),
-    });
+    const fetchSpy = vi.fn().mockImplementation(async () => jsonResponse({ data: [cashAccount] }));
     vi.stubGlobal('fetch', fetchSpy);
     const callsBefore = fetchSpy.mock.calls.length;
 

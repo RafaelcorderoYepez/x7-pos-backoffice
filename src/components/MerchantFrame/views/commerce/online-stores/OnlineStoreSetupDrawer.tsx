@@ -22,7 +22,7 @@ export interface OnlineStoreSetupDrawerProps {
   onSubmit: (data: OnlineStoreFormData) => Promise<void>;
 }
 
-export const COMMON_THEMES = [
+const COMMON_THEMES = [
   {
     id: 'default',
     name: 'Default Classic',
@@ -65,7 +65,7 @@ export const COMMON_THEMES = [
   },
 ];
 
-export const COMMON_CURRENCIES = [
+const COMMON_CURRENCIES = [
   { code: 'USD', label: 'USD - United States Dollar ($)', symbol: '$' },
   { code: 'EUR', label: 'EUR - Euro (€)', symbol: '€' },
   { code: 'DOP', label: 'DOP - Dominican Peso (RD$)', symbol: 'RD$' },
@@ -77,7 +77,7 @@ export const COMMON_CURRENCIES = [
   { code: 'COP', label: 'COP - Colombian Peso ($)', symbol: 'COL$' },
 ];
 
-export const COMMON_TIMEZONES = [
+const COMMON_TIMEZONES = [
   { zone: 'America/New_York', label: 'Eastern Time (US) — America/New_York' },
   { zone: 'America/Chicago', label: 'Central Time (US) — America/Chicago' },
   { zone: 'America/Denver', label: 'Mountain Time (US) — America/Denver' },
@@ -92,7 +92,7 @@ export const COMMON_TIMEZONES = [
   { zone: 'UTC', label: 'Universal Coordinated Time — UTC' },
 ];
 
-export const TIMEZONE_DEFAULT_CURRENCY: Record<string, string> = {
+const TIMEZONE_DEFAULT_CURRENCY: Record<string, string> = {
   'America/Santo_Domingo': 'DOP',
   'America/Santiago': 'CLP',
   'America/Mexico_City': 'MXN',
@@ -125,9 +125,6 @@ export const OnlineStoreSetupDrawer: React.FC<OnlineStoreSetupDrawerProps> = ({
     />
   );
 };
-
-// Aliased export for backwards compatibility
-export const OnlineStoreModal = OnlineStoreSetupDrawer;
 
 interface ContentProps {
   mode: 'create' | 'edit';

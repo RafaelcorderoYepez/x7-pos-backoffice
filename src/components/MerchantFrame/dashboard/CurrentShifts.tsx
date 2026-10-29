@@ -10,6 +10,7 @@ export const CurrentShifts: React.FC<CurrentShiftsProps> = ({ refreshTrigger }) 
   const [shifts, setShifts] = useState<ActiveShift[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const [prevTrigger, setPrevTrigger] = useState(refreshTrigger);
   if (refreshTrigger !== prevTrigger) {
@@ -41,7 +42,13 @@ export const CurrentShifts: React.FC<CurrentShiftsProps> = ({ refreshTrigger }) 
     return () => {
       ignore = true;
     };
-  }, [refreshTrigger]);
+  }, [refreshTrigger, retryCount]);
+
+  const fetchShifts = () => {
+    setLoading(true);
+    setError(null);
+    setRetryCount((count) => count + 1);
+  };
 
   if (loading) {
     return (

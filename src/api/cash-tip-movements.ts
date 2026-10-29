@@ -1,4 +1,18 @@
-import { getAccessToken } from '../lib/auth-storage';
+import {
+  apiRequest,
+  unwrapItem,
+  unwrapList,
+  type MaybeEnvelopedItem,
+  type MaybeEnvelopedList,
+} from './http';
+import type {
+  CashTipMovement,
+  CreateCashTipMovementDto,
+  CashDrawerOption,
+  TipOption,
+  FetchCashTipMovementsParams,
+  CashTipMovementsSummaryMetrics,
+} from '../types/cash-tip-movement';
 export type {
   CashTipMovement,
   CreateCashTipMovementDto,
@@ -8,47 +22,27 @@ export type {
   CashTipMovementsSummaryMetrics,
 } from '../types/cash-tip-movement';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-function authHeaders(): Record<string, string> {
-  const token = getAccessToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
 export async function fetchOpenCashDrawers(): Promise<CashDrawerOption[]> {
-  const res = await fetch(`${API_BASE}/v1/cash-drawers`, {
-    headers: authHeaders(),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch open cash drawers (${res.status})`);
-  }
-
-  const payload = await res.json();
-  const list = Array.isArray(payload) ? payload : payload.data;
-  if (Array.isArray(list)) {
-    return list.map((d: Record<string, unknown>) => ({
-      id: Number(d.id),
-      drawer_name: (d.drawer_name as string) || `Cash Drawer #${d.id}`,
-      status: String(d.status || 'OPEN').toUpperCase(),
-      current_balance: Number(d.currentBalance ?? d.current_balance ?? 0),
-    }));
-  }
-  return [];
+  const payload = await apiRequest<MaybeEnvelopedList<Record<string, unknown>>>(
+    '/v1/cash-drawers',
+    { method: 'GET' },
+    'Failed to fetch open cash drawers.',
+  );
+  return unwrapList(payload).map((d) => ({
+    id: Number(d.id),
+    drawer_name: (d.drawer_name as string) || `Cash Drawer #${d.id}`,
+    status: String(d.status || 'OPEN').toUpperCase(),
+    current_balance: Number(d.currentBalance ?? d.current_balance ?? 0),
+  }));
 }
 
 export async function fetchAvailableTips(): Promise<TipOption[]> {
-  const res = await fetch(`${API_BASE}/v1/tips/available`, {
-    headers: authHeaders(),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch available tips (${res.status})`);
-  }
-  const payload = await res.json();
-  return Array.isArray(payload) ? payload : payload.data || [];
+  const payload = await apiRequest<MaybeEnvelopedList<TipOption>>(
+    '/v1/tips/available',
+    { method: 'GET' },
+    'Failed to fetch available tips.',
+  );
+  return unwrapList(payload);
 }
 
 /**
@@ -74,19 +68,12 @@ export async function fetchCashTipMovements(
   if (params.date_from) query.append('date_from', params.date_from);
   if (params.date_to) query.append('date_to', params.date_to);
 
-  const res = await fetch(`${API_BASE}/v1/cash-tip-movements?${query.toString()}`, {
-    headers: authHeaders(),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Server returned HTTP ${res.status}`);
-  }
-
-  const payload = await res.json();
-  if (Array.isArray(payload)) return payload;
-  if (payload && Array.isArray(payload.data)) return payload.data;
-
-  return [];
+  const payload = await apiRequest<MaybeEnvelopedList<CashTipMovement>>(
+    `/v1/cash-tip-movements?${query.toString()}`,
+    { method: 'GET' },
+    'Failed to load cash tip movements. Please try again.',
+  );
+  return unwrapList(payload);
 }
 
 /**
@@ -95,19 +82,12 @@ export async function fetchCashTipMovements(
 export async function createCashTipMovement(
   dto: CreateCashTipMovementDto
 ): Promise<CashTipMovement> {
-  const res = await fetch(`${API_BASE}/v1/cash-tip-movements`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(dto),
-  });
-
-  if (!res.ok) {
-    const errJson = await res.json().catch(() => ({}));
-    throw new Error(errJson.message || `Failed to create cash tip movement (${res.status})`);
-  }
-
-  const payload = await res.json();
-  return payload.data || payload;
+  const payload = await apiRequest<MaybeEnvelopedItem<CashTipMovement>>(
+    '/v1/cash-tip-movements',
+    { method: 'POST', body: JSON.stringify(dto) },
+    'Failed to create cash tip movement.',
+  );
+  return unwrapItem(payload);
 }
 
 /**

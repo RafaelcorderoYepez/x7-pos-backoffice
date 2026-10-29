@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { getAccessToken } from '../../../../lib/auth-storage';
 import { CatalogQuickLinks } from './CatalogQuickLinks';
 import {
   StandardDashboardHub,
   type DashboardKPIItem,
   type DashboardModuleItem,
 } from '../../../shared/StandardDashboardHub';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../api/http';
 
 interface ProductsInventoryHubViewProps {
   onNavigate?: (view: string) => void;
@@ -29,46 +27,28 @@ export const ProductsInventoryHubView: React.FC<ProductsInventoryHubViewProps> =
     const fetchMetrics = async () => {
       try {
         setLoading(true);
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
+        // Each KPI is independent: a failing endpoint leaves its card at zero instead of blanking the hub.
+        const optionalList = <T,>(path: string) =>
+          apiRequest<MaybeEnvelopedList<T>>(path, { method: 'GET' }, '')
+            .then((json) => unwrapList(json))
+            .catch(() => null);
 
-        const [prodRes, catRes, varRes, modRes] = await Promise.allSettled([
-          fetch(`${API_BASE}/products?limit=100`, { headers }),
-          fetch(`${API_BASE}/category?limit=100`, { headers }),
-          fetch(`${API_BASE}/variants?limit=100`, { headers }),
-          fetch(`${API_BASE}/modifiers?limit=100`, { headers }),
+        const [products, categories, variants, modifiers] = await Promise.all([
+          optionalList<{ category?: unknown; categoryId?: unknown }>('/products?limit=100'),
+          optionalList<unknown>('/category?limit=100'),
+          optionalList<unknown>('/variants?limit=100'),
+          optionalList<unknown>('/modifiers?limit=100'),
         ]);
 
         if (!isMounted) return;
 
-        if (prodRes.status === 'fulfilled' && prodRes.value.ok) {
-          const json = await prodRes.value.json();
-          const list = Array.isArray(json) ? json : json.data || [];
-          setProductsCount(list.length);
-          const uncat = list.filter((p: { category?: unknown; categoryId?: unknown }) => !p.category && !p.categoryId).length;
-          setUncategorizedCount(uncat);
+        if (products) {
+          setProductsCount(products.length);
+          setUncategorizedCount(products.filter((p) => !p.category && !p.categoryId).length);
         }
-
-        if (catRes.status === 'fulfilled' && catRes.value.ok) {
-          const json = await catRes.value.json();
-          const list = Array.isArray(json) ? json : json.data || [];
-          setCategoriesCount(list.length);
-        }
-
-        if (varRes.status === 'fulfilled' && varRes.value.ok) {
-          const json = await varRes.value.json();
-          const list = Array.isArray(json) ? json : json.data || [];
-          setVariantsCount(list.length);
-        }
-
-        if (modRes.status === 'fulfilled' && modRes.value.ok) {
-          const json = await modRes.value.json();
-          const list = Array.isArray(json) ? json : json.data || [];
-          setModifiersCount(list.length);
-        }
+        if (categories) setCategoriesCount(categories.length);
+        if (variants) setVariantsCount(variants.length);
+        if (modifiers) setModifiersCount(modifiers.length);
       } catch (err) {
         console.warn('Error loading products dashboard metrics:', err);
       } finally {
@@ -136,7 +116,7 @@ export const ProductsInventoryHubView: React.FC<ProductsInventoryHubViewProps> =
       description: 'Manage saleable dishes and retail goods, pricing rules, tax rates, and kitchen display routing.',
       icon: 'inventory_2',
       badge: `${productsCount || 'Live'} Products`,
-      badgeVariant: 'red',
+      badgeVariant: 'rose',
       actionText: 'Manage Products',
     },
     {

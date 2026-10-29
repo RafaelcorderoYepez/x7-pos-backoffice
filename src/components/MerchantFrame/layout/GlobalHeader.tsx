@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { UserProfile, SystemNotification } from '../../../services/restaurantService';
+import { apiRequest } from '../../../api/http';
 import { navHubById } from '../../../lib/module-nav-hubs';
 import type { NavCategory } from '../../../services/navigationService';
 import logoX7 from '../../../assets/logo-x7.png';
@@ -33,13 +34,11 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
   onMenuSearchChange,
 }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [tier, setTier] = useState<string>('');
 
   // State for expandable search magnifying glass in sidebar / header
   const [isMenuSearchOpen, setIsMenuSearchOpen] = useState<boolean>(false);
   const [menuSearchQuery, setMenuSearchQuery] = useState<string>('');
 
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
   useEffect(() => {
     if (isSidebarCollapsed) {
@@ -105,12 +104,18 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
   useEffect(() => {
     const fetchHeaderData = async () => {
       try {
-        const [profileRes, tierRes] = await Promise.all([
-          fetch(`${API_BASE}/v1/auth/profile`).then(r => r.json()),
-          fetch(`${API_BASE}/v1/establishments/tier`).then(r => r.json())
-        ]);
-        setProfile(profileRes);
-        setTier(tierRes.tier);
+        // El backend devuelve la entidad User (username/email/role), no un UserProfile.
+        const user = await apiRequest<{ username?: string; email?: string; role?: string }>(
+          '/auth/profile',
+          { method: 'GET' },
+          'Failed to load profile',
+        );
+        setProfile({
+          name: user.username || user.email || 'User',
+          role: user.role ?? '',
+          portraitUrl: '',
+          Plan_id: 0,
+        });
       } catch (err) {
         console.error('Error fetching header data:', err);
       }
@@ -119,7 +124,7 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     void Promise.resolve().then(() => {
       void fetchHeaderData();
     });
-  }, [refreshTrigger, API_BASE]);
+  }, [refreshTrigger]);
 
   // Resolve breadcrumbs and titles reactively and dynamically from navCategories
   let categoryName = '';
@@ -246,6 +251,16 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     'online-delivery-info',
   ];
 
+  const qrCodeTabs = [
+    'qr-code-locations',
+    'qr-code-menus',
+    'qr-code-menu-sections',
+    'qr-code-menu-items',
+    'qr-code-deployments',
+    'qr-code-orders',
+    'qr-order-items',
+  ];
+
   // Specific domain mappings according to catalog architecture
   if (productsCatalogTabs.includes(activeTab)) {
     categoryName = 'Inventory';
@@ -290,6 +305,15 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     else if (activeTab === 'online-orders') activeFeatureName = 'Online Orders';
     else if (activeTab === 'online-order-items') activeFeatureName = 'Order Items';
     else if (activeTab === 'online-delivery-info') activeFeatureName = 'Delivery Info';
+  } else if (qrCodeTabs.includes(activeTab)) {
+    categoryName = 'Commerce';
+    if (activeTab === 'qr-code-locations') activeFeatureName = 'QR Code Locations';
+    else if (activeTab === 'qr-code-menus') activeFeatureName = 'QR Code Menus';
+    else if (activeTab === 'qr-code-menu-sections') activeFeatureName = 'QR Menu Sections';
+    else if (activeTab === 'qr-code-menu-items') activeFeatureName = 'QR Menu Items';
+    else if (activeTab === 'qr-code-deployments') activeFeatureName = 'QR Deployments';
+    else if (activeTab === 'qr-code-orders') activeFeatureName = 'QR Code Orders';
+    else if (activeTab === 'qr-order-items') activeFeatureName = 'QR Order Items';
   } else if (activeTab === 'dashboard') {
     categoryName = 'CORE';
     activeFeatureName = 'Restaurant Dashboard';
@@ -345,6 +369,20 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
     friendlyTitle = 'Company Profile';
   } else if (activeTab === 'company-configurations') {
     friendlyTitle = 'Company Configurations';
+  } else if (activeTab === 'qr-order-items') {
+    friendlyTitle = 'QR Order Items';
+  } else if (activeTab === 'qr-code-orders') {
+    friendlyTitle = 'QR Code Orders';
+  } else if (activeTab === 'qr-code-locations') {
+    friendlyTitle = 'QR Code Locations';
+  } else if (activeTab === 'qr-code-menus') {
+    friendlyTitle = 'QR Code Menus';
+  } else if (activeTab === 'qr-code-menu-sections') {
+    friendlyTitle = 'QR Menu Sections';
+  } else if (activeTab === 'qr-code-menu-items') {
+    friendlyTitle = 'QR Menu Items';
+  } else if (activeTab === 'qr-code-deployments') {
+    friendlyTitle = 'QR Deployments';
   } else if (profile?.role === 'SaaS Owner') {
     if (activeTab === 'subscription') {
       friendlyTitle = 'Subscription System';
@@ -534,16 +572,6 @@ export const GlobalHeader: React.FC<GlobalHeaderProps> = ({
               {friendlyTitle}
             </h2>
           </div>
-
-          {/* Subscription Tier Badge */}
-          {tier && (
-            <div className="tier-badge-full flex items-center gap-1.5 shadow-sm bg-[#1d1c17] text-white px-3 py-1 rounded text-[11px] font-bold uppercase tracking-wider">
-              <span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                star
-              </span>
-              {tier}
-            </div>
-          )}
         </div>
 
         {/* Lado Derecho: Utilidades (Notificaciones, Help, Settings) & User Profile */}

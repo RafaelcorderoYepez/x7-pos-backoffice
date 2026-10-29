@@ -6,8 +6,8 @@
 //
 // `forbidNonWhitelisted: true` in the backend → bodies are constructed explicit.
 
-import { getAccessToken, clearAuthSession } from '../lib/auth-storage';
-import { ApiError, getApiErrorDetails } from '../lib/api-error';
+import { apiRequest } from './http';
+import { ApiError } from '../lib/api-error';
 import type {
   DeliveryFee,
   DeliveryFeeDraft,
@@ -69,7 +69,7 @@ export async function request<T>(path: string, init: RequestInit, fallbackMessag
 export async function listAll<T>(resource: string, fallback: string): Promise<T[]> {
   const rows: T[] = [];
   for (let page = 1; page <= 50; page += 1) {
-    const json = await request<Envelope<T[]>>(
+    const json = await apiRequest<Envelope<T[]>>(
       `/${resource}?page=${page}&limit=${MAX_PAGE_LIMIT}`,
       { method: 'GET' },
       fallback,
@@ -97,7 +97,7 @@ const zoneBody = (draft: Partial<DeliveryZoneDraft>): Record<string, unknown> =>
 };
 
 export async function createDeliveryZone(draft: DeliveryZoneDraft): Promise<DeliveryZone> {
-  const json = await request<Envelope<DeliveryZone>>(
+  const json = await apiRequest<Envelope<DeliveryZone>>(
     '/delivery-zone',
     { method: 'POST', body: JSON.stringify(zoneBody(draft)) },
     'Failed to create the delivery zone.',
@@ -109,7 +109,7 @@ export async function updateDeliveryZone(
   id: number,
   patch: Partial<DeliveryZoneDraft>,
 ): Promise<DeliveryZone> {
-  const json = await request<Envelope<DeliveryZone>>(
+  const json = await apiRequest<Envelope<DeliveryZone>>(
     `/delivery-zone/${id}`,
     { method: 'PATCH', body: JSON.stringify(zoneBody(patch)) },
     'Failed to update the delivery zone.',
@@ -118,7 +118,7 @@ export async function updateDeliveryZone(
 }
 
 export async function deleteDeliveryZone(id: number): Promise<void> {
-  await request<Envelope<DeliveryZone>>(
+  await apiRequest<Envelope<DeliveryZone>>(
     `/delivery-zone/${id}`,
     { method: 'DELETE' },
     'Failed to delete the delivery zone.',
@@ -126,7 +126,7 @@ export async function deleteDeliveryZone(id: number): Promise<void> {
 }
 
 export async function locateDeliveryZone(point: LatLng): Promise<ZoneLocateResult> {
-  const json = await request<Envelope<ZoneLocateResult>>(
+  const json = await apiRequest<Envelope<ZoneLocateResult>>(
     `/delivery-zone/locate?lat=${point.lat}&lng=${point.lng}`,
     { method: 'GET' },
     'Failed to check that location.',
@@ -135,7 +135,7 @@ export async function locateDeliveryZone(point: LatLng): Promise<ZoneLocateResul
 }
 
 export async function getDeliveryCoverage(): Promise<ZoneCoverage> {
-  const json = await request<Envelope<ZoneCoverage>>(
+  const json = await apiRequest<Envelope<ZoneCoverage>>(
     '/delivery-zone/coverage',
     { method: 'GET' },
     'Failed to load delivery coverage.',
@@ -158,7 +158,7 @@ export async function getRadiusPolygon(input: {
     radius_km: String(Math.round(input.radiusKm * 1000) / 1000),
   });
   if (input.segments !== undefined) params.set('segments', String(input.segments));
-  const json = await request<Envelope<RadiusPolygonResult>>(
+  const json = await apiRequest<Envelope<RadiusPolygonResult>>(
     `/delivery-zone/radius-polygon?${params.toString()}`,
     { method: 'GET' },
     'Failed to generate the radius boundary.',
@@ -169,7 +169,7 @@ export async function getRadiusPolygon(input: {
 // ================= Tarifas =================
 
 export async function getDeliveryFeeSummary(): Promise<DeliveryFeeSummary> {
-  const json = await request<Envelope<DeliveryFeeSummary>>(
+  const json = await apiRequest<Envelope<DeliveryFeeSummary>>(
     '/delivery-fee/summary',
     { method: 'GET' },
     'Failed to load the delivery fee summary.',
@@ -199,7 +199,7 @@ const feeBody = (draft: Partial<DeliveryFeeDraft>): Record<string, unknown> => {
 };
 
 export async function createDeliveryFee(draft: DeliveryFeeDraft): Promise<DeliveryFee> {
-  const json = await request<Envelope<DeliveryFee>>(
+  const json = await apiRequest<Envelope<DeliveryFee>>(
     '/delivery-fee',
     { method: 'POST', body: JSON.stringify(feeBody(draft)) },
     'Failed to create the delivery fee.',
@@ -211,7 +211,7 @@ export async function updateDeliveryFee(
   id: number,
   patch: Partial<DeliveryFeeDraft>,
 ): Promise<DeliveryFee> {
-  const json = await request<Envelope<DeliveryFee>>(
+  const json = await apiRequest<Envelope<DeliveryFee>>(
     `/delivery-fee/${id}`,
     { method: 'PATCH', body: JSON.stringify(feeBody(patch)) },
     'Failed to update the delivery fee.',
@@ -220,7 +220,7 @@ export async function updateDeliveryFee(
 }
 
 export async function deleteDeliveryFee(id: number): Promise<void> {
-  await request<Envelope<DeliveryFee>>(
+  await apiRequest<Envelope<DeliveryFee>>(
     `/delivery-fee/${id}`,
     { method: 'DELETE' },
     'Failed to delete the delivery fee.',
@@ -237,7 +237,7 @@ export async function quoteDeliveryFee(input: {
     subtotal: Math.round(input.subtotal * 100) / 100,
   };
   if (input.distanceKm !== undefined) body.distance_km = input.distanceKm;
-  const json = await request<Envelope<DeliveryFeeQuote>>(
+  const json = await apiRequest<Envelope<DeliveryFeeQuote>>(
     '/delivery-fee/quote',
     { method: 'POST', body: JSON.stringify(body) },
     'Failed to quote the delivery fee.',

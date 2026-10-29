@@ -7,7 +7,6 @@ export type QuickLaunchAction = {
   onClick: () => void;
   variant?: 'default' | 'danger';
   active?: boolean;
-  icon?: string;
 };
 
 type QuickLaunchPanelProps = {

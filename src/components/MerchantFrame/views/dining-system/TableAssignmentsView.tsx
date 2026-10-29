@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type { DiningTable } from '../../../../types/dining-system';
 import { zoneSwatchColor } from '../../../../types/dining-system';
 import type {
@@ -32,8 +31,7 @@ import { DiningSystemQuickLinks } from './DiningSystemQuickLinks';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter, ModalFormError } from '../../shared/AppModal';
 import { Toast } from '../../shared/Toast';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 const DUTY_FILTERS: DutyFilter[] = ['all', 'active', 'released'];
 
@@ -445,28 +443,15 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchAssignments = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/table-assignments?limit=100`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading table assignments');
-      const json = await res.json();
+      const json = await apiRequest<{ data?: TableAssignment[] }>(
+        '/table-assignments?limit=100',
+        { method: 'GET' },
+        'Error loading table assignments',
+      );
       setAssignments((json.data ?? []) as TableAssignment[]);
     } catch (err) {
       console.error('Error fetching table assignments:', err);
@@ -478,27 +463,21 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
 
   const fetchContext = async () => {
     try {
-      const [tblRes, shiftRes, staffRes] = await Promise.all([
-        fetch(`${API_BASE}/tables?limit=100`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/shifts?limit=100`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/collaborators?limit=100`, { headers: authHeaders() }),
+      // Each catalog is independent: one failing request must not hide the others.
+      const optionalList = <T,>(path: string) =>
+        apiRequest<{ data?: T[] }>(path, { method: 'GET' }, '').catch(() => null);
+      const [tblJson, shiftJson, staffJson] = await Promise.all([
+        optionalList<DiningTable>('/tables?limit=100'),
+        optionalList<ShiftRef>('/shifts?limit=100'),
+        optionalList<CollaboratorRef>('/collaborators?limit=100'),
       ]);
-      if (tblRes.ok) {
-        const json = await tblRes.json();
-        setTables(((json.data ?? []) as DiningTable[]).filter((t) => t.status !== 'deleted'));
-      }
-      if (shiftRes.ok) {
-        const json = await shiftRes.json();
-        setShifts(((json.data ?? []) as ShiftRef[]).filter((s) => s.status !== 'deleted'));
-      }
+      if (tblJson) setTables((tblJson.data ?? []).filter((t) => t.status !== 'deleted'));
+      if (shiftJson) setShifts((shiftJson.data ?? []).filter((s) => s.status !== 'deleted'));
       // 403 when plan lacks collaborators feature: drawer falls back
       // to numeric id instead of names catalog.
-      if (staffRes.ok) {
-        const json = await staffRes.json();
+      if (staffJson) {
         setCollaborators(
-          ((json.data ?? []) as CollaboratorRef[]).filter(
-            (c) => (c as { status?: string }).status !== 'deleted',
-          ),
+          (staffJson.data ?? []).filter((c) => (c as { status?: string }).status !== 'deleted'),
         );
       }
     } catch (err) {
@@ -511,7 +490,7 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
       fetchAssignments();
       fetchContext();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeMerchantId]);
 
   const activeShiftId = useMemo(() => resolveActiveShiftId(shifts), [shifts]);
@@ -559,29 +538,25 @@ export const TableAssignmentsView: React.FC<TableAssignmentsViewProps> = ({
 
   // Creates assignment. `assignedAt` and timestamps are stamped by server.
   const createAssignment = async (draft: AssignmentDraft) => {
-    const res = await fetch(`${API_BASE}/table-assignments`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ ...draft, status: 'active' }),
-    });
-    if (res.status === 401) return handleUnauthorized();
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.message || 'Failed to assign the table');
+    await apiRequest<void>(
+      '/table-assignments',
+      { method: 'POST', body: JSON.stringify({ ...draft, status: 'active' }) },
+      'Failed to assign the table',
+    );
   };
 
   // Closes a coverage: seals releasedAt and deactivates it. It does not erase, so as not to lose the
   // trace of who covered what during shift.
   const releaseAssignment = async (id: number) => {
-    const res = await fetch(`${API_BASE}/table-assignments/${id}`, {
-      method: 'PATCH',
-      headers: authHeaders(),
-      body: JSON.stringify({ releasedAt: new Date().toISOString(), status: 'inactive' }),
-    });
-    if (res.status === 401) return handleUnauthorized();
-    if (!res.ok) {
-      const json = await res.json().catch(() => ({}));
-      throw new Error(json.message || 'Failed to release the assignment');
-    }
+    await apiRequest<void>(
+      `/table-assignments/${id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ releasedAt: new Date().toISOString(),
+        status: 'inactive' }),
+      },
+      'Failed to release the assignment',
+    );
   };
 
   const handleCreateSubmit = async (draft: AssignmentDraft) => {

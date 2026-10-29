@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken } from '../../../../../lib/auth-storage';
 import { getMerchantUsers } from '../../../../../api/users';
 import type { MerchantUser } from '../../../../../types/user';
 import { NavHubBar } from '../../../../shared/NavHubBar';
@@ -13,9 +12,7 @@ import {
 } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
 export type KitchenEventType = 'inicio' | 'listo' | 'servido' | 'cancelado' | 'recall' | 'reroute';
 
 export interface KitchenEventLogUser {
@@ -183,26 +180,20 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
   useEffect(() => {
     const fetchStations = async () => {
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-        const res = await fetch(`${API_BASE}/kitchen-station?status=active&limit=100`, { headers });
-        if (!res.ok) return;
-        const data = await res.json();
-        const rawList = data.data || data || [];
+        const data = await apiRequest<
+          MaybeEnvelopedList<{
+            id: number;
+            name: string;
+            code?: string;
+            stationNumber?: number;
+            station_number?: number;
+            display_order?: number;
+            displayOrder?: number;
+          }>
+        >('/kitchen-station?status=active&limit=100', { method: 'GET' }, 'Failed to load kitchen stations.');
         setStations(
-          rawList.map(
-            (st: {
-              id: number;
-              name: string;
-              code?: string;
-              stationNumber?: number;
-              station_number?: number;
-              display_order?: number;
-              displayOrder?: number;
-            }) => {
+          unwrapList(data).map(
+            (st) => {
               const sNum =
                 st.stationNumber ??
                 st.station_number ??
@@ -299,12 +290,6 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
     if (!silent) setLoading(true);
     setIsRefreshing(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       const params = new URLSearchParams();
       if (selectedStationId !== 'ALL') params.append('stationId', selectedStationId.toString());
       if (selectedUserId !== 'ALL') params.append('userId', selectedUserId.toString());
@@ -313,15 +298,14 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
       if (endTime) params.append('endTime', endTime);
       params.append('limit', '100');
 
-      const res = await fetch(`${API_BASE}/kitchen-event-logs?${params.toString()}`, { headers });
-      if (!res.ok) {
-        throw new Error(`Failed to load event logs (${res.status})`);
-      }
+      const resData = await apiRequest<MaybeEnvelopedList<Record<string, unknown>>>(
+        `/kitchen-event-logs?${params.toString()}`,
+        { method: 'GET' },
+        'Failed to load event logs',
+      );
+      const rawLogs = unwrapList(resData);
 
-      const resData = await res.json();
-      const rawLogs = resData.data || resData || [];
-
-      const parsed: KitchenEventLogRecord[] = rawLogs.map((item: Record<string, unknown>) => ({
+      const parsed: KitchenEventLogRecord[] = rawLogs.map((item) => ({
         id: Number(item.id),
         kitchenOrderId: (item.kitchenOrderId || item.kitchen_order_id || null) as number | null,
         kitchenOrderItemId: (item.kitchenOrderItemId || item.kitchen_order_item_id || null) as number | null,
@@ -435,6 +419,8 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
           events: [],
           hasCancellation: false,
           isCompleted: false,
+          // Placeholder; the real status is resolved after the events are sorted
+          latestStatus: 'PENDING',
           totalEvents: 0,
         });
       }
@@ -1004,7 +990,7 @@ export const KitchenEventLogView: React.FC<KitchenEventLogViewProps> = ({ onNavi
                 <option value="ALL">All Staff ({staffUsers.length})</option>
                 {staffUsers.map((u) => (
                   <option key={u.id} value={u.id}>
-                    {u.name || u.username || u.email.split('@')[0]} (ID #{u.id})
+                    {u.username || u.email.split('@')[0]} (ID #{u.id})
                   </option>
                 ))}
               </select>

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   SupplierInvoice,
   SupplierInvoiceItem,
@@ -12,8 +11,7 @@ import { AccountsPayableQuickLinks } from './AccountsPayableQuickLinks';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter } from '../../shared/AppModal';
 import { Toast } from '../../shared/Toast';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 // ---- Helpers ----
 
@@ -462,30 +460,16 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchItems = async () => {
     setLoading(true);
     setError(null);
     try {
       // Tenant scoping resolved by backend via JWT.
-      const res = await fetch(
-        `${API_BASE}/supplier-invoice-items?limit=100`,
-        { headers: authHeaders() },
+      const json = await apiRequest<{ data?: SupplierInvoiceItem[] }>(
+        '/supplier-invoice-items?limit=100',
+        { method: 'GET' },
+        'Error loading invoice line items',
       );
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading invoice line items');
-      const json = await res.json();
       const active = (json.data ?? []).filter((it: SupplierInvoiceItem) => !it.deleted_at);
       setItems(active);
     } catch (err) {
@@ -498,12 +482,11 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
 
   const fetchInvoices = async () => {
     try {
-      const res = await fetch(
-        `${API_BASE}/supplier-invoices?limit=100`,
-        { headers: authHeaders() },
+      const json = await apiRequest<{ data?: SupplierInvoice[] }>(
+        '/supplier-invoices?limit=100',
+        { method: 'GET' },
+        'Request failed. Please try again.',
       );
-      if (!res.ok) return;
-      const json = await res.json();
       setInvoices((json.data ?? []).filter((inv: SupplierInvoice) => !inv.deleted_at));
     } catch (err) {
       console.error('Error fetching invoices for items view:', err);
@@ -512,9 +495,11 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
 
   const fetchProducts = async () => {
     try {
-      const res = await fetch(`${API_BASE}/products?limit=100`, { headers: authHeaders() });
-      if (!res.ok) return;
-      const json = await res.json();
+      const json = await apiRequest<{ data?: InvoiceProductRef[] }>(
+        '/products?limit=100',
+        { method: 'GET' },
+        'Request failed. Please try again.',
+      );
       setProducts(json.data ?? []);
     } catch (err) {
       console.error('Error fetching products for items view:', err);
@@ -527,7 +512,7 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
       fetchInvoices();
       fetchProducts();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeCompanyId]);
 
   // ID->Invoice map to determine payment locks and resolve invoice numbers.
@@ -559,17 +544,18 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
   // Refetch parent invoice to reflect subtotal, tax_total, total_amount, and balance_due.
   const refreshParentInvoice = async (parentId: number) => {
     try {
-      const res = await fetch(`${API_BASE}/supplier-invoices/${parentId}`, {
-        headers: authHeaders(),
-      });
-      if (!res.ok) return;
-      const json = await res.json().catch(() => ({}));
-      if (json.data) {
+      const json = await apiRequest<{ data?: SupplierInvoice }>(
+        `/supplier-invoices/${parentId}`,
+        { method: 'GET' },
+        'Failed to refresh invoice totals.',
+      );
+      const updated = json.data;
+      if (updated) {
         setInvoices((prev) => {
-          const exists = prev.some((inv) => inv.id === json.data.id);
+          const exists = prev.some((inv) => inv.id === updated.id);
           return exists
-            ? prev.map((inv) => (inv.id === json.data.id ? json.data : inv))
-            : [...prev, json.data];
+            ? prev.map((inv) => (inv.id === updated.id ? updated : inv))
+            : [...prev, updated];
         });
       }
     } catch (err) {
@@ -620,14 +606,11 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
   const handleCreateSubmit = async (dto: CreateSupplierInvoiceItemDto) => {
     setFormSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-invoice-items`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to add line item');
+      const json = await apiRequest<{ data: SupplierInvoiceItem }>(
+        '/supplier-invoice-items',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to add line item',
+      );
       setItems((prev) => [json.data, ...prev]);
       setFormDrawer(null);
       setToast({ message: 'Line item added successfully', type: 'success' });
@@ -643,14 +626,11 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
   const handleEditSubmit = async (item: SupplierInvoiceItem, dto: UpdateSupplierInvoiceItemDto) => {
     setFormSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-invoice-items/${item.id}`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to update line item');
+      const json = await apiRequest<{ data: SupplierInvoiceItem }>(
+        `/supplier-invoice-items/${item.id}`,
+        { method: 'PUT', body: JSON.stringify(dto) },
+        'Failed to update line item',
+      );
       setItems((prev) => prev.map((it) => (it.id === json.data.id ? json.data : it)));
       setFormDrawer(null);
       setToast({ message: 'Line item updated successfully', type: 'success' });
@@ -667,15 +647,11 @@ export const SupplierInvoiceItemsView: React.FC<SupplierInvoiceItemsViewProps> =
     if (!deletingItem) return;
     setDeleteSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/supplier-invoice-items/${deletingItem.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to delete line item');
-      }
+      await apiRequest<void>(
+        `/supplier-invoice-items/${deletingItem.id}`,
+        { method: 'DELETE' },
+        'Failed to delete line item',
+      );
       const parentId = deletingItem.invoice_id;
       setItems((prev) => prev.filter((it) => it.id !== deletingItem.id));
       setDeletingItem(null);

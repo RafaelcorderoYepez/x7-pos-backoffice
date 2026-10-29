@@ -5,7 +5,6 @@
 // client-side using the same logic that drives badges to avoid desync.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   CreateTimeEntryDto,
   TimeEntry,
@@ -43,8 +42,7 @@ import { HrQuickLinks } from './HrQuickLinks';
 import { TimeEntryFormDrawer, type TimeEntryDraft } from './TimeEntryFormDrawer';
 import { TimeEntryDetailDrawer } from './TimeEntryDetailDrawer';
 import { TimesheetExportModal } from './TimesheetExportModal';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 interface TimeEntriesViewProps {
   onNavigate?: (view: string) => void;
@@ -85,28 +83,15 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchEntries = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/collaborator-time-entries?limit=100`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading time entries');
-      const json = await res.json();
+      const json = await apiRequest<{ data?: TimeEntry[] }>(
+        '/collaborator-time-entries?limit=100',
+        { method: 'GET' },
+        'Error loading time entries',
+      );
       setEntries((json.data ?? []) as TimeEntry[]);
     } catch (err) {
       console.error('Error fetching time entries:', err);
@@ -118,15 +103,12 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
 
   const fetchContext = async () => {
     try {
-      const res = await fetch(`${API_BASE}/collaborators?limit=100`, {
-        headers: authHeaders(),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        setCollaborators(
-          ((json.data ?? []) as Collaborator[]).filter((c) => c.status !== 'deleted'),
-        );
-      }
+      const json = await apiRequest<{ data?: Collaborator[] }>(
+        '/collaborators?limit=100',
+        { method: 'GET' },
+        'Failed to load collaborators.',
+      );
+      setCollaborators((json.data ?? []).filter((c) => c.status !== 'deleted'));
     } catch (err) {
       console.error('Error fetching collaborators for time entries:', err);
     }
@@ -137,7 +119,7 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
       fetchEntries();
       fetchContext();
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [activeMerchantId]);
 
   const visible = useMemo(() => filterTimeEntries(entries, filters), [entries, filters]);
@@ -171,14 +153,11 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
         break_minutes: draft.break_minutes,
         adjustment_reason: draft.adjustment_reason,
       };
-      const res = await fetch(`${API_BASE}/collaborator-time-entries`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to log the time entry');
+      await apiRequest<void>(
+        '/collaborator-time-entries',
+        { method: 'POST', body: JSON.stringify(body) },
+        'Failed to log the time entry',
+      );
       await fetchEntries();
       setFormDrawer(null);
       setToast({ message: 'Time entry logged successfully', type: 'success' });
@@ -201,14 +180,11 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
         break_minutes: draft.break_minutes,
         adjustment_reason: draft.adjustment_reason,
       };
-      const res = await fetch(`${API_BASE}/collaborator-time-entries/${id}`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to adjust the time entry');
+      await apiRequest<void>(
+        `/collaborator-time-entries/${id}`,
+        { method: 'PUT', body: JSON.stringify(body) },
+        'Failed to adjust the time entry',
+      );
       await fetchEntries();
       setFormDrawer(null);
       setToast({ message: 'Punch adjusted — the correction is on record', type: 'success' });
@@ -231,12 +207,11 @@ export const TimeEntriesView: React.FC<TimeEntriesViewProps> = ({
     setRevisionsError('');
     setRevisions([]);
     try {
-      const res = await fetch(`${API_BASE}/collaborator-time-entries/${id}/revisions`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to load the audit history');
+      const json = await apiRequest<{ data?: TimeEntryRevision[] }>(
+        `/collaborator-time-entries/${id}/revisions`,
+        { method: 'GET' },
+        'Failed to load the audit history',
+      );
       setRevisions((json.data ?? []) as TimeEntryRevision[]);
     } catch (err) {
       setRevisionsError(

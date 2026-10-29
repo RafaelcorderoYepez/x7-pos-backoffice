@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { JournalEntriesView } from './JournalEntriesView';
 import type { JournalEntry } from '../../../../types/accounting';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -48,16 +50,9 @@ function mockJournalEntriesFetch(entries: JournalEntry[], status = 200) {
     'fetch',
     vi.fn((url: string) => {
       if (url.includes('/ledger-accounts')) {
-        return Promise.resolve({
-          status: 200,
-          ok: true,
-          json: async () => ({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }),
-        });
+        return Promise.resolve(jsonResponse({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }));
       }
-      return Promise.resolve({
-        status,
-        ok: status >= 200 && status < 300,
-        json: async () => ({
+      return Promise.resolve(jsonResponse({
           data: entries,
           page: 1,
           limit: 100,
@@ -65,8 +60,7 @@ function mockJournalEntriesFetch(entries: JournalEntry[], status = 200) {
           totalPages: 1,
           hasNext: false,
           hasPrev: false,
-        }),
-      });
+        }, status));
     }),
   );
 }
@@ -247,18 +241,11 @@ describe('JournalEntriesView — create flow', () => {
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({
-            status: 200,
-            ok: true,
-            json: async () => ({ data: [cashAccount, revenueAccount], page: 1, limit: 100, total: 2, totalPages: 1 }),
-          });
+          return Promise.resolve(jsonResponse({ data: [cashAccount, revenueAccount], page: 1, limit: 100, total: 2, totalPages: 1 }));
         }
         if (url.includes('/journal-entry') && init?.method === 'POST') {
           const body = JSON.parse(init.body as string);
-          return Promise.resolve({
-            status: 201,
-            ok: true,
-            json: async () => ({
+          return Promise.resolve(jsonResponse({
               data: {
                 id: 99,
                 entry_number: body.entry_number,
@@ -275,14 +262,9 @@ describe('JournalEntriesView — create flow', () => {
                 company: { id: 1, name: 'Acme Corp' },
                 lines: [],
               },
-            }),
-          });
+            }, 201));
         }
-        return Promise.resolve({
-          status: 200,
-          ok: true,
-          json: async () => ({ data: entries, page: 1, limit: 100, total: entries.length, totalPages: 1 }),
-        });
+        return Promise.resolve(jsonResponse({ data: entries, page: 1, limit: 100, total: entries.length, totalPages: 1 }));
       }),
     );
   }
@@ -365,24 +347,12 @@ describe('JournalEntriesView — create flow', () => {
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({
-            status: 200,
-            ok: true,
-            json: async () => ({ data: [cashAccount, revenueAccount], page: 1, limit: 100, total: 2, totalPages: 1 }),
-          });
+          return Promise.resolve(jsonResponse({ data: [cashAccount, revenueAccount], page: 1, limit: 100, total: 2, totalPages: 1 }));
         }
         if (url.includes('/journal-entry') && init?.method === 'POST') {
-          return Promise.resolve({
-            status: 409,
-            ok: false,
-            json: async () => ({ message: "Entry number 'JE-2024-0099' already exists for this company." }),
-          });
+          return Promise.resolve(jsonResponse({ message: "Entry number 'JE-2024-0099' already exists for this company." }, 409));
         }
-        return Promise.resolve({
-          status: 200,
-          ok: true,
-          json: async () => ({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }),
-        });
+        return Promise.resolve(jsonResponse({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }));
       }),
     );
     render(<JournalEntriesView />);
@@ -433,20 +403,12 @@ describe('JournalEntriesView — edit flow', () => {
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }) });
+          return Promise.resolve(jsonResponse({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }));
         }
         if (url.includes('/journal-entry/1') && init?.method === 'PATCH') {
-          return Promise.resolve({
-            status: 200,
-            ok: true,
-            json: async () => ({ data: { ...draftEntry, description: 'Updated description' } }),
-          });
+          return Promise.resolve(jsonResponse({ data: { ...draftEntry, description: 'Updated description' } }));
         }
-        return Promise.resolve({
-          status: 200,
-          ok: true,
-          json: async () => ({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1 }),
-        });
+        return Promise.resolve(jsonResponse({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1 }));
       }),
     );
     render(<JournalEntriesView />);
@@ -528,12 +490,12 @@ describe('JournalEntriesView — lifecycle actions', () => {
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }) });
+          return Promise.resolve(jsonResponse({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }));
         }
         if (url.endsWith('/journal-entry/1/post') && init?.method === 'POST') {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: { ...draftEntry, status: 'POSTED' } }) });
+          return Promise.resolve(jsonResponse({ data: { ...draftEntry, status: 'POSTED' } }));
         }
-        return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1 }) });
+        return Promise.resolve(jsonResponse({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1 }));
       }),
     );
     render(<JournalEntriesView />);
@@ -546,17 +508,41 @@ describe('JournalEntriesView — lifecycle actions', () => {
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/journal-entry/1/post'), expect.objectContaining({ method: 'POST' }));
   });
 
+  it('keeps the entry as DRAFT and reports the error when the backend rejects the post', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.includes('/ledger-accounts')) {
+          return Promise.resolve(jsonResponse({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }));
+        }
+        if (url.endsWith('/journal-entry/1/post') && init?.method === 'POST') {
+          return Promise.resolve(jsonResponse({ message: 'Accounting period is closed' }, 409));
+        }
+        return Promise.resolve(jsonResponse({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1 }));
+      }),
+    );
+    render(<JournalEntriesView />);
+
+    await userEvent.click(await screen.findByTestId('journal-entry-row-1'));
+    await userEvent.click(screen.getByRole('button', { name: /^post$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /^confirm post$/i }));
+
+    expect(await screen.findByText('Accounting period is closed')).toBeInTheDocument();
+    expect(screen.queryByText(/journal entry posted successfully/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('POSTED')).not.toBeInTheDocument();
+  });
+
   it('voids a POSTED entry', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }) });
+          return Promise.resolve(jsonResponse({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }));
         }
         if (url.endsWith('/journal-entry/2/void') && init?.method === 'POST') {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: { ...unbalancedPosted, status: 'VOIDED' } }) });
+          return Promise.resolve(jsonResponse({ data: { ...unbalancedPosted, status: 'VOIDED' } }));
         }
-        return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [unbalancedPosted], page: 1, limit: 100, total: 1, totalPages: 1 }) });
+        return Promise.resolve(jsonResponse({ data: [unbalancedPosted], page: 1, limit: 100, total: 1, totalPages: 1 }));
       }),
     );
     render(<JournalEntriesView />);
@@ -573,12 +559,12 @@ describe('JournalEntriesView — lifecycle actions', () => {
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }) });
+          return Promise.resolve(jsonResponse({ data: [], page: 1, limit: 100, total: 0, totalPages: 1 }));
         }
         if (url.includes('/journal-entry/1') && init?.method === 'DELETE') {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ message: 'Journal Entry deleted successfully' }) });
+          return Promise.resolve(jsonResponse({ message: 'Journal Entry deleted successfully' }));
         }
-        return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1 }) });
+        return Promise.resolve(jsonResponse({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1 }));
       }),
     );
     render(<JournalEntriesView />);

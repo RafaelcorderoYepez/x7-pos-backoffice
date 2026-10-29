@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import { QuickLaunchPanel } from '../../shared/QuickLaunchPanel';
 import { EmergencySupportModal } from '../../modals/QuickActionModals';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, type TableDensity } from '../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../shared/tableOptionsHelpers';
+import { apiRequest } from '../../../../api/http';
 
 interface PurchaseOrder {
   id: number;
@@ -92,7 +92,6 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     }
   }, []);
 
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
   const activeCompanyId = companyId || 1;
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -104,27 +103,11 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`${API_BASE}/v1/inventory/suppliers?limit=100`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading suppliers from server');
-      }
-
-      const json = await res.json();
+      const json = await apiRequest<{ data?: Supplier[] }>(
+        '/v1/inventory/suppliers?limit=100',
+        { method: 'GET' },
+        'Error loading suppliers from server',
+      );
       setSuppliers(json.data || []);
     } catch (err: unknown) {
       console.error('Error fetching suppliers:', err);
@@ -132,7 +115,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     } finally {
       setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -143,19 +126,14 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
   // Fetch a single supplier by ID to retrieve relations (like purchaseOrders) and fresh metadata
   const fetchSupplierDetail = async (id: number) => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      const res = await fetch(`${API_BASE}/v1/inventory/suppliers/${id}`, { headers });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data) {
-          setSelectedSupplier(json.data);
-          setIsDetailDrawerOpen(true);
-        }
+      const json = await apiRequest<{ data?: Supplier }>(
+        `/v1/inventory/suppliers/${id}`,
+        { method: 'GET' },
+        'Failed to load supplier details.',
+      );
+      if (json.data) {
+        setSelectedSupplier(json.data);
+        setIsDetailDrawerOpen(true);
       }
     } catch (err) {
       console.error('Error fetching supplier detail:', err);
@@ -222,24 +200,13 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
     setIsToggling(true);
     setToggleError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       const nextActive = confirmTargetSupplier.isActive === false; // If inactive (false), next state is active (true)
 
-      const res = await fetch(`${API_BASE}/v1/inventory/suppliers/${confirmTargetSupplier.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ isActive: nextActive })
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error updating supplier status');
-      }
+      await apiRequest<void>(
+        `/v1/inventory/suppliers/${confirmTargetSupplier.id}`,
+        { method: 'PATCH', body: JSON.stringify({ isActive: nextActive }) },
+        'Error updating supplier status',
+      );
 
       showToast(`Supplier status updated to ${nextActive ? 'Active' : 'Inactive'}`, 'success');
 
@@ -267,12 +234,6 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
 
     setIsSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       const payload = {
         name: formName,
         tax_id: formTaxId || null,
@@ -282,24 +243,15 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({ onNavigate, compan
         isActive: formStatus === 'Active', // Map state to payload
       };
 
-      let url = `${API_BASE}/v1/inventory/suppliers`;
+      let url = '/v1/inventory/suppliers';
       let method = 'POST';
 
       if (drawerMode === 'edit' && selectedSupplier) {
-        url = `${API_BASE}/v1/inventory/suppliers/${selectedSupplier.id}`;
+        url = `/v1/inventory/suppliers/${selectedSupplier.id}`;
         method = 'PATCH';
       }
 
-      const res = await fetch(url, {
-        method,
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error saving supplier');
-      }
+      await apiRequest<void>(url, { method, body: JSON.stringify(payload) }, 'Error saving supplier');
 
       showToast(
         drawerMode === 'add'

@@ -3,7 +3,8 @@
 // Actual routes: `/api/delivery-driver` (SINGULAR, without `/v1`). The trade exits the JWT and the
 // backend uses `forbidNonWhitelisted`, so bodies are built field by field.
 
-import { MAX_PAGE_LIMIT, request, type Envelope } from './delivery';
+import { MAX_PAGE_LIMIT, type Envelope } from './delivery';
+import { apiRequest } from './http';
 import { buildDriverQuery } from '../lib/delivery-drivers';
 import type {
   DeliveryDriver,
@@ -15,7 +16,7 @@ import type {
 
 export async function listDeliveryDrivers(query: DriverQuery): Promise<DriverPage> {
   const qs = buildDriverQuery({ ...query, limit: Math.min(query.limit, MAX_PAGE_LIMIT) });
-  const json = await request<Envelope<DeliveryDriver[]>>(
+  const json = await apiRequest<Envelope<DeliveryDriver[]>>(
     `/delivery-driver?${qs}`,
     { method: 'GET' },
     'Failed to load delivery drivers. Please try again.',
@@ -30,7 +31,7 @@ export async function listDeliveryDrivers(query: DriverQuery): Promise<DriverPag
 }
 
 export async function getDriverSummary(): Promise<DriverSummary> {
-  const json = await request<Envelope<DriverSummary>>(
+  const json = await apiRequest<Envelope<DriverSummary>>(
     '/delivery-driver/summary',
     { method: 'GET' },
     'Failed to load the fleet summary.',
@@ -48,7 +49,7 @@ const driverBody = (draft: Partial<DeliveryDriverDraft>): Record<string, unknown
 };
 
 export async function createDeliveryDriver(draft: DeliveryDriverDraft): Promise<DeliveryDriver> {
-  const json = await request<Envelope<DeliveryDriver>>(
+  const json = await apiRequest<Envelope<DeliveryDriver>>(
     '/delivery-driver',
     { method: 'POST', body: JSON.stringify(driverBody(draft)) },
     'Failed to create the delivery driver.',
@@ -60,7 +61,7 @@ export async function updateDeliveryDriver(
   id: number,
   patch: Partial<DeliveryDriverDraft>,
 ): Promise<DeliveryDriver> {
-  const json = await request<Envelope<DeliveryDriver>>(
+  const json = await apiRequest<Envelope<DeliveryDriver>>(
     `/delivery-driver/${id}`,
     { method: 'PATCH', body: JSON.stringify(driverBody(patch)) },
     'Failed to update the delivery driver.',
@@ -70,7 +71,7 @@ export async function updateDeliveryDriver(
 
 /** on_shift=true → active, false → off_duty. 409 if it is in distribution or suspended. */
 export async function setDriverShift(id: number, onShift: boolean): Promise<DeliveryDriver> {
-  const json = await request<Envelope<DeliveryDriver>>(
+  const json = await apiRequest<Envelope<DeliveryDriver>>(
     `/delivery-driver/${id}/shift`,
     { method: 'PATCH', body: JSON.stringify({ on_shift: onShift }) },
     'Failed to change the driver shift.',
@@ -79,7 +80,7 @@ export async function setDriverShift(id: number, onShift: boolean): Promise<Deli
 }
 
 export async function deleteDeliveryDriver(id: number): Promise<void> {
-  await request<Envelope<DeliveryDriver>>(
+  await apiRequest<Envelope<DeliveryDriver>>(
     `/delivery-driver/${id}`,
     { method: 'DELETE' },
     'Failed to delete the delivery driver.',

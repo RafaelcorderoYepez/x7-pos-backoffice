@@ -7,8 +7,10 @@ import type {
   InvoiceSupplierRef,
   SupplierPaymentAllocation,
 } from '../../../../types/accounts-payable';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -57,10 +59,6 @@ const PAYMENTS: SupplierPayment[] = [
   },
 ];
 
-function jsonRes(body: unknown, status = 200) {
-  return { status, ok: status >= 200 && status < 300, json: async () => body };
-}
-
 interface InstallOpts {
   payments?: SupplierPayment[];
   suppliers?: InvoiceSupplierRef[];
@@ -79,26 +77,26 @@ function installFetch({
     const method = options?.method ?? 'GET';
 
     if (u.includes('/supplier-payment-allocations')) {
-      return jsonRes({ data: allocations });
+      return jsonResponse({ data: allocations });
     }
     if (u.includes('/supplier-payment-items')) {
-      return jsonRes({ data: items });
+      return jsonResponse({ data: items });
     }
     if (u.includes('/suppliers')) {
-      return jsonRes({ data: suppliers });
+      return jsonResponse({ data: suppliers });
     }
     if (u.includes('/supplier-payments')) {
       const detailMatch = u.match(/supplier-payments\/(\d+)$/);
       if (method === 'GET') {
         if (detailMatch) {
           const p = payments.find((x) => String(x.id) === detailMatch[1]);
-          return jsonRes({ data: p ?? null });
+          return jsonResponse({ data: p ?? null });
         }
-        return jsonRes({ data: payments });
+        return jsonResponse({ data: payments });
       }
-      return jsonRes({ data: {} });
+      return jsonResponse({ data: {} });
     }
-    return jsonRes({ data: [] });
+    return jsonResponse({ data: [] });
   });
   vi.stubGlobal('fetch', spy);
   return spy;
@@ -139,7 +137,7 @@ describe('SupplierPaymentsView — states', () => {
     delete window.location;
     // @ts-expect-error partial mock
     window.location = { href: '' };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({}, 401)));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonResponse({}, 401)));
     render(<SupplierPaymentsView />);
     await waitFor(() => expect(window.location.href).toBe('/login'));
     // @ts-expect-error restoring
@@ -346,7 +344,7 @@ describe('SupplierPaymentsView — create & edit persistence', () => {
       allocated_amount: 0,
       status: 'draft',
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({ data: created }, 201)));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonResponse({ data: created }, 201)));
 
     await user.click(screen.getByRole('button', { name: /record payment/i }));
     const dialog = screen.getByRole('dialog', { name: /record payment/i });
@@ -367,7 +365,7 @@ describe('SupplierPaymentsView — create & edit persistence', () => {
     const row = (await screen.findByText('PAY-2026-0001')).closest('tr')!;
 
     const updated: SupplierPayment = { ...PAYMENTS[0], status: 'posted' };
-    const spy = vi.fn().mockResolvedValue(jsonRes({ data: updated }));
+    const spy = vi.fn().mockImplementation(async () => jsonResponse({ data: updated }));
     vi.stubGlobal('fetch', spy);
 
     await user.click(within(row).getByLabelText('Edit payment'));
@@ -411,14 +409,14 @@ describe('SupplierPaymentsView — create & edit persistence', () => {
     const spy = vi.fn(async (url: string, options?: RequestInit) => {
       const u = String(url);
       const method = options?.method ?? 'GET';
-      if (u.includes('/v1/inventory/suppliers')) return jsonRes({ data: SUPPLIERS });
-      if (u.includes('/supplier-invoices')) return jsonRes({ data: outstanding });
-      if (u.includes('/supplier-payment-allocations')) return jsonRes({ data: { id: 1 } }, 201);
+      if (u.includes('/v1/inventory/suppliers')) return jsonResponse({ data: SUPPLIERS });
+      if (u.includes('/supplier-invoices')) return jsonResponse({ data: outstanding });
+      if (u.includes('/supplier-payment-allocations')) return jsonResponse({ data: { id: 1 } }, 201);
       if (u.includes('/supplier-payments')) {
-        if (method === 'POST') return jsonRes({ data: created }, 201);
-        return jsonRes({ data: PAYMENTS });
+        if (method === 'POST') return jsonResponse({ data: created }, 201);
+        return jsonResponse({ data: PAYMENTS });
       }
-      return jsonRes({ data: [] });
+      return jsonResponse({ data: [] });
     });
     vi.stubGlobal('fetch', spy);
 

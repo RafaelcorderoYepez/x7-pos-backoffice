@@ -5,8 +5,10 @@ import { CashShiftsView } from './CashShiftsView';
 import { formatDateTime } from './cashShiftsHelpers';
 import type { CashShift } from '../../../../types/cash-shift';
 import type { CashDrawer } from '../../../../types/cash-drawer';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -14,11 +16,7 @@ vi.mock('../../../../lib/auth-storage', () => ({
 export function mockFetchOnce(data: CashShift[], status = 200) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      status,
-      ok: status >= 200 && status < 300,
-      json: async () => ({ statusCode: status, message: 'ok', data }),
-    }),
+    vi.fn().mockImplementation(async () => jsonResponse({ statusCode: status, message: 'ok', data }, status)),
   );
 }
 
@@ -317,11 +315,7 @@ function mockFetchSequence(responses: Array<{ status?: number; data: unknown }>)
       const r = responses[Math.min(call, responses.length - 1)];
       call += 1;
       const status = r.status ?? 200;
-      return {
-        status,
-        ok: status >= 200 && status < 300,
-        json: async () => ({ statusCode: status, message: 'ok', data: r.data }),
-      };
+      return jsonResponse({ statusCode: status, message: 'ok', data: r.data }, status);
     }),
   );
 }
@@ -365,9 +359,9 @@ describe('CashShiftsView — Open Cash Shift', () => {
     const newShift: CashShift = { ...openShift, id: 6, cashDrawerId: 7, openingBalance: 100 };
     const fetchMock = vi.fn(async (_url: unknown, options?: { method?: string }) => {
       if (options?.method === 'POST') {
-        return { status: 201, ok: true, json: async () => ({ statusCode: 201, message: 'ok', data: newShift }) };
+        return jsonResponse({ statusCode: 201, message: 'ok', data: newShift }, 201);
       }
-      return { status: 200, ok: true, json: async () => ({ statusCode: 200, message: 'ok', data: [newShift] }) };
+      return jsonResponse({ statusCode: 200, message: 'ok', data: [newShift] });
     });
     vi.stubGlobal('fetch', fetchMock);
     await userEvent.click(submitButton);
@@ -401,14 +395,10 @@ describe('CashShiftsView — Open Cash Shift', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 409,
-        ok: false,
-        json: async () => ({
+      vi.fn().mockImplementation(async () => jsonResponse({
           message:
             'Cash Drawer #7 already has an active shift session (#CS-12) in progress. Please close the active shift before opening a new one.',
-        }),
-      }),
+        }, 409)),
     );
     await userEvent.click(within(dialog).getByRole('button', { name: /open shift/i }));
 
@@ -460,9 +450,9 @@ describe('CashShiftsView — Close Shift', () => {
     };
     const fetchMock = vi.fn(async (_url: unknown, options?: { method?: string }) => {
       if (options?.method === 'POST') {
-        return { status: 200, ok: true, json: async () => ({ statusCode: 200, message: 'ok', data: closedResponse }) };
+        return jsonResponse({ statusCode: 200, message: 'ok', data: closedResponse });
       }
-      return { status: 200, ok: true, json: async () => ({ statusCode: 200, message: 'ok', data: [closedResponse] }) };
+      return jsonResponse({ statusCode: 200, message: 'ok', data: [closedResponse] });
     });
     vi.stubGlobal('fetch', fetchMock);
     await userEvent.click(within(dialog).getByRole('button', { name: /confirm close/i }));
@@ -508,9 +498,9 @@ describe('CashShiftsView — Close Shift', () => {
       'fetch',
       vi.fn(async (_url: unknown, options?: { method?: string }) => {
         if (options?.method === 'POST') {
-          return { status: 200, ok: true, json: async () => ({ statusCode: 200, message: 'ok', data: discrepancyResponse }) };
+          return jsonResponse({ statusCode: 200, message: 'ok', data: discrepancyResponse });
         }
-        return { status: 200, ok: true, json: async () => ({ statusCode: 200, message: 'ok', data: [discrepancyResponse] }) };
+        return jsonResponse({ statusCode: 200, message: 'ok', data: [discrepancyResponse] });
       }),
     );
     await userEvent.click(within(dialog).getByRole('button', { name: /confirm close/i }));
@@ -543,9 +533,9 @@ describe('CashShiftsView — Close Shift', () => {
       'fetch',
       vi.fn(async (_url: unknown, options?: { method?: string }) => {
         if (options?.method === 'POST') {
-          return { status: 200, ok: true, json: async () => ({ statusCode: 200, message: 'ok', data: surplusResponse }) };
+          return jsonResponse({ statusCode: 200, message: 'ok', data: surplusResponse });
         }
-        return { status: 200, ok: true, json: async () => ({ statusCode: 200, message: 'ok', data: [surplusResponse] }) };
+        return jsonResponse({ statusCode: 200, message: 'ok', data: [surplusResponse] });
       }),
     );
     await userEvent.click(within(dialog).getByRole('button', { name: /confirm close/i }));
@@ -565,11 +555,7 @@ describe('CashShiftsView — Close Shift', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 400,
-        ok: false,
-        json: async () => ({ message: 'The cash shift is already closed. Only OPEN cash shifts can be closed.' }),
-      }),
+      vi.fn().mockImplementation(async () => jsonResponse({ message: 'The cash shift is already closed. Only OPEN cash shifts can be closed.' }, 400)),
     );
     await userEvent.click(within(dialog).getByRole('button', { name: /confirm close/i }));
 

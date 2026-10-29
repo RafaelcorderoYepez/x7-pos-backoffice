@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
-import { getAccessToken } from '../../../../../lib/auth-storage';
-import type { BackendKitchenStation, KitchenTicket } from './KitchenMonitorView';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
+import { createPortal } from 'react-dom';
+import type { BackendKitchenStation, KitchenTicket } from './kds-monitor-model';
+import { apiRequest } from '../../../../../api/http';
 export interface StationRerouteStatus {
   stationId: number;
   stationName: string;
@@ -130,27 +128,21 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
     setSaving(true);
     setFeedbackMessage(null);
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-station/${selectedStationId}/reroute-config`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      await apiRequest<void>(
+        `/kitchen-station/${selectedStationId}/reroute-config`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            backupStationId,
+            maxActiveTicketsCapacity: capacityLimit,
+            autoRerouteOnOffline: autoOfflineReroute,
+            autoRerouteOnCapacity: autoCapacityReroute,
+            fallbackAction,
+            printerName: printerName.trim() || null,
+          }),
         },
-        body: JSON.stringify({
-          backupStationId,
-          maxActiveTicketsCapacity: capacityLimit,
-          autoRerouteOnOffline: autoOfflineReroute,
-          autoRerouteOnCapacity: autoCapacityReroute,
-          fallbackAction,
-          printerName: printerName.trim() || null,
-        }),
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json();
-        throw new Error(errorJson.message || 'Failed to update rerouting configuration');
-      }
+        'Failed to update rerouting configuration',
+      );
 
       setFeedbackMessage({
         text: 'Configuration successfully updated & live policies applied.',
@@ -170,25 +162,17 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
     setRerouting(true);
     setFeedbackMessage(null);
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-station/${selectedStationId}/reroute-orders`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      const resData = await apiRequest<{ message?: string; thermalPrinted?: boolean }>(
+        `/kitchen-station/${selectedStationId}/reroute-orders`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetStationId: backupStationId || undefined,
+            reason: 'Manual Emergency Load Balancing & Station Reroute',
+          }),
         },
-        body: JSON.stringify({
-          targetStationId: backupStationId || undefined,
-          reason: 'Manual Emergency Load Balancing & Station Reroute',
-        }),
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.message || 'Failed to reroute orders');
-      }
-
-      const resData = await res.json();
+        'Failed to reroute orders',
+      );
       setFeedbackMessage({
         text: resData.message || `Rerouted orders to secondary station successfully!`,
         type: 'success',
@@ -232,8 +216,8 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
     });
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-hidden animate-fade-in">
+  const content = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-hidden animate-fade-in" role="dialog" aria-modal="true">
       <div className="relative w-full max-w-2xl bg-[#16171c] border border-zinc-700/80 rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-zinc-800 to-zinc-900 border-b border-zinc-700">
@@ -718,4 +702,6 @@ export const StationRerouteModal: React.FC<StationRerouteModalProps> = ({
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 };

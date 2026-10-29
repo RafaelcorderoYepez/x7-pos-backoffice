@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken } from '../../../../../lib/auth-storage';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { AppModal } from '../../../shared/AppModal';
+import type { KitchenStationType } from './KitchenStationsView';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
 import { KitchenSlaConfigModal } from './KitchenSlaConfigModal';
@@ -18,11 +18,13 @@ const KitchenDevResetButton = devToolModules['./KitchenDevResetButton.tsx']?.Kit
 import {
   enqueueOfflineAction,
   flushOfflineQueue,
+  isRetryableKdsError,
   getQueuedActions,
 } from '../../../../../lib/kds-offline-sync';
 import { sendStationKeepaliveHeartbeat } from '../../../../../lib/kds-keepalive';
+import { API_BASE, apiRequest, authHeaders, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
+import { ApiError } from '../../../../../lib/api-error';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 
 export type KitchenOrderBusinessStatus = 'pending' | 'started' | 'completed' | 'cancelled';
 
@@ -370,6 +372,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
   const [isOffline, setIsOffline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? !navigator.onLine : false,
   );
+  const [, setQueuedActionsCount] = useState<number>(0);
+  const [, setIsSyncing] = useState<boolean>(false);
 
   // Real-time clock for elapsed second counters
   const [currentTime, setCurrentTime] = useState<number>(() => Date.now());
@@ -389,19 +393,22 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     setToastMessage({ text, type });
   };
 
+  // The server judged and refused the action (4xx): show why instead of queueing it offline.
+  const reportRejectedAction = (err: unknown) => {
+    if (err instanceof ApiError && err.status === 401) return; // already redirecting to login
+    showToast(err instanceof Error ? err.message : 'Action rejected by the server', 'warning');
+  };
+
   // 1. Fetch stations & products catalog
   useEffect(() => {
     const fetchStations = async () => {
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-        const res = await fetch(`${API_BASE}/kitchen-station?status=active&limit=100`, { headers });
-        if (!res.ok) return;
-        const data = await res.json();
-        const rawList: Record<string, unknown>[] = data.data || data || [];
+        const data = await apiRequest<MaybeEnvelopedList<Record<string, unknown>>>(
+          '/kitchen-station?status=active&limit=100',
+          { method: 'GET' },
+          'Failed to load kitchen stations.',
+        );
+        const rawList = unwrapList(data);
         setStations(
           rawList.map((s) => ({
             id: Number(s.id),
@@ -418,23 +425,21 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
 
     const fetchProducts = async () => {
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-        const [prodRes, varRes] = await Promise.all([
-          fetch(`${API_BASE}/products?limit=150`, { headers }).catch(() => null),
-          fetch(`${API_BASE}/variants?limit=200`, { headers }).catch(() => null),
+        type Row = Record<string, unknown>;
+        const optionalList = (path: string) =>
+          apiRequest<MaybeEnvelopedList<Row>>(path, { method: 'GET' }, '')
+            .then((json) => unwrapList(json))
+            .catch(() => null);
+        const [prodList, varList] = await Promise.all([
+          optionalList('/products?limit=150'),
+          optionalList('/variants?limit=200'),
         ]);
 
         const newMap: Record<string, string[]> = { ...DEFAULT_PRODUCT_VARIANTS };
         const productNames: string[] = [];
 
-        if (prodRes && prodRes.ok) {
-          const data = await prodRes.json();
-          const rawList: Record<string, unknown>[] = data.data || data || [];
-          rawList.forEach((p) => {
+        if (prodList) {
+          prodList.forEach((p) => {
             if (p?.name && typeof p.name === 'string' && p.name.trim().length > 0) {
               productNames.push(p.name);
               if (Array.isArray(p.variants) && p.variants.length > 0) {
@@ -449,9 +454,7 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           });
         }
 
-        if (varRes && varRes.ok) {
-          const varData = await varRes.json();
-          const varList: Record<string, unknown>[] = varData.data || varData || [];
+        if (varList) {
           varList.forEach((v) => {
             const pName = (v.product as Record<string, unknown> | undefined)?.name;
             if (typeof pName === 'string' && typeof v.name === 'string') {
@@ -484,12 +487,6 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     setIsRefreshing(true);
     setLoadError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       const params = new URLSearchParams({
         limit: '100',
         page: '1',
@@ -497,19 +494,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         sortOrder: 'ASC',
       });
 
-      const res = await fetch(`${API_BASE}/kitchen-orders?${params.toString()}`, { headers });
-      if (!res.ok) {
-        throw new Error(`Failed to load orders: ${res.statusText}`);
-      }
+      const resData = await apiRequest<MaybeEnvelopedList<Record<string, unknown>>>(
+        `/kitchen-orders?${params.toString()}`,
+        { method: 'GET' },
+        'Failed to load orders',
+      );
+      const rawOrders = unwrapList(resData);
 
-      const resData = await res.json();
-      const rawOrders = resData.data || resData || [];
-
-      const parsedOrders: KitchenOrderTicket[] = (rawOrders as Record<string, unknown>[]).map((o) => ({
+      const parsedOrders: KitchenOrderTicket[] = rawOrders.map((o) => ({
         id: Number(o.id),
         merchantId: Number(o.merchantId || o.merchant_id),
         orderId: (o.orderId || o.order_id || null) as number | null,
-        onlineOrderId: (o.onlineOrderId || o.online_order_id || null) as string | null,
+        onlineOrderId: (o.onlineOrderId || o.online_order_id || null) as number | null,
         stationId: (o.stationId || o.station_id || (o.station as Record<string, unknown> | undefined)?.id || null) as number | null,
         stationName: (o.stationName || (o.station as Record<string, unknown> | undefined)?.name || null) as string | null,
         priority: Number(o.priority ?? 0),
@@ -532,8 +528,8 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
           variantName: ((it.variant as Record<string, unknown> | undefined)?.name || it.variantName || null) as string | null,
           quantity: Number(it.quantity ?? 1),
           preparedQuantity: Number(it.preparedQuantity ?? it.prepared_quantity ?? 0),
-          preparationStatus: (it.preparationStatus || it.preparation_status || 'pending') as 'held' | 'pending' | 'in_preparation' | 'ready' | 'cancelled',
-          course: (it.course || null) as string | null,
+          preparationStatus: (it.preparationStatus || it.preparation_status || 'pending') as KitchenOrderItemLine['preparationStatus'],
+          course: (it.course || undefined) as KitchenOrderItemLine['course'],
           holdUntil: (it.holdUntil || it.hold_until || null) as string | null,
           firedAt: (it.firedAt || it.fired_at || null) as string | null,
           notes: (it.notes || null) as string | null,
@@ -583,11 +579,19 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         return;
       }
       setIsSyncing(true);
-      const token = getAccessToken();
-      const res = await flushOfflineQueue(API_BASE, token);
+      const res = await flushOfflineQueue();
       setIsSyncing(false);
       if (res.success && res.syncedCount > 0) {
         showToast(`Synchronized ${res.syncedCount} offline actions with server`, 'success');
+      }
+      if (res.ignored.length > 0) {
+        // The screen applied these optimistically: tell the cook and reload the real state.
+        showToast(
+          `${res.ignored.length} offline action(s) were rejected by the server and have been reverted`,
+          'warning',
+        );
+      }
+      if (res.success && (res.syncedCount > 0 || res.ignored.length > 0)) {
         loadOrders(true);
       }
       const remaining = await getQueuedActions();
@@ -622,12 +626,12 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
         return;
       }
       try {
-        const token = getAccessToken();
+        // Raw fetch on purpose: a connectivity probe with its own 2s timeout, not a business call.
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
         const res = await fetch(`${API_BASE}/kitchen-event-logs/ping`, {
           signal: controller.signal,
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: authHeaders(),
         });
         clearTimeout(timeout);
         if (res.ok) {
@@ -879,25 +883,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
 
     try {
-      const token = getAccessToken();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/kitchen-orders/${order.id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ businessStatus: 'started' }),
-      });
-
-      if (res.ok) {
-        applyOptimisticStart();
-        showToast(`Order #KO-${order.id} started`, 'info');
-      } else {
-        throw new Error('Server returned error');
-      }
+      await apiRequest<void>(
+        `/kitchen-orders/${order.id}`,
+        { method: 'PUT', body: JSON.stringify({ businessStatus: 'started' }) },
+        'Failed to start order',
+      );
+      applyOptimisticStart();
+      showToast(`Order #KO-${order.id} started`, 'info');
     } catch (err) {
+      if (!isRetryableKdsError(err)) {
+        reportRejectedAction(err);
+        return;
+      }
       console.warn('Network start failed, enqueuing offline:', err);
       setIsOffline(true);
       applyOptimisticStart();
@@ -962,25 +959,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
 
     try {
-      const token = getAccessToken();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/kitchen-orders/${order.id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ businessStatus: 'pending' }),
-      });
-
-      if (res.ok) {
-        showToast(`Order #KO-${order.id} reverted to pending`, 'info');
-        loadOrders(true);
-      } else {
-        throw new Error('Server returned error');
-      }
+      await apiRequest<void>(
+        `/kitchen-orders/${order.id}`,
+        { method: 'PUT', body: JSON.stringify({ businessStatus: 'pending' }) },
+        'Failed to revert order to pending',
+      );
+      showToast(`Order #KO-${order.id} reverted to pending`, 'info');
+      loadOrders(true);
     } catch (err) {
+      if (!isRetryableKdsError(err)) {
+        reportRejectedAction(err);
+        return;
+      }
       console.warn('Network undo failed, enqueuing offline:', err);
       setIsOffline(true);
       applyOptimisticUndo();
@@ -1037,30 +1027,27 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
 
     try {
-      const token = getAccessToken();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       if (currentPrepStatus === 'held') {
-        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/fire`, {
-          method: 'POST',
-          headers,
-        });
-        if (!res.ok) throw new Error('Failed to fire item');
+        await apiRequest<void>(
+          `/kitchen-order-items/${itemId}/fire`,
+          { method: 'POST' },
+          'Failed to fire item',
+        );
       } else {
-        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
-        });
-        if (!res.ok) throw new Error('Failed to start item');
+        await apiRequest<void>(
+          `/kitchen-order-items/${itemId}`,
+          { method: 'PUT', body: JSON.stringify({ preparationStatus: 'in_preparation' }) },
+          'Failed to start item',
+        );
       }
 
       showToast(`Dish started`, 'info');
       loadOrders(true);
     } catch (err) {
+      if (!isRetryableKdsError(err)) {
+        reportRejectedAction(err);
+        return;
+      }
       console.warn('Network item start failed, enqueuing offline:', err);
       setIsOffline(true);
       applyOptimisticStartItem();
@@ -1129,25 +1116,24 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
 
     try {
-      const token = getAccessToken();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({
-          preparationStatus: 'ready',
-          preparedQuantity: quantity,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Failed to mark item ready');
+      await apiRequest<void>(
+        `/kitchen-order-items/${itemId}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            preparationStatus: 'ready',
+            preparedQuantity: quantity,
+          }),
+        },
+        'Failed to mark item ready',
+      );
       showToast(willAllBeReady ? `Order #KO-${orderId} bumped` : `Dish ready`, 'success');
       loadOrders(true);
     } catch (err) {
+      if (!isRetryableKdsError(err)) {
+        reportRejectedAction(err);
+        return;
+      }
       console.warn('Network ready item failed, enqueuing offline:', err);
       setIsOffline(true);
       applyOptimisticReadyItem();
@@ -1222,44 +1208,43 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
 
     try {
-      const token = getAccessToken();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       if (currentPrepStatus === 'ready') {
         // Ready -> in_preparation
-        const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
-        });
-        if (!res.ok) throw new Error('Failed to undo ready');
+        await apiRequest<void>(
+          `/kitchen-order-items/${itemId}`,
+          { method: 'PUT', body: JSON.stringify({ preparationStatus: 'in_preparation' }) },
+          'Failed to undo ready',
+        );
       } else {
         // in_preparation -> held or pending
         if (isStagedCourse) {
-          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}/hold?holdMinutes=10`, {
-            method: 'POST',
-            headers,
-          });
-          if (!res.ok) throw new Error('Failed to hold item');
+          await apiRequest<void>(
+            `/kitchen-order-items/${itemId}/hold?holdMinutes=10`,
+            { method: 'POST' },
+            'Failed to hold item',
+          );
         } else {
-          const res = await fetch(`${API_BASE}/kitchen-order-items/${itemId}`, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify({
-              preparationStatus: 'pending',
-              preparedQuantity: 0,
-            }),
-          });
-          if (!res.ok) throw new Error('Failed to revert item');
+          await apiRequest<void>(
+            `/kitchen-order-items/${itemId}`,
+            {
+              method: 'PUT',
+              body: JSON.stringify({
+                preparationStatus: 'pending',
+                preparedQuantity: 0,
+              }),
+            },
+            'Failed to revert item',
+          );
         }
       }
 
       showToast(`Dish reverted`, 'info');
       loadOrders(true);
     } catch (err) {
+      if (!isRetryableKdsError(err)) {
+        reportRejectedAction(err);
+        return;
+      }
       console.warn('Network item undo failed, enqueuing offline:', err);
       setIsOffline(true);
       applyOptimisticUndoItem();
@@ -1321,25 +1306,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
 
     try {
-      const token = getAccessToken();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/kitchen-orders/${order.id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ businessStatus: 'completed' }),
-      });
-
-      if (res.ok) {
-        applyOptimisticBump();
-        showToast(`Order #KO-${order.id} bumped`, 'success');
-      } else {
-        throw new Error('Failed to bump order');
-      }
+      await apiRequest<void>(
+        `/kitchen-orders/${order.id}`,
+        { method: 'PUT', body: JSON.stringify({ businessStatus: 'completed' }) },
+        'Failed to bump order',
+      );
+      applyOptimisticBump();
+      showToast(`Order #KO-${order.id} bumped`, 'success');
     } catch (err) {
+      if (!isRetryableKdsError(err)) {
+        reportRejectedAction(err);
+        return;
+      }
       console.warn('Network bump failed, enqueuing offline:', err);
       setIsOffline(true);
       applyOptimisticBump();
@@ -1390,31 +1368,19 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     }
 
     try {
-      const token = getAccessToken();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/kitchen-orders/${idToRecall}/recall`, {
-        method: 'POST',
-        headers,
-      });
-
-      if (res.ok) {
-        applyOptimisticRecall();
-        showToast(`Order #KO-${idToRecall} recalled`, 'info');
-        window.dispatchEvent(
-          new CustomEvent('x7_kds_data_reset', {
-            detail: { action: 'recall', orderId: idToRecall },
-          }),
-        );
-        window.dispatchEvent(new CustomEvent('online_orders_refresh'));
-        loadOrders(true);
-      } else {
-        throw new Error('Failed to recall order');
-      }
+      await apiRequest<void>(
+        `/kitchen-orders/${idToRecall}/recall`,
+        { method: 'POST' },
+        'Failed to recall order',
+      );
+      applyOptimisticRecall();
+      showToast(`Order #KO-${idToRecall} recalled`, 'info');
+      loadOrders(true);
     } catch (err) {
+      if (!isRetryableKdsError(err)) {
+        reportRejectedAction(err);
+        return;
+      }
       console.warn('Network recall failed, enqueuing offline:', err);
       setIsOffline(true);
       applyOptimisticRecall();
@@ -1433,44 +1399,32 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
     if (!cancellingTicket) return;
     try {
       setCancelSubmitting(true);
-      const token = getAccessToken();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/kitchen-orders/${cancellingTicket.id}/cancel`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({
-          reason: selectedReason,
-          notes: cancellationNotes || undefined,
-        }),
-      });
-
-      if (res.ok) {
-        setOrders(prev =>
-          prev.map(o =>
-            o.id === cancellingTicket.id
-              ? {
-                  ...o,
-                  businessStatus: 'cancelled',
-                  cancellationReason: selectedReason,
-                  cancelledAt: new Date().toISOString(),
-                }
-              : o
-          )
-        );
-        showToast(`Order #KO-${cancellingTicket.id} CANCELLED (${selectedReason})`, 'warning');
-        setCancellingTicket(null);
-        setCancellationNotes('');
-      } else {
-        const errJson = await res.json().catch(() => null);
-        const msg = Array.isArray(errJson?.message)
-          ? errJson.message[0]
-          : (errJson?.message || 'Failed to cancel order');
-        showToast(msg, 'warning');
-      }
+      await apiRequest<void>(
+        `/kitchen-orders/${cancellingTicket.id}/cancel`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            reason: selectedReason,
+            notes: cancellationNotes || undefined,
+          }),
+        },
+        'Failed to cancel order',
+      );
+      setOrders(prev =>
+        prev.map(o =>
+          o.id === cancellingTicket.id
+            ? {
+                ...o,
+                businessStatus: 'cancelled',
+                cancellationReason: selectedReason,
+                cancelledAt: new Date().toISOString(),
+              }
+            : o
+        )
+      );
+      showToast(`Order #KO-${cancellingTicket.id} CANCELLED (${selectedReason})`, 'warning');
+      setCancellingTicket(null);
+      setCancellationNotes('');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error cancelling order';
       showToast(message, 'warning');
@@ -2022,6 +1976,19 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
               <span className="material-symbols-outlined text-[18px]">add</span>
               CREATE ORDER
             </button>
+
+            {/* Recall Button */}
+            {lastBumpedOrder && (
+              <button
+                type="button"
+                onClick={() => handleRecallOrder()}
+                className="h-[34px] px-3 rounded-lg border border-[#d5cfc4] bg-[#fcfcfb] text-[#5f5e5e] text-xs font-bold uppercase tracking-wider hover:bg-[#f2ede5] hover:text-[#1d1c17] transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                title="Undo last bumped ticket"
+              >
+                <span className="material-symbols-outlined text-sm text-amber-700">undo</span>
+                RECALL #KO-{lastBumpedOrder.id}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -2804,7 +2771,6 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       {/* DETAIL INSPECTION MODAL (HISTORICAL AUDIT PANEL) */}
       {inspectingTicket && (
         <AppModal
-          isOpen={true}
           onClose={() => setInspectingTicket(null)}
           title={`Audit Details: Ticket #KO-${inspectingTicket.id}`}
         >
@@ -2954,7 +2920,6 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
       {/* CANCELLATION REASON MODAL */}
       {cancellingTicket && (
         <AppModal
-          isOpen={true}
           onClose={() => setCancellingTicket(null)}
           title={`Cancel Kitchen Ticket #KO-${cancellingTicket.id}`}
         >
@@ -3057,11 +3022,6 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                 setIsCreating(true);
                 setCreateError(null);
                 try {
-                  const token = getAccessToken();
-                  const headers = {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                  };
                   const ticketRef = formOrderId.trim();
                   const instructions = formNotes.trim();
                   let combinedNotes = '';
@@ -3094,25 +3054,18 @@ export const KitchenOrdersView: React.FC<KitchenOrdersViewProps> = ({ onNavigate
                   // Send keepalive heartbeat to ensure station is fresh and online
                   await sendStationKeepaliveHeartbeat('ALL');
 
-                  const res = await fetch(`${API_BASE}/kitchen-orders`, {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify(payload),
-                  });
-
-                  if (res.ok) {
-                    setIsCreateModalOpen(false);
-                    setFormOrderId('');
-                    setFormNotes('');
-                    setFormPriority(0);
-                    setFormItems([{ productName: '', variantName: '', quantity: 1, notes: '' }]);
-                    showToast('New kitchen order created successfully!', 'success');
-                    loadOrders(true);
-                  } else {
-                    const errJson = await res.json().catch(() => null);
-                    const msg = Array.isArray(errJson?.message) ? errJson.message[0] : (errJson?.message || 'Failed to create order');
-                    setCreateError(msg);
-                  }
+                  await apiRequest<void>(
+                    '/kitchen-orders',
+                    { method: 'POST', body: JSON.stringify(payload) },
+                    'Failed to create order',
+                  );
+                  setIsCreateModalOpen(false);
+                  setFormOrderId('');
+                  setFormNotes('');
+                  setFormPriority(0);
+                  setFormItems([{ productName: '', variantName: '', quantity: 1, course: 'main_course', notes: '' }]);
+                  showToast('New kitchen order created successfully!', 'success');
+                  loadOrders(true);
                 } catch (err: unknown) {
                   const message = err instanceof Error ? err.message : 'Network error creating order';
                   setCreateError(message);

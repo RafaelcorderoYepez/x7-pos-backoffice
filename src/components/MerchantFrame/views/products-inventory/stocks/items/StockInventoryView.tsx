@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, getStoredUser } from '../../../../../../lib/auth-storage';
+import { getStoredUser } from '../../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../StockQuickLinks';
 import { NavHubBar } from '../../../../../shared/NavHubBar';
 import { EmergencySupportModal } from '../../../../modals/QuickActionModals';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../../shared/tableOptionsHelpers';
+import {
+  apiRequest,
+  getWithFallback,
+  unwrapItem,
+  unwrapList,
+  type MaybeEnvelopedItem,
+  type MaybeEnvelopedList,
+} from '../../../../../../api/http';
 
 interface Product {
   id: number;
@@ -51,6 +59,15 @@ interface StockItem {
   isActive?: boolean;
 }
 
+interface StockMovementHistoryEntry {
+  id: number | string;
+  type: string;
+  quantity: number;
+  createdAt: string;
+  reference?: string | null;
+  reason?: string | null;
+}
+
 interface StockInventoryViewProps {
   onNavigate?: (view: string) => void;
 }
@@ -76,7 +93,7 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   // Stock movements history (Drawer)
   const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
   const [selectedItemForHistory, setSelectedItemForHistory] = useState<StockItem | null>(null);
-  const [historyMovements, setHistoryMovements] = useState<Record<string, unknown>[]>([]);
+  const [historyMovements, setHistoryMovements] = useState<StockMovementHistoryEntry[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
@@ -102,8 +119,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   const [pageSize, setPageSize] = useState<number>(5);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-
-
   // Soporte
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
 
@@ -123,8 +138,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
   };
 
   const topRef = useRef<HTMLDivElement | null>(null);
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   const checkObjectActive = (obj: unknown): boolean => {
     if (!obj || typeof obj !== 'object') return true;
     const o = obj as Record<string, unknown>;
@@ -148,23 +161,18 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       const locationsMap = new Map<string, Record<string, unknown>>();
       const locationsNameMap = new Map<string, Record<string, unknown>>();
       try {
-        let locationsRes = await fetch(`${API_BASE}/v1/inventory/locations`, { headers });
-        if (!locationsRes.ok || locationsRes.status === 404 || locationsRes.status === 400) {
-          const fallbackLocations = await fetch(`${API_BASE}/locations`, { headers });
-          if (fallbackLocations.ok) locationsRes = fallbackLocations;
-        }
-        if (locationsRes.ok) {
-          const lJson = await locationsRes.json();
-          const rawLocations: Record<string, unknown>[] = Array.isArray(lJson)
-            ? lJson
-            : (Array.isArray(lJson.data) ? lJson.data : (Array.isArray(lJson.items) ? lJson.items : []));
-          rawLocations.forEach((l) => {
-            if (l.id) locationsMap.set(String(l.id), l);
-            if (typeof l.name === 'string') locationsNameMap.set(l.name.trim().toLowerCase(), l);
-          });
-          const activeLocations = (rawLocations as unknown as Location[]).filter((l) => checkObjectActive(l));
-          setLocations(activeLocations);
-        }
+        const lJson = await apiRequest<MaybeEnvelopedList<Record<string, unknown>>>(
+          '/locations',
+          { method: 'GET' },
+          'Failed to load locations.',
+        );
+        const rawLocations = unwrapList(lJson);
+        rawLocations.forEach((l) => {
+          if (l.id) locationsMap.set(String(l.id), l);
+          if (typeof l.name === 'string') locationsNameMap.set(l.name.trim().toLowerCase(), l);
+        });
+        const activeLocations = (rawLocations as unknown as Location[]).filter((l) => checkObjectActive(l));
+        setLocations(activeLocations);
       } catch (lErr) {
         console.warn('Could not fetch locations list:', lErr);
       }
@@ -173,90 +181,77 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       const suppliesMap = new Map<string, Record<string, unknown>>();
       const suppliesNameMap = new Map<string, Record<string, unknown>>();
       try {
-        let suppliesRes = await fetch(`${API_BASE}/v1/inventory/raw-materials?limit=200&status=all`, { headers });
-        if (!suppliesRes.ok || suppliesRes.status === 404) {
-          suppliesRes = await fetch(`${API_BASE}/v1/supplies?limit=200`, { headers });
-        }
-        if (!suppliesRes.ok || suppliesRes.status === 404) {
-          suppliesRes = await fetch(`${API_BASE}/supplies?limit=200`, { headers });
-        }
-        if (suppliesRes.ok) {
-          const sJson = await suppliesRes.json();
-          const rawSupplies: Record<string, unknown>[] = Array.isArray(sJson)
-            ? sJson
-            : (Array.isArray(sJson.items)
-              ? sJson.items
-              : (Array.isArray(sJson.data)
-                ? sJson.data
-                : (Array.isArray(sJson.data?.items) ? sJson.data.items : [])));
-          rawSupplies.forEach((s) => {
-            if (s.id) suppliesMap.set(String(s.id), s);
-            if (typeof s.name === 'string') suppliesNameMap.set(s.name.trim().toLowerCase(), s);
-          });
-        }
+        type SupplyRow = Record<string, unknown>;
+        const sJson = await apiRequest<
+          SupplyRow[] | { items?: SupplyRow[]; data?: SupplyRow[] | { items?: SupplyRow[] } }
+        >('/v1/inventory/raw-materials?limit=200&status=all', { method: 'GET' }, 'Failed to load raw materials.');
+        const rawSupplies: SupplyRow[] = Array.isArray(sJson)
+          ? sJson
+          : (Array.isArray(sJson.items)
+            ? sJson.items
+            : (Array.isArray(sJson.data)
+              ? sJson.data
+              : (Array.isArray(sJson.data?.items) ? sJson.data.items : [])));
+        rawSupplies.forEach((s) => {
+          if (s.id) suppliesMap.set(String(s.id), s);
+          if (typeof s.name === 'string') suppliesNameMap.set(s.name.trim().toLowerCase(), s);
+        });
       } catch (sErr) {
         console.warn('Could not fetch supplies list for status map:', sErr);
       }
 
       // Load stock items
-      let itemsRes = await fetch(`${API_BASE}/v1/raw-material-stock/items?limit=100`, { headers });
-      if (!itemsRes.ok || itemsRes.status === 404) {
-        const fallbackItems = await fetch(`${API_BASE}/items?limit=100`, { headers });
-        if (fallbackItems.ok) itemsRes = fallbackItems;
-      }
+      type ItemRow = Record<string, unknown>;
+      const json = await getWithFallback<
+        ItemRow[] | { data?: ItemRow[] | { data?: ItemRow[]; items?: ItemRow[] }; items?: ItemRow[] }
+      >(['/v1/raw-material-stock/items?limit=100', '/items?limit=100'], 'Failed to fetch stock items from server.');
+      const data = Array.isArray(json) ? json : json.data || json.items || [];
+      const rawItems: ItemRow[] = Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : (Array.isArray(data.items) ? data.items : []));
+      const mappedItems: StockItem[] = rawItems.map((i) => {
+        const supplyObj = (i.supply || i.rawMaterial || i.raw_material || i.ingredient || null) as Record<string, unknown> | null;
+        const supplyId = supplyObj?.id || i.supplyId || i.supply_id || i.rawMaterialId || i.raw_material_id;
+        const supplyName = supplyObj?.name || i.name || (i.product as Record<string, unknown> | undefined)?.name;
+        const masterSupply = (supplyId ? suppliesMap.get(String(supplyId)) : null) || (supplyName ? suppliesNameMap.get(String(supplyName).trim().toLowerCase()) : null);
+        const finalSupply = (masterSupply || supplyObj) as Supply | null;
 
-      if (itemsRes.ok) {
-        const json = await itemsRes.json();
-        const data = json.data || json.items || json || [];
-        const rawItems: Record<string, unknown>[] = Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : (Array.isArray(data.items) ? data.items : []));
-        const mappedItems: StockItem[] = rawItems.map((i) => {
-          const supplyObj = (i.supply || i.rawMaterial || i.raw_material || i.ingredient || null) as Record<string, unknown> | null;
-          const supplyId = supplyObj?.id || i.supplyId || i.supply_id || i.rawMaterialId || i.raw_material_id;
-          const supplyName = supplyObj?.name || i.name || (i.product as Record<string, unknown> | undefined)?.name;
-          const masterSupply = (supplyId ? suppliesMap.get(String(supplyId)) : null) || (supplyName ? suppliesNameMap.get(String(supplyName).trim().toLowerCase()) : null);
-          const finalSupply = (masterSupply || supplyObj) as Supply | null;
+        const isMasterSupplyActive = checkObjectActive(masterSupply);
+        const isEmbeddedSupplyActive = checkObjectActive(supplyObj);
+        
+        const supplyIsActive = isMasterSupplyActive && isEmbeddedSupplyActive;
 
-          const isMasterSupplyActive = checkObjectActive(masterSupply);
-          const isEmbeddedSupplyActive = checkObjectActive(supplyObj);
-          
-          const supplyIsActive = isMasterSupplyActive && isEmbeddedSupplyActive;
+        const locObj = i.location as Record<string, unknown> | null | undefined;
+        const locId = locObj?.id || i.locationId || i.location_id;
+        const locName = locObj?.name || i.locationName || i.location_name;
+        const masterLoc = (locId ? locationsMap.get(String(locId)) : null) || (locName ? locationsNameMap.get(String(locName).trim().toLowerCase()) : null);
+        const finalLoc = (masterLoc || locObj) as Location | null;
 
-          const locObj = i.location as Record<string, unknown> | null | undefined;
-          const locId = locObj?.id || i.locationId || i.location_id;
-          const locName = locObj?.name || i.locationName || i.location_name;
-          const masterLoc = (locId ? locationsMap.get(String(locId)) : null) || (locName ? locationsNameMap.get(String(locName).trim().toLowerCase()) : null);
-          const finalLoc = (masterLoc || locObj) as Location | null;
+        const isMasterLocActive = checkObjectActive(masterLoc);
+        const isEmbeddedLocActive = checkObjectActive(locObj);
 
-          const isMasterLocActive = checkObjectActive(masterLoc);
-          const isEmbeddedLocActive = checkObjectActive(locObj);
+        const locationIsActive = isMasterLocActive && isEmbeddedLocActive;
+        const selfIsActive = checkObjectActive(i);
 
-          const locationIsActive = isMasterLocActive && isEmbeddedLocActive;
-          const selfIsActive = checkObjectActive(i);
+        const itemIsActive = selfIsActive && supplyIsActive && locationIsActive;
 
-          const itemIsActive = selfIsActive && supplyIsActive && locationIsActive;
-
-          return {
-            ...(i as unknown as StockItem),
-            isActive: itemIsActive,
-            currentQty: Number(i.currentQty ?? i.current_qty ?? i.quantity ?? 0),
-            allocatedQty: Number(i.allocatedQty ?? i.allocated_qty ?? 0),
-            minimumQty: (i.minimumQty ?? i.minimum_qty ?? null) as number | null,
-            supply: finalSupply,
-            location: finalLoc,
-            product: (i.product as Product | null) || (finalSupply ? { id: finalSupply.id, name: finalSupply.name, sku: finalSupply.code || finalSupply.sku || '' } : null)
-          };
-        });
-        setStockItems(mappedItems);
-      } else {
-        throw new Error('Failed to fetch stock items from server.');
-      }
+        return {
+          ...(i as unknown as StockItem),
+          isActive: itemIsActive,
+          currentQty: Number(i.currentQty ?? i.current_qty ?? i.quantity ?? 0),
+          allocatedQty: Number(i.allocatedQty ?? i.allocated_qty ?? 0),
+          minimumQty: (i.minimumQty ?? i.minimum_qty ?? null) as number | null,
+          supply: finalSupply,
+          location: finalLoc,
+          product: (i.product as Product | null) || (finalSupply ? { id: finalSupply.id, name: finalSupply.name, sku: finalSupply.code || finalSupply.sku || '' } : null)
+        };
+      });
+      setStockItems(mappedItems);
     } catch (err: unknown) {
       console.error(err);
       setError('Failed to load stock control panel data. Please check your backend connection.');
     } finally {
       setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     if (topRef.current) {
@@ -286,12 +281,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
     setAdjustError(null);
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       const payload = {
         value: Number(adjustValue),
         type: adjustType,
@@ -306,31 +295,14 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         payload
       });
 
-      // Intentar primero /v1/raw-material-stock/items/:id/adjust y fallback a /items/:id/adjust
-      let usedUrl = `${API_BASE}/v1/raw-material-stock/items/${selectedItemForAdjust.id}/adjust`;
-      let res = await fetch(usedUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok || res.status === 404) {
-        usedUrl = `${API_BASE}/items/${selectedItemForAdjust.id}/adjust`;
-        res = await fetch(usedUrl, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload)
-        });
-      }
-
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.message || 'Failed to adjust stock quantity.');
-      }
-
-      const resBody = await res.json();
-      const updatedItem = resBody.data || resBody;
+      // Only the stock-items module exposes the adjust action (v1/raw-material-stock has no
+      // items/:id/adjust route, so the previous v1 attempt always 404'd before this one).
+      const resBody = await apiRequest<MaybeEnvelopedItem<{ id: number; currentQty: number }>>(
+        `/items/${selectedItemForAdjust.id}/adjust`,
+        { method: 'POST', body: JSON.stringify(payload) },
+        'Failed to adjust stock quantity.',
+      );
+      const updatedItem = unwrapItem(resBody);
 
       // Sync grid silently in background without full reload
       setStockItems(prev => prev.map(item => item.id === updatedItem.id ? { ...item, currentQty: updatedItem.currentQty } : item));
@@ -357,19 +329,10 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       setHistoryMovements([]);
 
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        };
-
-        const res = await fetch(`${API_BASE}/movements?itemId=${item.id}&limit=100`, { headers });
-        if (!res.ok) {
-          throw new Error('Error loading movement log');
-        }
-
-        const json = await res.json();
-        const data = json.data || json || [];
+        const json = await apiRequest<
+          StockMovementHistoryEntry[] | { data?: StockMovementHistoryEntry[] | { data?: StockMovementHistoryEntry[] } }
+        >(`/movements?itemId=${item.id}&limit=100`, { method: 'GET' }, 'Error loading movement log');
+        const data = Array.isArray(json) ? json : json.data || [];
         setHistoryMovements(Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : []));
       } catch (err: unknown) {
         console.error(err);
@@ -415,8 +378,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       return false;
     }
 
-
-
     // Quick Low Stock Alert Filter (currentStock <= minStockThreshold)
     const minThreshold = Number(item.minimumQty ?? item.supply?.min_stock_threshold ?? 0);
     const isLowStock = minThreshold > 0 ? item.currentQty < minThreshold : false;
@@ -424,7 +385,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
 
     return matchesSearch && matchesLocation && matchesOutOfStock;
   });
-
 
   // Group by Location or by Raw Material
   // Helper to comprehensively determine unit cost (WACC/CPP, cost_per_unit, unit_cost)
@@ -539,7 +499,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
       group.hasAlert = true;
     }
   }
-
 
   const densityPadding = getDensityPadding(rowDensity);
 
@@ -701,7 +660,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
               </span>
             </label>
           </div>
-
 
         </div>
       </div>
@@ -1122,8 +1080,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         />
       </div>
 
-
-
       {/* Quick Links Hub Persistente (Sprint 25 Story 4114) */}
       <StockQuickLinks current="stock-movements" onNavigate={onNavigate} />
 
@@ -1182,8 +1138,6 @@ export const StockInventoryView: React.FC<StockInventoryViewProps> = ({ onNaviga
         isOpen={isSupportOpen}
         onClose={() => setIsSupportOpen(false)}
       />
-
-
 
       {/* Movement History Drawer Portal Render */}
       {isHistoryOpen && selectedItemForHistory && createPortal(

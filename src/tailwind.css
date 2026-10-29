@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 /* ==========================================
    CONFIGURACIONES PARA PLATFORM SAAS
@@ -267,11 +265,11 @@ body.restaurant-active {
 /* Forzar que cualquier elemento explícitamente blanco o encabezado con text-white mantenga color blanco */
 #store-drawer-title,
 .restaurant-active .text-white,
-.restaurant-active .!text-white,
+.restaurant-active .\!text-white,
 .restaurant-active :is(h1, h2, h3, h4, h5, h6).text-white,
 .restaurant-active :is(h1, h2, h3, h4, h5, h6).\!text-white,
 .saas-active .text-white,
-.saas-active .!text-white,
+.saas-active .\!text-white,
 .saas-active :is(h1, h2, h3, h4, h5, h6).text-white,
 .saas-active :is(h1, h2, h3, h4, h5, h6).\!text-white {
   color: #ffffff !important;

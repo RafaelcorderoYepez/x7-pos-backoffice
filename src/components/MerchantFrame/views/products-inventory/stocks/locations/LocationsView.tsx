@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../StockQuickLinks';
 import { NavHubBar } from '../../../../../shared/NavHubBar';
 import { EmergencySupportModal } from '../../../../modals/QuickActionModals';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../../shared/tableOptionsHelpers';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../../api/http';
 
 interface StockItem {
   id: number;
@@ -90,37 +90,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     if (!silent) setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      const merchantId = sessionStorage.getItem('x7:branch-context') || '1';
-
-      // 1. Try the strict business route first
-      let res = await fetch(`${API_BASE}/v1/inventory/locations?merchantId=${merchantId}`, { headers });
-
-      // 2. Fallback a /locations
-      if (!res.ok || res.status === 404 || res.status === 400) {
-        const fallbackRes = await fetch(`${API_BASE}/locations`, { headers });
-        if (fallbackRes.ok) {
-          res = fallbackRes;
-        }
-      }
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading inventory locations');
-      }
-
-      const json = await res.json();
-      let dataList: Location[] = Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : []);
+      // The backend scopes locations to the merchant in the JWT.
+      const json = await apiRequest<MaybeEnvelopedList<Location>>(
+        '/locations',
+        { method: 'GET' },
+        'Error loading inventory locations',
+      );
+      let dataList: Location[] = unwrapList(json);
       if (dataList.length > 0 && !dataList.some((l) => l.isMainStorage)) {
         dataList = dataList.map((l, idx) => (idx === 0 ? { ...l, isMainStorage: true } : l));
       }
@@ -131,7 +107,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     } finally {
       if (!silent) setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -217,12 +193,6 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     setIsToggling(true);
     setToggleError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       const newIsActive = !confirmTargetLocation.isActive;
 
       // Guard against active balance
@@ -232,24 +202,13 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
         );
       }
 
-      let res;
-      if (!newIsActive) {
-        res = await fetch(`${API_BASE}/locations/${confirmTargetLocation.id}`, {
-          method: 'DELETE',
-          headers
-        });
-      } else {
-        res = await fetch(`${API_BASE}/locations/${confirmTargetLocation.id}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ isActive: true })
-        });
-      }
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error updating location status');
-      }
+      await apiRequest<void>(
+        `/locations/${confirmTargetLocation.id}`,
+        newIsActive
+          ? { method: 'PATCH', body: JSON.stringify({ isActive: true }) }
+          : { method: 'DELETE' },
+        'Error updating location status',
+      );
 
       setLocations((prevLocations) =>
         prevLocations.map((l) =>
@@ -288,14 +247,6 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
     }
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      let res;
-
       // If formIsMainStorage is true, uncheck any other main storage for this merchant (Rule 2)
       if (formIsMainStorage) {
         setLocations((prev) =>
@@ -315,11 +266,11 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
           isMainStorage: formIsMainStorage,
           isActive: formIsActive,
         };
-        res = await fetch(`${API_BASE}/locations`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload)
-        });
+        await apiRequest<void>(
+          '/locations',
+          { method: 'POST', body: JSON.stringify(payload) },
+          'Error saving location',
+        );
       } else if (selectedLocation) {
         const payload = {
           name: formName.trim(),
@@ -328,16 +279,11 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
           isMainStorage: formIsMainStorage,
           isActive: formIsActive
         };
-        res = await fetch(`${API_BASE}/locations/${selectedLocation.id}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify(payload)
-        });
-      }
-
-      if (res && !res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Error saving location');
+        await apiRequest<void>(
+          `/locations/${selectedLocation.id}`,
+          { method: 'PATCH', body: JSON.stringify(payload) },
+          'Error saving location',
+        );
       }
       setIsFormDrawerOpen(false);
       fetchLocations(true);
@@ -477,7 +423,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
                 onChangeDensity={setRowDensity}
                 totalItems={filteredLocations.length}
                 pageSize={pageSize}
-                onChangePageSize={(s) => {
+                onChangePageSize={(s: number) => {
                   setPageSize(s);
                   setCurrentPage(1);
                 }}
@@ -685,7 +631,7 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
               pageSize={pageSize}
               totalItems={filteredLocations.length}
               onPageChange={setCurrentPage}
-              onChangePageSize={(s) => {
+              onPageSizeChange={(s: number) => {
                 setPageSize(s);
                 setCurrentPage(1);
               }}
@@ -857,7 +803,6 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
         document.body
       )}
 
-
       {/* Portal: Detail Drawer (Data inspection) */}
       {isDetailDrawerOpen && selectedLocation && createPortal(
         <div className="fixed inset-0 z-[1000] flex justify-end font-sans">
@@ -941,10 +886,9 @@ export const LocationsView: React.FC<LocationsViewProps> = ({ onNavigate }) => {
         document.body
       )}
 
-
     {/* Activation / Deactivation Confirmation Modal */}
       {isConfirmModalOpen && confirmTargetLocation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white border border-[#e8e2d8] rounded-xl max-w-sm w-full p-6 shadow-2xl animate-scale-up text-left">
             <div className="flex items-start gap-4">
               <div className={`p-3 rounded-xl text-white ${

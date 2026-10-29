@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getSaasToken, clearSaasToken } from '../../../lib/saas-auth-storage';
+import { saasRequest } from '../../../api/http';
+import { ApiError } from '../../../lib/api-error';
 import type { MerchantOrder, OrderChannel, OrderStatus } from '../../../types/settlements';
 import {
   ORDER_CHANNELS,
@@ -9,7 +10,12 @@ import {
 } from '../../../types/settlements';
 import { formatCurrency, formatDate, num, ORDER_STATUS_BADGE_STYLES } from '../../../lib/settlements';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+// saasRequest ya borró el token: se vuelve al login del panel.
+function isSessionExpired(err: unknown): boolean {
+  if (!(err instanceof ApiError) || err.status !== 401) return false;
+  window.location.href = '/saas-admin';
+  return true;
+}
 
 interface OrdersRegistryViewProps {
   onNavigate?: (view: string) => void;
@@ -26,34 +32,24 @@ export const OrdersRegistryView: React.FC<OrdersRegistryViewProps> = ({ onNaviga
   const [statusFilter, setStatusFilter] = useState<'' | OrderStatus>('');
   const [detailOrder, setDetailOrder] = useState<MerchantOrder | null>(null);
 
-  const authHeaders = useCallback((): Record<string, string> => {
-    const token = getSaasToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  }, []);
-
-  const handleUnauthorized = useCallback(() => {
-    clearSaasToken();
-    window.location.href = '/saas-admin';
-  }, []);
-
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/v1/platform/orders`, { headers: authHeaders() });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading orders');
-      const json = await res.json();
+      const json = await saasRequest<{ data?: MerchantOrder[] }>(
+        '/v1/platform/orders',
+        { method: 'GET' },
+        'Error loading orders',
+      );
       setOrders(json.data ?? []);
     } catch (err) {
+      if (isSessionExpired(err)) return;
       console.error('Error fetching merchant orders:', err);
       setError('Failed to load merchant orders. Please check if the backend is running.');
     } finally {
       setLoading(false);
     }
-  }, [authHeaders, handleUnauthorized]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {

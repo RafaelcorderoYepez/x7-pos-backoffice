@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   SettlementMethod,
   CreateTipSettlementDto,
@@ -75,10 +76,10 @@ export const TipSettlementFormDrawer: React.FC<TipSettlementFormDrawerProps> = (
     }
   };
 
-  return (
+  const content = (
     <div
       aria-label="New tip settlement drawer overlay"
-      className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-sm flex justify-end font-poppins transition-opacity duration-300"
+      className="fixed inset-0 z-[9999] overflow-hidden bg-black/40 backdrop-blur-sm flex justify-end font-poppins transition-opacity duration-300"
     >
       <div className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col justify-between overflow-y-auto">
         {/* Header */}
@@ -273,6 +274,8 @@ export const TipSettlementFormDrawer: React.FC<TipSettlementFormDrawerProps> = (
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(content, document.body) : content;
 };
 
 export default TipSettlementFormDrawer;

@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StockQuickLinks } from '../StockQuickLinks';
 import { NavHubBar } from '../../../../../shared/NavHubBar';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession, getStoredUser } from '../../../../../../lib/auth-storage';
+import { getStoredUser } from '../../../../../../lib/auth-storage';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../../shared/tableOptionsHelpers';
+import { apiRequest, getWithFallback, type MaybeEnvelopedList } from '../../../../../../api/http';
 
 interface StockItemOption {
   id: number;
@@ -37,6 +38,15 @@ interface Movement {
   destinationLocationName?: string | null;
   createdAt: string;
 }
+
+// The movements endpoint has answered with several envelopes over time; all are accepted.
+interface MovementsPage {
+  data?: Movement[] | { data?: Movement[]; total?: number; totalPages?: number };
+  total?: number;
+  count?: number;
+  totalPages?: number;
+}
+type MovementsResponse = Movement[] | MovementsPage;
 
 interface MovementsViewProps {
   onNavigate?: (view: string) => void;
@@ -89,8 +99,6 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const currentUser = getStoredUser();
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   // Unique list of raw materials by name and ID
   const uniqueSuppliesMap = new Map<number, { id: number; name: string }>();
   stockItemOptions.forEach(item => {
@@ -120,38 +128,22 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
 
   const fetchStockItems = useCallback(async () => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      let res = await fetch(`${API_BASE}/v1/raw-material-stock/items?limit=100`, { headers });
-      if (!res.ok) {
-        res = await fetch(`${API_BASE}/items?limit=100`, { headers });
-      }
-      if (res.ok) {
-        const json = await res.json();
-        const data = json.items || json.data || json || [];
-        setStockItemOptions(Array.isArray(data) ? data : []);
-      }
+      const json = await getWithFallback<MaybeEnvelopedList<StockItemOption>>(
+        ['/v1/raw-material-stock/items?limit=100', '/items?limit=100'],
+        'Failed to load stock items.',
+      );
+      setStockItemOptions(Array.isArray(json) ? json : json.items || json.data || []);
     } catch (e) {
       console.error('Error loading stock items options', e);
     }
-  }, [API_BASE]);
+  }, []);
 
   const fetchMovements = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       const limitParam = pageSize === 9999 ? 500 : pageSize;
-      let url = `${API_BASE}/v1/raw-material-stock/movements?page=${page}&limit=${limitParam}`;
+      let url = `/v1/raw-material-stock/movements?page=${page}&limit=${limitParam}`;
       if (itemIdFilter) {
         url += `&itemId=${encodeURIComponent(itemIdFilter)}`;
       } else if (itemNameFilter.trim()) {
@@ -161,39 +153,29 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
         url += `&movementType=${encodeURIComponent(movementTypeFilter)}`;
       }
 
-      let res = await fetch(url, { headers });
-      if (!res.ok || res.status === 404) {
-        url = `${API_BASE}/movements?page=${page}&limit=${limitParam}`;
-        if (itemIdFilter) url += `&itemId=${encodeURIComponent(itemIdFilter)}`;
-        else if (itemNameFilter.trim()) url += `&itemName=${encodeURIComponent(itemNameFilter)}`;
-        res = await fetch(url, { headers });
-      }
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading stock movements log');
-      }
-
-      const json = await res.json();
-      const items = Array.isArray(json)
-        ? json
-        : Array.isArray(json.data)
+      // The legacy /movements route does not filter by movement type.
+      let legacyUrl = `/movements?page=${page}&limit=${limitParam}`;
+      if (itemIdFilter) legacyUrl += `&itemId=${encodeURIComponent(itemIdFilter)}`;
+      else if (itemNameFilter.trim()) legacyUrl += `&itemName=${encodeURIComponent(itemNameFilter)}`;
+      const response = await getWithFallback<MovementsResponse>(
+        [url, legacyUrl],
+        'Error loading stock movements log',
+      );
+      // Bare-array responses carry no pagination metadata.
+      const json: MovementsPage = Array.isArray(response) ? { data: response } : response;
+      const items = Array.isArray(json.data)
         ? json.data
         : Array.isArray(json.data?.data)
         ? json.data.data
         : [];
       setMovements(items);
 
+      const nested = Array.isArray(json.data) ? undefined : json.data;
       const totalCount =
         typeof json.total === 'number'
           ? json.total
-          : typeof json.data?.total === 'number'
-          ? json.data.total
+          : typeof nested?.total === 'number'
+          ? nested.total
           : typeof json.count === 'number'
           ? json.count
           : items.length;
@@ -202,8 +184,8 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
       const pages =
         typeof json.totalPages === 'number'
           ? json.totalPages
-          : typeof json.data?.totalPages === 'number'
-          ? json.data.totalPages
+          : typeof nested?.totalPages === 'number'
+          ? nested.totalPages
           : Math.max(1, Math.ceil(totalCount / limitParam));
       setTotalPages(pages);
     } catch (err: unknown) {
@@ -213,7 +195,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [page, pageSize, itemNameFilter, itemIdFilter, movementTypeFilter, API_BASE]);
+  }, [page, pageSize, itemNameFilter, itemIdFilter, movementTypeFilter]);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -282,12 +264,6 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
     setIsSubmitting(true);
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       const isEntry = ['PURCHASE_RECEIPT', 'IN', 'RETURN'].includes(formMovementType);
 
       // For ADJUSTMENT, send the absolute delta and direction
@@ -323,17 +299,11 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
         createdBy: currentUser?.email || 'Inventory Clerk'
       };
 
-      const res = await fetch(`${API_BASE}/v1/raw-material-stock/movements`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.message || 'Failed to record stock movement');
-      }
-
+      await apiRequest<void>(
+        '/v1/raw-material-stock/movements',
+        { method: 'POST', body: JSON.stringify(payload) },
+        'Failed to record stock movement.',
+      );
       setIsRecordOpen(false);
       setFormSupplyId('');
       setFormLocationId('');
@@ -354,7 +324,6 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
       setIsSubmitting(false);
     }
   };
-
 
   return (
     <div className="flex flex-col gap-6 animate-fade-in text-left font-sans pb-24">
@@ -443,8 +412,6 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-
-
       {/* Tabla Audit Trail Grid */}
       {(() => {
         const activeColSpan =
@@ -494,7 +461,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
                 onChangeDensity={setRowDensity}
                 totalItems={totalItems > 0 ? totalItems : movements.length}
                 pageSize={pageSize}
-                onChangePageSize={(s) => {
+                onChangePageSize={(s: number) => {
                   setPageSize(s);
                   setPage(1);
                 }}
@@ -712,7 +679,7 @@ export const MovementsView: React.FC<MovementsViewProps> = ({ onNavigate }) => {
               pageSize={pageSize}
               totalItems={totalItems > 0 ? totalItems : movements.length}
               onPageChange={setPage}
-              onChangePageSize={(s) => {
+              onPageSizeChange={(s: number) => {
                 setPageSize(s);
                 setPage(1);
               }}

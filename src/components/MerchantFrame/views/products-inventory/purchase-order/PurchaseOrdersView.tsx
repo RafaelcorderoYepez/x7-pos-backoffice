@@ -1,15 +1,22 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
+import {
+  apiRequest,
+  unwrapItem,
+  unwrapList,
+  type MaybeEnvelopedItem,
+  type MaybeEnvelopedList,
+} from '../../../../../api/http';
 
 interface Supplier {
   id: number;
   name: string;
+  isActive?: boolean;
 }
 
 interface Supply {
@@ -68,7 +75,6 @@ interface OrderItemRow {
   subtotal: number;
 }
 
-
 export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNavigate }) => {
   const [mode, setMode] = useState<'list' | 'create'>('list');
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
@@ -102,7 +108,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   const [selectedSupplierId, setSelectedSupplierId] = useState<number | ''>('');
   const [orderStatus, setOrderStatus] = useState<string>('DRAFT');
 
-
   // Detail raw materials items grid
   const [itemRows, setItemRows] = useState<OrderItemRow[]>([]);
 
@@ -122,8 +127,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const topRef = useRef<HTMLDivElement | null>(null);
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   // Auto-scroll at start
   useEffect(() => {
     if (topRef.current) {
@@ -136,34 +139,19 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     if (!silent) setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      const res = await fetch(`${API_BASE}/v1/purchase-orders?limit=100`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading purchase orders');
-      }
-
-      const json = await res.json();
-      const data = json.data || json || [];
-      setPurchaseOrders(Array.isArray(data) ? data : []);
+      const json = await apiRequest<MaybeEnvelopedList<PurchaseOrder>>(
+        '/v1/purchase-orders?limit=100',
+        { method: 'GET' },
+        'Error loading purchase orders',
+      );
+      setPurchaseOrders(unwrapList(json));
     } catch (err: unknown) {
       console.error(err);
       if (!silent) setError('Failed to load purchase orders. Please verify your backend server connection.');
     } finally {
       if (!silent) setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   const handleOpenDeleteConfirm = (po: PurchaseOrder) => {
     setSelectedOrderForDelete(po);
@@ -176,24 +164,12 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      // Soft-delete: PATCH to mark as inactive
-      const res = await fetch(`${API_BASE}/v1/purchase-orders/${selectedOrderForDelete.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ isActive: false })
-      });
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(errBody.message || 'Failed to delete purchase order.');
-      }
-
+      // Soft-delete: PATCH para marcar como inactiva
+      await apiRequest<void>(
+        `/v1/purchase-orders/${selectedOrderForDelete.id}`,
+        { method: 'PATCH', body: JSON.stringify({ isActive: false }) },
+        'Failed to delete purchase order.',
+      );
       // Update DOM immediately by removing from list
       setPurchaseOrders(prev => prev.filter(p => p.id !== selectedOrderForDelete.id));
       setIsDeleteModalOpen(false);
@@ -209,51 +185,24 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
 
   const fetchSuppliersAndSupplies = useCallback(async () => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
+      // Each catalog is optional: a failing one leaves its picker empty without blocking the others.
+      const optionalList = <T,>(path: string) =>
+        apiRequest<MaybeEnvelopedList<T>>(path, { method: 'GET' }, '')
+          .then((json) => (Array.isArray(json) ? json : json.items || json.data || []))
+          .catch(() => null);
+      const [suppliersList, suppliesList, locationsList] = await Promise.all([
+        optionalList<Supplier>('/v1/inventory/suppliers?limit=100'),
+        optionalList<Supply>('/v1/inventory/raw-materials?status=active&limit=500'),
+        optionalList<{ id: number; name: string; isActive?: boolean }>('/locations'),
+      ]);
 
-      // Load active suppliers
-      const suppliersRes = await fetch(`${API_BASE}/v1/inventory/suppliers?limit=100`, { headers });
-
-      // Load active raw materials (supplies)
-      let suppliesRes = await fetch(`${API_BASE}/v1/inventory/raw-materials?status=active&limit=500`, { headers });
-      if (!suppliesRes.ok) {
-        suppliesRes = await fetch(`${API_BASE}/supplies?status=active&limit=500`, { headers });
-      }
-
-      // Cargar ubicaciones
-      let locationsRes = await fetch(`${API_BASE}/v1/inventory/locations`, { headers });
-      if (!locationsRes.ok || locationsRes.status === 404 || locationsRes.status === 400) {
-        const fallbackLocations = await fetch(`${API_BASE}/locations`, { headers });
-        if (fallbackLocations.ok) locationsRes = fallbackLocations;
-      }
-
-      if (suppliersRes.ok) {
-        const json = await suppliersRes.json();
-        const data = json.items || json.data || json || [];
-        const activeSuppliers = (Array.isArray(data) ? data : []).filter((s: { isActive?: boolean }) => s.isActive !== false);
-        setSuppliers(activeSuppliers);
-      }
-      if (suppliesRes.ok) {
-        const json = await suppliesRes.json();
-        const data = json.items || json.data || json || [];
-        const activeSupplies = (Array.isArray(data) ? data : []).filter((s: { isActive?: boolean }) => s.isActive !== false);
-        setSupplies(activeSupplies);
-      }
-
-      if (locationsRes.ok) {
-        const json = await locationsRes.json();
-        const data = json.data || json || [];
-        const activeLocations = (Array.isArray(data) ? data : []).filter((l: { isActive?: boolean }) => l.isActive !== false);
-        setLocations(activeLocations);
-      }
+      if (suppliersList) setSuppliers(suppliersList.filter((s) => s.isActive !== false));
+      if (suppliesList) setSupplies(suppliesList.filter((s) => s.isActive !== false));
+      if (locationsList) setLocations(locationsList.filter((l) => l.isActive !== false));
     } catch (err) {
       console.error('Error fetching catalog data', err);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -354,16 +303,12 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   const handleOpenEditMode = async (po: PurchaseOrder) => {
     let fullOrder = po;
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-      const detailRes = await fetch(`${API_BASE}/v1/purchase-orders/${po.id}`, { headers });
-      if (detailRes.ok) {
-        const body = await detailRes.json();
-        fullOrder = body.data || body;
-      }
+      const body = await apiRequest<MaybeEnvelopedItem<PurchaseOrder>>(
+        `/v1/purchase-orders/${po.id}`,
+        { method: 'GET' },
+        'Failed to load the purchase order.',
+      );
+      fullOrder = unwrapItem(body);
     } catch (e) {
       console.error('Failed to load full PO details for edit', e);
     }
@@ -422,16 +367,10 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     }
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       const isEdit = editingOrderId !== null;
       const url = isEdit
-        ? `${API_BASE}/v1/purchase-orders/${editingOrderId}`
-        : `${API_BASE}/v1/purchase-orders`;
+        ? `/v1/purchase-orders/${editingOrderId}`
+        : '/v1/purchase-orders';
       const method = isEdit ? 'PUT' : 'POST';
 
       const payload = {
@@ -449,17 +388,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
         }))
       };
 
-
-      const res = await fetch(url, {
-        method,
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Error saving the purchase order');
-      }
+      await apiRequest<void>(url, { method, body: JSON.stringify(payload) }, 'Error saving the purchase order');
 
       setEditingOrderId(null);
       setMode('list');
@@ -471,38 +400,26 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
     }
   };
 
-
-
   // Open Inspection Drawer
   const handleInspectOrder = async (po: PurchaseOrder) => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
+      const body = await apiRequest<MaybeEnvelopedItem<PurchaseOrder>>(
+        `/v1/purchase-orders/${po.id}`,
+        { method: 'GET' },
+        'Failed to load purchase order details.',
+      );
+      const orderData = unwrapItem(body);
+      setSelectedOrderForInspect(orderData);
+      setInspectorStatus(orderData.status);
 
-      const detailRes = await fetch(`${API_BASE}/v1/purchase-orders/${po.id}`, { headers });
-
-      if (detailRes.ok) {
-        const body = await detailRes.json();
-        const orderData = body.data || body;
-        setSelectedOrderForInspect(orderData);
-        setInspectorStatus(orderData.status);
-
-        // Initialize quantities received for each item
-        const initialQtys: Record<number, number> = {};
-        if (orderData.purchaseOrderItems) {
-          orderData.purchaseOrderItems.forEach((item: { id: number; receivedQuantity?: number }) => {
-            initialQtys[item.id] = item.receivedQuantity || 0;
-          });
-        }
-        setReceivedQuantities(initialQtys);
-      } else {
-        setSelectedOrderForInspect(po);
-        setInspectorStatus(po.status);
-        setReceivedQuantities({});
+      // Inicializar cantidades recibidas de cada item
+      const initialQtys: Record<number, number> = {};
+      if (orderData.purchaseOrderItems) {
+        orderData.purchaseOrderItems.forEach((item) => {
+          if (item.id != null) initialQtys[item.id] = item.receivedQuantity || 0;
+        });
       }
+      setReceivedQuantities(initialQtys);
     } catch (e) {
       console.error('Failed to load purchase order details', e);
       setSelectedOrderForInspect(po);
@@ -516,12 +433,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
   const handleSaveInspectorChanges = async () => {
     if (!selectedOrderForInspect) return;
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       // 1. Check for additional received quantities to submit via /receive
       const receiveItemsPayload: { id: number; receivedQuantity: number }[] = [];
       if (selectedOrderForInspect.purchaseOrderItems) {
@@ -545,32 +456,20 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
 
       // If items pending receipt, call specialized POST /v1/purchase-orders/:id/receive endpoint
       if (receiveItemsPayload.length > 0) {
-        const receiveRes = await fetch(`${API_BASE}/v1/purchase-orders/${selectedOrderForInspect.id}/receive`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ items: receiveItemsPayload })
-        });
-
-        if (!receiveRes.ok) {
-          const errorData = await receiveRes.json().catch(() => ({}));
-          const errMsg = Array.isArray(errorData.message) ? errorData.message.join(', ') : (errorData.message || 'Error receiving items');
-          throw new Error(errMsg);
-        }
+        await apiRequest<void>(
+          `/v1/purchase-orders/${selectedOrderForInspect.id}/receive`,
+          { method: 'POST', body: JSON.stringify({ items: receiveItemsPayload }) },
+          'Error receiving items',
+        );
       }
 
       // 2. If status was explicitly changed in dropdown to another non-derived value, update via PATCH /status
       if (inspectorStatus !== selectedOrderForInspect.status && receiveItemsPayload.length === 0) {
-        const statusRes = await fetch(`${API_BASE}/v1/purchase-orders/${selectedOrderForInspect.id}/status`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ status: inspectorStatus })
-        });
-
-        if (!statusRes.ok) {
-          const errorData = await statusRes.json().catch(() => ({}));
-          const errMsg = Array.isArray(errorData.message) ? errorData.message.join(', ') : (errorData.message || 'Error updating status');
-          throw new Error(errMsg);
-        }
+        await apiRequest<void>(
+          `/v1/purchase-orders/${selectedOrderForInspect.id}/status`,
+          { method: 'PATCH', body: JSON.stringify({ status: inspectorStatus }) },
+          'Error updating status',
+        );
       }
 
       setIsDetailDrawerOpen(false);
@@ -581,7 +480,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
       alert(message);
     }
   };
-
 
   // Helper to retrieve valid lifecycle transitions
   const getAllowedNextStatuses = (currentStatus: string) => {
@@ -769,7 +667,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                   <span>Edit Order Items & Quantities</span>
                 </button>
               )}
-
 
               <div className="border-t border-[#e8e2d8] pt-5 space-y-3">
                 <h4 className="text-[10px] font-bold uppercase tracking-widest text-[#ae001a]">Order Metadata</h4>
@@ -1094,7 +991,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                     onChangeDensity={setRowDensity}
                     totalItems={filteredOrders.length}
                     pageSize={pageSize}
-                    onChangePageSize={(s) => {
+                    onChangePageSize={(s: number) => {
                       setPageSize(s);
                       setCurrentPage(1);
                     }}
@@ -1172,7 +1069,11 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
 
                     <tbody className="divide-y divide-[#e8e2d8]">
                       {activeColSpan === 0 ? (
-                        <NoColumnsEmptyState colSpan={7} />
+                        <tr>
+                          <td colSpan={7}>
+                            <NoColumnsEmptyState />
+                          </td>
+                        </tr>
                       ) : isLoading ? (
                         <tr>
                           <td colSpan={activeColSpan} className="px-6 py-12 text-center text-secondary font-sans bg-white">
@@ -1370,7 +1271,7 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
                   pageSize={pageSize}
                   totalItems={filteredOrders.length}
                   onPageChange={setCurrentPage}
-                  onChangePageSize={(s) => {
+                  onPageSizeChange={(s: number) => {
                     setPageSize(s);
                     setCurrentPage(1);
                   }}
@@ -1410,7 +1311,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
               <span className="material-symbols-outlined text-[#ae001a]">receipt_long</span>
               {editingOrderId ? `Edit Purchase Order #${editingOrderId}` : 'Create Purchase Order'}
             </h2>
-
 
             {/* Cabecera (Master Form) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1618,8 +1518,6 @@ export const PurchaseOrdersView: React.FC<PurchaseOrdersViewProps> = ({ onNaviga
           </div>
         </form>
       )}
-
-
 
       <EmergencySupportModal
         isOpen={isSupportOpen}

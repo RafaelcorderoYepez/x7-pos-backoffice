@@ -7,8 +7,10 @@ import type {
   InvoiceSupplierRef,
   SupplierPaymentAllocation,
 } from '../../../../types/accounts-payable';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -51,10 +53,6 @@ const NOTES: SupplierCreditNote[] = [
   },
 ];
 
-function jsonRes(body: unknown, status = 200) {
-  return { status, ok: status >= 200 && status < 300, json: async () => body };
-}
-
 interface InstallOpts {
   notes?: SupplierCreditNote[];
   suppliers?: InvoiceSupplierRef[];
@@ -67,23 +65,23 @@ function installFetch({ notes = NOTES, suppliers = SUPPLIERS, allocations = [] }
     const method = options?.method ?? 'GET';
 
     if (u.includes('/supplier-payment-allocations')) {
-      return jsonRes({ data: allocations });
+      return jsonResponse({ data: allocations });
     }
     if (u.includes('/suppliers')) {
-      return jsonRes({ data: suppliers });
+      return jsonResponse({ data: suppliers });
     }
     if (u.includes('/supplier-credit-notes')) {
       const detailMatch = u.match(/supplier-credit-notes\/(\d+)$/);
       if (method === 'GET') {
         if (detailMatch) {
           const cn = notes.find((n) => String(n.id) === detailMatch[1]);
-          return jsonRes({ data: cn ?? null });
+          return jsonResponse({ data: cn ?? null });
         }
-        return jsonRes({ data: notes });
+        return jsonResponse({ data: notes });
       }
-      return jsonRes({ data: {} });
+      return jsonResponse({ data: {} });
     }
-    return jsonRes({ data: [] });
+    return jsonResponse({ data: [] });
   });
   vi.stubGlobal('fetch', spy);
   return spy;
@@ -126,7 +124,7 @@ describe('SupplierCreditNotesView — states', () => {
     delete window.location;
     // @ts-expect-error partial mock
     window.location = { href: '' };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({}, 401)));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonResponse({}, 401)));
     render(<SupplierCreditNotesView />);
     await waitFor(() => expect(window.location.href).toBe('/login'));
     // @ts-expect-error restoring
@@ -291,7 +289,7 @@ describe('SupplierCreditNotesView — create & edit persistence', () => {
       applied_amount: 0,
       status: 'draft',
     };
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({ data: created }, 201)));
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => jsonResponse({ data: created }, 201)));
 
     await user.click(screen.getByRole('button', { name: /issue credit note/i }));
     const dialog = screen.getByRole('dialog', { name: /issue credit note/i });
@@ -312,7 +310,7 @@ describe('SupplierCreditNotesView — create & edit persistence', () => {
     const row = (await screen.findByText('CN-2026-0001')).closest('tr')!;
 
     const updated: SupplierCreditNote = { ...NOTES[0], status: 'issued' };
-    const spy = vi.fn().mockResolvedValue(jsonRes({ data: updated }));
+    const spy = vi.fn().mockImplementation(async () => jsonResponse({ data: updated }));
     vi.stubGlobal('fetch', spy);
 
     await user.click(within(row).getByLabelText('Edit credit note'));

@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
 import { InventoryNavHubBar } from '../InventoryNavHubBar';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
+import { apiRequest } from '../../../../../api/http';
 
 interface Category {
   id: number;
@@ -96,38 +96,23 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
       topRef.current.scrollIntoView({ behavior: 'instant' });
     }
   }, []);
-
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   const fetchAllData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const [productsRes, categoriesRes] = await Promise.all([
-        fetch(`${API_BASE}/products?limit=100`, { headers }),
-        fetch(`${API_BASE}/category?limit=100`, { headers })
+      const [productsJson, categoriesJson] = await Promise.all([
+        apiRequest<{ data?: {
+        id: number;
+        name: string;
+        sku?: string;
+        basePrice: number | string;
+        isActive?: boolean;
+        category?: { id: number; name: string } | null;
+        variants?: Variant[];
+        modifiers?: Modifier[];
+      }[] }>('/products?limit=100', { method: 'GET' }, 'Error loading data from server'),
+        apiRequest<{ data?: Category[] }>('/category?limit=100', { method: 'GET' }, 'Error loading data from server'),
       ]);
-
-      if (productsRes.status === 401 || categoriesRes.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!productsRes.ok || !categoriesRes.ok) {
-        throw new Error('Error loading data from server');
-      }
-
-      const productsJson = await productsRes.json();
-      const categoriesJson = await categoriesRes.json();
 
       const productsData = productsJson.data || [];
       const categoriesData = categoriesJson.data || [];
@@ -161,7 +146,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -243,23 +228,14 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     setIsToggling(true);
     setToggleError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      const res = await fetch(`${API_BASE}/products/${confirmTargetProduct.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ isActive: !confirmTargetProduct.isActive })
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error updating product status');
-      }
-
+      await apiRequest<void>(
+        `/products/${confirmTargetProduct.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ isActive: !confirmTargetProduct.isActive })
+        },
+        'Error updating product status.',
+      );
       setProducts((prevProducts) =>
         prevProducts.map((prod) =>
           prod.id === confirmTargetProduct.id ? { ...prod, isActive: !prod.isActive } : prod
@@ -291,14 +267,6 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
     }
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
       const categoryIdNum = formCategory === 'NULL' ? null : parseInt(formCategory);
 
       const bodyData = {
@@ -310,25 +278,17 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
       };
 
       if (modalMode === 'add') {
-        const res = await fetch(`${API_BASE}/products`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(bodyData)
-        });
-        if (!res.ok) {
-          const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error creating product');
-        }
+        await apiRequest<void>(
+          '/products',
+          { method: 'POST', body: JSON.stringify(bodyData) },
+          'Error creating product.',
+        );
       } else if (modalMode === 'edit' && editingProductId) {
-        const res = await fetch(`${API_BASE}/products/${editingProductId}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify(bodyData)
-        });
-        if (!res.ok) {
-          const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error updating product');
-        }
+        await apiRequest<void>(
+          `/products/${editingProductId}`,
+          { method: 'PATCH', body: JSON.stringify(bodyData) },
+          'Error updating product.',
+        );
       }
 
       setIsModalOpen(false);
@@ -342,7 +302,6 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
 
   // Action menu handlers (more_vert)
   const handleExportCSV = () => {
-    setIsOptionsMenuOpen(false);
     if (!filteredProducts || filteredProducts.length === 0) return;
     const headers = ['ID', 'Name', 'Category', 'Base Price', 'SKU', 'Status'];
     const rows = filteredProducts.map(p => [
@@ -364,12 +323,10 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
   };
 
   const handlePrintTable = () => {
-    setIsOptionsMenuOpen(false);
     window.print();
   };
 
   const handleCopySummary = () => {
-    setIsOptionsMenuOpen(false);
     const text = filteredProducts
       .map(p => `#${p.id} ${p.name} (${p.category?.name || 'Uncategorized'}) - $${p.basePrice} [${p.isActive !== false ? 'ACTIVE' : 'INACTIVE'}]`)
       .join('\n');
@@ -896,7 +853,6 @@ export const ProductsView: React.FC<ProductsViewProps> = ({ onNavigate }) => {
         </div>,
         document.body
       )}
-
 
       <EmergencySupportModal
         isOpen={isSupportOpen}

@@ -5,7 +5,6 @@
 // on create is validated against JWT, satisfying DTO contract.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   Collaborator,
   CollaboratorSummary,
@@ -41,8 +40,10 @@ import { Toast } from '../../shared/Toast';
 import { HrQuickLinks } from './HrQuickLinks';
 import { CollaboratorFormDrawer, type CollaboratorDraft } from './CollaboratorFormDrawer';
 import { CollaboratorDetailDrawer } from './CollaboratorDetailDrawer';
+import { ApiError } from '../../../../lib/api-error';
+import { apiRequest } from '../../../../api/http';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+const REGISTER_FALLBACK = 'Failed to register the collaborator';
 
 // Soft-delete: row retained in database to preserve order and shift history.
 const DELETED_STATUS = 'deleted';
@@ -128,28 +129,15 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchCollaborators = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/collaborators?limit=100`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading collaborators');
-      const json = await res.json();
+      const json = await apiRequest<{ data?: Collaborator[] }>(
+        '/collaborators?limit=100',
+        { method: 'GET' },
+        'Error loading collaborators',
+      );
       setCollaborators(
         ((json.data ?? []) as Collaborator[]).filter((c) => c.status !== DELETED_STATUS),
       );
@@ -167,15 +155,11 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
     setUsersError('');
     try {
       // Merchant ID sourced from prop, avoiding local storage desync.
-      const res = await fetch(`${API_BASE}/users/merchant/${activeMerchantId}`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to load platform accounts.');
-      }
-      const json = await res.json();
+      const json = await apiRequest<{ data?: MerchantUser[] }>(
+        `/users/merchant/${activeMerchantId}`,
+        { method: 'GET' },
+        'Failed to load platform accounts.',
+      );
       setUsers(((json.data ?? []) as MerchantUser[]).filter((u) => u.isActive !== false));
     } catch (err) {
       console.error('Error fetching platform accounts for collaborators:', err);
@@ -187,11 +171,12 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
     }
 
     try {
-      const shiftRes = await fetch(`${API_BASE}/shifts?limit=100`, { headers: authHeaders() });
-      if (shiftRes.ok) {
-        const json = await shiftRes.json();
-        setShifts(((json.data ?? []) as ShiftRef[]).filter((s) => s.status !== 'deleted'));
-      }
+      const json = await apiRequest<{ data?: ShiftRef[] }>(
+        '/shifts?limit=100',
+        { method: 'GET' },
+        'Failed to load shifts.',
+      );
+      setShifts((json.data ?? []).filter((s) => s.status !== 'deleted'));
     } catch (err) {
       console.error('Error fetching shifts for collaborators:', err);
     }
@@ -235,20 +220,21 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
         status: draft.status,
         shift_id: draft.shift_id,
       };
-      const res = await fetch(`${API_BASE}/collaborators`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // Unique index 409 mapped to descriptive error naming user account.
-        throw new Error(
-          res.status === 409
-            ? conflictMessageFor(draft.user_id, json.message)
-            : json.message || 'Failed to register the collaborator',
+      try {
+        await apiRequest<void>(
+          '/collaborators',
+          { method: 'POST', body: JSON.stringify(body) },
+          REGISTER_FALLBACK,
         );
+      } catch (err) {
+        // Unique index 409 mapped to descriptive error naming user account.
+        if (err instanceof ApiError && err.status === 409) {
+          throw new Error(
+            conflictMessageFor(draft.user_id, err.message === REGISTER_FALLBACK ? undefined : err.message),
+            { cause: err },
+          );
+        }
+        throw err;
       }
       await fetchCollaborators();
       setFormDrawer(null);
@@ -272,14 +258,11 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
         status: draft.status,
         shift_id: draft.shift_id,
       };
-      const res = await fetch(`${API_BASE}/collaborators/${id}`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify(body),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to update the collaborator');
+      await apiRequest<void>(
+        `/collaborators/${id}`,
+        { method: 'PUT', body: JSON.stringify(body) },
+        'Failed to update the collaborator',
+      );
       await fetchCollaborators();
       setFormDrawer(null);
       setToast({ message: 'Collaborator updated successfully', type: 'success' });
@@ -294,15 +277,11 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
     if (!deleting) return;
     setDeleteSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/collaborators/${deleting.id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to remove the collaborator');
-      }
+      await apiRequest<void>(
+        `/collaborators/${deleting.id}`,
+        { method: 'DELETE' },
+        'Failed to remove the collaborator',
+      );
       setCollaborators((prev) => prev.filter((c) => c.id !== deleting.id));
       setDeleting(null);
       setToast({ message: 'Collaborator removed successfully', type: 'success' });
@@ -329,12 +308,11 @@ export const CollaboratorsView: React.FC<CollaboratorsViewProps> = ({
     setSummaryError('');
     setSummary(null);
     try {
-      const res = await fetch(`${API_BASE}/collaborators/${id}/summary`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to load the operational summary');
+      const json = await apiRequest<{ data: CollaboratorSummary }>(
+        `/collaborators/${id}/summary`,
+        { method: 'GET' },
+        'Failed to load the operational summary',
+      );
       setSummary(json.data as CollaboratorSummary);
     } catch (err) {
       setSummaryError(

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   AccountType,
   CreateLedgerAccountDto,
@@ -16,8 +15,7 @@ import {
 } from './ledgerAccountTreeHelpers';
 import { StatusToggleButton, ConfirmStatusToggleDialog } from '../../../shared/StatusToggle';
 import { LedgerQuickLinks } from './LedgerQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 
 
@@ -362,26 +360,12 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
     setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/ledger-accounts?limit=100`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        setError(`Failed to load ledger accounts. Server returned status ${res.status}`);
-        return;
-      }
-
-      const json = await res.json();
-      const loaded = json.data ?? [];
-      setAccounts(loaded);
+      const json = await apiRequest<{ data?: LedgerAccount[] }>(
+        '/ledger-accounts?limit=100',
+        { method: 'GET' },
+        'Failed to load ledger accounts.',
+      );
+      setAccounts(json.data ?? []);
     } catch (err: unknown) {
       console.error('Error fetching ledger accounts:', err);
       setError(err instanceof Error ? err.message : 'Failed to load ledger accounts');
@@ -399,26 +383,11 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
   const handleCreateSubmit = async (dto: CreateLedgerAccountDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/ledger-accounts`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to create ledger account');
-      }
+      const json = await apiRequest<{ data: LedgerAccount }>(
+        '/ledger-accounts',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to create ledger account',
+      );
 
       setAccounts((prev) => [...prev, json.data]);
       setFormModalOpen(null);
@@ -434,26 +403,11 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
   const handleEditSubmit = async (accountId: number, dto: UpdateLedgerAccountDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/ledger-accounts/${accountId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to update ledger account');
-      }
+      const json = await apiRequest<{ data: LedgerAccount }>(
+        `/ledger-accounts/${accountId}`,
+        { method: 'PATCH', body: JSON.stringify(dto) },
+        'Failed to update ledger account',
+      );
 
       setAccounts((prev) => prev.map((a) => (a.id === json.data.id ? json.data : a)));
       setFormModalOpen(null);
@@ -471,26 +425,11 @@ export const LedgerAccountsView: React.FC<LedgerAccountsViewProps> = ({ onNaviga
     const isDeactivating = togglingAccount.is_active;
     setToggleSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/ledger-accounts/${togglingAccount.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ is_active: !isDeactivating }),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to update ledger account status');
-      }
+      const json = await apiRequest<{ data: LedgerAccount }>(
+        `/ledger-accounts/${togglingAccount.id}`,
+        { method: 'PATCH', body: JSON.stringify({ is_active: !isDeactivating }) },
+        'Failed to update ledger account status',
+      );
 
       setAccounts((prev) => prev.map((a) => (a.id === json.data.id ? json.data : a)));
       setTogglingAccount(null);

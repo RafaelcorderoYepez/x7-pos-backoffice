@@ -1,5 +1,4 @@
-import { getAccessToken, clearAuthSession } from '../lib/auth-storage';
-import { ApiError, getApiErrorMessage } from '../lib/api-error';
+import { apiRequest } from './http';
 import type {
   CompanyMerchant,
   CompanyMerchantsMeta,
@@ -10,54 +9,11 @@ import type {
   MerchantMutationResponse,
 } from '../types/merchant';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-function authHeaders(includeJson = false): Record<string, string> {
-  const token = getAccessToken();
-  return {
-    Accept: 'application/json',
-    ...(includeJson ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
-async function merchantRequest<T>(
-  path: string,
-  init: RequestInit,
-  fallbackMessage: string,
-): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      ...authHeaders(Boolean(init.body)),
-      ...init.headers,
-    },
-  });
-
-  if (response.status === 401) {
-    clearAuthSession();
-    window.location.href = '/login';
-    throw new ApiError('Unauthorized', 401);
-  }
-
-  if (!response.ok) {
-    const message = await getApiErrorMessage(response, fallbackMessage);
-    throw new ApiError(message, response.status);
-  }
-
-  const text = await response.text();
-  if (!text.trim()) {
-    return undefined as T;
-  }
-
-  return JSON.parse(text) as T;
-}
-
 export async function getCompanyMerchants(): Promise<{
   merchants: CompanyMerchant[];
   meta: CompanyMerchantsMeta;
 }> {
-  const json = await merchantRequest<CompanyMerchantsResponse>(
+  const json = await apiRequest<CompanyMerchantsResponse>(
     '/merchants/company/branches',
     { method: 'GET' },
     'Failed to load merchants. Please try again.',
@@ -72,7 +28,7 @@ export async function getCompanyMerchants(): Promise<{
 export async function createCompanyMerchant(
   payload: MerchantFormPayload,
 ): Promise<CompanyMerchant> {
-  const json = await merchantRequest<MerchantMutationResponse>(
+  const json = await apiRequest<MerchantMutationResponse>(
     '/merchants/company/branches',
     {
       method: 'POST',
@@ -88,7 +44,7 @@ export async function updateCompanyMerchant(
   id: number,
   payload: MerchantFormPayload,
 ): Promise<CompanyMerchant> {
-  const json = await merchantRequest<MerchantMutationResponse>(
+  const json = await apiRequest<MerchantMutationResponse>(
     `/merchants/${id}`,
     {
       method: 'PUT',
@@ -103,7 +59,7 @@ export async function updateCompanyMerchant(
 export async function deactivateCompanyMerchant(
   id: number,
 ): Promise<CompanyMerchant> {
-  const json = await merchantRequest<MerchantMutationResponse>(
+  const json = await apiRequest<MerchantMutationResponse>(
     `/merchants/${id}`,
     {
       method: 'PUT',
@@ -118,7 +74,7 @@ export async function deactivateCompanyMerchant(
 export async function getMerchantAdminSummary(
   id: number,
 ): Promise<MerchantAdminSummary> {
-  const json = await merchantRequest<MerchantAdminSummaryResponse>(
+  const json = await apiRequest<MerchantAdminSummaryResponse>(
     `/merchants/${id}/admin-summary`,
     { method: 'GET' },
     'Failed to load merchant summary. Please try again.',

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { LedgerAccount } from '../../../../types/accounting';
 
 import {
@@ -31,6 +31,9 @@ export const JournalEntryLinesEditor: React.FC<JournalEntryLinesEditorProps> = (
       blurTimeoutRef.current = null;
     }
   };
+
+  // Cancel a pending dropdown close if the editor unmounts first
+  useEffect(() => clearBlurTimeout, []);
 
   const updateLine = (key: string, patch: Partial<JournalEntryLineDraft>) => {
     onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));

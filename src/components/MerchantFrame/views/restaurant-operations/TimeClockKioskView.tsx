@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   CollaboratorPinAccount,
   PunchType,
@@ -756,8 +757,9 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
       </main>
 
       {/* SUPERVISOR OVERRIDE MODAL */}
-      {showOverrideModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      {showOverrideModal &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
           <div className="bg-[#1f2228] border-2 border-amber-500 max-w-lg w-full p-6 md:p-8 rounded-2xl shadow-2xl space-y-6 animate-fade-in text-left">
             <div className="flex items-center gap-3 border-b border-gray-800 pb-4">
               <div className="w-12 h-12 bg-amber-500/20 text-amber-400 rounded-xl flex items-center justify-center shrink-0">
@@ -858,7 +860,8 @@ export const TimeClockKioskView: React.FC<TimeClockKioskViewProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Terminal Footer */}

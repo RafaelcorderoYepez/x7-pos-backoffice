@@ -1,12 +1,15 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { AppModal } from '../../../shared/AppModal';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
 import { TableOptionsMenu, NoColumnsEmptyState, TableEmptyState, TablePaginationFooter } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { NavHubBar } from '../../../../shared/NavHubBar';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
+import { ApiError } from '../../../../../lib/api-error';
+
+const SAVE_FALLBACK = 'Error saving kitchen station.';
 
 export type KitchenStationType = 'HOT' | 'COLD' | 'BAR' | 'DESSERT' | 'PREP' | 'PACKING' | 'EXPO';
 export type KitchenDisplayMode = 'AUTO' | 'MANUAL' | 'SUMMARY' | 'GRID';
@@ -155,8 +158,6 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const topRef = useRef<HTMLDivElement | null>(null);
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   useEffect(() => {
     if (topRef.current) {
       topRef.current.scrollIntoView({ behavior: 'instant' });
@@ -168,12 +169,6 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     setIsRefreshing(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       const statusQuery = statusFilter === 'Deleted' ? 'deleted' : statusFilter === 'Active' ? 'active' : '';
       const params = new URLSearchParams();
       if (statusQuery) params.append('status', statusQuery);
@@ -181,45 +176,35 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
       params.append('sortBy', 'displayOrder');
       params.append('sortOrder', 'ASC');
 
-      const res = await fetch(`${API_BASE}/kitchen-station?${params.toString()}`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (res.ok) {
-        const json = await res.json();
-        const rawList: Record<string, unknown>[] = Array.isArray(json) ? json : json.data || [];
-        const dataList: KitchenStation[] = rawList.map((st) => ({
-          id: Number(st.id ?? 0),
-          merchant_id: Number(st.merchant_id ?? st.merchantId ?? 0),
-          merchantId: Number(st.merchant_id ?? st.merchantId ?? 0),
-          name: String(st.name ?? ''),
-          is_active: Boolean(st.isActive ?? st.is_active ?? true),
-          isActive: Boolean(st.isActive ?? st.is_active ?? true),
-          station_type: (st.stationType ?? st.station_type ?? 'PREP') as KitchenStationType,
-          stationType: (st.stationType ?? st.station_type ?? 'PREP') as KitchenStationType,
-          display_mode: (st.displayMode ?? st.display_mode ?? 'AUTO') as KitchenDisplayMode,
-          displayMode: (st.displayMode ?? st.display_mode ?? 'AUTO') as KitchenDisplayMode,
-          display_order: Number(st.displayOrder ?? st.display_order ?? 1),
-          displayOrder: Number(st.displayOrder ?? st.display_order ?? 1),
-          station_number: Number(st.stationNumber ?? st.station_number ?? st.displayOrder ?? st.display_order ?? st.id),
-          stationNumber: Number(st.stationNumber ?? st.station_number ?? st.displayOrder ?? st.display_order ?? st.id),
-          printer_name: (st.printerName ?? st.printer_name ?? null) as string | null,
-          printerName: (st.printerName ?? st.printer_name ?? null) as string | null,
-          created_at: String(st.createdAt ?? st.created_at ?? new Date().toISOString()),
-          createdAt: String(st.createdAt ?? st.created_at ?? new Date().toISOString()),
-          updated_at: String(st.updatedAt ?? st.updated_at ?? new Date().toISOString()),
-          updatedAt: String(st.updatedAt ?? st.updated_at ?? new Date().toISOString()),
-          status: (st.status ?? 'active') as KitchenStationStatus,
-        }));
-        setStations(dataList);
-        setLastUpdated(new Date());
-      } else {
-        setStations([]);
-      }
+      const json = await apiRequest<MaybeEnvelopedList<Record<string, unknown>>>(
+        `/kitchen-station?${params.toString()}`,
+        { method: 'GET' },
+        'Failed to fetch kitchen stations from backend API.',
+      );
+      const rawList = unwrapList(json);
+      const dataList: KitchenStation[] = rawList.map((st) => ({
+        id: Number(st.id ?? 0),
+        merchant_id: Number(st.merchant_id ?? st.merchantId ?? 0),
+        merchantId: Number(st.merchant_id ?? st.merchantId ?? 0),
+        name: String(st.name ?? ''),
+        is_active: Boolean(st.isActive ?? st.is_active ?? true),
+        isActive: Boolean(st.isActive ?? st.is_active ?? true),
+        station_type: (st.stationType ?? st.station_type ?? 'PREP') as KitchenStationType,
+        stationType: (st.stationType ?? st.station_type ?? 'PREP') as KitchenStationType,
+        display_mode: (st.displayMode ?? st.display_mode ?? 'AUTO') as KitchenDisplayMode,
+        displayMode: (st.displayMode ?? st.display_mode ?? 'AUTO') as KitchenDisplayMode,
+        display_order: Number(st.displayOrder ?? st.display_order ?? 1),
+        displayOrder: Number(st.displayOrder ?? st.display_order ?? 1),
+        printer_name: (st.printerName ?? st.printer_name ?? null) as string | null,
+        printerName: (st.printerName ?? st.printer_name ?? null) as string | null,
+        created_at: String(st.createdAt ?? st.created_at ?? new Date().toISOString()),
+        createdAt: String(st.createdAt ?? st.created_at ?? new Date().toISOString()),
+        updated_at: String(st.updatedAt ?? st.updated_at ?? new Date().toISOString()),
+        updatedAt: String(st.updatedAt ?? st.updated_at ?? new Date().toISOString()),
+        status: (st.status ?? 'active') as KitchenStationStatus,
+      }));
+      setStations(dataList);
+      setLastUpdated(new Date());
     } catch (err) {
       console.warn('API error fetching kitchen stations:', err);
       setError('Failed to fetch kitchen stations from backend API.');
@@ -228,7 +213,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [statusFilter, displayModeFilter, API_BASE]);
+  }, [statusFilter, displayModeFilter]);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -293,23 +278,13 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     );
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/kitchen-station/${station.id}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ isActive: nextActive }),
-      });
-
-      if (!res.ok) {
-        // Rollback if API fails
-        fetchStations(true);
-      }
+      await apiRequest<void>(
+        `/kitchen-station/${station.id}`,
+        { method: 'PUT', body: JSON.stringify({ isActive: nextActive }) },
+        'Failed to update station status',
+      );
     } catch (err) {
+      // Rollback the optimistic toggle to the server state.
       console.error('Error toggling kitchen station status:', err);
       fetchStations(true);
     }
@@ -357,13 +332,6 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     setFormError(null);
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      let res: Response;
       if (drawerMode === 'add') {
         const createPayload = {
           name: formName.trim(),
@@ -372,11 +340,7 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
           displayOrder: Number(formDisplayOrder),
           ...(formPrinterName.trim() ? { printerName: formPrinterName.trim() } : {}),
         };
-        res = await fetch(`${API_BASE}/kitchen-station`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(createPayload),
-        });
+        await apiRequest<void>('/kitchen-station', { method: 'POST', body: JSON.stringify(createPayload) }, SAVE_FALLBACK);
       } else {
         const isDeleted = formStatus === 'deleted';
         const updatePayload = {
@@ -388,27 +352,17 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
           isActive: isDeleted ? false : formIsActive,
           status: formStatus,
         };
-        res = await fetch(`${API_BASE}/kitchen-station/${editingStation?.id}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(updatePayload),
-        });
+        await apiRequest<void>(
+          `/kitchen-station/${editingStation?.id}`,
+          { method: 'PUT', body: JSON.stringify(updatePayload) },
+          SAVE_FALLBACK,
+        );
       }
 
-      if (res.ok) {
-        setIsDrawerOpen(false);
-        fetchStations(true);
-      } else {
-        const errorJson = await res.json().catch(() => ({}));
-        const msg = errorJson.message
-          ? Array.isArray(errorJson.message)
-            ? errorJson.message.join(', ')
-            : errorJson.message
-          : 'Error saving kitchen station.';
-        setFormError(msg);
-      }
-    } catch {
-      setFormError('Network error connecting to server.');
+      setIsDrawerOpen(false);
+      fetchStations(true);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : 'Network error connecting to server.');
     } finally {
       setIsSubmitting(false);
     }
@@ -419,24 +373,20 @@ export const KitchenStationsView: React.FC<KitchenStationsViewProps> = ({ onNavi
     if (!stationToDelete) return;
     setIsDeleting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/kitchen-station/${stationToDelete.id}`, {
-        method: 'DELETE',
-        headers,
-      });
-
-      if (res.ok || res.status === 404) {
-        setStations((prev) => prev.filter((s) => s.id !== stationToDelete.id));
-      } else {
-        setStations((prev) => prev.filter((s) => s.id !== stationToDelete.id));
-      }
-    } catch {
+      await apiRequest<void>(
+        `/kitchen-station/${stationToDelete.id}`,
+        { method: 'DELETE' },
+        'Failed to delete kitchen station',
+      );
       setStations((prev) => prev.filter((s) => s.id !== stationToDelete.id));
+    } catch (err) {
+      // 404: already gone on the server, so drop it from the list too. Any other failure keeps
+      // the row (it still exists) and tells the user why.
+      if (err instanceof ApiError && err.status === 404) {
+        setStations((prev) => prev.filter((s) => s.id !== stationToDelete.id));
+      } else if (!(err instanceof ApiError && err.status === 401)) {
+        alert(err instanceof Error ? err.message : 'Failed to delete kitchen station');
+      }
     } finally {
       setIsDeleting(false);
       setDeleteModalOpen(false);

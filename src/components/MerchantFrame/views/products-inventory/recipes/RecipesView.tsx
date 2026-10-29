@@ -1,12 +1,10 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
+import { apiRequest, type MaybeEnvelopedList } from '../../../../../api/http';
+import { ApiError } from '../../../../../lib/api-error';
 interface Supply {
   id: number;
   name: string;
@@ -149,7 +147,6 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
   const [formDuplicateWarning, setFormDuplicateWarning] = useState<string | null>(null);
   const [drawerError, setDrawerError] = useState<string | null>(null);
 
-
   // 1. Load Recipes, Commercial Products, and Raw Materials from backend
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) {
@@ -157,42 +154,17 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
       setError(null);
     }
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
+      // A failing list renders empty instead of blocking the whole workspace.
+      const optionalList = <T,>(path: string) =>
+        apiRequest<MaybeEnvelopedList<T>>(path, { method: 'GET' }, '')
+          .then((json) => (Array.isArray(json) ? json : json.items || json.data || []))
+          .catch(() => [] as T[]);
+      const [rawProducts, suppliesList, recipesList] = await Promise.all([
+        optionalList<Record<string, unknown>>('/products?limit=100'),
+        optionalList<Supply>('/v1/inventory/raw-materials?status=active&limit=200'),
+        optionalList<ProductRecipe>('/v1/recipes'),
+      ]);
 
-      // Load v1 recipes
-      let recipesRes = await fetch(`${API_BASE}/v1/recipes`, { headers });
-      if (!recipesRes.ok) {
-        recipesRes = await fetch(`${API_BASE}/v1/inventory/recipes`, { headers });
-      }
-
-      // Cargar productos
-      const productsRes = await fetch(`${API_BASE}/products?limit=100`, { headers });
-
-      // Load raw materials
-      let suppliesRes = await fetch(`${API_BASE}/v1/inventory/raw-materials?status=active&limit=200`, { headers });
-      if (!suppliesRes.ok) {
-        suppliesRes = await fetch(`${API_BASE}/supplies?status=active&limit=200`, { headers });
-      }
-
-      if (recipesRes.status === 401 || productsRes.status === 401 || suppliesRes.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const productsJson = await productsRes.json().catch(() => ({}));
-      const suppliesJson = await suppliesRes.json().catch(() => ({}));
-      const recipesJson = recipesRes.ok ? await recipesRes.json().catch(() => []) : [];
-
-      const productsList = productsJson.items || productsJson.data || productsJson || [];
-      const suppliesList = suppliesJson.items || suppliesJson.data || suppliesJson || [];
-      const recipesList = Array.isArray(recipesJson) ? recipesJson : (recipesJson.items || []);
-
-      const rawProducts: Record<string, unknown>[] = Array.isArray(productsList) ? productsList : [];
       const normalizedProducts: Product[] = rawProducts.map((p) => ({
         id: Number(p.id),
         name: String(p.name || ''),
@@ -210,8 +182,8 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
       }));
 
       setProducts(normalizedProducts);
-      setSupplies(Array.isArray(suppliesList) ? suppliesList : []);
-      setRecipes(Array.isArray(recipesList) ? recipesList : []);
+      setSupplies(suppliesList);
+      setRecipes(recipesList);
 
     } catch (err: unknown) {
       console.error('Error fetching recipes workspace data:', err);
@@ -246,7 +218,6 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     setDrawerError(null);
     setIsDrawerOpen(true);
   };
-
 
   // Open Drawer to Edit Existing Recipe
   const handleOpenEdit = (rec: ProductRecipe) => {
@@ -330,21 +301,11 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     if (!window.confirm('Are you sure you want to delete or archive this production recipe formula?')) return;
     try {
       setIsLoading(true);
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/v1/recipes/${recipeId}`, {
-        method: 'DELETE',
-        headers,
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to delete recipe.');
-      }
-
+      await apiRequest<void>(
+        `/v1/recipes/${recipeId}`,
+        { method: 'DELETE' },
+        'Failed to delete recipe.',
+      );
       fetchData();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error deleting recipe.';
@@ -396,12 +357,6 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
     try {
       setIsLoading(true);
 
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       const payload: Record<string, unknown> = {
         productId: Number(formProductId),
         lines: validLines,
@@ -419,38 +374,22 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
         payload.variantId = Number(formVariantId);
       }
 
-      let res;
-      if (drawerMode === 'edit' && selectedRecipe) {
-        res = await fetch(`${API_BASE}/v1/recipes/${selectedRecipe.id}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(payload),
-        });
-      } else {
-        res = await fetch(`${API_BASE}/v1/recipes`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-        });
-      }
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        let errMsg = 'Could not save recipe.';
-        if (Array.isArray(errJson.message)) {
-          errMsg = errJson.message.join('\n');
-        } else if (typeof errJson.message === 'string') {
-          if (errJson.message.includes('already exists')) {
-            errMsg = 'A recipe already exists for this product or variant.';
-          } else if (errJson.message.includes('Validation failed')) {
-            errMsg = 'Validation error on entered data. Please check selected product and ingredients.';
-          } else {
-            errMsg = errJson.message;
-          }
-        } else if (typeof errJson.error === 'string') {
-          errMsg = errJson.error;
-        }
-        setDrawerError(errMsg);
+      const isEdit = drawerMode === 'edit' && selectedRecipe;
+      try {
+        await apiRequest<void>(
+          isEdit ? `/v1/recipes/${selectedRecipe.id}` : '/v1/recipes',
+          { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(payload) },
+          'Could not save recipe.',
+        );
+      } catch (err) {
+        if (!(err instanceof ApiError)) throw err;
+        setDrawerError(
+          err.message.includes('already exists')
+            ? 'A recipe already exists for this product or variant.'
+            : err.message.includes('Validation failed')
+            ? 'Validation error on entered data. Please check selected product and ingredients.'
+            : err.message,
+        );
         return;
       }
 
@@ -463,9 +402,6 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
       setIsLoading(false);
     }
   };
-
-
-
 
   // Multi-criteria Dynamic Recipe Filtering
   const filteredRecipes = recipes.filter((rec) => {
@@ -537,7 +473,7 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
         <div className="bg-red-50 border border-red-200 text-[#ae001a] p-4 rounded-lg text-sm font-semibold flex justify-between items-center">
           <span>{error}</span>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             className="px-3 py-1 bg-[#ae001a] text-white text-xs font-bold rounded hover:bg-[#930015] cursor-pointer"
           >
             Retry
@@ -601,8 +537,6 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
           </div>
         </div>
       </div>
-
-
 
       {/* Main Data Grid */}
       <div className="bg-white border border-[#e8e2d8] rounded-xl shadow-xs overflow-hidden">
@@ -911,8 +845,6 @@ export const RecipesView: React.FC<RecipesViewProps> = ({ onNavigate }) => {
           }}
         />
       </div>
-
-
 
       {/* Quick Links Navigational Hub (Sprint 25 Story 4114) */}
       <StockQuickLinks current="recipes" onNavigate={onNavigate} />

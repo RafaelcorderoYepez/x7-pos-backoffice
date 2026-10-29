@@ -56,6 +56,12 @@ export function clearAuthSession(): void {
   }
 }
 
+/** Ends the session and sends the user back to the login page (hard navigation). */
+export function redirectToLogin(): void {
+  clearAuthSession();
+  window.location.href = '/login';
+}
+
 export function getAccessToken(): string | null {
   return (
     localStorage.getItem(ACCESS_TOKEN_KEY) ??

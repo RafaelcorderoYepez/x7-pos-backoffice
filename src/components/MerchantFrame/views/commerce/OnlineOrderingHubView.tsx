@@ -1,12 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { getAccessToken } from '../../../../lib/auth-storage';
 import {
   StandardDashboardHub,
   type DashboardKPIItem,
   type DashboardModuleItem,
 } from '../../../shared/StandardDashboardHub';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../api/http';
 
 interface OnlineStoreApiItem {
   id: string;
@@ -36,22 +34,16 @@ export const OnlineOrderingHubView: React.FC<OnlineOrderingHubViewProps> = ({
     const fetchMetrics = async () => {
       try {
         setLoading(true);
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-
-        const [resStores, resMenus] = await Promise.all([
-          fetch(`${API_BASE}/online-stores?limit=100`, { headers }),
-          fetch(`${API_BASE}/online-menus?limit=100`, { headers }),
+        // Each KPI group is independent: one failing request must not blank the other.
+        const [storesJson, menusJson] = await Promise.all([
+          apiRequest<MaybeEnvelopedList<OnlineStoreApiItem>>('/online-stores?limit=100', { method: 'GET' }, '').catch(() => null),
+          apiRequest<MaybeEnvelopedList<Record<string, unknown>>>('/online-menus?limit=100', { method: 'GET' }, '').catch(() => null),
         ]);
 
         if (!isMounted) return;
 
-        if (resStores.ok) {
-          const json = await resStores.json();
-          const list: OnlineStoreApiItem[] = Array.isArray(json) ? json : json.data || [];
+        if (storesJson) {
+          const list = unwrapList(storesJson);
           setStoresCount(list.length);
 
           const published = list.filter(
@@ -70,11 +62,8 @@ export const OnlineOrderingHubView: React.FC<OnlineOrderingHubViewProps> = ({
           setCurrenciesCount(distinctCurrencies.size || 1);
         }
 
-        if (resMenus.ok) {
-          const jsonMenus = await resMenus.json();
-          const listMenus: Record<string, unknown>[] = Array.isArray(jsonMenus)
-            ? jsonMenus
-            : jsonMenus.data || [];
+        if (menusJson) {
+          const listMenus = unwrapList(menusJson);
           setMenusCount(listMenus.length);
           const activeMenus = listMenus.filter((m) =>
             m.isActive !== undefined ? Boolean(m.isActive) : Boolean(m.is_active)

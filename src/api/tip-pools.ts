@@ -1,4 +1,10 @@
-import { getAccessToken } from '../lib/auth-storage';
+import {
+  apiRequest,
+  unwrapItem,
+  unwrapList,
+  type MaybeEnvelopedItem,
+  type MaybeEnvelopedList,
+} from './http';
 import type {
   TipPool,
   FetchTipPoolsParams,
@@ -7,18 +13,6 @@ import type {
   UpdateTipPoolDto,
   ActiveShiftOption,
 } from '../types/tip-pools';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
-
-
-function authHeaders(): Record<string, string> {
-  const token = getAccessToken();
-  return {
-    Accept: 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
 
 export interface FetchTipPoolsResponse {
   data: TipPool[];
@@ -57,16 +51,11 @@ export async function fetchTipPools(params: FetchTipPoolsParams): Promise<TipPoo
 
   const path = `/v1/tip-pools?${query.toString()}`;
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
-  }
-
-  const json = (await response.json()) as FetchTipPoolsResponse | TipPool[];
+  const json = await apiRequest<FetchTipPoolsResponse | TipPool[]>(
+    path,
+    { method: 'GET' },
+    'Failed to load tip pools. Please try again.',
+  );
   let pools: TipPool[] = [];
 
   if (Array.isArray(json)) {
@@ -138,15 +127,12 @@ export function calculateTipPoolsSummaryMetrics(pools: TipPool[]): TipPoolsSumma
 }
 
 export async function fetchActiveShifts(): Promise<ActiveShiftOption[]> {
-  const response = await fetch(`${API_BASE}/v1/shifts/active`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
-  }
-  const json = await response.json();
-  return Array.isArray(json) ? json : json.data || [];
+  const json = await apiRequest<MaybeEnvelopedList<ActiveShiftOption>>(
+    '/v1/shifts/active',
+    { method: 'GET' },
+    'Failed to load active shifts. Please try again.',
+  );
+  return unwrapList(json);
 }
 
 export async function createTipPool(dto: CreateTipPoolDto): Promise<TipPool> {
@@ -165,25 +151,19 @@ export async function createTipPool(dto: CreateTipPoolDto): Promise<TipPool> {
   const initialStatus = dto.status || 'OPEN';
   const initialClosedAt = initialStatus === 'CLOSED' ? new Date().toISOString() : null;
 
-  const response = await fetch(`${API_BASE}/v1/tip-pools`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
+  const json = await apiRequest<MaybeEnvelopedItem<TipPool>>(
+    '/v1/tip-pools',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        ...dto,
+        status: initialStatus,
+        closed_at: initialClosedAt,
+      }),
     },
-    body: JSON.stringify({
-      ...dto,
-      status: initialStatus,
-      closed_at: initialClosedAt,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
-  }
-
-  const json = await response.json();
-  return normalizeTipPool(json.data || json);
+    'Failed to create tip pool. Please try again.',
+  );
+  return normalizeTipPool(unwrapItem(json));
 }
 
 export async function updateTipPool(id: number, dto: UpdateTipPoolDto): Promise<TipPool> {
@@ -205,23 +185,17 @@ export async function updateTipPool(id: number, dto: UpdateTipPoolDto): Promise<
     }
   }
 
-  const response = await fetch(`${API_BASE}/v1/tip-pools/${id}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
+  const json = await apiRequest<MaybeEnvelopedItem<TipPool>>(
+    `/v1/tip-pools/${id}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ...dto,
+        ...(closedAtCalculated !== undefined ? { closed_at: closedAtCalculated } : {}),
+      }),
     },
-    body: JSON.stringify({
-      ...dto,
-      ...(closedAtCalculated !== undefined ? { closed_at: closedAtCalculated } : {}),
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP error ${response.status}`);
-  }
-
-  const json = await response.json();
-  return normalizeTipPool(json.data || json);
+    'Failed to update tip pool. Please try again.',
+  );
+  return normalizeTipPool(unwrapItem(json));
 }
 

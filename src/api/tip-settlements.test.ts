@@ -107,10 +107,7 @@ describe('tip-settlements API & Helpers', () => {
   });
 
   it('fetches settlements via API', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => sampleSettlements,
-    } as Response);
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(sampleSettlements)));
 
     const result = await fetchTipSettlements({
       company_id: 'cmp-01',
@@ -123,10 +120,7 @@ describe('tip-settlements API & Helpers', () => {
 
   it('updates settlement status to SETTLED', async () => {
     const mockUpdated = { ...sampleSettlements[3], status: 'SETTLED', settled_by: 88, settled_at: new Date().toISOString() };
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockUpdated,
-    } as Response);
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(mockUpdated)));
 
     const updated = await updateTipSettlementStatus(504, 'SETTLED', 88, 'Manually settled by admin');
     expect(updated.status).toBe('SETTLED');
@@ -135,10 +129,7 @@ describe('tip-settlements API & Helpers', () => {
 
   it('creates new settlement record', async () => {
     const mockCreated = { id: 507, collaborator_id: 102, shift_id: 403, total_amount: 95.0, settlement_method: 'CASH', status: 'PENDING' };
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockCreated,
-    } as Response);
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(mockCreated)));
 
     const created = await createTipSettlement({
       collaborator_id: 102,

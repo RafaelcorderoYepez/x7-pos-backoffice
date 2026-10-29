@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken } from '../../../../../lib/auth-storage';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
 import {
@@ -11,9 +10,7 @@ import {
 } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
+import { apiRequest, getWithFallback, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
 export interface HourlyHeatmapItem {
   hour: number;
   label: string;
@@ -210,28 +207,22 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
   useEffect(() => {
     const fetchStations = async () => {
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
-        const res = await fetch(`${API_BASE}/kitchen-station?status=active&limit=100`, { headers });
-        if (!res.ok) return;
-        const json = await res.json();
-        const list = json.data || json || [];
+        const json = await apiRequest<
+          MaybeEnvelopedList<{
+            id: number;
+            name: string;
+            code?: string;
+            stationType?: string;
+            station_type?: string;
+            stationNumber?: number;
+            station_number?: number;
+            display_order?: number;
+            displayOrder?: number;
+          }>
+        >('/kitchen-station?status=active&limit=100', { method: 'GET' }, 'Failed to load kitchen stations.');
         setStations(
-          list.map(
-            (st: {
-              id: number;
-              name: string;
-              code?: string;
-              stationType?: string;
-              station_type?: string;
-              stationNumber?: number;
-              station_number?: number;
-              display_order?: number;
-              displayOrder?: number;
-            }) => {
+          unwrapList(json).map(
+            (st) => {
               const sNum =
                 st.stationNumber ??
                 st.station_number ??
@@ -294,12 +285,6 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
     if (!silent) setLoading(true);
     setRefreshing(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       const params = new URLSearchParams();
       if (selectedPreset !== 'all' && startDate && endDate) {
         params.append('startDate', startDate);
@@ -309,120 +294,118 @@ export const KitchenAnalyticsView: React.FC<KitchenAnalyticsViewProps> = ({ onNa
         params.append('stationId', selectedStationId.toString());
       }
 
-      // Call primary executive analytics endpoint
-      let res = await fetch(`${API_BASE}/kitchen-analytics/executive-summary?${params.toString()}`, { headers }).catch(() => null);
+      // Executive summary first; the plain /kitchen-analytics route is the older aggregate.
+      const json = await getWithFallback<{ data?: ExecutiveAnalyticsData }>(
+        [
+          `/kitchen-analytics/executive-summary?${params.toString()}`,
+          `/kitchen-analytics?${params.toString()}`,
+        ],
+        'Failed to load kitchen analytics',
+      );
+      if (json.data) {
+        const payload: ExecutiveAnalyticsData = json.data;
 
-      if (!res || !res.ok) {
-        res = await fetch(`${API_BASE}/kitchen-analytics?${params.toString()}`, { headers }).catch(() => null);
-      }
+        // Synthetic fallback for stationEfficiencyMatrix if not present
+        if (!payload.stationEfficiencyMatrix || payload.stationEfficiencyMatrix.length === 0) {
+          payload.stationEfficiencyMatrix = (payload.stationBreakdown || []).map((sb) => {
+            const matchedSt = stations.find((s) => s.id === sb.stationId);
+            const avg = sb.avgPrepTimeSeconds;
+            let rating: StationEfficiencyRating = 'optimal';
+            if (avg > 900) rating = 'critical';
+            else if (avg > 600) rating = 'warning';
 
-      if (res && res.ok) {
-        const json = await res.json();
-        if (json.data) {
-          const payload: ExecutiveAnalyticsData = json.data;
-
-          // Synthetic fallback for stationEfficiencyMatrix if not present
-          if (!payload.stationEfficiencyMatrix || payload.stationEfficiencyMatrix.length === 0) {
-            payload.stationEfficiencyMatrix = (payload.stationBreakdown || []).map((sb) => {
-              const matchedSt = stations.find((s) => s.id === sb.stationId);
-              const avg = sb.avgPrepTimeSeconds;
-              let rating: StationEfficiencyRating = 'optimal';
-              if (avg > 900) rating = 'critical';
-              else if (avg > 600) rating = 'warning';
-
-              return {
-                stationId: sb.stationId,
-                stationName: sb.stationName,
-                stationType: matchedSt?.stationType || 'PREP',
-                totalItemsPrepared: sb.completedOrders * 2,
-                avgPrepTimeSeconds: avg,
-                avgPrepTimeFormatted: sb.avgPrepTimeFormatted,
-                peakQueueCapacity: Math.max(1, Math.round(sb.totalOrders * 0.4)),
-                efficiencyRating: rating,
-              };
-            });
-          }
-
-          // Synthetic fallback for bottlenecks if not present
-          if (!payload.bottlenecks || payload.bottlenecks.length === 0) {
-            payload.bottlenecks = [
-              {
-                productId: 1,
-                productName: 'Well Done Ribeye Burger',
-                variantId: 1,
-                variantName: 'Double Cheese & Bacon',
-                totalQuantityPrepared: 28,
-                avgPrepTimeSeconds: 980,
-                avgPrepTimeFormatted: '16m 20s',
-                standardCookingTimeSeconds: 600,
-                standardCookingTimeFormatted: '10m 00s',
-                varianceSeconds: 380,
-                varianceFormatted: '+6m 20s',
-                isBottleneck: true,
-              },
-              {
-                productId: 2,
-                productName: 'Wood-Fired Margherita Pizza',
-                variantId: null,
-                variantName: 'Family Size',
-                totalQuantityPrepared: 42,
-                avgPrepTimeSeconds: 855,
-                avgPrepTimeFormatted: '14m 15s',
-                standardCookingTimeSeconds: 600,
-                standardCookingTimeFormatted: '10m 00s',
-                varianceSeconds: 255,
-                varianceFormatted: '+4m 15s',
-                isBottleneck: true,
-              },
-              {
-                productId: 3,
-                productName: 'Pan-Seared Salmon Fillet',
-                variantId: 2,
-                variantName: 'With Asparagus',
-                totalQuantityPrepared: 19,
-                avgPrepTimeSeconds: 790,
-                avgPrepTimeFormatted: '13m 10s',
-                standardCookingTimeSeconds: 600,
-                standardCookingTimeFormatted: '10m 00s',
-                varianceSeconds: 190,
-                varianceFormatted: '+3m 10s',
-                isBottleneck: true,
-              },
-              {
-                productId: 4,
-                productName: 'Crispy Calamari Basket',
-                variantId: null,
-                variantName: 'Standard',
-                totalQuantityPrepared: 54,
-                avgPrepTimeSeconds: 690,
-                avgPrepTimeFormatted: '11m 30s',
-                standardCookingTimeSeconds: 600,
-                standardCookingTimeFormatted: '10m 00s',
-                varianceSeconds: 90,
-                varianceFormatted: '+1m 30s',
-                isBottleneck: true,
-              },
-              {
-                productId: 5,
-                productName: 'Truffle Mac & Cheese Skillet',
-                variantId: null,
-                variantName: 'Au Gratin',
-                totalQuantityPrepared: 33,
-                avgPrepTimeSeconds: 645,
-                avgPrepTimeFormatted: '10m 45s',
-                standardCookingTimeSeconds: 600,
-                standardCookingTimeFormatted: '10m 00s',
-                varianceSeconds: 45,
-                varianceFormatted: '+0m 45s',
-                isBottleneck: true,
-              },
-            ];
-          }
-
-          setData(payload);
-          setLastUpdated(new Date());
-          return;
+            return {
+              stationId: sb.stationId,
+              stationName: sb.stationName,
+              stationType: matchedSt?.stationType || 'PREP',
+              totalItemsPrepared: sb.completedOrders * 2,
+              avgPrepTimeSeconds: avg,
+              avgPrepTimeFormatted: sb.avgPrepTimeFormatted,
+              peakQueueCapacity: Math.max(1, Math.round(sb.totalOrders * 0.4)),
+              efficiencyRating: rating,
+            };
+          });
         }
+
+        // Synthetic fallback for bottlenecks if not present
+        if (!payload.bottlenecks || payload.bottlenecks.length === 0) {
+          payload.bottlenecks = [
+            {
+              productId: 1,
+              productName: 'Well Done Ribeye Burger',
+              variantId: 1,
+              variantName: 'Double Cheese & Bacon',
+              totalQuantityPrepared: 28,
+              avgPrepTimeSeconds: 980,
+              avgPrepTimeFormatted: '16m 20s',
+              standardCookingTimeSeconds: 600,
+              standardCookingTimeFormatted: '10m 00s',
+              varianceSeconds: 380,
+              varianceFormatted: '+6m 20s',
+              isBottleneck: true,
+            },
+            {
+              productId: 2,
+              productName: 'Wood-Fired Margherita Pizza',
+              variantId: null,
+              variantName: 'Family Size',
+              totalQuantityPrepared: 42,
+              avgPrepTimeSeconds: 855,
+              avgPrepTimeFormatted: '14m 15s',
+              standardCookingTimeSeconds: 600,
+              standardCookingTimeFormatted: '10m 00s',
+              varianceSeconds: 255,
+              varianceFormatted: '+4m 15s',
+              isBottleneck: true,
+            },
+            {
+              productId: 3,
+              productName: 'Pan-Seared Salmon Fillet',
+              variantId: 2,
+              variantName: 'With Asparagus',
+              totalQuantityPrepared: 19,
+              avgPrepTimeSeconds: 790,
+              avgPrepTimeFormatted: '13m 10s',
+              standardCookingTimeSeconds: 600,
+              standardCookingTimeFormatted: '10m 00s',
+              varianceSeconds: 190,
+              varianceFormatted: '+3m 10s',
+              isBottleneck: true,
+            },
+            {
+              productId: 4,
+              productName: 'Crispy Calamari Basket',
+              variantId: null,
+              variantName: 'Standard',
+              totalQuantityPrepared: 54,
+              avgPrepTimeSeconds: 690,
+              avgPrepTimeFormatted: '11m 30s',
+              standardCookingTimeSeconds: 600,
+              standardCookingTimeFormatted: '10m 00s',
+              varianceSeconds: 90,
+              varianceFormatted: '+1m 30s',
+              isBottleneck: true,
+            },
+            {
+              productId: 5,
+              productName: 'Truffle Mac & Cheese Skillet',
+              variantId: null,
+              variantName: 'Au Gratin',
+              totalQuantityPrepared: 33,
+              avgPrepTimeSeconds: 645,
+              avgPrepTimeFormatted: '10m 45s',
+              standardCookingTimeSeconds: 600,
+              standardCookingTimeFormatted: '10m 00s',
+              varianceSeconds: 45,
+              varianceFormatted: '+0m 45s',
+              isBottleneck: true,
+            },
+          ];
+        }
+
+        setData(payload);
+        setLastUpdated(new Date());
+        return;
       }
     } catch (err: unknown) {
       console.warn('Backend analytics endpoint error, applying local dataset fallback', err);

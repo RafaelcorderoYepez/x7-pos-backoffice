@@ -279,11 +279,11 @@ export const MODULE_NAV_HUBS: ModuleNavHub[] = [
     description: 'Physical & virtual QR access points, active QR menus, and dynamic QR code generation.',
     items: [
       { featureId: 'qr-code-locations', label: 'QR CODE LOCATIONS', icon: 'qr_code_2', live: true, description: 'Manage physical and virtual QR access points, assigned menus, tables and dynamic QR assets.' },
-      { featureId: 'qr-code-menus', label: 'QR CODE MENUS', icon: 'restaurant_menu', live: false, description: 'Deploy and configure digital QR menus.' },
-      { featureId: 'qr-code-menu-sections', label: 'QR MENU SECTIONS', icon: 'view_headline', live: false, description: 'Organize menu sections for QR ordering.' },
-      { featureId: 'qr-code-menu-items', label: 'QR MENU ITEMS', icon: 'fastfood', live: false, description: 'Configure items and modifiers for QR access.' },
-      { featureId: 'qr-code-orders', label: 'QR CODE ORDERS', icon: 'shopping_bag', live: false, description: 'Track live orders originated from QR scans.' },
-      { featureId: 'qr-order-items', label: 'QR ORDER ITEMS', icon: 'receipt', live: false, description: 'Detailed line items from QR customer orders.' },
+      { featureId: 'qr-code-menu-items', label: 'QR CODE MENU ITEMS', icon: 'fastfood', live: true, description: 'Configure items and dishes with real-time availability for QR access.' },
+      { featureId: 'qr-code-menu-sections', label: 'QR CODE MENU SECTIONS', icon: 'view_headline', live: true, description: 'Organize menu sections for QR ordering.' },
+      { featureId: 'qr-code-menus', label: 'QR CODE MENUS', icon: 'restaurant_menu', live: true, description: 'Deploy and configure digital QR menus.' },
+      { featureId: 'qr-code-orders', label: 'QR CODE ORDERS', icon: 'shopping_bag', live: true, description: 'Track live orders originated from QR scans.' },
+      { featureId: 'qr-order-items', label: 'QR ORDER ITEMS', icon: 'receipt', live: true, description: 'Detailed line items from QR customer orders.' },
     ],
   },
   {

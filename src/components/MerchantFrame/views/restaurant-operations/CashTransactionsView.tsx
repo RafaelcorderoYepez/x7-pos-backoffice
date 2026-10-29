@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import { getCurrentMerchantId } from '../../../../api/users';
 import type {
   CashTransaction,
@@ -11,7 +10,6 @@ import type {
 import { CashManagementQuickLinks } from './CashManagementQuickLinks';
 import { STATUS_BADGE_CLASSES as CASH_SHIFT_STATUS_BADGE_CLASSES } from './cashShiftsHelpers';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 const PAGE_SIZE = 10;
 
 import {
@@ -25,6 +23,7 @@ import {
   formatDateTime,
   getTodayDateString,
 } from './cashTransactionsHelpers';
+import { apiRequest } from '../../../../api/http';
 
 const CASH_TRANSACTION_STATUS_BADGE_CLASSES: Record<CashTransactionStatus, string> = {
   ACTIVE: 'bg-green-500/10 text-green-600 border border-green-500/20',
@@ -350,10 +349,6 @@ export const CashTransactionsView: React.FC<CashTransactionsViewProps> = ({ onNa
     setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
       const merchantId = getCurrentMerchantId() ?? sessionStorage.getItem('x7:branch-context') ?? '1';
 
       const params = new URLSearchParams({
@@ -367,19 +362,14 @@ export const CashTransactionsView: React.FC<CashTransactionsViewProps> = ({ onNa
       if (drawerFilter !== '') params.set('cashDrawerId', String(drawerFilter));
       if (shiftFilter !== '') params.set('shiftId', String(shiftFilter));
 
-      const res = await fetch(`${API_BASE}/cash-transactions?${params.toString()}`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Failed to load cash transactions');
-      }
-
-      const json = await res.json();
+      const json = await apiRequest<{
+        data?: Parameters<typeof normalizeTransaction>[0][];
+        paginationMeta?: CashTransactionPaginationMeta;
+      }>(
+        `/cash-transactions?${params.toString()}`,
+        { method: 'GET' },
+        'Failed to load cash transactions',
+      );
       setTransactions((json.data ?? []).map(normalizeTransaction));
       setPaginationMeta(json.paginationMeta ?? null);
     } catch (err) {
@@ -396,17 +386,11 @@ export const CashTransactionsView: React.FC<CashTransactionsViewProps> = ({ onNa
     setDetailLoading(true);
     detailRequestIdRef.current = txn.id;
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      const res = await fetch(`${API_BASE}/cash-transactions/${txn.id}`, { headers });
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-      if (!res.ok) throw new Error('Failed to load cash transaction detail');
-      const json = await res.json();
+      const json = await apiRequest<{ data: Parameters<typeof normalizeTransaction>[0] }>(
+        `/cash-transactions/${txn.id}`,
+        { method: 'GET' },
+        'Failed to load cash transaction detail',
+      );
       if (detailRequestIdRef.current === txn.id) {
         setDetailTransaction(normalizeTransaction(json.data));
       }
@@ -439,22 +423,13 @@ export const CashTransactionsView: React.FC<CashTransactionsViewProps> = ({ onNa
   useEffect(() => {
     const fetchFilterOptions = async () => {
       try {
-        const token = getAccessToken();
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        const [drawerRes, shiftRes] = await Promise.all([
-          fetch(`${API_BASE}/cash-drawers?limit=100`, { headers }).catch(() => null),
-          fetch(`${API_BASE}/cash-shifts?limit=100`, { headers }).catch(() => null),
+        // Each list is optional for the filter bar: one failing must not hide the other.
+        const [drawerJson, shiftJson] = await Promise.all([
+          apiRequest<{ data?: { id: number }[] }>('/cash-drawers?limit=100', { method: 'GET' }, '').catch(() => null),
+          apiRequest<{ data?: { id: number }[] }>('/cash-shifts?limit=100', { method: 'GET' }, '').catch(() => null),
         ]);
-
-        if (drawerRes && drawerRes.ok) {
-          const drawerJson = await drawerRes.json().catch(() => ({ data: [] }));
-          setDrawerOptions((drawerJson.data ?? []).map((d: { id: number }) => d.id));
-        }
-        if (shiftRes && shiftRes.ok) {
-          const shiftJson = await shiftRes.json().catch(() => ({ data: [] }));
-          setShiftOptions((shiftJson.data ?? []).map((s: { id: number }) => s.id));
-        }
+        if (drawerJson) setDrawerOptions((drawerJson.data ?? []).map((d) => d.id));
+        if (shiftJson) setShiftOptions((shiftJson.data ?? []).map((s) => s.id));
       } catch (err) {
         console.error('Error fetching drawers/shifts for filter:', err);
       }

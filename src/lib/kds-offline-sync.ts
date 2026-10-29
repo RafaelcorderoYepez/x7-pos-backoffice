@@ -1,3 +1,6 @@
+import { apiRequest } from '../api/http';
+import { ApiError } from './api-error';
+
 /**
  * KDS Offline Resilience Mode, Local Event Queueing & Network Re-Sync Engine
  * Historia X7P-4210
@@ -259,18 +262,33 @@ export async function getCachedTicketsLocally<T>(): Promise<T[]> {
   }
 }
 
+/** Acción que el backend descartó al sincronizar (orden ya cerrada, datos inválidos...). */
+export interface KdsIgnoredAction {
+  actionType: string;
+  detail?: string;
+}
+
+interface KdsSyncResponse {
+  syncedCount?: number;
+  actions?: { actionType: string; status: 'applied' | 'conflict_resolved' | 'ignored'; detail?: string }[];
+}
+
 /**
- * Flush all queued offline actions to the backend server
+ * Flush all queued offline actions to the backend server.
+ *
+ * The backend applies each action independently and answers 200 even when it discards some of
+ * them, so those come back in `ignored` for the UI to report (the screen applied them
+ * optimistically). A 401 redirects to login via apiRequest and keeps the queue on the device.
  */
-export async function flushOfflineQueue(
-  apiBase: string,
-  token: string | null
-): Promise<{ success: boolean; syncedCount: number; errors: string[] }> {
+export async function flushOfflineQueue(): Promise<{
+  success: boolean;
+  syncedCount: number;
+  ignored: KdsIgnoredAction[];
+  errors: string[];
+}> {
   const queued = await getQueuedActions();
-  console.log('[X7-KDS-SYNC] flushOfflineQueue called. Queued actions:', queued.length, queued.map(a => `${a.actionType}(orderId=${a.kitchenOrderId})`));
   if (queued.length === 0) {
-    console.log('[X7-KDS-SYNC] No pending actions, skipping sync.');
-    return { success: true, syncedCount: 0, errors: [] };
+    return { success: true, syncedCount: 0, ignored: [], errors: [] };
   }
 
   // Filter and normalize the payload to ensure strict compatibility with OfflineKitchenActionDto
@@ -306,45 +324,41 @@ export async function flushOfflineQueue(
     actions: actionsPayload,
   };
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-
   try {
-    console.log('[X7-KDS-SYNC] Sending sync POST to', `${apiBase}/kitchen-event-logs/sync`, 'payload:', JSON.stringify(payload, null, 2));
-    const res = await fetch(`${apiBase}/kitchen-event-logs/sync`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-    });
-    console.log('[X7-KDS-SYNC] Sync response status:', res.status, res.statusText);
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => res.statusText);
-      throw new Error(`Sync failed with HTTP ${res.status}: ${errText}`);
-    }
-
-    const data = await res.json();
-    console.log('[X7-KDS-SYNC] Sync response data:', JSON.stringify(data));
+    const data = await apiRequest<KdsSyncResponse>(
+      '/kitchen-event-logs/sync',
+      { method: 'POST', body: JSON.stringify(payload) },
+      'Offline sync failed',
+    );
     const idsToRemove = queued.map((q) => q.id).filter((id): id is number => typeof id === 'number');
     await removeQueuedActions(idsToRemove);
-    console.log('[X7-KDS-SYNC] Removed', idsToRemove.length, 'actions from queue. Synced count:', data.syncedCount || queued.length);
 
+    const ignored = (data?.actions ?? [])
+      .filter((a) => a.status === 'ignored')
+      .map(({ actionType, detail }) => ({ actionType, detail }));
     return {
       success: true,
-      syncedCount: data.syncedCount || queued.length,
+      syncedCount: data?.syncedCount ?? queued.length - ignored.length,
+      ignored,
       errors: [],
     };
   } catch (err) {
     const errorMsg = (err as Error).message;
     console.warn('Failed to flush offline queue:', errorMsg);
-    return {
-      success: false,
-      syncedCount: 0,
-      errors: [errorMsg],
-    };
+    return { success: false, syncedCount: 0, ignored: [], errors: [errorMsg] };
   }
+}
+
+/**
+ * Whether a failed KDS request should fall back to the offline queue.
+ *
+ * Only failures where the server never judged the action are retryable: no connection, timeout
+ * or a 5xx. A 4xx is a real rejection (order already closed, invalid data...) and must be shown,
+ * not queued; a 401 already redirected to the login page.
+ */
+export function isRetryableKdsError(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return true;
+  return err.status === 408 || err.status >= 500;
 }
 
 /**

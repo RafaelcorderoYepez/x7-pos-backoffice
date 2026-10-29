@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { SupplierPaymentItemsView } from './SupplierPaymentItemsView';
 import type { SupplierPayment, SupplierPaymentItem } from '../../../../types/accounts-payable';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -57,14 +59,6 @@ const ITEMS: SupplierPaymentItem[] = [
   { id: 14, payment_id: 3, document_number: 'INV-C-001', document_type: 'invoice', amount: 300 },
 ];
 
-function jsonRes(body: unknown, status = 200) {
-  return Promise.resolve({
-    ok: status >= 200 && status < 300,
-    status,
-    json: () => Promise.resolve(body),
-  } as Response);
-}
-
 /** Default backend: items list, per-payment sibling list, and the payments catalogue. */
 function defaultFetch(items: SupplierPaymentItem[] = ITEMS) {
   return vi.fn((url: string | URL | Request) => {
@@ -73,14 +67,14 @@ function defaultFetch(items: SupplierPaymentItem[] = ITEMS) {
       const match = u.match(/payment_id=(\d+)/);
       if (match) {
         const pid = Number(match[1]);
-        return jsonRes({ data: items.filter((i) => i.payment_id === pid) });
+        return jsonResponse({ data: items.filter((i) => i.payment_id === pid) });
       }
-      return jsonRes({ data: items });
+      return jsonResponse({ data: items });
     }
     if (u.includes('/supplier-payments')) {
-      return jsonRes({ data: PAYMENTS });
+      return jsonResponse({ data: PAYMENTS });
     }
-    return jsonRes({ data: [] });
+    return jsonResponse({ data: [] });
   });
 }
 
@@ -284,18 +278,18 @@ describe('SupplierPaymentItemsView', () => {
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/supplier-payment-items') && opts?.method === 'POST') {
-          return jsonRes({ data: { id: 20 } }, 201);
+          return jsonResponse({ data: { id: 20 } }, 201);
         }
         if (u.includes('/supplier-payment-items')) {
           const match = u.match(/payment_id=(\d+)/);
           if (match) {
             const pid = Number(match[1]);
-            return jsonRes({ data: ITEMS.filter((i) => i.payment_id === pid) });
+            return jsonResponse({ data: ITEMS.filter((i) => i.payment_id === pid) });
           }
-          return jsonRes({ data: ITEMS });
+          return jsonResponse({ data: ITEMS });
         }
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 
@@ -331,18 +325,18 @@ describe('SupplierPaymentItemsView', () => {
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/supplier-payment-items') && opts?.method === 'POST') {
-          return jsonRes({ message: 'Backend refused this item' }, 400);
+          return jsonResponse({ message: 'Backend refused this item' }, 400);
         }
         if (u.includes('/supplier-payment-items')) {
           const match = u.match(/payment_id=(\d+)/);
           if (match) {
             const pid = Number(match[1]);
-            return jsonRes({ data: ITEMS.filter((i) => i.payment_id === pid) });
+            return jsonResponse({ data: ITEMS.filter((i) => i.payment_id === pid) });
           }
-          return jsonRes({ data: ITEMS });
+          return jsonResponse({ data: ITEMS });
         }
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 
@@ -392,18 +386,18 @@ describe('SupplierPaymentItemsView', () => {
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/supplier-payment-items/12') && opts?.method === 'PUT') {
-          return jsonRes({ data: { id: 12 } });
+          return jsonResponse({ data: { id: 12 } });
         }
         if (u.includes('/supplier-payment-items')) {
           const match = u.match(/payment_id=(\d+)/);
           if (match) {
             const pid = Number(match[1]);
-            return jsonRes({ data: ITEMS.filter((i) => i.payment_id === pid) });
+            return jsonResponse({ data: ITEMS.filter((i) => i.payment_id === pid) });
           }
-          return jsonRes({ data: ITEMS });
+          return jsonResponse({ data: ITEMS });
         }
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 
@@ -454,18 +448,18 @@ describe('SupplierPaymentItemsView', () => {
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/supplier-payment-items/13') && opts?.method === 'DELETE') {
-          return jsonRes({ data: { id: 13 } });
+          return jsonResponse({ data: { id: 13 } });
         }
         if (u.includes('/supplier-payment-items')) {
           const match = u.match(/payment_id=(\d+)/);
           if (match) {
             const pid = Number(match[1]);
-            return jsonRes({ data: ITEMS.filter((i) => i.payment_id === pid) });
+            return jsonResponse({ data: ITEMS.filter((i) => i.payment_id === pid) });
           }
-          return jsonRes({ data: ITEMS });
+          return jsonResponse({ data: ITEMS });
         }
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 
@@ -490,11 +484,11 @@ describe('SupplierPaymentItemsView', () => {
       const fetchMock = vi.fn((url: string | URL | Request, opts?: RequestInit) => {
         const u = String(url);
         if (u.includes('/supplier-payment-items/13') && opts?.method === 'DELETE') {
-          return jsonRes({ message: 'Parent voucher is posted' }, 400);
+          return jsonResponse({ message: 'Parent voucher is posted' }, 400);
         }
-        if (u.includes('/supplier-payment-items')) return jsonRes({ data: ITEMS });
-        if (u.includes('/supplier-payments')) return jsonRes({ data: PAYMENTS });
-        return jsonRes({ data: [] });
+        if (u.includes('/supplier-payment-items')) return jsonResponse({ data: ITEMS });
+        if (u.includes('/supplier-payments')) return jsonResponse({ data: PAYMENTS });
+        return jsonResponse({ data: [] });
       });
       vi.stubGlobal('fetch', fetchMock);
 

@@ -39,7 +39,7 @@ describe('merchant-profile-validation', () => {
   });
 
   it('accepts omitted phone', () => {
-    const withoutPhone: Partial<typeof valid> = { ...valid };
+    const withoutPhone: Omit<typeof valid, 'phone'> & { phone?: string } = { ...valid };
     delete withoutPhone.phone;
     const errors = validateMerchantProfile(withoutPhone);
     expect(hasMerchantProfileErrors(errors)).toBe(false);

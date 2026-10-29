@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   SupplierPayment,
   SupplierPaymentAllocation,
@@ -20,8 +19,7 @@ import { AccountsPayableQuickLinks } from './AccountsPayableQuickLinks';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import { AppModal, ModalFormFooter, ModalFormError } from '../../shared/AppModal';
 import { Toast } from '../../shared/Toast';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 // ---- Helpers ----
 
@@ -59,7 +57,6 @@ interface AllocationFormDrawerProps {
   creditNotes: SupplierCreditNote[];
   submitting: boolean;
   formError: string;
-  authHeaders: () => Record<string, string>;
   onCancel: () => void;
   onSubmit: (dto: CreateSupplierPaymentAllocationDto) => void;
 }
@@ -70,7 +67,6 @@ const AllocationFormDrawer: React.FC<AllocationFormDrawerProps> = ({
   creditNotes,
   submitting,
   formError,
-  authHeaders,
   onCancel,
   onSubmit,
 }) => {
@@ -133,13 +129,14 @@ const AllocationFormDrawer: React.FC<AllocationFormDrawerProps> = ({
     void Promise.resolve().then(() => {
       setLoadingInvoices(true);
     });
-    fetch(`${API_BASE}/supplier-invoices?supplier_id=${supplierId}&limit=100`, {
-      headers: authHeaders(),
-    })
-      .then((res) => (res.ok ? res.json() : { data: [] }))
+    apiRequest<{ data?: SupplierInvoice[] }>(
+      `/supplier-invoices?supplier_id=${supplierId}&limit=100`,
+      { method: 'GET' },
+      'Failed to load outstanding invoices.',
+    )
       .then((json) => {
         if (cancelled) return;
-        const list = ((json.data ?? []) as SupplierInvoice[]).filter(
+        const list = (json.data ?? []).filter(
           (inv) => !inv.deleted_at && num(inv.balance_due) > 0,
         );
         setOutstanding(list);
@@ -153,7 +150,7 @@ const AllocationFormDrawer: React.FC<AllocationFormDrawerProps> = ({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [supplierId]);
 
   const selectedPayment = payments.find((p) => String(p.id) === paymentId);
@@ -628,18 +625,6 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
     return () => clearTimeout(t);
   }, [toast]);
 
-  const authHeaders = (): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  };
-
-  const handleUnauthorized = () => {
-    clearAuthSession();
-    window.location.href = '/login';
-  };
-
   const fetchAllocations = async () => {
     setLoading(true);
     setError(null);
@@ -649,12 +634,11 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
       const params = new URLSearchParams({ limit: '100' });
       if (payment) params.set('payment_id', String(payment.id));
       if (creditNote) params.set('credit_note_id', String(creditNote.id));
-      const res = await fetch(`${API_BASE}/supplier-payment-allocations?${params.toString()}`, {
-        headers: authHeaders(),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) throw new Error('Error loading payment allocations');
-      const json = await res.json();
+      const json = await apiRequest<{ data?: SupplierPaymentAllocation[] }>(
+        `/supplier-payment-allocations?${params.toString()}`,
+        { method: 'GET' },
+        'Error loading payment allocations',
+      );
       const active = ((json.data ?? []) as SupplierPaymentAllocation[]).filter(
         (a) => !a.deleted_at,
       );
@@ -670,25 +654,17 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
   // Catalogs to resolve source numbers and validate balances in drawer.
   const fetchSources = async () => {
     try {
-      const [payRes, cnRes, supRes] = await Promise.all([
-        fetch(`${API_BASE}/supplier-payments?limit=100`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/supplier-credit-notes?limit=100`, { headers: authHeaders() }),
-        fetch(`${API_BASE}/v1/inventory/suppliers?limit=100`, { headers: authHeaders() }),
+      // Each catalog is independent: one failing must not hide the others.
+      const get = <T,>(path: string) =>
+        apiRequest<{ data?: T[] }>(path, { method: 'GET' }, 'Failed to load catalog.').catch(() => null);
+      const [payJson, cnJson, supJson] = await Promise.all([
+        get<SupplierPayment>('/supplier-payments?limit=100'),
+        get<SupplierCreditNote>('/supplier-credit-notes?limit=100'),
+        get<InvoiceSupplierRef>('/v1/inventory/suppliers?limit=100'),
       ]);
-      if (payRes.ok) {
-        const json = await payRes.json();
-        setPayments(((json.data ?? []) as SupplierPayment[]).filter((p) => !p.deleted_at));
-      }
-      if (cnRes.ok) {
-        const json = await cnRes.json();
-        setCreditNotes(
-          ((json.data ?? []) as SupplierCreditNote[]).filter((cn) => !cn.deleted_at),
-        );
-      }
-      if (supRes.ok) {
-        const json = await supRes.json();
-        setSuppliers(json.data ?? []);
-      }
+      if (payJson) setPayments((payJson.data ?? []).filter((p) => !p.deleted_at));
+      if (cnJson) setCreditNotes((cnJson.data ?? []).filter((cn) => !cn.deleted_at));
+      if (supJson) setSuppliers(supJson.data ?? []);
     } catch (err) {
       console.error('Error fetching allocation sources:', err);
     }
@@ -791,14 +767,11 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
     setFormSubmitting(true);
     setFormError('');
     try {
-      const res = await fetch(`${API_BASE}/supplier-payment-allocations`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(dto),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.message || 'Failed to allocate funds');
+      await apiRequest<void>(
+        '/supplier-payment-allocations',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to allocate funds',
+      );
       await refreshAll();
       setFormOpen(false);
       setToast({ message: 'Allocation applied successfully', type: 'success' });
@@ -813,15 +786,11 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
     if (!unlinkingAllocation) return;
     setUnlinkSubmitting(true);
     try {
-      const res = await fetch(
-        `${API_BASE}/supplier-payment-allocations/${unlinkingAllocation.id}`,
-        { method: 'DELETE', headers: authHeaders() },
+      await apiRequest<void>(
+        `/supplier-payment-allocations/${unlinkingAllocation.id}`,
+        { method: 'DELETE' },
+        'Failed to unlink allocation',
       );
-      if (res.status === 401) return handleUnauthorized();
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}));
-        throw new Error(json.message || 'Failed to unlink allocation');
-      }
       setUnlinkingAllocation(null);
       // Refetch: backend already reverted source and document balances.
       await refreshAll();
@@ -1155,7 +1124,6 @@ export const SupplierPaymentAllocationsView: React.FC<SupplierPaymentAllocations
           creditNotes={creditNotes}
           submitting={formSubmitting}
           formError={formError}
-          authHeaders={authHeaders}
           onCancel={() => setFormOpen(false)}
           onSubmit={handleCreateSubmit}
         />

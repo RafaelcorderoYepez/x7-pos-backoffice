@@ -1,18 +1,19 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { getAccessToken } from '../../../../../lib/auth-storage';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { HeaderQuickTabs } from '../../../../shared/HeaderQuickTabs';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { KitchenQuickLinks } from './KitchenQuickLinks';
 import { useKdsCriticalSla } from '../../../../../lib/kds-sla-config';
-
-const devToolModules = import.meta.glob<{
-  KitchenDevResetButton?: React.ComponentType<{ onResetComplete?: () => void }>;
-}>('./KitchenDevResetButton.tsx', { eager: true });
-const KitchenDevResetButton = devToolModules['./KitchenDevResetButton.tsx']?.KitchenDevResetButton;
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { KitchenDevResetButton } from './KitchenDevResetButton';
+import {
+  apiRequest,
+  unwrapItem,
+  unwrapList,
+  type MaybeEnvelopedItem,
+  type MaybeEnvelopedList,
+} from '../../../../../api/http';
+import { ApiError } from '../../../../../lib/api-error';
 
 export type KitchenItemPrepStatus = 'held' | 'pending' | 'in_preparation' | 'ready';
 
@@ -98,6 +99,10 @@ const getItemPrepAction = (course?: string, productName?: string) => {
   };
 };
 
+interface KitchenOrderItemsViewProps {
+  onNavigate?: (view: string) => void;
+}
+
 export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ onNavigate }) => {
   const [items, setItems] = useState<KitchenOrderItemDetail[]>([]);
   const [stations, setStations] = useState<KitchenStationOption[]>([]);
@@ -169,18 +174,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
   // 1. Fetch stations
   const fetchStations = useCallback(async () => {
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-station?status=active&limit=100`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const rawList = data.data || data || [];
+      const data = await apiRequest<
+        MaybeEnvelopedList<{ id: number; name: string; stationType?: string; station_type?: string }>
+      >('/kitchen-station?status=active&limit=100', { method: 'GET' }, 'Failed to load kitchen stations.');
       setStations(
-        rawList.map((s: { id: number; name: string; stationType?: string; station_type?: string }) => ({
+        unwrapList(data).map((s) => ({
           id: s.id,
           name: s.name,
           stationType: s.stationType || s.station_type,
@@ -197,7 +195,6 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     setIsRefreshing(true);
     setError(null);
     try {
-      const token = getAccessToken();
       const queryParams = new URLSearchParams({
         limit: '100',
         page: '1',
@@ -205,18 +202,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         sortOrder: 'ASC',
       });
 
-      const res = await fetch(`${API_BASE}/kitchen-order-items?${queryParams.toString()}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error(`Failed to load kitchen order items: ${res.statusText}`);
-      }
-
-      const resData = await res.json();
+      const resData = await apiRequest<{ data?: KitchenOrderItemDetail[] }>(
+        `/kitchen-order-items?${queryParams.toString()}`,
+        { method: 'GET' },
+        'Failed to load kitchen order items',
+      );
       const rawItems: KitchenOrderItemDetail[] = resData.data || [];
       setItems(rawItems);
       setLastUpdated(new Date());
@@ -281,40 +271,31 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     setActionInProgressId(item.id);
 
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}/increment`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-
-      if (!res.ok) {
-        // Fallback: use PUT endpoint if increment is unavailable
+      let data: { data?: KitchenOrderItemDetail; autoBumped?: boolean } & Partial<KitchenOrderItemDetail>;
+      try {
+        data = await apiRequest<typeof data>(
+          `/kitchen-order-items/${item.id}/increment`,
+          { method: 'POST' },
+          'Could not update prepared quantity',
+        );
+      } catch (err) {
+        // Fallback only when the increment route is missing (older backends). Any other error is a
+        // real rejection: falling back to a PUT would overwrite the count the server refused.
+        if (!(err instanceof ApiError && err.status === 404)) throw err;
         const newPrepared = item.preparedQuantity >= item.quantity ? 0 : item.preparedQuantity + 1;
         const newStatus: KitchenItemPrepStatus =
           newPrepared === item.quantity ? 'ready' : newPrepared > 0 ? 'in_preparation' : 'pending';
 
-        const putRes = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        const putData = await apiRequest<MaybeEnvelopedItem<KitchenOrderItemDetail>>(
+          `/kitchen-order-items/${item.id}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({ preparedQuantity: newPrepared, preparationStatus: newStatus }),
           },
-          body: JSON.stringify({
-            preparedQuantity: newPrepared,
-            preparationStatus: newStatus,
-          }),
-        });
-
-        if (!putRes.ok) {
-          throw new Error('Could not update prepared quantity');
-        }
-
-        const putData = await putRes.json();
-        const updatedItem = putData.data || putData;
-        setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem } : it)));
+          'Could not update prepared quantity',
+        );
+        const fallbackItem = unwrapItem(putData);
+        setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...fallbackItem } : it)));
         showToast(
           `${item.product.name}: ${newPrepared}/${item.quantity} Prepared (${newStatus.toUpperCase()})`,
           'info'
@@ -322,8 +303,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         return;
       }
 
-      const data = await res.json();
-      const updatedItem = data.data || data;
+      const updatedItem = unwrapItem(data);
       const isAutoBumped = data.autoBumped || false;
 
       setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem } : it)));
@@ -366,26 +346,22 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
     setActionInProgressId(item.id);
     try {
-      const token = getAccessToken();
       const newPrepared = Math.max(0, item.preparedQuantity - 1);
       // Keep in active preparation (in_preparation); it only returns to pending when you press Undo
       const newStatus: KitchenItemPrepStatus = 'in_preparation';
 
-      const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      const data = await apiRequest<MaybeEnvelopedItem<KitchenOrderItemDetail>>(
+        `/kitchen-order-items/${item.id}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            preparedQuantity: newPrepared,
+            preparationStatus: newStatus,
+          }),
         },
-        body: JSON.stringify({
-          preparedQuantity: newPrepared,
-          preparationStatus: newStatus,
-        }),
-      });
-
-      if (!res.ok) throw new Error('Failed to decrement quantity');
-      const data = await res.json();
-      const updatedItem = data.data || data;
+        'Failed to decrement quantity',
+      );
+      const updatedItem = unwrapItem(data);
       setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem } : it)));
       showToast(`${item.product.name}: Decremented to ${newPrepared}/${item.quantity}`, 'info');
     } catch (err: unknown) {
@@ -412,22 +388,18 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     setActionInProgressId(item.id);
 
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      const data = await apiRequest<MaybeEnvelopedItem<KitchenOrderItemDetail>>(
+        `/kitchen-order-items/${item.id}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            preparedQuantity: item.quantity,
+            preparationStatus: 'ready',
+          }),
         },
-        body: JSON.stringify({
-          preparedQuantity: item.quantity,
-          preparationStatus: 'ready',
-        }),
-      });
-
-      if (!res.ok) throw new Error('Failed to mark item ready');
-      const data = await res.json();
-      const updatedItem = data.data || data;
+        'Failed to mark item ready',
+      );
+      const updatedItem = unwrapItem(data);
       setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem } : it)));
       showToast(`✓ ${item.product.name} (x${item.quantity}) marked READY!`, 'success');
 
@@ -448,22 +420,12 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
     setActionInProgressId(item.id);
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}/fire`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || 'Failed to fire item');
-      }
-
-      const data = await res.json();
-      const updatedItem = data.data || data;
+      const data = await apiRequest<MaybeEnvelopedItem<KitchenOrderItemDetail>>(
+        `/kitchen-order-items/${item.id}/fire`,
+        { method: 'POST' },
+        'Failed to fire item',
+      );
+      const updatedItem = unwrapItem(data);
       setItems(prev => prev.map(it => (it.id === item.id ? { ...it, ...updatedItem, preparationStatus: 'pending' } : it)));
       showToast(`🔥 Fired "${item.product?.name || 'Item'}" to active preparation queue!`, 'success');
       loadItems(true);
@@ -490,26 +452,19 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
 
     setActionInProgressId(item.id);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
       if (item.preparationStatus === 'held') {
-        const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}/fire`, {
-          method: 'POST',
-          headers,
-        });
-        if (!res.ok) throw new Error('Failed to fire item');
+        await apiRequest<void>(
+          `/kitchen-order-items/${item.id}/fire`,
+          { method: 'POST' },
+          'Failed to fire item',
+        );
         showToast(`🔥 Fired "${item.product?.name || 'Item'}" to active preparation!`, 'success');
       } else {
-        const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ preparationStatus: 'in_preparation' }),
-        });
-        if (!res.ok) throw new Error('Failed to start item preparation');
+        await apiRequest<void>(
+          `/kitchen-order-items/${item.id}`,
+          { method: 'PUT', body: JSON.stringify({ preparationStatus: 'in_preparation' }) },
+          'Failed to start item preparation',
+        );
         const action = getItemPrepAction(item.course, item.product?.name);
         showToast(`Started ${action.verb.toLowerCase()} for "${item.product?.name || 'Dish'}"`, 'info');
       }
@@ -544,28 +499,24 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     setActionInProgressId(item.id);
 
     try {
-      const token = getAccessToken();
       const isReadyState = item.preparationStatus === 'ready';
 
       if (isReadyState) {
         // Ready -> in_preparation
         const targetPreparedQty = Math.max(0, item.quantity - 1);
-        const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        const data = await apiRequest<MaybeEnvelopedItem<KitchenOrderItemDetail>>(
+          `/kitchen-order-items/${item.id}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              preparationStatus: 'in_preparation',
+              preparedQuantity: targetPreparedQty,
+              completedAt: null,
+            }),
           },
-          body: JSON.stringify({
-            preparationStatus: 'in_preparation',
-            preparedQuantity: targetPreparedQty,
-            completedAt: null,
-          }),
-        });
-
-        if (!res.ok) throw new Error('Failed to undo ready status');
-        const data = await res.json();
-        const updatedItem = data.data || data;
+          'Failed to undo ready status',
+        );
+        const updatedItem = unwrapItem(data);
         setItems(prev =>
           prev.map(it =>
             it.id === item.id
@@ -584,16 +535,12 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
         // in_preparation -> pending or held
         const isStagedCourse = item.course === 'dessert' || item.course === 'main_course';
         if (isStagedCourse) {
-          const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}/hold?holdMinutes=10`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-          });
-          if (!res.ok) throw new Error('Failed to hold item');
-          const data = await res.json();
-          const updatedItem = data.data || data;
+          const data = await apiRequest<MaybeEnvelopedItem<KitchenOrderItemDetail>>(
+            `/kitchen-order-items/${item.id}/hold?holdMinutes=10`,
+            { method: 'POST' },
+            'Failed to hold item',
+          );
+          const updatedItem = unwrapItem(data);
           setItems(prev =>
             prev.map(it =>
               it.id === item.id
@@ -610,23 +557,20 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
           );
           showToast(`↩️ "${item.product.name}" returned to Held.`, 'info');
         } else {
-          const res = await fetch(`${API_BASE}/kitchen-order-items/${item.id}`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          const data = await apiRequest<MaybeEnvelopedItem<KitchenOrderItemDetail>>(
+            `/kitchen-order-items/${item.id}`,
+            {
+              method: 'PUT',
+              body: JSON.stringify({
+                preparedQuantity: 0,
+                preparationStatus: 'pending',
+                startedAt: null,
+                completedAt: null,
+              }),
             },
-            body: JSON.stringify({
-              preparedQuantity: 0,
-              preparationStatus: 'pending',
-              startedAt: null,
-              completedAt: null,
-            }),
-          });
-
-          if (!res.ok) throw new Error('Failed to revert item');
-          const data = await res.json();
-          const updatedItem = data.data || data;
+            'Failed to revert item',
+          );
+          const updatedItem = unwrapItem(data);
           setItems(prev =>
             prev.map(it =>
               it.id === item.id
@@ -662,18 +606,11 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     if (!confirmRecall) return;
 
     try {
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/kitchen-orders/${kitchenOrderId}/recall`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error('Could not recall order. Check server permissions.');
-      }
+      await apiRequest<void>(
+        `/kitchen-orders/${kitchenOrderId}/recall`,
+        { method: 'POST' },
+        'Could not recall order. Check server permissions.',
+      );
 
       showToast(`↺ RECALLED #KO-${kitchenOrderId} back to Active Preparation!`, 'info');
       window.dispatchEvent(
@@ -780,7 +717,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
       businessStatus: string;
       tier: number;
       createdAt: string;
-      items: KitchenOrderItemRecord[];
+      items: KitchenOrderItemDetail[];
     }>();
 
     for (const it of result) {
@@ -844,7 +781,7 @@ export const KitchenOrderItemsView: React.FC<KitchenOrderItemsViewProps> = ({ on
     }
 
     // 4. Flatten the sorted list keeping items of each order together
-    const flatItems: KitchenOrderItemRecord[] = [];
+    const flatItems: KitchenOrderItemDetail[] = [];
     for (const grp of orderGroups) {
       flatItems.push(...grp.items);
     }

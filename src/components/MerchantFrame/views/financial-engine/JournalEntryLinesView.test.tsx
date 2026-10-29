@@ -4,8 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { JournalEntryLinesView } from './JournalEntryLinesView';
 import { flattenJournalEntryLines, isLeafAccount } from './journalEntryLinesHelpers';
 import type { JournalEntry, LedgerAccount } from '../../../../types/accounting';
+import { jsonResponse } from '../../../../test/fetch';
 
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -80,16 +82,9 @@ function mockFetch(entries: JournalEntry[], ledgerAccounts: LedgerAccount[] = [c
     'fetch',
     vi.fn((url: string) => {
       if (url.includes('/ledger-accounts')) {
-        return Promise.resolve({
-          status: 200,
-          ok: true,
-          json: async () => ({ data: ledgerAccounts, page: 1, limit: 100, total: ledgerAccounts.length, totalPages: 1 }),
-        });
+        return Promise.resolve(jsonResponse({ data: ledgerAccounts, page: 1, limit: 100, total: ledgerAccounts.length, totalPages: 1 }));
       }
-      return Promise.resolve({
-        status,
-        ok: status >= 200 && status < 300,
-        json: async () => ({
+      return Promise.resolve(jsonResponse({
           data: entries,
           page: 1,
           limit: 100,
@@ -97,8 +92,7 @@ function mockFetch(entries: JournalEntry[], ledgerAccounts: LedgerAccount[] = [c
           totalPages: 1,
           hasNext: false,
           hasPrev: false,
-        }),
-      });
+        }, status));
     }),
   );
 }
@@ -406,13 +400,13 @@ describe('JournalEntryLinesView — create line', () => {
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [cash], page: 1, limit: 100, total: 1, totalPages: 1 }) });
+          return Promise.resolve(jsonResponse({ data: [cash], page: 1, limit: 100, total: 1, totalPages: 1 }));
         }
         if (url.endsWith('/journal-entries/3/lines') && init?.method === 'POST') {
           postBody = JSON.parse(init.body as string);
-          return Promise.resolve({ status: 201, ok: true, json: async () => ({ statusCode: 201, message: 'ok', data: { id: 99, account: cash, debit: 100, credit: 0, description: null } }) });
+          return Promise.resolve(jsonResponse({ statusCode: 201, message: 'ok', data: { id: 99, account: cash, debit: 100, credit: 0, description: null } }, 201));
         }
-        return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1, hasNext: false, hasPrev: false }) });
+        return Promise.resolve(jsonResponse({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1, hasNext: false, hasPrev: false }));
       }),
     );
     render(<JournalEntryLinesView />);
@@ -473,12 +467,12 @@ describe('JournalEntryLinesView — create line', () => {
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [cash], page: 1, limit: 100, total: 1, totalPages: 1 }) });
+          return Promise.resolve(jsonResponse({ data: [cash], page: 1, limit: 100, total: 1, totalPages: 1 }));
         }
         if (url.endsWith('/journal-entries/3/lines') && init?.method === 'POST') {
-          return Promise.resolve({ status: 400, ok: false, json: async () => ({ message: 'Account does not belong to company' }) });
+          return Promise.resolve(jsonResponse({ message: 'Account does not belong to company' }, 400));
         }
-        return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1, hasNext: false, hasPrev: false }) });
+        return Promise.resolve(jsonResponse({ data: [draftEntry], page: 1, limit: 100, total: 1, totalPages: 1, hasNext: false, hasPrev: false }));
       }),
     );
     render(<JournalEntryLinesView />);
@@ -519,13 +513,13 @@ describe('JournalEntryLinesView — edit line', () => {
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [cash], page: 1, limit: 100, total: 1, totalPages: 1 }) });
+          return Promise.resolve(jsonResponse({ data: [cash], page: 1, limit: 100, total: 1, totalPages: 1 }));
         }
         if (url.endsWith('/journal-entries/3/lines/5') && init?.method === 'PATCH') {
           patchBody = JSON.parse(init.body as string);
-          return Promise.resolve({ status: 201, ok: true, json: async () => ({ statusCode: 201, message: 'ok', data: { id: 5, account: cash, debit: 75, credit: 0, description: 'Adjustment' } }) });
+          return Promise.resolve(jsonResponse({ statusCode: 201, message: 'ok', data: { id: 5, account: cash, debit: 75, credit: 0, description: 'Adjustment' } }, 201));
         }
-        return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [draftEntryWithLine], page: 1, limit: 100, total: 1, totalPages: 1, hasNext: false, hasPrev: false }) });
+        return Promise.resolve(jsonResponse({ data: [draftEntryWithLine], page: 1, limit: 100, total: 1, totalPages: 1, hasNext: false, hasPrev: false }));
       }),
     );
     render(<JournalEntryLinesView />);
@@ -549,13 +543,13 @@ describe('JournalEntryLinesView — edit line', () => {
       'fetch',
       vi.fn((url: string, init?: RequestInit) => {
         if (url.includes('/ledger-accounts')) {
-          return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [cash], page: 1, limit: 100, total: 1, totalPages: 1 }) });
+          return Promise.resolve(jsonResponse({ data: [cash], page: 1, limit: 100, total: 1, totalPages: 1 }));
         }
         if (url.endsWith('/journal-entries/3/lines/5') && init?.method === 'PATCH') {
           patchBody = JSON.parse(init.body as string);
-          return Promise.resolve({ status: 201, ok: true, json: async () => ({ statusCode: 201, message: 'ok', data: { id: 5, account: cash, debit: 50, credit: 0, description: null } }) });
+          return Promise.resolve(jsonResponse({ statusCode: 201, message: 'ok', data: { id: 5, account: cash, debit: 50, credit: 0, description: null } }, 201));
         }
-        return Promise.resolve({ status: 200, ok: true, json: async () => ({ data: [draftEntryWithLine], page: 1, limit: 100, total: 1, totalPages: 1, hasNext: false, hasPrev: false }) });
+        return Promise.resolve(jsonResponse({ data: [draftEntryWithLine], page: 1, limit: 100, total: 1, totalPages: 1, hasNext: false, hasPrev: false }));
       }),
     );
     render(<JournalEntryLinesView />);

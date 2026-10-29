@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { PayrollRulesView } from './PayrollRulesView';
 import type { MerchantPayrollRule } from '../../../../types/configuration';
+import { jsonResponse } from '../../../../test/fetch';
 
 
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
@@ -71,14 +73,9 @@ const MOCK_RULES: MerchantPayrollRule[] = [weeklyRule, biweeklyRule, monthlyRule
 function mockFetchOnce(data: MerchantPayrollRule[], status = 200) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      status,
-      ok: status >= 200 && status < 300,
-      json: async () => ({
-        data,
-        pagination: { total: data.length, page: 1, limit: 100, totalPages: 1 },
-      }),
-    }),
+    vi.fn().mockImplementation(async () =>
+      jsonResponse({ data, pagination: { total: data.length, page: 1, limit: 100, totalPages: 1 } }, status),
+    ),
   );
 }
 
@@ -472,11 +469,7 @@ describe('PayrollRulesView — create payroll rule', () => {
       status: 'active',
     };
 
-    const fetchSpy = vi.fn().mockResolvedValue({
-      status: 201,
-      ok: true,
-      json: async () => ({ data: createdRule }),
-    });
+    const fetchSpy = vi.fn().mockImplementation(async () => jsonResponse({ data: createdRule }, 201));
     vi.stubGlobal('fetch', fetchSpy);
 
     await user.click(screen.getByRole('button', { name: /add payroll rule/i }));
@@ -503,11 +496,7 @@ describe('PayrollRulesView — create payroll rule', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 400,
-        ok: false,
-        json: async () => ({ message: 'Invalid payload' }),
-      }),
+      vi.fn().mockImplementation(async () => jsonResponse({ message: 'Invalid payload' }, 400)),
     );
 
     await user.click(screen.getByRole('button', { name: /add payroll rule/i }));
@@ -549,11 +538,7 @@ describe('PayrollRulesView — edit payroll rule', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 200,
-        ok: true,
-        json: async () => ({ data: updatedRule }),
-      }),
+      vi.fn().mockImplementation(async () => jsonResponse({ data: updatedRule })),
     );
 
     await user.click(within(row).getByLabelText('Edit payroll rule'));
@@ -573,11 +558,7 @@ describe('PayrollRulesView — edit payroll rule', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 500,
-        ok: false,
-        json: async () => ({ message: 'Server error' }),
-      }),
+      vi.fn().mockImplementation(async () => jsonResponse({ message: 'Server error' }, 500)),
     );
 
     await user.click(within(row).getByLabelText('Edit payroll rule'));
@@ -613,10 +594,7 @@ describe('PayrollRulesView — detail inspection', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 200,
-        ok: true,
-        json: async () => ({
+      vi.fn().mockImplementation(async () => jsonResponse({
           data: {
             ...weeklyRule,
             createdAt: '2026-01-05T10:00:00.000Z',
@@ -624,8 +602,7 @@ describe('PayrollRulesView — detail inspection', () => {
             createdBy: { id: 1, username: 'jane.doe', email: 'jane@company.com' },
             updatedBy: { id: 2, username: null, email: 'ops@company.com' },
           },
-        }),
-      }),
+        })),
     );
 
     await user.click(row);
@@ -658,11 +635,7 @@ describe('PayrollRulesView — status toggle', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 200,
-        ok: true,
-        json: async () => ({ data: { ...weeklyRule, status: 'inactive' } }),
-      }),
+      vi.fn().mockImplementation(async () => jsonResponse({ data: { ...weeklyRule, status: 'inactive' } })),
     );
 
     await user.click(within(row).getByLabelText('Deactivate payroll rule'));
@@ -682,11 +655,7 @@ describe('PayrollRulesView — status toggle', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        status: 200,
-        ok: true,
-        json: async () => ({ data: { ...monthlyRule, status: 'active' } }),
-      }),
+      vi.fn().mockImplementation(async () => jsonResponse({ data: { ...monthlyRule, status: 'active' } })),
     );
 
     await user.click(within(row).getByLabelText('Reactivate payroll rule'));
@@ -699,11 +668,7 @@ describe('PayrollRulesView — status toggle', () => {
 
   it('does not send a request when the confirm dialog is cancelled', async () => {
     const user = userEvent.setup();
-    const fetchSpy = vi.fn().mockResolvedValue({
-      status: 200,
-      ok: true,
-      json: async () => ({ data: MOCK_RULES }),
-    });
+    const fetchSpy = vi.fn().mockImplementation(async () => jsonResponse({ data: MOCK_RULES }));
     vi.stubGlobal('fetch', fetchSpy);
     render(<PayrollRulesView />);
     const row = (await screen.findByText('Weekly Hourly Staff')).closest('tr')!;

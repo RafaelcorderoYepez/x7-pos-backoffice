@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { getAccessToken } from '../../../../lib/auth-storage';
 import { StockQuickLinks } from './stocks/StockQuickLinks';
 import {
   StandardDashboardHub,
   type DashboardKPIItem,
   type DashboardModuleItem,
 } from '../../../shared/StandardDashboardHub';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../api/http';
 
 interface RawMaterialsHubViewProps {
   onNavigate?: (view: string) => void;
@@ -32,91 +30,54 @@ export const RawMaterialsHubView: React.FC<RawMaterialsHubViewProps> = ({
     const fetchMetrics = async () => {
       try {
         setLoading(true);
-        const token = getAccessToken();
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        };
+        // Each KPI is independent: a failing endpoint leaves its card at zero instead of blanking the hub.
+        const optionalList = <T,>(path: string) =>
+          apiRequest<MaybeEnvelopedList<T>>(path, { method: 'GET' }, '')
+            .then((json) => unwrapList(json))
+            .catch(() => null);
 
-        const [rmRes, poRes, locRes, catRes, stockRes, movRes] = await Promise.allSettled([
-          fetch(`${API_BASE}/v1/inventory/raw-materials?limit=200&status=all`, { headers }),
-          fetch(`${API_BASE}/v1/purchase-orders?limit=100`, { headers }).then(async (res) => {
-            if (!res.ok) return fetch(`${API_BASE}/purchase-orders?limit=100`, { headers });
-            return res;
-          }),
-          fetch(`${API_BASE}/v1/inventory/locations`, { headers }).then(async (res) => {
-            if (!res.ok) return fetch(`${API_BASE}/locations`, { headers });
-            return res;
-          }),
-          fetch(`${API_BASE}/v1/raw-material-categories?status=all`, { headers }).then(async (res) => {
-            if (!res.ok) return fetch(`${API_BASE}/v1/inventory/raw-material-categories`, { headers });
-            return res;
-          }),
-          fetch(`${API_BASE}/v1/raw-material-stock/items?limit=100`, { headers }),
-          fetch(`${API_BASE}/v1/raw-material-stock/movements?limit=100`, { headers }),
+        type StockLevels = { currentQty?: number; currentStock?: number; minimumQty?: number; minimumStock?: number };
+        const [rawMaterials, purchaseOrders, locations, categories, stockItems, movements] = await Promise.all([
+          optionalList<StockLevels>('/v1/inventory/raw-materials?limit=200&status=all'),
+          optionalList<{ status?: string }>('/v1/purchase-orders?limit=100'),
+          optionalList<unknown>('/locations'),
+          optionalList<unknown>('/v1/raw-material-categories?status=all'),
+          optionalList<StockLevels>('/v1/raw-material-stock/items?limit=100'),
+          optionalList<unknown>('/v1/raw-material-stock/movements?limit=100'),
         ]);
 
         if (!isMounted) return;
 
+        const isLow = (m: StockLevels) => {
+          const current = Number(m.currentQty ?? m.currentStock ?? 0);
+          const min = Number(m.minimumQty ?? m.minimumStock ?? 0);
+          return min > 0 && current <= min;
+        };
         let detectedLowStock = 0;
 
-        if (rmRes.status === 'fulfilled' && rmRes.value.ok) {
-          const json = await rmRes.value.json();
-          const list: Array<{ currentQty?: number; currentStock?: number; minimumQty?: number; minimumStock?: number }> =
-            Array.isArray(json) ? json : json.data || [];
-          setRawMaterialsCount(list.length);
-
-          const rmLow = list.filter((m) => {
-            const current = Number(m.currentQty ?? m.currentStock ?? 0);
-            const min = Number(m.minimumQty ?? m.minimumStock ?? 0);
-            return min > 0 && current <= min;
-          }).length;
-          detectedLowStock = Math.max(detectedLowStock, rmLow);
+        if (rawMaterials) {
+          setRawMaterialsCount(rawMaterials.length);
+          detectedLowStock = Math.max(detectedLowStock, rawMaterials.filter(isLow).length);
         }
 
-        if (poRes.status === 'fulfilled' && poRes.value.ok) {
-          const json = await poRes.value.json();
-          const list: Array<{ status?: string }> = Array.isArray(json) ? json : json.data || [];
-          setPurchaseOrdersCount(list.length);
-
-          const openCount = list.filter((po) => {
+        if (purchaseOrders) {
+          setPurchaseOrdersCount(purchaseOrders.length);
+          const openCount = purchaseOrders.filter((po) => {
             const st = (po.status || '').toUpperCase();
             return st && !['RECEIVED', 'COMPLETED', 'CANCELLED'].includes(st);
           }).length;
           setPendingOrdersCount(openCount);
         }
 
-        if (locRes.status === 'fulfilled' && locRes.value.ok) {
-          const json = await locRes.value.json();
-          const list = Array.isArray(json) ? json : json.data || [];
-          setLocationsCount(list.length);
+        if (locations) setLocationsCount(locations.length);
+        if (categories) setCategoriesCount(categories.length);
+
+        if (stockItems) {
+          setStockItemsCount(stockItems.length);
+          detectedLowStock = Math.max(detectedLowStock, stockItems.filter(isLow).length);
         }
 
-        if (catRes.status === 'fulfilled' && catRes.value.ok) {
-          const json = await catRes.value.json();
-          const list = Array.isArray(json) ? json : json.data || [];
-          setCategoriesCount(list.length);
-        }
-
-        if (stockRes.status === 'fulfilled' && stockRes.value.ok) {
-          const json = await stockRes.value.json();
-          const list: Array<{ currentStock?: number; currentQty?: number; minimumStock?: number; minimumQty?: number }> =
-            Array.isArray(json) ? json : json.data || [];
-          setStockItemsCount(list.length);
-
-          const stockLow = list.filter((s) => {
-            const current = Number(s.currentStock ?? s.currentQty ?? 0);
-            const min = Number(s.minimumStock ?? s.minimumQty ?? 0);
-            return min > 0 && current <= min;
-          }).length;
-          detectedLowStock = Math.max(detectedLowStock, stockLow);
-        }
-
-        if (movRes.status === 'fulfilled' && movRes.value.ok) {
-          const json = await movRes.value.json();
-          const list = Array.isArray(json) ? json : json.data || [];
-          setMovementsCount(list.length);
-        }
+        if (movements) setMovementsCount(movements.length);
 
         setLowStockCount(detectedLowStock);
       } catch (err) {
@@ -209,7 +170,7 @@ export const RawMaterialsHubView: React.FC<RawMaterialsHubViewProps> = ({
       description: 'Track real-time inventory balances, stock counts by location, par levels, and low-stock alerts.',
       icon: 'table_rows',
       badge: lowStockCount > 0 ? `${lowStockCount} Low Stock` : 'Stock Healthy',
-      badgeVariant: lowStockCount > 0 ? 'red' : 'emerald',
+      badgeVariant: lowStockCount > 0 ? 'rose' : 'emerald',
       actionText: 'Manage Stock Levels',
     },
     {

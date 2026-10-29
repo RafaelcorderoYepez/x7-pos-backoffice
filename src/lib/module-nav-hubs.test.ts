@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 // `?raw` (Vite) instead of node:fs: the app's tsconfig does not load Node. types.
 import featuresTxt from '../../public/Features.txt?raw';
-import merchantFrameSource from '../components/MerchantFrame/MerchantFrame.tsx?raw';
+import { REGISTERED_VIEW_TABS } from '../components/MerchantFrame/views/merchant-view-registry';
 import { MODULE_NAV_HUBS, navHubById, navHubForFeature } from './module-nav-hubs';
 
 // EXACT tags for the stories in each module.
@@ -123,9 +123,9 @@ const STORY_LABELS: Record<string, { back: string; items: string[] }> = {
     back: 'QR CODE SYSTEM COMMAND HUB',
     items: [
       'QR CODE LOCATIONS',
+      'QR CODE MENU ITEMS',
+      'QR CODE MENU SECTIONS',
       'QR CODE MENUS',
-      'QR MENU SECTIONS',
-      'QR MENU ITEMS',
       'QR CODE ORDERS',
       'QR ORDER ITEMS',
     ],
@@ -174,11 +174,10 @@ describe('module NavHubBars', () => {
     }
   });
 
-  it('marks as live exactly the options MerchantFrame routes to a view', () => {
-    const frame = merchantFrameSource;
+  it('marks as live exactly the options with a registered view', () => {
     for (const hub of MODULE_NAV_HUBS) {
       for (const item of hub.items) {
-        expect({ id: item.featureId, live: frame.includes(`activeTab === '${item.featureId}'`) }).toEqual({
+        expect({ id: item.featureId, live: REGISTERED_VIEW_TABS.includes(item.featureId) }).toEqual({
           id: item.featureId,
           live: item.live,
         });

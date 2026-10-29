@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import type {
   MerchantTipRule,
   TipCalculationMethod,
@@ -9,8 +8,7 @@ import type {
   UpdateTipRuleDto,
 } from '../../../../types/configuration';
 import { RuleConfigQuickLinks } from './RuleConfigQuickLinks';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+import { apiRequest } from '../../../../api/http';
 
 function fuzzyMatch(query: string, target: string): boolean {
   let qi = 0;
@@ -678,25 +676,11 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`${API_BASE}/merchant-tip-rule?limit=100`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading tip rules');
-      }
-
-      const json = await res.json();
+      const json = await apiRequest<{ data?: MerchantTipRule[] }>(
+        '/merchant-tip-rule?limit=100',
+        { method: 'GET' },
+        'Error loading tip rules',
+      );
       setRules(json.data ?? []);
     } catch (err) {
       console.error('Error fetching tip rules:', err);
@@ -715,26 +699,11 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
   const handleCreateSubmit = async (dto: CreateTipRuleDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-tip-rule`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to create tip rule');
-      }
+      const json = await apiRequest<{ data: MerchantTipRule }>(
+        '/merchant-tip-rule',
+        { method: 'POST', body: JSON.stringify(dto) },
+        'Failed to create tip rule',
+      );
 
       setRules((prev) => [json.data, ...prev]);
       setFormModalOpen(null);
@@ -750,26 +719,11 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
   const handleEditSubmit = async (ruleId: number, dto: UpdateTipRuleDto) => {
     setFormSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-tip-rule/${ruleId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify(dto),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to update tip rule');
-      }
+      const json = await apiRequest<{ data: MerchantTipRule }>(
+        `/merchant-tip-rule/${ruleId}`,
+        { method: 'PATCH', body: JSON.stringify(dto) },
+        'Failed to update tip rule',
+      );
 
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
       setFormModalOpen(null);
@@ -784,22 +738,11 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
 
   const handleRowClick = async (ruleId: number) => {
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-tip-rule/${ruleId}`, { headers });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to load tip rule details');
-      }
+      const json = await apiRequest<{ data: MerchantTipRule }>(
+        `/merchant-tip-rule/${ruleId}`,
+        { method: 'GET' },
+        'Failed to load tip rule details',
+      );
 
       setDetailRule(json.data);
     } catch (err: unknown) {
@@ -812,26 +755,11 @@ export const TipRulesView: React.FC<TipRulesViewProps> = ({ onNavigate }) => {
     const nextStatus: 'active' | 'inactive' = togglingRule.status === 'active' ? 'inactive' : 'active';
     setToggleSubmitting(true);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-
-      const res = await fetch(`${API_BASE}/merchant-tip-rule/${togglingRule.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ status: nextStatus }),
-      });
-
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(json.message || 'Failed to update tip rule status');
-      }
+      const json = await apiRequest<{ data: MerchantTipRule }>(
+        `/merchant-tip-rule/${togglingRule.id}`,
+        { method: 'PATCH', body: JSON.stringify({ status: nextStatus }) },
+        'Failed to update tip rule status',
+      );
 
       setRules((prev) => prev.map((r) => (r.id === json.data.id ? json.data : r)));
       setTogglingRule(null);

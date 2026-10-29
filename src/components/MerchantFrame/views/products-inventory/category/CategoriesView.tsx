@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
 import { InventoryNavHubBar } from '../InventoryNavHubBar';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
+import { apiRequest } from '../../../../../api/http';
 
 interface Category {
   id: string;
@@ -64,46 +64,23 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
       topRef.current.scrollIntoView({ behavior: 'instant' });
     }
   }, []);
-
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   const fetchCategories = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const [categoriesRes, productsRes] = await Promise.all([
-        fetch(`${API_BASE}/category?limit=100`, { headers }),
-        fetch(`${API_BASE}/products?limit=100`, { headers })
+      const [categoriesJson, productsJson] = await Promise.all([
+        apiRequest<{ data?: { id: number | string; name: string; parents?: { id: number | string }[]; isActive?: boolean }[] }>('/category?limit=100', { method: 'GET' }, 'Error loading data from server'),
+        apiRequest<{ data?: { category?: { id: number | string } }[] }>('/products?limit=100', { method: 'GET' }, 'Error loading data from server'),
       ]);
-
-      if (categoriesRes.status === 401 || productsRes.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!categoriesRes.ok || !productsRes.ok) {
-        throw new Error('Error loading data from server');
-      }
-
-      const categoriesJson = await categoriesRes.json();
-      const productsJson = await productsRes.json();
 
       const categoriesData = categoriesJson.data || [];
       const productsData = productsJson.data || [];
 
       // Map to local interface format
       const mapped: Category[] = categoriesData.map((cat: { id: number | string; name: string; parents?: { id: number | string }[]; isActive?: boolean }) => {
-        const hasParent = cat.parents && cat.parents.length > 0;
-        const parentId = hasParent ? String(cat.parents[0].id) : 'NULL';
+        const firstParent = cat.parents?.[0];
+        const hasParent = firstParent !== undefined;
+        const parentId = firstParent ? String(firstParent.id) : 'NULL';
         const type = hasParent ? 'Sub-Category' : 'Root Category';
         
         // Contar productos vinculados
@@ -126,7 +103,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     } finally {
       setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -212,25 +189,13 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     setIsToggling(true);
     setToggleError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
       const newIsActive = confirmTargetCategory.status !== 'Active';
 
-      const res = await fetch(`${API_BASE}/category/${confirmTargetCategory.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ isActive: newIsActive })
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error updating category status');
-      }
-
+      await apiRequest<void>(
+        `/category/${confirmTargetCategory.id}`,
+        { method: 'PATCH', body: JSON.stringify({ isActive: newIsActive }) },
+        'Error updating category status.',
+      );
       setCategories((prevCategories) =>
         prevCategories.map((c) =>
           c.id === confirmTargetCategory.id ? { ...c, status: newIsActive ? 'Active' : 'Inactive' } : c
@@ -256,38 +221,21 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
     }
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
       const parentIdNum = formParent === 'NULL' ? null : parseInt(formParent);
+      const body = JSON.stringify({
+        name: formName,
+        parentId: parentIdNum,
+        isActive: formStatus === 'Active'
+      });
 
       if (modalMode === 'add') {
-        const res = await fetch(`${API_BASE}/category`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            name: formName,
-            parentId: parentIdNum,
-            isActive: formStatus === 'Active'
-          })
-        });
-        if (!res.ok) throw new Error('Error creating category');
+        await apiRequest<void>('/category', { method: 'POST', body }, 'Error creating category');
       } else if (modalMode === 'edit' && editingCategoryId) {
-        const res = await fetch(`${API_BASE}/category/${editingCategoryId}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({
-            name: formName,
-            parentId: parentIdNum,
-            isActive: formStatus === 'Active'
-          })
-        });
-        if (!res.ok) throw new Error('Error updating category');
+        await apiRequest<void>(
+          `/category/${editingCategoryId}`,
+          { method: 'PATCH', body },
+          'Error updating category',
+        );
       }
 
       setIsModalOpen(false);
@@ -602,7 +550,6 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
         />
       </div>
 
-
       {/* Interactive Add / Edit Category Modal */}
       {isModalOpen && createPortal(
         <div className="fixed inset-0 bg-black/60 z-[9999] flex justify-center items-start overflow-y-auto p-2 md:pt-4 md:pb-12 backdrop-blur-sm">
@@ -692,7 +639,6 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({ onNavigate }) =>
         </div>,
         document.body
       )}
-
 
       <EmergencySupportModal
         isOpen={isSupportOpen}

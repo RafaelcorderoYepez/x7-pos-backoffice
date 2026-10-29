@@ -518,17 +518,36 @@ export const TableOptionsMenu: React.FC<TableOptionsMenuProps> = ({
   );
 };
 
-export const NoColumnsEmptyState: React.FC = () => (
-  <div className="p-12 text-center bg-[#fef9f1] border-t border-[#e8e2d8] flex flex-col items-center justify-center gap-2 font-sans select-none">
-    <span className="material-symbols-outlined text-4xl text-[#5f5e5e]">
-      view_column
-    </span>
-    <p className="text-body-md font-bold text-[#1d1c17]">No Columns Selected</p>
-    <p className="text-body-sm text-[#5f5e5e] max-w-sm">
-      All table columns are currently hidden. Open the 3-dots menu (⋮) to toggle visible columns.
-    </p>
-  </div>
-);
+export interface NoColumnsEmptyStateProps {
+  colSpan?: number;
+  asTableRow?: boolean;
+}
+
+export const NoColumnsEmptyState: React.FC<NoColumnsEmptyStateProps> = ({ colSpan, asTableRow }) => {
+  const content = (
+    <div className="p-12 text-center bg-[#fef9f1] border-t border-[#e8e2d8] flex flex-col items-center justify-center gap-2 font-sans select-none">
+      <span className="material-symbols-outlined text-4xl text-[#5f5e5e]">
+        view_column
+      </span>
+      <p className="text-body-md font-bold text-[#1d1c17]">No Columns Selected</p>
+      <p className="text-body-sm text-[#5f5e5e] max-w-sm">
+        All table columns are currently hidden. Open the 3-dots menu (⋮) to toggle visible columns.
+      </p>
+    </div>
+  );
+
+  if (asTableRow || colSpan !== undefined) {
+    return (
+      <tr>
+        <td colSpan={colSpan ?? 1} className="p-0">
+          {content}
+        </td>
+      </tr>
+    );
+  }
+
+  return content;
+};
 
 export interface TableEmptyStateProps {
   icon?: string;
@@ -585,9 +604,7 @@ export interface TablePaginationFooterProps {
   onPageChange: (page: number) => void;
   totalPages?: number;
   onPageSizeChange?: (size: number) => void;
-  pageSizeOptions?: number[];
-  startItem?: number;
-  endItem?: number;
+  onChangePageSize?: (size: number) => void;
 }
 
 export const TablePaginationFooter: React.FC<TablePaginationFooterProps> = ({

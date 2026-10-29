@@ -1,15 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../lib/auth-storage';
 import { useModalDismiss } from '../../../../lib/useModalDismiss';
 import {
-  childTablesOf,
   descendantTableIds,
   wouldCreateCycle,
   eligibleParentTables,
   eligibleTransferTargets,
   inheritedChildStatus,
-  joinedChildrenLabel,
   parentTableId,
 } from '../../../../lib/dining-tables';
 import { useDiningRealtime } from '../../../../lib/useDiningRealtime';
@@ -26,14 +23,8 @@ import type {
 import {
   FLOOR_PLAN_MIN_DIMENSION,
   FLOOR_PLAN_STATUS_BADGE_STYLES,
-  TABLE_STATUSES,
-  isTableStatus,
-  tableStatusLabel,
   FLOOR_PLAN_STATUS_LABELS,
   TABLE_FOOTPRINT,
-  TABLE_MIN_SIZE_PX,
-  TABLE_MAX_SIZE_PX,
-  tableFootprint,
   TABLE_SHAPES,
   isTableClipped,
   normalizeFloorPlanStatus,
@@ -46,17 +37,12 @@ import {
   formatArea,
   formatDimensions,
   formatLength,
-  lengthSuffix,
-  lengthToPx,
-  lengthValue,
   loadUnitSystem,
   saveUnitSystem,
 } from '../../../../lib/measurement-units';
 import type { Outline } from '../../../../lib/floor-geometry';
 import {
   MIN_OUTLINE_VERTICES,
-  OUTLINE_PRESETS,
-  clampPointToPolygon,
   insertVertex,
   outlinePath,
   outlineWarning,
@@ -64,26 +50,40 @@ import {
   pointInPolygon,
   polygonBounds,
   polygonArea,
-  rectangleOutline,
   removeVertex,
   serializeOutline,
   tableInsideOutline,
   tablesOutsideOutline,
   validateOutline,
 } from '../../../../lib/floor-geometry';
+import {
+  GRID_PX,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  SNAP_PX,
+  ZOOM_STEPS,
+  clamp,
+  containToOutline,
+  findFreeSpot,
+  fitZoom,
+  footprintOfTable,
+  nextTableNumber,
+  resolveParentId,
+  shapeRadiusClass,
+  snap,
+} from '../../../../lib/floor-plan-layout';
+import { ZoneAreaPanel } from './floor-plan-editor/ZoneAreaPanel';
+import { RoomShapePanel } from './floor-plan-editor/RoomShapePanel';
+import { MultiTableInspector } from './floor-plan-editor/MultiTableInspector';
+import { TableInspector } from './floor-plan-editor/TableInspector';
+import { inputClass, labelClass } from './floor-plan-editor/editor-ui';
+import { ApiError } from '../../../../lib/api-error';
+import { apiRequest } from '../../../../api/http';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
+// A 401 inside the batch save: apiRequest already redirected, so the loop just stops.
+const isUnauthorized = (err: unknown): boolean => err instanceof ApiError && err.status === 401;
 
 // ---- Constantes espaciales ----
-
-// The background draws a 20px grid, but positions snap every 10px: half a
-// cell provides sufficient precision without forcing the user to fine-tune pixel by pixel.
-const GRID_PX = 20;
-const SNAP_PX = 10;
-
-const ZOOM_STEPS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2];
-const MIN_ZOOM = ZOOM_STEPS[0];
-const MAX_ZOOM = ZOOM_STEPS[ZOOM_STEPS.length - 1];
 
 // Fill color fallback when zone lacks color (backend allows null color).
 const FALLBACK_TABLE_COLOR = '#ae001a';
@@ -114,11 +114,6 @@ const UNIT_SYSTEM_ARIA: Record<UnitSystem, string> = {
   metric: 'Show measurements in meters',
   imperial: 'Show measurements in feet and inches',
 };
-
-// Step size for coordinate inputs. In px it was 10 (grid); in meters or feet that
-// same 10 would be a 10m leap, so it is refined to hundredths — matching the
-// precision returned by `lengthValue` and preventing browser stepMismatch.
-const COORD_STEP = 0.01;
 
 // `limit` is capped at 100 in /api/tables (@Max(100)); MAX_PAGES is a safety belt
 // to prevent a corrupted `totalPages` from trapping the editor in an infinite loop.
@@ -436,17 +431,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     rootRef.current?.focus({ preventScroll: true });
   }, []);
 
-  const authHeaders = useCallback((): Record<string, string> => {
-    const token = getAccessToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-  }, []);
 
-  const handleUnauthorized = useCallback(() => {
-    clearAuthSession();
-    window.location.href = '/login';
-  }, []);
 
   // ---------------- Carga inicial ----------------
 
@@ -460,16 +445,21 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     ): Promise<{ rows: T[]; ok: boolean; unauthorized: boolean }> => {
       const rows: T[] = [];
       for (let page = 1; page <= MAX_PAGES; page += 1) {
-        const res = await fetch(`${API_BASE}/${resource}?limit=${PAGE_LIMIT}&page=${page}`, {
-          headers: authHeaders(),
-        });
-        if (res.status === 401) return { rows, ok: false, unauthorized: true };
-        if (!res.ok) return { rows, ok: false, unauthorized: false };
-        const json = (await res.json()) as {
+        let json: {
           data?: T[];
           paginationMeta?: { totalPages?: number };
           pagination?: { totalPages?: number };
         };
+        try {
+          json = await apiRequest<typeof json>(
+            `/${resource}?limit=${PAGE_LIMIT}&page=${page}`,
+            { method: 'GET' },
+            `Error loading ${resource}`,
+          );
+        } catch (err) {
+          if (!(err instanceof ApiError)) throw err;
+          return { rows, ok: false, unauthorized: err.status === 401 };
+        }
         rows.push(...(json.data ?? []));
         const totalPages =
           json.paginationMeta?.totalPages ?? json.pagination?.totalPages ?? 1;
@@ -477,7 +467,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       }
       return { rows, ok: true, unauthorized: false };
     },
-    [authHeaders],
+    [],
   );
 
   const loadLayout = useCallback(async () => {
@@ -489,10 +479,8 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         fetchAllPages<FloorZone>('floor-zone'),
       ]);
 
-      if (tablesResult.unauthorized || zonesResult.unauthorized) {
-        handleUnauthorized();
-        return;
-      }
+      // apiRequest already redirected to the login page.
+      if (tablesResult.unauthorized || zonesResult.unauthorized) return;
       if (!tablesResult.ok) throw new Error('Error loading floor plan tables');
 
       const allTables = tablesResult.rows;
@@ -541,7 +529,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [fetchAllPages, handleUnauthorized, plan.id, canvasW, canvasH]);
+  }, [fetchAllPages, plan.id, canvasW, canvasH]);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -680,19 +668,14 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       if (!source) return;
       setTransferSubmitting(true);
       try {
-        const res = await fetch(`${API_BASE}/tables/transfer`, {
-          method: 'POST',
-          headers: authHeaders(),
-          body: JSON.stringify({ sourceTableId: source.id, targetTableId: target.id }),
-        });
-        if (res.status === 401) {
-          handleUnauthorized();
-          return;
-        }
-        const json = (await res.json().catch(() => ({}))) as ApiErrorBody;
-        if (!res.ok) {
-          throw new Error(errorMessageOf(json) || 'Transfer rejected by the server');
-        }
+        await apiRequest<void>(
+          '/tables/transfer',
+          {
+            method: 'POST',
+            body: JSON.stringify({ sourceTableId: source.id, targetTableId: target.id }),
+          },
+          'Transfer rejected by the server',
+        );
         setTransferOpen(false);
         await loadLayout();
         setToast({
@@ -708,7 +691,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         setTransferSubmitting(false);
       }
     },
-    [authHeaders, handleUnauthorized, loadLayout, selectedId],
+    [loadLayout, selectedId],
   );
 
   // ---------------- Live channel ----------------
@@ -1017,29 +1000,23 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     async (name: string, color: string): Promise<FloorZone | null> => {
       setZoneBusy(true);
       try {
-        const res = await fetch(`${API_BASE}/floor-zone`, {
-          method: 'POST',
-          headers: authHeaders(),
-          // All five fields are @IsNotEmpty and `floorPlan`/`merchant` sent as plain
-          // integers (backend does not infer merchant from JWT in this endpoint).
-          body: JSON.stringify({
-            merchant: merchantId,
-            name,
-            color,
-            floorPlan: plan.id,
-            status: 'active',
-          }),
-        });
-        if (res.status === 401) {
-          handleUnauthorized();
-          return null;
-        }
-        const json = (await res.json().catch(() => ({}))) as ApiErrorBody & {
-          data?: FloorZone;
-        };
-        if (!res.ok || !json.data) {
-          throw new Error(errorMessageOf(json) || 'Failed to create the floor zone');
-        }
+        const json = await apiRequest<{ data?: FloorZone }>(
+          '/floor-zone',
+          {
+            method: 'POST',
+            // All five fields are @IsNotEmpty and `floorPlan`/`merchant` sent as plain
+            // integers (backend does not infer merchant from JWT in this endpoint).
+            body: JSON.stringify({
+              merchant: merchantId,
+              name,
+              color,
+              floorPlan: plan.id,
+              status: 'active',
+            }),
+          },
+          'Failed to create the floor zone',
+        );
+        if (!json.data) throw new Error('Failed to create the floor zone');
         const created = json.data;
         setZones((prev) => [...prev, created]);
         setActiveZoneId(created.id);
@@ -1054,7 +1031,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         setZoneBusy(false);
       }
     },
-    [authHeaders, handleUnauthorized, merchantId, plan.id],
+    [merchantId, plan.id],
   );
 
   const updateZone = useCallback(
@@ -1062,21 +1039,11 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       setZoneBusy(true);
       try {
         // PATCH without `merchant`: zone does not change merchant on rename.
-        const res = await fetch(`${API_BASE}/floor-zone/${id}`, {
-          method: 'PATCH',
-          headers: authHeaders(),
-          body: JSON.stringify({ name, color }),
-        });
-        if (res.status === 401) {
-          handleUnauthorized();
-          return null;
-        }
-        const json = (await res.json().catch(() => ({}))) as ApiErrorBody & {
-          data?: FloorZone;
-        };
-        if (!res.ok) {
-          throw new Error(errorMessageOf(json) || 'Failed to update the floor zone');
-        }
+        const json = await apiRequest<{ data?: FloorZone }>(
+          `/floor-zone/${id}`,
+          { method: 'PATCH', body: JSON.stringify({ name, color }) },
+          'Failed to update the floor zone',
+        );
         const updated = json.data ?? null;
         setZones((prev) =>
           prev.map((z) => (z.id === id ? { ...z, ...(updated ?? {}), name, color } : z)),
@@ -1092,7 +1059,7 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         setZoneBusy(false);
       }
     },
-    [authHeaders, handleUnauthorized],
+    [],
   );
 
   // ---------------- Zone areas ----------------
@@ -1561,20 +1528,21 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       const poly = zoneAreas.get(zoneId);
       const zone = zones.find((z) => z.id === zoneId);
       try {
-        const res = await fetch(`${API_BASE}/floor-zone/${zoneId}`, {
-          method: 'PATCH',
-          headers: authHeaders(),
-          // Only `area`: backend update uses Object.assign, so sending scalar IDs
-          // would destroy relational entity links.
-          body: JSON.stringify({ area: poly ? serializeOutline(poly) : null }),
-        });
-        if (res.status === 401) {
-          unauthorized = true;
-        } else if (!res.ok) {
-          const json = (await res.json().catch(() => ({}))) as ApiErrorBody;
-          throw new Error(errorMessageOf(json) || 'Zone area rejected by the server');
-        }
+        await apiRequest<void>(
+          `/floor-zone/${zoneId}`,
+          {
+            method: 'PATCH',
+            // Only `area`: backend update uses Object.assign, so sending scalar IDs
+            // would destroy relational entity links.
+            body: JSON.stringify({ area: poly ? serializeOutline(poly) : null }),
+          },
+          'Zone area rejected by the server',
+        );
       } catch (err) {
+        if (isUnauthorized(err)) {
+          unauthorized = true;
+          continue;
+        }
         failures.push(
           `Zone ${zone?.name ?? zoneId}: ${err instanceof Error ? err.message : 'area could not be saved'}`,
         );
@@ -1587,23 +1555,20 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
         failures.push(`Room shape: ${invalid}`);
       } else {
         try {
-          const res = await fetch(`${API_BASE}/floor-plan/${plan.id}`, {
-            method: 'PATCH',
-            headers: authHeaders(),
-            // ONLY `outline`: backend update uses Object.assign, so sending scalar
-            // `merchant` would corrupt relationship.
-            body: JSON.stringify({ outline: serializeOutline(outline) }),
-          });
-          if (res.status === 401) {
-            unauthorized = true;
-          } else if (!res.ok) {
-            const json = (await res.json().catch(() => ({}))) as ApiErrorBody;
-            throw new Error(errorMessageOf(json) || 'Room shape rejected by the server');
-          } else {
-            outlineSaved = true;
-          }
+          await apiRequest<void>(
+            `/floor-plan/${plan.id}`,
+            {
+              method: 'PATCH',
+              // ONLY `outline`: backend update uses Object.assign, so sending scalar
+              // `merchant` would corrupt relationship.
+              body: JSON.stringify({ outline: serializeOutline(outline) }),
+            },
+            'Room shape rejected by the server',
+          );
+          outlineSaved = true;
         } catch (err) {
-          failures.push(
+          if (isUnauthorized(err)) unauthorized = true;
+          else failures.push(
             `Room shape: ${err instanceof Error ? err.message : 'could not be saved'}`,
           );
         }
@@ -1615,20 +1580,17 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     if (!unauthorized) {
       for (const id of pendingDeletes) {
         try {
-          const res = await fetch(`${API_BASE}/tables/${id}`, {
-            method: 'DELETE',
-            headers: authHeaders(),
-          });
-          if (res.status === 401) {
+          await apiRequest<void>(
+            `/tables/${id}`,
+            { method: 'DELETE' },
+            'Delete rejected by the server',
+          );
+          savedDeletes.push(id);
+        } catch (err) {
+          if (isUnauthorized(err)) {
             unauthorized = true;
             break;
           }
-          if (!res.ok) {
-            const json = (await res.json().catch(() => ({}))) as ApiErrorBody;
-            throw new Error(errorMessageOf(json) || 'Delete rejected by the server');
-          }
-          savedDeletes.push(id);
-        } catch (err) {
           failures.push(
             `Table #${id}: ${err instanceof Error ? err.message : 'could not be deleted'}`,
           );
@@ -1682,23 +1644,18 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
             : {}),
         };
         try {
-          const res = await fetch(`${API_BASE}/tables`, {
-            method: 'POST',
-            headers: authHeaders(),
-            body: JSON.stringify(dto),
-          });
-          if (res.status === 401) {
+          const json = await apiRequest<{ data?: DiningTable }>(
+            '/tables',
+            { method: 'POST', body: JSON.stringify(dto) },
+            'Create rejected by the server',
+          );
+          if (!json.data) throw new Error('Create rejected by the server');
+          created.push({ tempId: t.id, row: json.data });
+        } catch (err) {
+          if (isUnauthorized(err)) {
             unauthorized = true;
             break;
           }
-          const json = (await res.json().catch(() => ({}))) as ApiErrorBody & {
-            data?: DiningTable;
-          };
-          if (!res.ok || !json.data) {
-            throw new Error(errorMessageOf(json) || 'Create rejected by the server');
-          }
-          created.push({ tempId: t.id, row: json.data });
-        } catch (err) {
           failures.push(
             `Table ${t.number}: ${err instanceof Error ? err.message : 'could not be created'}`,
           );
@@ -1734,21 +1691,17 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           continue;
         }
         try {
-          const res = await fetch(`${API_BASE}/tables/${t.id}`, {
-            method: 'PUT',
-            headers: authHeaders(),
-            body: JSON.stringify(dto),
-          });
-          if (res.status === 401) {
+          await apiRequest<void>(
+            `/tables/${t.id}`,
+            { method: 'PUT', body: JSON.stringify(dto) },
+            'Update rejected by the server',
+          );
+          savedUpdates.push(t.id);
+        } catch (err) {
+          if (isUnauthorized(err)) {
             unauthorized = true;
             break;
           }
-          if (!res.ok) {
-            const json = (await res.json().catch(() => ({}))) as ApiErrorBody;
-            throw new Error(errorMessageOf(json) || 'Update rejected by the server');
-          }
-          savedUpdates.push(t.id);
-        } catch (err) {
           failures.push(
             `Table ${t.number}: ${err instanceof Error ? err.message : 'could not be updated'}`,
           );
@@ -1756,9 +1709,9 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
       }
     }
 
+    // apiRequest already redirected to the login page; stop without touching the canvas.
     if (unauthorized) {
       setSaving(false);
-      handleUnauthorized();
       return;
     }
 
@@ -1817,11 +1770,9 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
     onSaved?.();
   }, [
     activeZoneId,
-    authHeaders,
     dirtyCount,
     dirtyIds,
     dirtyZoneIds,
-    handleUnauthorized,
     loadLayout,
     merchantId,
     onSaved,
@@ -1912,16 +1863,6 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
   // Stable id per plan: two editors for same plan never coexist, avoiding conflicts.
   // value generated by React carries characters that dirty the url(#…) reference of the SVG.
   const gridPatternId = `floor-grid-${plan.id}`;
-
-  const inputClass =
-    'w-full bg-[#fef9f1] text-[#1d1c17] px-3 py-2 border border-[#e8e2d8] rounded text-sm focus:border-[#ae001a] focus:ring-1 focus:ring-[#ae001a] outline-none';
-  const labelClass = 'text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider';
-
-  // Legacy status outside standard vocabulary is retained to prevent inadvertent mutation.
-  const statusOptions: string[] =
-    selectedTable && !isTableStatus(selectedTable.status)
-      ? [selectedTable.status, ...TABLE_STATUSES]
-      : TABLE_STATUSES;
 
   return createPortal(
     <div
@@ -2731,308 +2672,48 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
           </div>
 
           {mode === 'zones' ? (
-            <div className="p-4 space-y-4">
-              <div className="flex items-center gap-2">
-                <span
-                  aria-hidden="true"
-                  style={{ backgroundColor: activeZone?.color?.trim() || DEFAULT_ZONE_COLOR }}
-                  className="inline-block w-6 h-6 rounded border border-[#e8e2d8] shrink-0"
-                />
-                <select
-                  value={activeZoneId ?? ''}
-                  onChange={(e) => {
-                    setActiveZoneId(e.target.value ? Number(e.target.value) : null);
-                    setSelectedZoneVertex(null);
-                  }}
-                  aria-label="Zone being edited"
-                  className={inputClass}
-                >
-                  {zones.length === 0 && <option value="">No zones yet</option>}
-                  {zones.map((z) => (
-                    <option key={z.id} value={z.id}>
-                      {z.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {activeZoneId != null && zoneAreas.get(activeZoneId) ? (
-                <>
-                  <p className="text-[11px] text-[#5f5e5e] leading-relaxed">
-                    Drag the square corners to reshape this zone. Tables dropped inside it are
-                    assigned to it automatically.
-                  </p>
-                  <p className="text-[11px] font-mono text-[#1d1c17]">
-                    {zoneAreas.get(activeZoneId)!.length} corners ·{' '}
-                    {formatArea(polygonArea(zoneAreas.get(activeZoneId)!), unitSystem)}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={clearZoneArea}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 border border-[#ae001a] text-[#ae001a] text-[10px] font-bold uppercase tracking-widest hover:bg-[#ae001a] hover:text-white transition-colors duration-200"
-                  >
-                    <span className="material-symbols-outlined text-base" aria-hidden="true">
-                      delete
-                    </span>
-                    Remove area
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p className="text-[11px] text-[#5f5e5e] leading-relaxed">
-                    This zone has no area drawn yet, so it only colours its tables. Draw one to
-                    mark which part of the room belongs to it.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={drawZoneArea}
-                    disabled={activeZoneId == null}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#ae001a] hover:bg-[#930015] text-white text-[10px] font-bold uppercase tracking-widest transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <span className="material-symbols-outlined text-base" aria-hidden="true">
-                      draw
-                    </span>
-                    Draw area
-                  </button>
-                </>
-              )}
-            </div>
+            <ZoneAreaPanel
+              zones={zones}
+              activeZoneId={activeZoneId}
+              zoneColor={activeZone?.color?.trim() || DEFAULT_ZONE_COLOR}
+              zoneArea={activeZoneId != null ? zoneAreas.get(activeZoneId) : undefined}
+              unitSystem={unitSystem}
+              onSelectZone={(zoneId) => {
+                setActiveZoneId(zoneId);
+                setSelectedZoneVertex(null);
+              }}
+              onDrawArea={drawZoneArea}
+              onClearArea={clearZoneArea}
+            />
           ) : mode === 'shape' ? (
-            <div className="p-4 flex flex-col gap-4" data-testid="floor-plan-room-panel">
-              <div>
-                <p className={labelClass}>Room presets</p>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  {OUTLINE_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() =>
-                        requestOutline(preset.label, preset.build(canvasW, canvasH))
-                      }
-                      aria-label={`Apply ${preset.label} room preset`}
-                      className="px-2 py-2 border border-[#e8e2d8] bg-[#fef9f1] text-[10px] font-bold uppercase tracking-widest text-[#1d1c17] hover:text-[#ae001a] hover:border-[#ae001a] transition-colors duration-200 rounded"
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => requestOutline('Rectangle', rectangleOutline(canvasW, canvasH))}
-                  aria-label="Reset room shape to the full canvas"
-                  className="mt-2 w-full flex items-center justify-center gap-2 py-2 border border-dashed border-[#e8e2d8] text-[10px] font-bold uppercase tracking-widest text-[#1d1c17] hover:text-[#ae001a] hover:border-[#ae001a] transition-colors duration-200"
-                >
-                  <span className="material-symbols-outlined text-base" aria-hidden="true">
-                    restart_alt
-                  </span>
-                  Reset to full canvas
-                </button>
-              </div>
-
-              {/* Warning: applying preset places existing tables out of bounds. */}
-              {pendingPreset && (
-                <div
-                  data-testid="outline-preset-confirm"
-                  className="border border-[#ae001a] bg-[#f5efe6] p-3 rounded flex flex-col gap-2"
-                >
-                  <p className="text-[11px] text-[#1d1c17] leading-relaxed">
-                    <strong>{pendingPreset.label}:</strong> {pendingPreset.warning}
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={confirmPendingPreset}
-                      className="flex-1 py-2 bg-[#ae001a] hover:bg-[#930015] text-white text-[10px] font-bold uppercase tracking-widest transition-colors"
-                    >
-                      Apply anyway
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPendingPreset(null)}
-                      className="flex-1 py-2 border border-[#e8e2d8] bg-white text-[10px] font-bold uppercase tracking-widest text-[#1d1c17] hover:text-[#ae001a] transition-colors duration-200"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="border-t border-[#e8e2d8] pt-4 flex flex-col gap-3">
-                <p className="text-[11px] text-[#5f5e5e] font-mono">
-                  {outline.length} corners · {formatArea(roomAreaPx2, unitSystem)} ·{' '}
-                  {tables.length} {tables.length === 1 ? 'table' : 'tables'}
-                </p>
-
-                {selectedVertexPoint ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col gap-1.5">
-                      <label htmlFor="insp-corner-x" className={labelClass}>
-                        Corner X {lengthSuffix(unitSystem)}
-                      </label>
-                      <input
-                        id="insp-corner-x"
-                        type="number"
-                        step={COORD_STEP}
-                        value={lengthValue(selectedVertexPoint.x, unitSystem)}
-                        onChange={(e) =>
-                          moveVertex(
-                            selectedVertex as number,
-                            lengthToPx(Number(e.target.value) || 0, unitSystem),
-                            selectedVertexPoint.y,
-                          )
-                        }
-                        className={`${inputClass} font-mono`}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label htmlFor="insp-corner-y" className={labelClass}>
-                        Corner Y {lengthSuffix(unitSystem)}
-                      </label>
-                      <input
-                        id="insp-corner-y"
-                        type="number"
-                        step={COORD_STEP}
-                        value={lengthValue(selectedVertexPoint.y, unitSystem)}
-                        onChange={(e) =>
-                          moveVertex(
-                            selectedVertex as number,
-                            selectedVertexPoint.x,
-                            lengthToPx(Number(e.target.value) || 0, unitSystem),
-                          )
-                        }
-                        className={`${inputClass} font-mono`}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-[#5f5e5e] leading-relaxed">
-                    Select a corner on the canvas to nudge or delete it.
-                  </p>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => deleteVertex(selectedVertex as number)}
-                  disabled={selectedVertex === null || outline.length <= MIN_OUTLINE_VERTICES}
-                  aria-label="Delete selected room corner"
-                  title={
-                    outline.length <= MIN_OUTLINE_VERTICES
-                      ? `A room needs at least ${MIN_OUTLINE_VERTICES} corners — add one before deleting another.`
-                      : selectedVertex === null
-                        ? 'Select a corner on the canvas first.'
-                        : undefined
-                  }
-                  className="w-full flex items-center justify-center gap-2 py-2.5 border border-[#ae001a] text-[#ae001a] text-[10px] font-bold uppercase tracking-widest hover:bg-[#ae001a] hover:text-white transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-[#ae001a]"
-                >
-                  <span className="material-symbols-outlined text-base" aria-hidden="true">
-                    delete
-                  </span>
-                  Delete corner
-                </button>
-              </div>
-
-              <div className="border-t border-[#e8e2d8] pt-4 flex flex-col gap-2">
-                <p className={labelClass}>Tables outside the room</p>
-                <p className="text-2xl font-black text-[#1d1c17] tabular-nums leading-none">
-                  {outsideCount}
-                </p>
-                {outsideCount > 0 && (
-                  <>
-                    <p
-                      data-testid="outline-warning"
-                      role="alert"
-                      className="text-[11px] font-semibold text-[#ae001a] leading-relaxed"
-                    >
-                      {outlineWarning(outsideCount)}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={bringTablesInside}
-                      aria-label="Bring every table inside the room"
-                      className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#ae001a] hover:bg-[#930015] text-white text-[10px] font-bold uppercase tracking-widest transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-base" aria-hidden="true">
-                        move_selection_down
-                      </span>
-                      Bring all inside
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
+            <RoomShapePanel
+              canvasW={canvasW}
+              canvasH={canvasH}
+              outline={outline}
+              roomAreaPx2={roomAreaPx2}
+              tableCount={tables.length}
+              outsideCount={outsideCount}
+              unitSystem={unitSystem}
+              pendingPreset={pendingPreset}
+              selectedVertex={selectedVertex}
+              selectedVertexPoint={selectedVertexPoint}
+              onRequestOutline={requestOutline}
+              onConfirmPreset={confirmPendingPreset}
+              onCancelPreset={() => setPendingPreset(null)}
+              onMoveVertex={moveVertex}
+              onDeleteVertex={deleteVertex}
+              onBringTablesInside={bringTablesInside}
+            />
           ) : selectedIds.length > 1 ? (
-            <div className="p-4 flex flex-col gap-4" data-testid="floor-plan-multi-inspector">
-              <div>
-                <p className="text-[11px] font-bold text-[#5f5e5e] uppercase tracking-wider">
-                  Selection
-                </p>
-                <p className="text-sm text-[#1d1c17] mt-1">
-                  <strong>{selectedIds.length} tables</strong> selected ·{' '}
-                  {selectedTables.reduce((sum, t) => sum + t.capacity, 0)} seats combined
-                </p>
-                <p className="text-[11px] text-[#5f5e5e] mt-1 font-mono">
-                  {selectedTables.map((t) => t.number).join(', ')}
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="multi-parent" className={labelClass}>
-                  <span className="material-symbols-outlined text-[13px] align-middle" aria-hidden="true">
-                    link
-                  </span>{' '}
-                  Join them under
-                </label>
-                <select
-                  id="multi-parent"
-                  value={effectiveJoinParent ?? ''}
-                  onChange={(e) => setJoinParentId(Number(e.target.value))}
-                  className={inputClass}
-                >
-                  {selectedTables.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.number} · {t.capacity} seats{t.id < 0 ? ' · unsaved' : ''}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() =>
-                    effectiveJoinParent != null && joinSelected(effectiveJoinParent)
-                  }
-                  aria-label={`Join ${selectedIds.length} selected tables`}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#ae001a] hover:bg-[#930015] text-white text-[10px] font-bold uppercase tracking-widest transition-colors"
-                >
-                  <span className="material-symbols-outlined text-base" aria-hidden="true">
-                    link
-                  </span>
-                  Join {selectedIds.length} tables
-                </button>
-                <button
-                  type="button"
-                  onClick={unjoinSelected}
-                  aria-label="Unjoin the selected tables"
-                  className="w-full flex items-center justify-center gap-2 py-2 border border-[#e8e2d8] text-[#1d1c17] text-[10px] font-bold uppercase tracking-widest hover:text-[#ae001a] transition-colors duration-200"
-                >
-                  <span className="material-symbols-outlined text-base" aria-hidden="true">
-                    link_off
-                  </span>
-                  Unjoin selected
-                </button>
-              </div>
-
-              <p className="text-[11px] text-[#5f5e5e] leading-relaxed">
-                Ctrl/Cmd-click adds or removes a table. Drag on empty floor to box-select. The
-                parent keeps the group together; the rest hang from it.
-              </p>
-
-              <button
-                type="button"
-                onClick={() => setSelectedIds([])}
-                className="w-full py-2 border border-[#e8e2d8] text-[#5f5e5e] text-[10px] font-bold uppercase tracking-widest hover:bg-[#f2ede5] transition-colors"
-              >
-                Clear selection
-              </button>
-            </div>
+            <MultiTableInspector
+              selectedCount={selectedIds.length}
+              selectedTables={selectedTables}
+              joinParentId={effectiveJoinParent}
+              onChangeJoinParent={setJoinParentId}
+              onJoin={joinSelected}
+              onUnjoin={unjoinSelected}
+              onClearSelection={() => setSelectedIds([])}
+            />
           ) : !selectedTable ? (
             <div
               data-testid="floor-plan-inspector-empty"
@@ -3047,367 +2728,23 @@ export const FloorPlanEditor: React.FC<FloorPlanEditorProps> = ({
               </p>
             </div>
           ) : (
-            <div className="p-4 flex flex-col gap-4" data-testid="floor-plan-inspector">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="insp-number" className={labelClass}>
-                  Table number
-                </label>
-                <input
-                  id="insp-number"
-                  type="text"
-                  value={selectedTable.number ?? ''}
-                  onChange={(e) => patchTable(selectedTable.id, { number: e.target.value })}
-                  maxLength={50}
-                  className={`${inputClass} font-mono`}
-                />
-                {duplicateNumbers.has((selectedTable.number ?? '').trim().toLowerCase()) && (
-                  <p role="alert" className="text-[11px] font-semibold text-[#ae001a]">
-                    Duplicate table number — numbers must be unique per merchant.
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="insp-capacity" className={labelClass}>
-                    Capacity
-                  </label>
-                  <input
-                    id="insp-capacity"
-                    type="number"
-                    min={1}
-                    value={selectedTable.capacity}
-                    onChange={(e) =>
-                      patchTable(selectedTable.id, {
-                        capacity: Math.max(1, Math.round(Number(e.target.value) || 1)),
-                      })
-                    }
-                    className={`${inputClass} font-mono`}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="insp-shape" className={labelClass}>
-                    Shape
-                  </label>
-                  <select
-                    id="insp-shape"
-                    value={selectedTable.shape}
-                    onChange={(e) => {
-                      const shape = e.target.value as TableShape;
-                      const fp = footprintOf(shape);
-                      // Changing shape changes the footprint: we reframe against the canvas and
-                      // against room boundaries so table is not partially positioned outside.
-                      const spot = containToOutline(
-                        clamp(selectedTable.pos_x, 0, Math.max(0, canvasW - fp.w)),
-                        clamp(selectedTable.pos_y, 0, Math.max(0, canvasH - fp.h)),
-                        shape,
-                        outline,
-                        canvasW,
-                        canvasH,
-                      );
-                      patchTable(selectedTable.id, {
-                        shape,
-                        pos_x: spot.x,
-                        pos_y: spot.y,
-                      });
-                    }}
-                    className={inputClass}
-                  >
-                    {TABLE_SHAPES.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Custom dimensions: allows deviation from standard shape template.
-                  Empty = inherits shape default. */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="insp-width" className={labelClass}>
-                    Table width {lengthSuffix(unitSystem)}
-                  </label>
-                  <input
-                    id="insp-width"
-                    type="number"
-                    step={COORD_STEP}
-                    min={lengthValue(TABLE_MIN_SIZE_PX, unitSystem)}
-                    max={lengthValue(TABLE_MAX_SIZE_PX, unitSystem)}
-                    value={lengthValue(footprintOfTable(selectedTable).w, unitSystem)}
-                    onChange={(e) => {
-                      const px = clamp(
-                        lengthToPx(Number(e.target.value) || 0, unitSystem),
-                        TABLE_MIN_SIZE_PX,
-                        TABLE_MAX_SIZE_PX,
-                      );
-                      patchTable(selectedTable.id, { width: px });
-                    }}
-                    className={`${inputClass} font-mono`}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="insp-height" className={labelClass}>
-                    Table depth {lengthSuffix(unitSystem)}
-                  </label>
-                  <input
-                    id="insp-height"
-                    type="number"
-                    step={COORD_STEP}
-                    min={lengthValue(TABLE_MIN_SIZE_PX, unitSystem)}
-                    max={lengthValue(TABLE_MAX_SIZE_PX, unitSystem)}
-                    value={lengthValue(footprintOfTable(selectedTable).h, unitSystem)}
-                    onChange={(e) => {
-                      const px = clamp(
-                        lengthToPx(Number(e.target.value) || 0, unitSystem),
-                        TABLE_MIN_SIZE_PX,
-                        TABLE_MAX_SIZE_PX,
-                      );
-                      patchTable(selectedTable.id, { height: px });
-                    }}
-                    className={`${inputClass} font-mono`}
-                  />
-                </div>
-              </div>
-
-              {(selectedTable.width != null || selectedTable.height != null) && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    patchTable(selectedTable.id, { width: null, height: null })
-                  }
-                  className="text-[10px] font-bold uppercase tracking-widest text-[#1d1c17] hover:text-[#ae001a] transition-colors duration-200 text-left"
-                >
-                  Reset to default size
-                </button>
-              )}
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="insp-rotation" className={labelClass}>
-                  Rotation — {selectedTable.rotation}°
-                </label>
-                <input
-                  id="insp-rotation"
-                  type="range"
-                  min={0}
-                  max={360}
-                  step={5}
-                  value={selectedTable.rotation}
-                  onChange={(e) =>
-                    patchTable(selectedTable.id, { rotation: Number(e.target.value) })
-                  }
-                  className="w-full accent-[#ae001a]"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="insp-status" className={labelClass}>
-                  Status
-                </label>
-                <select
-                  id="insp-status"
-                  value={selectedTable.status}
-                  onChange={(e) => patchTable(selectedTable.id, { status: e.target.value })}
-                  className={inputClass}
-                >
-                  {statusOptions.map((s) => (
-                    <option key={s} value={s}>
-                      {tableStatusLabel(s)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="insp-location" className={labelClass}>
-                  Location
-                </label>
-                <input
-                  id="insp-location"
-                  type="text"
-                  value={selectedTable.location}
-                  onChange={(e) => patchTable(selectedTable.id, { location: e.target.value })}
-                  placeholder="e.g., Near window"
-                  className={inputClass}
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="insp-zone" className={labelClass}>
-                  Floor zone
-                </label>
-                <select
-                  id="insp-zone"
-                  value={selectedTable.floorZone?.id ?? ''}
-                  onChange={(e) => {
-                    const zone = zoneById.get(Number(e.target.value));
-                    if (!zone) return;
-                    patchTable(selectedTable.id, {
-                      floorZone: { id: zone.id, name: zone.name, color: zone.color ?? null },
-                    });
-                  }}
-                  className={inputClass}
-                >
-                  {zones.length === 0 && <option value="">No zones yet</option>}
-                  {zones.map((z) => (
-                    <option key={z.id} value={z.id}>
-                      {z.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="insp-x" className={labelClass}>
-                    X {lengthSuffix(unitSystem)}
-                  </label>
-                  {/* User enters values in active units, converted to pixels locally
-                      before persistence. */}
-                  <input
-                    id="insp-x"
-                    type="number"
-                    step={COORD_STEP}
-                    value={lengthValue(selectedTable.pos_x, unitSystem)}
-                    onChange={(e) =>
-                      moveTable(
-                        selectedTable.id,
-                        lengthToPx(Number(e.target.value) || 0, unitSystem),
-                        selectedTable.pos_y,
-                      )
-                    }
-                    className={`${inputClass} font-mono`}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="insp-y" className={labelClass}>
-                    Y {lengthSuffix(unitSystem)}
-                  </label>
-                  <input
-                    id="insp-y"
-                    type="number"
-                    step={COORD_STEP}
-                    value={lengthValue(selectedTable.pos_y, unitSystem)}
-                    onChange={(e) =>
-                      moveTable(
-                        selectedTable.id,
-                        selectedTable.pos_x,
-                        lengthToPx(Number(e.target.value) || 0, unitSystem),
-                      )
-                    }
-                    className={`${inputClass} font-mono`}
-                  />
-                </div>
-              </div>
-
-              {/* ---------------- Table Merging ---------------- */}
-              <div className="flex flex-col gap-1.5 pt-3 border-t border-[#e8e2d8]">
-                <label htmlFor="insp-parent" className={labelClass}>
-                  <span className="material-symbols-outlined text-[13px] align-middle" aria-hidden="true">
-                    link
-                  </span>{' '}
-                  Joined to
-                </label>
-                <select
-                  id="insp-parent"
-                  value={parentTableId(selectedTable) ?? ''}
-                  onChange={(e) =>
-                    setTableParent(
-                      selectedTable.id,
-                      e.target.value ? Number(e.target.value) : null,
-                    )
-                  }
-                  className={inputClass}
-                >
-                  <option value="">Not joined — standalone</option>
-                  {parentChoices.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.number} · {t.capacity} seats{t.id < 0 ? ' · unsaved' : ''}
-                    </option>
-                  ))}
-                </select>
-
-                {parentTableId(selectedTable) != null && (
-                  <button
-                    type="button"
-                    onClick={() => setTableParent(selectedTable.id, null)}
-                    aria-label={`Unjoin table ${selectedTable.number}`}
-                    className="w-full flex items-center justify-center gap-2 py-2 border border-[#e8e2d8] text-[#1d1c17] text-[10px] font-bold uppercase tracking-widest hover:text-[#ae001a] transition-colors duration-200"
-                  >
-                    <span className="material-symbols-outlined text-base" aria-hidden="true">
-                      link_off
-                    </span>
-                    Unjoin
-                  </button>
-                )}
-
-                {joinedChildrenLabel(tables, selectedTable.id) && (
-                  <p
-                    data-testid="inspector-group-summary"
-                    className="text-[11px] text-[#5f5e5e] leading-relaxed"
-                  >
-                    {joinedChildrenLabel(tables, selectedTable.id)} —{' '}
-                    {childTablesOf(tables, selectedTable.id)
-                      .map((c) => c.number)
-                      .join(', ')}
-                    . Combined capacity{' '}
-                    {selectedTable.capacity +
-                      childTablesOf(tables, selectedTable.id).reduce(
-                        (sum, c) => sum + c.capacity,
-                        0,
-                      )}
-                    .
-                  </p>
-                )}
-
-                {parentChoices.length === 0 && parentTableId(selectedTable) == null && (
-                  <p className="text-[11px] text-[#5f5e5e] italic">
-                    No other saved table on this plan can act as the parent.
-                  </p>
-                )}
-              </div>
-
-              {/* ---------------- Guest Transfer ---------------- */}
-              {selectedTable.status === 'occupied' && (
-                <div className="flex flex-col gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setTransferOpen(true)}
-                    disabled={dirtyCount > 0}
-                    aria-label={`Transfer guests from table ${selectedTable.number}`}
-                    title={
-                      dirtyCount > 0
-                        ? 'Save your layout changes first — the transfer runs on the server and would fight your pending edits.'
-                        : 'Move this party to another table'
-                    }
-                    className="w-full flex items-center justify-center gap-2 py-2.5 border border-[#e8e2d8] text-[#1d1c17] text-[10px] font-bold uppercase tracking-widest hover:text-[#ae001a] transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-[#1d1c17]"
-                  >
-                    <span className="material-symbols-outlined text-base" aria-hidden="true">
-                      swap_horiz
-                    </span>
-                    Transfer party
-                  </button>
-                  {dirtyCount > 0 && (
-                    <p className="text-[11px] text-[#5f5e5e] italic">
-                      Save the layout to enable the transfer.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => removeTable(selectedTable.id)}
-                aria-label={`Delete table ${selectedTable.number}`}
-                className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 border border-[#ae001a] text-[#ae001a] text-[10px] font-bold uppercase tracking-widest hover:bg-[#ae001a] hover:text-white transition-colors duration-200"
-              >
-                <span className="material-symbols-outlined text-base" aria-hidden="true">
-                  delete
-                </span>
-                Delete table
-              </button>
-            </div>
+            <TableInspector
+              table={selectedTable}
+              tables={tables}
+              zones={zones}
+              canvasW={canvasW}
+              canvasH={canvasH}
+              outline={outline}
+              unitSystem={unitSystem}
+              isDuplicateNumber={duplicateNumbers.has((selectedTable.number ?? '').trim().toLowerCase())}
+              parentChoices={parentChoices}
+              hasUnsavedChanges={dirtyCount > 0}
+              onPatch={(patch) => patchTable(selectedTable.id, patch)}
+              onMove={(x, y) => moveTable(selectedTable.id, x, y)}
+              onSetParent={(parentId) => setTableParent(selectedTable.id, parentId)}
+              onOpenTransfer={() => setTransferOpen(true)}
+              onRemove={() => removeTable(selectedTable.id)}
+            />
           )}
 
           {saveErrors.length > 0 && (

@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession } from '../../../../../lib/auth-storage';
 import { CatalogQuickLinks } from '../CatalogQuickLinks';
 import { InventoryNavHubBar } from '../InventoryNavHubBar';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, TableEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
+import { apiRequest, type MaybeEnvelopedList } from '../../../../../api/http';
 
 interface Product {
   id: number;
@@ -72,38 +72,14 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
       topRef.current.scrollIntoView({ behavior: 'instant' });
     }
   }, []);
-
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
-
   const fetchAllData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const [modifiersRes, productsRes] = await Promise.all([
-        fetch(`${API_BASE}/modifiers?limit=100`, { headers }),
-        fetch(`${API_BASE}/products?limit=100`, { headers })
+      const [modifiersJson, productsJson] = await Promise.all([
+        apiRequest<MaybeEnvelopedList<{ id: number; name: string; priceDelta: number | string; isActive?: boolean; product?: { id: number; name: string } | null }>>('/modifiers?limit=100', { method: 'GET' }, 'Error loading data from server'),
+        apiRequest<MaybeEnvelopedList<{ id: number; name: string }>>('/products?limit=100', { method: 'GET' }, 'Error loading data from server'),
       ]);
-
-      if (modifiersRes.status === 401 || productsRes.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!modifiersRes.ok || !productsRes.ok) {
-        throw new Error('Error loading data from server');
-      }
-
-      const modifiersJson = await modifiersRes.json();
-      const productsJson = await productsRes.json();
 
       const modifiersData = Array.isArray(modifiersJson)
         ? modifiersJson
@@ -135,7 +111,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -227,23 +203,14 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
     setIsToggling(true);
     setToggleError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      };
-
-      const res = await fetch(`${API_BASE}/modifiers/${confirmTargetModifier.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ isActive: !confirmTargetModifier.isActive })
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error updating modifier status');
-      }
-
+      await apiRequest<void>(
+        `/modifiers/${confirmTargetModifier.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ isActive: !confirmTargetModifier.isActive })
+        },
+        'Error updating modifier status.',
+      );
       setModifiers((prevModifiers) =>
         prevModifiers.map((mod) =>
           mod.id === confirmTargetModifier.id ? { ...mod, isActive: !confirmTargetModifier.isActive } : mod
@@ -274,14 +241,6 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
     }
 
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
       const bodyData: { name: string; priceDelta: number; isActive: boolean; productId?: number } = {
         name: formName,
         priceDelta: deltaNum,
@@ -290,25 +249,17 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
 
       if (modalMode === 'add') {
         bodyData.productId = parseInt(formProduct);
-        const res = await fetch(`${API_BASE}/modifiers`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(bodyData)
-        });
-        if (!res.ok) {
-          const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error creating modifier');
-        }
+        await apiRequest<void>(
+          '/modifiers',
+          { method: 'POST', body: JSON.stringify(bodyData) },
+          'Error creating modifier.',
+        );
       } else if (modalMode === 'edit' && editingModifierId) {
-        const res = await fetch(`${API_BASE}/modifiers/${editingModifierId}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify(bodyData)
-        });
-        if (!res.ok) {
-          const errorJson = await res.json().catch(() => ({}));
-          throw new Error(errorJson.message || 'Error updating modifier');
-        }
+        await apiRequest<void>(
+          `/modifiers/${editingModifierId}`,
+          { method: 'PATCH', body: JSON.stringify(bodyData) },
+          'Error updating modifier.',
+        );
       }
 
       setIsModalOpen(false);
@@ -489,7 +440,11 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
             </thead>
             <tbody className="divide-y divide-[#e8e2d8] text-xs font-sans">
               {visibleColumnsCount === 0 ? (
-                <NoColumnsEmptyState colSpan={5} />
+                <tr>
+                  <td colSpan={5}>
+                    <NoColumnsEmptyState />
+                  </td>
+                </tr>
               ) : isLoading ? (
                 <tr>
                   <td colSpan={visibleColumnsCount} className="px-6 py-12 text-center text-secondary font-sans bg-white">
@@ -615,7 +570,7 @@ export const ModifiersView: React.FC<ModifiersViewProps> = ({ onNavigate }) => {
           pageSize={pageSize}
           totalItems={filteredModifiers.length}
           onPageChange={setCurrentPage}
-          onChangePageSize={(size) => {
+          onPageSizeChange={(size: number) => {
             setPageSize(size);
             setCurrentPage(1);
           }}

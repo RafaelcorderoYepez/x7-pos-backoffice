@@ -1,17 +1,131 @@
 import { cleanup, render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QRLocationsView } from './QRLocationsView';
 
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
 }));
 
+type BackendLocation = {
+  id: number;
+  name: string;
+  merchant: { id: number; name: string };
+  qrMenu: { id: number; name: string };
+  table: { id: number } | null;
+  location_type: 'Table' | 'Pickup' | 'Delivery';
+  status: 'active' | 'inactive' | 'suspended' | 'archived';
+  qr_code_url: string;
+  qr_code_image: string;
+};
+
+const MERCHANT = { id: 3, name: 'prueba1' };
+const MENUS = [
+  { id: 101, name: 'Main Dinner & Cocktail Menu', status: 'active', merchant: MERCHANT },
+  { id: 103, name: 'Patio & Terrace Special Menu', status: 'active', merchant: MERCHANT },
+  { id: 104, name: 'Takeout & Pickup Menu', status: 'active', merchant: MERCHANT },
+];
+const TABLES = [
+  { id: 201, number: '12', merchant: MERCHANT, capacity: 4 },
+  { id: 203, number: 'Patio-01', merchant: MERCHANT, capacity: 2 },
+];
+
+const seedLocations = (): BackendLocation[] => [
+  {
+    id: 1,
+    name: 'Patio Table #12 Access',
+    merchant: MERCHANT,
+    qrMenu: { id: 101, name: 'Main Dinner & Cocktail Menu' },
+    table: { id: 201 },
+    location_type: 'Table',
+    status: 'active',
+    qr_code_url: 'https://order.x7pos.com/m/3/l/1',
+    qr_code_image: 'data:image/svg+xml;base64,AA==',
+  },
+  {
+    id: 2,
+    name: 'Curbside Pickup Point',
+    merchant: MERCHANT,
+    qrMenu: { id: 104, name: 'Takeout & Pickup Menu' },
+    table: null,
+    location_type: 'Pickup',
+    status: 'active',
+    qr_code_url: 'https://order.x7pos.com/m/3/l/2',
+    qr_code_image: 'data:image/svg+xml;base64,AA==',
+  },
+  {
+    id: 3,
+    name: 'Terrace Table #Patio-01',
+    merchant: MERCHANT,
+    qrMenu: { id: 103, name: 'Patio & Terrace Special Menu' },
+    table: { id: 203 },
+    location_type: 'Table',
+    status: 'inactive',
+    qr_code_url: 'https://order.x7pos.com/m/3/l/3',
+    qr_code_image: 'data:image/svg+xml;base64,AA==',
+  },
+  {
+    id: 5,
+    name: 'Main Bar Stool #05',
+    merchant: MERCHANT,
+    qrMenu: { id: 101, name: 'Main Dinner & Cocktail Menu' },
+    table: null,
+    location_type: 'Table',
+    status: 'suspended',
+    qr_code_url: 'https://order.x7pos.com/m/3/l/5',
+    qr_code_image: 'data:image/svg+xml;base64,AA==',
+  },
+];
+
+let locations: BackendLocation[];
+let failNextCreate = false;
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
+// In-memory stand-in for the NestJS endpoints used by the view (/api/qr-locations, /api/qr-menus, ...).
+const fakeBackend = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = String(input);
+  const method = init?.method ?? 'GET';
+  if (url.startsWith('/api/merchants/company/branches')) return json({ data: [MERCHANT] });
+  if (url.startsWith('/api/qr-menus')) return json({ data: MENUS });
+  if (url.startsWith('/api/tables')) return json({ data: TABLES });
+  if (url.startsWith('/api/qr-locations') && method === 'GET') return json({ data: locations });
+  if (url === '/api/qr-locations' && method === 'POST') {
+    if (failNextCreate) {
+      failNextCreate = false;
+      return json({ message: 'Database unavailable' }, 500);
+    }
+    const body = JSON.parse(String(init?.body));
+    const created: BackendLocation = {
+      id: locations.length + 1,
+      name: body.name,
+      merchant: MERCHANT,
+      qrMenu: MENUS.find((m) => m.id === body.qrMenu) ?? MENUS[0],
+      table: body.table ? { id: body.table } : null,
+      location_type: body.location_type,
+      status: body.status,
+      qr_code_url: body.qr_code_url,
+      qr_code_image: body.qr_code_image,
+    };
+    locations = [created, ...locations];
+    return json({ data: created }, 201);
+  }
+  return json({ message: `Unexpected ${method} ${url}` }, 404);
+});
+
 describe('QRLocationsView Component', () => {
+  beforeEach(() => {
+    locations = seedLocations();
+    failNextCreate = false;
+    vi.stubGlobal('fetch', fakeBackend);
+  });
+
   afterEach(() => {
     cleanup();
-    localStorage.clear();
+    vi.unstubAllGlobals();
   });
 
   it('renders the workspace header and summary metric cards', async () => {
@@ -125,8 +239,12 @@ describe('QRLocationsView Component', () => {
 
     expect(screen.getByText('Print & Asset Export Controller')).toBeInTheDocument();
     expect(screen.getByText('Table Acrylic (4" x 6")')).toBeInTheDocument();
+    expect(screen.getByText('Table Sticker (8x8cm)')).toBeInTheDocument();
+    expect(screen.getByText('Tent Card (A6)')).toBeInTheDocument();
     expect(screen.getByText('High-Res PNG')).toBeInTheDocument();
     expect(screen.getByText('Vector SVG')).toBeInTheDocument();
+    expect(screen.getByText('Escanea para ordenar')).toBeInTheDocument();
+    expect(screen.getAllByText(/prueba1/i).length).toBeGreaterThan(0);
   });
 
   it('supports batch selecting multiple QR locations and opening batch print package controller', async () => {
@@ -145,6 +263,95 @@ describe('QRLocationsView Component', () => {
 
     expect(screen.getByText('Batch Print & Asset Export Package')).toBeInTheDocument();
     expect(screen.getByText('Print All Cards')).toBeInTheDocument();
+    expect(screen.getAllByText('Escanea para ordenar').length).toBeGreaterThan(0);
+  });
+
+  it('displays relational bindings accurately: anchor badge, table badge, menu pill with theme, and suspended status', async () => {
+    render(<QRLocationsView merchantId={3} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Patio Table #12 Access')).toBeInTheDocument();
+    });
+
+    // Anchor badge #QR-LOC-1
+    expect(screen.getByText('#QR-LOC-1')).toBeInTheDocument();
+
+    // Table association badge #TBL-12 and zone
+    expect(screen.getByText('#TBL-12')).toBeInTheDocument();
+
+    // Assigned Menu with Theme Pill
+    expect(screen.getAllByText('#QRM-101').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('🎨 Modern Elegance').length).toBeGreaterThan(0);
+
+    // Non-table / Global for Curbside
+    expect(screen.getAllByText('Non-table / Global').length).toBeGreaterThan(0);
+
+    // Suspended status badge (#QR-LOC-5)
+    expect(screen.getAllByText('Suspended').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Revoked \/ Archived/i).length).toBeGreaterThan(0);
+  });
+
+  it('triggers instant toast notification upon copying target destination URL', async () => {
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: writeTextMock,
+      },
+      writable: true,
+      configurable: true,
+    });
+
+    render(<QRLocationsView merchantId={3} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Patio Table #12 Access')).toBeInTheDocument();
+    });
+
+    const copyBtn = screen.getAllByTitle('Copy Target URL')[0];
+    fireEvent.click(copyBtn);
+
+    expect(writeTextMock).toHaveBeenCalled();
+    expect(screen.getByText('URL copied to clipboard!')).toBeInTheDocument();
+  });
+
+  it('opens interactive lightbox preview when clicking 48x48px QR thumbnail', async () => {
+    const user = userEvent.setup();
+    render(<QRLocationsView merchantId={3} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Patio Table #12 Access')).toBeInTheDocument();
+    });
+
+    const qrThumbs = screen.getAllByTitle(/Click to expand QR Lightbox preview/i);
+    await user.click(qrThumbs[0]);
+
+    expect(screen.getByLabelText('QR Code Lightbox Preview')).toBeInTheDocument();
+    expect(screen.getByText('Destination Dispatch URL')).toBeInTheDocument();
+    expect(screen.getByText('Lightbox Preview')).toBeInTheDocument();
+
+    const closeLightboxBtn = screen.getByTitle('Close Lightbox');
+    await user.click(closeLightboxBtn);
+
+    expect(screen.queryByLabelText('QR Code Lightbox Preview')).not.toBeInTheDocument();
+  });
+
+  it('shows the backend error and does not list the location when saving fails', async () => {
+    failNextCreate = true;
+    render(<QRLocationsView merchantId={3} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Patio Table #12 Access')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Configure QR Location'));
+    fireEvent.change(screen.getByPlaceholderText(/e\.g\., "Patio Table #12"/i), {
+      target: { value: 'Rooftop Lounge Spot' },
+    });
+    fireEvent.click(screen.getByText('Create Access Point'));
+
+    expect(await screen.findByText(/Database unavailable/)).toBeInTheDocument();
+    expect(locations.some((l) => l.name === 'Rooftop Lounge Spot')).toBe(false);
   });
 });
+
 

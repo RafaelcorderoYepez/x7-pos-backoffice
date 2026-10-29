@@ -500,11 +500,16 @@ export function getDeviceLanguage(stationId?: number | string | null): KDSLangua
   return 'en';
 }
 
-export function getLocalizedVariantName(variantName?: string | null): string {
+export function getLocalizedVariantName(variantName?: string | null, lang: KDSLanguage = 'en'): string {
   if (!variantName) return '';
   const trimmed = variantName.trim();
-  if (!trimmed || trimmed.toLowerCase() === 'standard') return '';
-  // Variants are preserved as stored in database
+  if (!trimmed || trimmed.toLowerCase() === 'estándar' || trimmed.toLowerCase() === 'standard') return '';
+  if (lang === 'es') {
+    const lower = trimmed.toLowerCase();
+    if (lower === 'small') return 'Small';
+    if (lower === 'medium') return 'Medium';
+    if (lower === 'large') return 'Large';
+  }
   return trimmed;
 }
 
@@ -592,3 +597,15 @@ export function extractCleanKitchenInstruction(
   return text;
 }
 
+
+// Nombres de estación habituales traducidos para la pantalla en español.
+export const getLocalizedStationName = (name: string, lang: 'en' | 'es'): string => {
+  if (lang !== 'es') return name;
+  const n = name.trim().toLowerCase();
+  if (n.includes('hot line')) return 'Línea Caliente y Parrilla';
+  if (n.includes('cold prep')) return 'Preparación Fría y Ensaladas';
+  if (n.includes('main bar')) return 'Bar Principal y Bebidas';
+  if (n.includes('desserts') || n.includes('bakery')) return 'Postres y Panadería';
+  if (n.includes('expo')) return 'Expo y Control de Calidad';
+  return name;
+};

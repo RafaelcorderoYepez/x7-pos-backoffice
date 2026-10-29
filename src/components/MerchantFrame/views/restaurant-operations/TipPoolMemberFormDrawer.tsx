@@ -242,7 +242,7 @@ export const TipPoolMemberFormDrawer: React.FC<TipPoolMemberFormDrawerProps> = (
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-sm transition-opacity font-poppins"
+      className="fixed inset-0 z-[9999] overflow-hidden bg-black/40 backdrop-blur-sm transition-opacity font-poppins"
       aria-labelledby="drawer-title"
       role="dialog"
       aria-modal="true"

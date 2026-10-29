@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getAccessToken, clearAuthSession, getStoredUser } from '../../../../../lib/auth-storage';
+import { getStoredUser } from '../../../../../lib/auth-storage';
 import { StockQuickLinks } from '../stocks/StockQuickLinks';
 import { NavHubBar } from '../../../../shared/NavHubBar';
 import { EmergencySupportModal } from '../../../modals/QuickActionModals';
 import { TableOptionsMenu, TablePaginationFooter, NoColumnsEmptyState, type TableDensity } from '../../../../shared/TableOptionsMenu';
 import { getDensityPadding } from '../../../../shared/tableOptionsHelpers';
+import { apiRequest, unwrapList, type MaybeEnvelopedList } from '../../../../../api/http';
 
 interface Category {
   id: number;
@@ -19,6 +20,18 @@ interface Category {
 interface RawMaterialCategoriesViewProps {
   onNavigate?: (view: string) => void;
 }
+
+type RawCategory = {
+  id: number;
+  name: string;
+  description?: string | null;
+  isActive?: boolean;
+  is_active?: boolean;
+  created_at?: string;
+  createdAt?: string;
+  updated_at?: string;
+  updatedAt?: string;
+};
 
 export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps> = ({ onNavigate }) => {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -66,7 +79,6 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
     navigator.clipboard.writeText(`Raw Material Categories: ${filteredCategories.length} total, ${active} active, ${filteredCategories.length - active} inactive.`);
   };
 
-
   // Drawer
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
   const [drawerMode, setDrawerMode] = useState<'add' | 'edit'>('add');
@@ -85,8 +97,6 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
 
   const [isSupportOpen, setIsSupportOpen] = useState<boolean>(false);
   const topRef = useRef<HTMLDivElement | null>(null);
-
-  const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
   const currentUser = getStoredUser();
   const isInventorySpecialist = ['merchant_admin', 'admin', 'super_admin', 'SaaS Owner', 'Inventory Specialist'].includes(currentUser?.role || '');
 
@@ -94,37 +104,14 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
     if (!silent) setIsLoading(true);
     setError(null);
     try {
-      const token = getAccessToken();
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      };
-
-      const res = await fetch(`${API_BASE}/v1/raw-material-categories?status=all`, { headers });
-      if (res.status === 401) {
-        clearAuthSession();
-        window.location.href = '/login';
-        return;
-      }
-
-      if (!res.ok) {
-        throw new Error('Error loading categories from server');
-      }
-
-      const json = await res.json();
-      const rawData = json.data || json.items || json || [];
+      const json = await apiRequest<MaybeEnvelopedList<RawCategory>>(
+        '/v1/raw-material-categories?status=all',
+        { method: 'GET' },
+        'Error loading categories from server',
+      );
+      const rawData = unwrapList(json);
       
-      const mapped: Category[] = rawData.map((c: {
-        id: number;
-        name: string;
-        description?: string | null;
-        isActive?: boolean;
-        is_active?: boolean;
-        created_at?: string;
-        createdAt?: string;
-        updated_at?: string;
-        updatedAt?: string;
-      }) => ({
+      const mapped: Category[] = rawData.map((c) => ({
         id: c.id,
         name: c.name,
         description: c.description,
@@ -140,7 +127,7 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
     } finally {
       setIsLoading(false);
     }
-  }, [API_BASE]);
+  }, []);
 
   useEffect(() => {
     if (topRef.current) {
@@ -175,12 +162,6 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-
     const isEdit = drawerMode === 'edit' && selectedCategory;
     const bodyData: { name: string; description?: string; is_active: boolean } = {
       name: formName,
@@ -192,25 +173,13 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
       setIsLoading(true);
       setIsDrawerOpen(false);
 
-      let res;
-      if (isEdit) {
-        res = await fetch(`${API_BASE}/v1/raw-material-categories/${selectedCategory.id}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(bodyData),
-        });
-      } else {
-        res = await fetch(`${API_BASE}/v1/raw-material-categories`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(bodyData),
-        });
-      }
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error saving category to server');
-      }
+      await apiRequest<void>(
+        isEdit
+          ? `/v1/raw-material-categories/${selectedCategory.id}`
+          : '/v1/raw-material-categories',
+        { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(bodyData) },
+        'Error saving category to server',
+      );
 
       await fetchData();
     } catch (err: unknown) {
@@ -234,26 +203,17 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
     setIsToggling(true);
     setToggleError(null);
 
-    const token = getAccessToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-
     try {
       const nextActiveState = !toggleTarget.isActive;
 
-      const res = await fetch(`${API_BASE}/v1/raw-material-categories/${toggleTarget.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ is_active: nextActiveState }),
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson.message || 'Error updating category status. It might be assigned to active raw materials.');
-      }
-
+      await apiRequest<void>(
+        `/v1/raw-material-categories/${toggleTarget.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ is_active: nextActiveState }),
+        },
+        'Error updating category status. It might be assigned to active raw materials.',
+      );
       setIsToggleModalOpen(false);
       await fetchData();
     } catch (err: unknown) {
@@ -267,7 +227,6 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
   const filteredCategories = categories.filter((c) => {
     if (statusFilter === 'Active' && !c.isActive) return false;
     if (statusFilter === 'Inactive' && c.isActive) return false;
-
 
     const matchSearch =
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -343,8 +302,6 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
           </div>
         </div>
       </div>
-
-
 
       {/* Tabla */}
       <div className="bg-white border border-[#e8e2d8] rounded overflow-hidden shadow-sm">
@@ -535,8 +492,6 @@ export const RawMaterialCategoriesView: React.FC<RawMaterialCategoriesViewProps>
           }}
         />
       </div>
-
-
 
       {/* Drawer */}
       {isDrawerOpen && createPortal(

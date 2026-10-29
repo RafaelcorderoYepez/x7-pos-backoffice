@@ -1,27 +1,11 @@
 //src/services/saasService.ts
 import type { SubscriptionPlan, CreateSubscriptionPlanDto, UpdateSubscriptionPlanDto, Application, PlatformFeature, PlanApplication, CreatePlanApplicationDto, UpdatePlanApplicationDto, PlanFeature, CreatePlanFeatureDto, UpdatePlanFeatureDto } from '../types/subscription';
 import type { CompanyRegistryItem, CompanyRegistryPayload, CompanyRegistryStatus } from '../types/company-registry';
-import { getSaasToken, clearSaasToken } from '../lib/saas-auth-storage';
+import { saasRequest } from '../api/http';
 
-async function saasApiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getSaasToken();
-  const res = await fetch(`/api/${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers as Record<string, string> | undefined),
-    },
-  });
-  if (res.status === 401) {
-    clearSaasToken();
-    throw new Error('SESSION_EXPIRED');
-  }
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error((data as { message?: string }).message || `Request failed: ${res.status}`);
-  }
-  return res.json() as Promise<T>;
+// Las rutas de este servicio van sin barra inicial ('subscription-plan', 'features/3'...).
+function saasApiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  return saasRequest<T>(`/${path}`, { method: 'GET', ...options }, 'Request failed. Please try again.');
 }
 
 export interface MerchantMetric {

@@ -5,7 +5,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { ReservationsView } from './ReservationsView';
 
 let storedRole = 'merchant_admin';
-vi.mock('../../../../lib/auth-storage', () => ({
+vi.mock('../../../../lib/auth-storage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/auth-storage')>()),
   getAccessToken: vi.fn(() => 'mock-token'),
   clearAuthSession: vi.fn(),
   getStoredUser: vi.fn(() => ({ id: 2, role: storedRole, merchant: { id: 3 } })),
