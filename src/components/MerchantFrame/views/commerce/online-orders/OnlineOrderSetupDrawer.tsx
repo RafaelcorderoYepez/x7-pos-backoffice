@@ -135,7 +135,7 @@ export const OnlineOrderSetupDrawer: React.FC<OnlineOrderSetupDrawerProps> = ({
         setItemDraftVariantId('');
       }
     }
-  }, [storeId, storeMenus]);
+  }, [storeId, storeMenus, selectedMenuId]);
 
   // 2. Active items in the selected digital menu ONLY
   const menuAvailableItems = useMemo(() => {

@@ -2,7 +2,7 @@
 // Properties use snake_case to match REST API contract
 // (GET /api/v1/accounts-payable/...) and with the rest of the inventory/supplier views.
 
-// Lowercase values ​​to match backend enum
+// Lowercase values to match backend enum
 // (SupplierInvoiceStatus: pending | partially_paid | paid | cancelled).
 // "Overdue" is not a persisted state: it is derived in the front via isPastDue().
 export type SupplierInvoiceStatus =
@@ -174,7 +174,7 @@ export interface CreateSupplierInvoiceItemDto {
 
 // ================= Supplier Credit Notes =================
 
-// Lowercase values ​​to match backend enum
+// Lowercase values to match backend enum
 // (SupplierCreditNoteStatus: draft | issued | partially_applied | fully_applied | cancelled).
 export type SupplierCreditNoteStatus =
   | 'draft'
@@ -280,7 +280,7 @@ export type UpdateSupplierCreditNoteDto = Partial<CreateSupplierCreditNoteDto> &
 
 // ================= Supplier Payments (Disbursements) =================
 
-// Lowercase values ​​to match backend enum
+// Lowercase values to match backend enum
 // (SupplierPaymentStatus: draft | posted | partially_allocated | fully_allocated | cancelled).
 export type SupplierPaymentStatus =
   | 'draft'

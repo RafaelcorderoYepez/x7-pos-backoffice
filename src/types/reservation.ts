@@ -60,7 +60,7 @@ export const isReservationStatus = (raw?: string | null): raw is ReservationStat
 // Pill on light background. The classes are written WHOLE and by hand, one per state: the
 // Tailwind JIT extracts the class names by reading the file as plain text, so a
 // `bg-[${color}]/15` composed at runtime never generates CSS and pill
-// it would come out transparent. The literals repeat the values ​​of RESERVATION_STATUS_COLORS.
+// it would come out transparent. The literals repeat the values of RESERVATION_STATUS_COLORS.
 export const RESERVATION_STATUS_PILL_STYLES: Record<ReservationStatus, string> = {
   pending: 'bg-[#f59e0b]/15 text-[#b45309] border border-[#f59e0b]/40',
   confirmed: 'bg-[#3b82f6]/15 text-[#1d4ed8] border border-[#3b82f6]/40',

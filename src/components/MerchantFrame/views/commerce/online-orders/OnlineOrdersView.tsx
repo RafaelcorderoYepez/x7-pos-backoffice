@@ -9,10 +9,10 @@ import {
 } from '../../../../shared/TableOptionsMenu';
 import {
   OnlineOrderDetailsDrawer,
-  isOnlineOrderEditable,
   type OnlineOrderDetailData,
   type KitchenStationOption,
 } from './OnlineOrderDetailsDrawer';
+import { isOnlineOrderEditable } from './onlineOrderHelpers';
 export type { OnlineOrderDetailData };
 import {
   OnlineOrderSetupDrawer,

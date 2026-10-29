@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SideDrawer } from '../../../shared/SideDrawer';
 import { ModalFormError } from '../../../shared/AppModal';
+import { isOnlineOrderEditable } from './onlineOrderHelpers';
 
 export interface OnlineOrderKitchenStation {
   id: number;
@@ -116,13 +117,6 @@ interface OnlineOrderDetailsDrawerProps {
   ) => Promise<void>;
   onEditOrder?: (order: OnlineOrderDetailData) => void;
 }
-
-export const isOnlineOrderEditable = (
-  order?: { fulfillmentStatus?: string } | null
-): boolean => {
-  if (!order || !order.fulfillmentStatus) return false;
-  return order.fulfillmentStatus === 'received' || order.fulfillmentStatus === 'accepted';
-};
 
 export const OnlineOrderDetailsDrawer: React.FC<OnlineOrderDetailsDrawerProps> = ({
   isOpen,
