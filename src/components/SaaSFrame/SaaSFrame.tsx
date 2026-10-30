@@ -11,6 +11,7 @@ import { PlatformFeatureCatalogView } from './views/PlatformFeatureCatalogView';
 import { PlanApplicationsView } from './views/PlanApplicationsView';
 import { PlanFeaturesView } from './views/PlanFeaturesView';
 import { CompanyRegistryView } from './views/CompanyRegistryView';
+import { GlobalUsersDirectoryView } from './views/GlobalUsersDirectoryView';
 import { OrdersRegistryView } from './views/OrdersRegistryView';
 import { MerchantSettlementsView } from './views/MerchantSettlementsView';
 import type { SubscriptionPlan } from '../../types/subscription';
@@ -185,6 +186,10 @@ export const SaaSFrame: React.FC = () => {
 
     if (activeTab === 'companies') {
       return <CompanyRegistryView onNavigate={handleNavigateView} />;
+    }
+
+    if (activeTab === 'users') {
+      return <GlobalUsersDirectoryView />;
     }
 
     if (activeTab === 'orders-registry') {

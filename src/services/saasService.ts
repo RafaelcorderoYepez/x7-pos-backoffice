@@ -1,6 +1,7 @@
 //src/services/saasService.ts
 import type { SubscriptionPlan, CreateSubscriptionPlanDto, UpdateSubscriptionPlanDto, Application, PlatformFeature, PlanApplication, CreatePlanApplicationDto, UpdatePlanApplicationDto, PlanFeature, CreatePlanFeatureDto, UpdatePlanFeatureDto } from '../types/subscription';
 import type { CompanyRegistryItem, CompanyRegistryPayload, CompanyRegistryStatus } from '../types/company-registry';
+import type { PlatformUser } from '../types/user';
 import { saasRequest } from '../api/http';
 
 // Las rutas de este servicio van sin barra inicial ('subscription-plan', 'features/3'...).
@@ -16,12 +17,15 @@ async function saasFetchAll<T>(path: string): Promise<T[]> {
   const separator = path.includes('?') ? '&' : '?';
   const items: T[] = [];
   for (let page = 1; ; page++) {
+    // La mayoría de los módulos anidan la paginación en `pagination`; /users la pone en la raíz.
     const response = await saasApiFetch<{
       data: T[];
       pagination?: { totalPages: number };
+      totalPages?: number;
     }>(`${path}${separator}page=${page}&limit=${PAGE_SIZE}`);
     items.push(...response.data);
-    if (!response.pagination || page >= response.pagination.totalPages) return items;
+    const totalPages = response.pagination?.totalPages ?? response.totalPages;
+    if (totalPages === undefined || page >= totalPages) return items;
   }
 }
 
@@ -424,5 +428,18 @@ export const saasService = {
       { method: 'PATCH', body: JSON.stringify({ status }) },
     );
     return response.data;
+  },
+
+  // ── Global Users Directory (SaaS Owner) ───────────────────────────────
+  // GET /users es solo para portal_admin: todos los usuarios de la plataforma.
+  async listPlatformUsers(): Promise<PlatformUser[]> {
+    return saasFetchAll<PlatformUser>('users');
+  },
+
+  async setPlatformUserActive(id: number, isActive: boolean): Promise<void> {
+    await saasApiFetch<unknown>(`users/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    });
   },
 };
