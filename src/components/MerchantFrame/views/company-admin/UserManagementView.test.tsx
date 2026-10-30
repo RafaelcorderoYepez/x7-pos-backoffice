@@ -5,17 +5,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserManagementView } from './UserManagementView';
 import {
   createUser,
+  getCompanyUsers,
   getCurrentMerchantId,
-  getMerchantUsers,
   getUserHrSummary,
   setUserActiveStatus,
   triggerUserPasswordReset,
   updateUser,
 } from '../../../../api/users';
-import type { MerchantUser } from '../../../../types/user';
+import type { PlatformUser } from '../../../../types/user';
 
 vi.mock('../../../../api/users', () => ({
-  getMerchantUsers: vi.fn(),
+  getCompanyUsers: vi.fn(),
   getCurrentMerchantId: vi.fn(),
   createUser: vi.fn(),
   updateUser: vi.fn(),
@@ -24,7 +24,10 @@ vi.mock('../../../../api/users', () => ({
   getUserHrSummary: vi.fn(),
 }));
 
-const MOCK_USERS: MerchantUser[] = [
+const DOWNTOWN = { id: 5, name: 'Acme Downtown', companyId: 1 };
+const AIRPORT = { id: 9, name: 'Acme Airport', companyId: 1 };
+
+const MOCK_USERS: PlatformUser[] = [
   {
     id: 1,
     username: 'jdoe',
@@ -33,6 +36,7 @@ const MOCK_USERS: MerchantUser[] = [
     scope: 'merchant_web',
     isActive: true,
     merchantId: 5,
+    merchant: DOWNTOWN,
   },
   {
     id: 2,
@@ -42,6 +46,17 @@ const MOCK_USERS: MerchantUser[] = [
     scope: 'merchant_android',
     isActive: false,
     merchantId: 5,
+    merchant: DOWNTOWN,
+  },
+  {
+    id: 3,
+    username: 'kbranch',
+    email: 'kate@acme.com',
+    role: 'merchant_user',
+    scope: 'merchant_web',
+    isActive: true,
+    merchantId: 9,
+    merchant: AIRPORT,
   },
 ];
 
@@ -54,7 +69,7 @@ function renderView() {
 }
 
 beforeEach(() => {
-  vi.mocked(getMerchantUsers).mockResolvedValue(MOCK_USERS);
+  vi.mocked(getCompanyUsers).mockResolvedValue(MOCK_USERS);
   vi.mocked(getCurrentMerchantId).mockReturnValue(5);
   vi.mocked(createUser).mockResolvedValue(MOCK_USERS[0]);
   vi.mocked(updateUser).mockResolvedValue(MOCK_USERS[0]);
@@ -80,6 +95,26 @@ describe('UserManagementView', () => {
     expect(await screen.findByText('jdoe')).toBeInTheDocument();
     expect(screen.getByText('john@acme.com')).toBeInTheDocument();
     expect(screen.getByText('asmith')).toBeInTheDocument();
+  });
+
+  it('lists the users of every branch of the company with their branch', async () => {
+    renderView();
+    expect(await screen.findByText('kbranch')).toBeInTheDocument();
+    expect(screen.getAllByText('Acme Downtown')).toHaveLength(2);
+    expect(screen.getByText('Acme Airport')).toBeInTheDocument();
+  });
+
+  it('lets the admin manage only the users of its own branch', async () => {
+    renderView();
+    await screen.findByText('kbranch');
+
+    expect(screen.getByRole('button', { name: 'Edit jdoe' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit kbranch' })).not.toBeInTheDocument();
+    expect(screen.getByText('Other branch')).toBeInTheDocument();
+
+    // A row of another branch does not open the HR summary either.
+    await userEvent.click(screen.getByText('kbranch'));
+    expect(getUserHrSummary).not.toHaveBeenCalled();
   });
 
   it('shows the zero-match message when filters exclude everyone', async () => {

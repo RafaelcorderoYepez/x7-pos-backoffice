@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   createUser,
-  getMerchantUsers,
+  getCompanyUsers,
   getCurrentMerchantId,
   getUserHrSummary,
   setUserActiveStatus,
@@ -31,7 +31,7 @@ import {
   type UserFormFieldErrors,
   type UserFormValues,
 } from '../../../../lib/user-form-validation';
-import type { MerchantUser, UserHrSummary } from '../../../../types/user';
+import type { MerchantUser, PlatformUser, UserHrSummary } from '../../../../types/user';
 import { EmergencySupportModal } from '../../modals/QuickActionModals';
 import { RolesAccessMatrixModal } from '../../modals/RolesAccessMatrixModal';
 import { QuickLaunchPanel } from '../../shared/QuickLaunchPanel';
@@ -60,7 +60,11 @@ function userLabel(user: MerchantUser): string {
 
 export const UserManagementView: React.FC = () => {
   const navigate = useNavigate();
-  const [users, setUsers] = useState<MerchantUser[]>([]);
+  // The directory lists the whole company, but a merchant admin can only manage the users of
+  // its own branch (the backend answers "not found" for the rest): those rows are read-only.
+  const [currentMerchantId] = useState(getCurrentMerchantId);
+  const isOwnBranch = (user: MerchantUser) => user.merchantId === currentMerchantId;
+  const [users, setUsers] = useState<PlatformUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -94,7 +98,7 @@ export const UserManagementView: React.FC = () => {
     setError(null);
 
     try {
-      const data = await getMerchantUsers();
+      const data = await getCompanyUsers();
       setUsers(data);
     } catch (err) {
       const message =
@@ -384,7 +388,7 @@ export const UserManagementView: React.FC = () => {
             group
           </span>
           <p className="text-[#1d1c17] font-bold mt-4 max-w-2xl mx-auto">
-            No users found for this merchant. Click &apos;Add User&apos; to
+            No users found for this company. Click &apos;Add User&apos; to
             provision your first team profile.
           </p>
           <button
@@ -414,6 +418,9 @@ export const UserManagementView: React.FC = () => {
                     User
                   </th>
                   <th className="px-6 py-3 text-left text-label-caps font-bold text-[#5f5e5e]">
+                    Branch
+                  </th>
+                  <th className="px-6 py-3 text-left text-label-caps font-bold text-[#5f5e5e]">
                     Security Role
                   </th>
                   <th className="px-6 py-3 text-left text-label-caps font-bold text-[#5f5e5e]">
@@ -430,7 +437,7 @@ export const UserManagementView: React.FC = () => {
               <tbody className="divide-y divide-[#e8e2d8]">
                 {filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center">
+                    <td colSpan={6} className="px-6 py-8 text-center">
                       <div className="flex flex-col items-center gap-2 text-secondary">
                         <span className="material-symbols-outlined text-3xl">
                           search_off
@@ -456,10 +463,12 @@ export const UserManagementView: React.FC = () => {
                   filteredUsers.map((user) => (
                     <tr
                       key={user.id}
-                      className={`group hover:bg-[#f8f3eb] transition-colors cursor-pointer ${
-                        user.isActive ? '' : 'opacity-75'
-                      }`}
-                      onClick={() => void openUserSummary(user)}
+                      className={`group hover:bg-[#f8f3eb] transition-colors ${
+                        isOwnBranch(user) ? 'cursor-pointer' : ''
+                      } ${user.isActive ? '' : 'opacity-75'}`}
+                      onClick={
+                        isOwnBranch(user) ? () => void openUserSummary(user) : undefined
+                      }
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -473,6 +482,9 @@ export const UserManagementView: React.FC = () => {
                             </p>
                           </div>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 text-body-md text-[#1d1c17]">
+                        {user.merchant?.name ?? '—'}
                       </td>
                       <td className="px-6 py-4 text-body-md text-[#1d1c17]">
                         {formatEnumLabel(user.role)}
@@ -491,24 +503,33 @@ export const UserManagementView: React.FC = () => {
                         className="px-6 py-4 text-right"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <div className="flex justify-end gap-2 opacity-30 group-hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(user)}
-                            className="p-1 text-[#1d1c17] hover:text-[#ae001a] transition-colors"
-                            title="Edit user"
-                            aria-label={`Edit ${userLabel(user)}`}
+                        {isOwnBranch(user) ? (
+                          <div className="flex justify-end gap-2 opacity-30 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(user)}
+                              className="p-1 text-[#1d1c17] hover:text-[#ae001a] transition-colors"
+                              title="Edit user"
+                              aria-label={`Edit ${userLabel(user)}`}
+                            >
+                              <span className="material-symbols-outlined text-[20px]">
+                                edit
+                              </span>
+                            </button>
+                            <StatusToggleButton
+                              status={user.isActive ? 'active' : 'inactive'}
+                              entityLabel={userLabel(user)}
+                              onClick={() => setToggleTarget(user)}
+                            />
+                          </div>
+                        ) : (
+                          <span
+                            className="text-label-caps font-bold text-[#5f5e5e]"
+                            title="Users of other branches are managed by their own branch admin"
                           >
-                            <span className="material-symbols-outlined text-[20px]">
-                              edit
-                            </span>
-                          </button>
-                          <StatusToggleButton
-                            status={user.isActive ? 'active' : 'inactive'}
-                            entityLabel={userLabel(user)}
-                            onClick={() => setToggleTarget(user)}
-                          />
-                        </div>
+                            Other branch
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))

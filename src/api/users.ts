@@ -5,6 +5,7 @@ import type {
   CreateUserPayload,
   MerchantUser,
   MessageResponse,
+  PlatformUser,
   UpdateUserPayload,
   UserHrSummary,
   UserHrSummaryResponse,
@@ -25,6 +26,20 @@ export async function getMerchantUsers(): Promise<MerchantUser[]> {
 
   const json = await apiRequest<UsersListResponse>(
     `/users/merchant/${merchantId}`,
+    { method: 'GET' },
+    'Failed to load users. Please try again.',
+  );
+
+  return json.data ?? [];
+}
+
+/**
+ * Users of every branch of the logged-in user's company (GET /users/company), each with
+ * its merchant. The backend takes the company from the session.
+ */
+export async function getCompanyUsers(): Promise<PlatformUser[]> {
+  const json = await apiRequest<{ data?: PlatformUser[] }>(
+    '/users/company',
     { method: 'GET' },
     'Failed to load users. Please try again.',
   );
