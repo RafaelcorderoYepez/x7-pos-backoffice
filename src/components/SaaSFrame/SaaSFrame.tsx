@@ -127,33 +127,6 @@ export const SaaSFrame: React.FC = () => {
       );
     }
 
-    // From the NavHubBar you arrive without a chosen plan: these two views need it.
-    if (
-      (activeTab === 'subscription-plan-applications' || activeTab === 'subscription-plan-features') &&
-      !selectedPlan
-    ) {
-      return (
-        <div className="bg-white border border-[#e8e2d8] p-12 rounded flex flex-col items-center text-center">
-          <span className="material-symbols-outlined text-[#d51f2c] text-6xl" aria-hidden="true">
-            {activeTab === 'subscription-plan-features' ? 'checklist' : 'widgets'}
-          </span>
-          <h2 className="text-h2 font-black text-[#222222] mt-4 uppercase">
-            {activeTab === 'subscription-plan-features' ? 'Plan Features' : 'Plan Applications'}
-          </h2>
-          <p className="text-body-md text-[#666666] mt-2 max-w-md text-center">
-            Select a subscription plan first.
-          </p>
-          <button
-            type="button"
-            onClick={() => setActiveTab('subscription')}
-            className="mt-6 px-4 py-2 bg-[#222222] text-white font-bold text-label-caps hover:bg-[#ae001a] transition-colors duration-200"
-          >
-            Choose a plan
-          </button>
-        </div>
-      );
-    }
-
     if (activeTab === 'subscription') {
       return <SubscriptionPlansView onNavigate={handleNavigateView} />;
     }
@@ -166,19 +139,21 @@ export const SaaSFrame: React.FC = () => {
       return <PlatformFeatureCatalogView onNavigate={handleNavigateView} />;
     }
 
-    if (activeTab === 'subscription-plan-applications' && selectedPlan) {
+    // From Subscription Plans they open on the chosen plan; from the NavHubBar, without one,
+    // they offer their own plan selector.
+    if (activeTab === 'subscription-plan-applications') {
       return (
         <PlanApplicationsView
-          plan={selectedPlan}
+          plan={selectedPlan ?? undefined}
           onNavigate={handleNavigateView}
         />
       );
     }
 
-    if (activeTab === 'subscription-plan-features' && selectedPlan) {
+    if (activeTab === 'subscription-plan-features') {
       return (
         <PlanFeaturesView
-          plan={selectedPlan}
+          plan={selectedPlan ?? undefined}
           onNavigate={handleNavigateView}
         />
       );
