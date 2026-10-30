@@ -85,3 +85,30 @@ export interface UpdatePlanFeatureDto {
   limit_value?: number;
   status?: 'active' | 'inactive';
 }
+
+/**
+ * The plan a company is subscribed to (GET /company-subscriptions). This is what grants
+ * access: the login takes the latest active one whose end date has not passed.
+ */
+export interface CompanySubscription {
+  id: number;
+  company: { id: number; name: string };
+  plan: { id: number; name: string };
+  /** YYYY-MM-DD */
+  startDate: string;
+  endDate: string | null;
+  renewalDate: string | null;
+  status: 'active' | 'inactive';
+  paymentMethod: string;
+  /** Active but past its end date: the company has no access to the plan any more. */
+  isExpired: boolean;
+}
+
+export interface UpdateCompanySubscriptionDto {
+  planId?: number;
+  status?: 'active' | 'inactive';
+  startDate?: string;
+  endDate?: string | null;
+  renewalDate?: string | null;
+  paymentMethod?: string;
+}
