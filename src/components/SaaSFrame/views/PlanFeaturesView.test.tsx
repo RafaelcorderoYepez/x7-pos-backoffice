@@ -8,6 +8,7 @@ import type { PlanFeature, SubscriptionPlan, PlatformFeature } from '../../../ty
 
 vi.mock('../../../services/saasService', () => ({
   saasService: {
+    getSubscriptionPlans: vi.fn(),
     getPlanFeatures: vi.fn(),
     getFeatures: vi.fn(),
     createPlanFeature: vi.fn(),
@@ -51,6 +52,60 @@ const MOCK_CATALOG_FEATURES: PlatformFeature[] = [
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+// Desde la NavHubBar se llega sin plan elegido: la vista carga los planes y ofrece un selector.
+describe('PlanFeaturesView — without a chosen plan', () => {
+  const EXECUTIVE: SubscriptionPlan = {
+    id: 7,
+    name: 'Executive',
+    description: 'Custom terms.',
+    price: null,
+    priceLabel: 'Contact sales',
+    billingCycle: 'annual',
+    status: 'active',
+  };
+
+  beforeEach(() => {
+    vi.mocked(saasService.getSubscriptionPlans).mockResolvedValue([MOCK_PLAN, EXECUTIVE]);
+    vi.mocked(saasService.getPlanFeatures).mockResolvedValue(MOCK_PLAN_FEATURES);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('opens on the first plan and lists its features', async () => {
+    render(<PlanFeaturesView />);
+    await waitFor(() => {
+      expect(saasService.getPlanFeatures).toHaveBeenCalledWith(3);
+    });
+    expect(
+      screen.getByText('FEATURE ENTITLEMENTS BOUND TO PLAN: Gold Plan'),
+    ).toBeInTheDocument();
+  });
+
+  it('reloads the features when another plan is selected', async () => {
+    render(<PlanFeaturesView />);
+    const select = await screen.findByLabelText('Select Plan');
+
+    await userEvent.selectOptions(select, '7');
+
+    await waitFor(() => {
+      expect(saasService.getPlanFeatures).toHaveBeenCalledWith(7);
+    });
+    expect(screen.getByRole('option', { name: 'Executive (Contact sales)' })).toBeInTheDocument();
+  });
+
+  it('shows no selector when the plan comes from Subscription Plans', async () => {
+    render(<PlanFeaturesView plan={MOCK_PLAN} />);
+    await waitFor(() => {
+      expect(saasService.getPlanFeatures).toHaveBeenCalledWith(3);
+    });
+    expect(screen.queryByLabelText('Select Plan')).not.toBeInTheDocument();
+    expect(saasService.getSubscriptionPlans).not.toHaveBeenCalled();
+  });
 });
 
 describe('PlanFeaturesView — loading state', () => {

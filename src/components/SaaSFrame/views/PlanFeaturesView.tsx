@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { saasService } from '../../../services/saasService';
 import type { PlanFeature, SubscriptionPlan, PlatformFeature } from '../../../types/subscription';
 import { StatusToggleButton, ConfirmStatusToggleDialog } from '../../shared/StatusToggle';
+import { SubscriptionPlanSelect } from './SubscriptionPlanSelect';
 
 function isValidLimitValue(raw: string): boolean {
   return /^\d+(\.\d{1,2})?$/.test(raw.trim()) && Number(raw) > 0;
@@ -266,11 +267,14 @@ function fuzzyMatch(query: string, target: string): boolean {
 }
 
 interface PlanFeaturesViewProps {
-  plan: SubscriptionPlan;
+  /** Plan chosen in Subscription Plans; without it the view loads the plans and offers a selector. */
+  plan?: SubscriptionPlan;
   onNavigate?: (view: string) => void;
 }
 
 export const PlanFeaturesView: React.FC<PlanFeaturesViewProps> = ({ plan, onNavigate }) => {
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(plan ?? null);
   const [planFeatures, setPlanFeatures] = useState<PlanFeature[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
@@ -287,8 +291,32 @@ export const PlanFeaturesView: React.FC<PlanFeaturesViewProps> = ({ plan, onNavi
   const [toggleSubmitting, setToggleSubmitting] = useState(false);
 
   useEffect(() => {
+    if (plan) {
+      void Promise.resolve().then(() => setSelectedPlan(plan));
+      return;
+    }
     saasService
-      .getPlanFeatures(plan.id)
+      .getSubscriptionPlans()
+      .then((data) => {
+        setPlans(data);
+        if (data.length > 0) setSelectedPlan(data[0]);
+        else setLoading(false);
+      })
+      .catch(() => {
+        setFetchError(true);
+        setLoading(false);
+      });
+  }, [plan]);
+
+  const selectedPlanId = selectedPlan?.id;
+  useEffect(() => {
+    if (!selectedPlanId) return;
+    void Promise.resolve().then(() => {
+      setLoading(true);
+      setFetchError(false);
+    });
+    saasService
+      .getPlanFeatures(selectedPlanId)
       .then(setPlanFeatures)
       .catch((err) => {
         const msg = err instanceof Error ? err.message : 'Failed to load plan features';
@@ -303,7 +331,7 @@ export const PlanFeaturesView: React.FC<PlanFeaturesViewProps> = ({ plan, onNavi
         }
       })
       .finally(() => setLoading(false));
-  }, [plan.id]);
+  }, [selectedPlanId]);
 
   useEffect(() => {
     if (!toast) return;
@@ -325,10 +353,11 @@ export const PlanFeaturesView: React.FC<PlanFeaturesViewProps> = ({ plan, onNavi
   };
 
   const handleMap = async (dto: { featureId: number; limitValue: number }) => {
+    if (!selectedPlan) return;
     setMapSubmitting(true);
     try {
       const newPF = await saasService.createPlanFeature({
-        subscriptionPlan: plan.id,
+        subscriptionPlan: selectedPlan.id,
         feature: dto.featureId,
         limit_value: dto.limitValue,
         status: 'active',
@@ -449,10 +478,17 @@ export const PlanFeaturesView: React.FC<PlanFeaturesViewProps> = ({ plan, onNavi
   return (
     <div className="flex flex-col gap-6">
       {/* Dark Title Banner (AC2) */}
-      <div className="bg-[#222222] px-6 py-4">
+      <div className="bg-[#222222] px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <span className="text-[11px] font-bold uppercase tracking-widest text-white">
-          FEATURE ENTITLEMENTS BOUND TO PLAN: {plan.name}
+          FEATURE ENTITLEMENTS BOUND TO PLAN: {selectedPlan?.name || '...'}
         </span>
+        {!plan && plans.length > 0 && (
+          <SubscriptionPlanSelect
+            plans={plans}
+            value={selectedPlan?.id}
+            onChange={setSelectedPlan}
+          />
+        )}
       </div>
 
       {/* Empty State (AC4) */}
@@ -718,9 +754,9 @@ export const PlanFeaturesView: React.FC<PlanFeaturesViewProps> = ({ plan, onNavi
       )}
 
       {/* Modals */}
-      {showMapModal && (
+      {showMapModal && selectedPlan && (
         <MapFeatureDialog
-          plan={plan}
+          plan={selectedPlan}
           availableFeatures={availableFeatures}
           loadingFeatures={loadingFeatures}
           submitting={mapSubmitting}

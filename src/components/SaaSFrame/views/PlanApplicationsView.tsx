@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { StatusToggleButton, ConfirmStatusToggleDialog } from '../../shared/StatusToggle';
 import { saasService } from '../../../services/saasService';
 import type { PlanApplication, SubscriptionPlan, Application } from '../../../types/subscription';
+import { SubscriptionPlanSelect } from './SubscriptionPlanSelect';
 
 interface EditPlanApplicationDialogProps {
   pa: PlanApplication;
@@ -467,28 +468,11 @@ export const PlanApplicationsView: React.FC<PlanApplicationsViewProps> = ({
 
         {/* Dropdown selector if plan is not passed via props */}
         {!plan && plans.length > 0 && (
-          <div className="flex items-center gap-3">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-white/70">
-              Select Plan:
-            </label>
-            <select
-              aria-label="Select Plan"
-              value={selectedPlanState?.id || ''}
-              onChange={(e) => {
-                const selected = plans.find(p => p.id === parseInt(e.target.value));
-                if (selected) {
-                  setSelectedPlanState(selected);
-                }
-              }}
-              className="bg-[#333333] text-white px-3 py-1.5 border border-white/10 rounded text-xs focus:border-[#d51f2c] focus:ring-1 focus:ring-[#d51f2c] outline-none cursor-pointer"
-            >
-              {plans.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name} (${p.price})
-                </option>
-              ))}
-            </select>
-          </div>
+          <SubscriptionPlanSelect
+            plans={plans}
+            value={selectedPlanState?.id}
+            onChange={setSelectedPlanState}
+          />
         )}
       </div>
 
