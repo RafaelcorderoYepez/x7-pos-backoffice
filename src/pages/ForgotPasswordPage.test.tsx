@@ -97,10 +97,15 @@ describe('ForgotPasswordPage', () => {
     expect(screen.getByText('Resend Reset Link')).toBeInTheDocument();
 
     cooldownSeconds = 30;
-    await waitFor(() => {
-      expect(screen.getByTestId('forgot-password-submit')).toBeDisabled();
-      expect(screen.getByText('Resend in 30s')).toBeInTheDocument();
-    });
+    // The page polls the cooldown every 1000 ms, the same as waitFor's default timeout:
+    // on a slow CI runner the tick lost the race. Leave room for a couple of ticks.
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('forgot-password-submit')).toBeDisabled();
+        expect(screen.getByText('Resend in 30s')).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
 
     await user.click(screen.getByTestId('forgot-password-submit'));
     expect(authApi.requestPasswordReset).toHaveBeenCalledTimes(1);
