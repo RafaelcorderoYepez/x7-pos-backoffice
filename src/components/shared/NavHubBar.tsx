@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 export interface NavHubItem {
   id: string;
@@ -34,6 +34,19 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
 }) => {
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const handleBack = onBackToDashboard || onBack;
+  // Deferred scroll resets from scrollToPageTop. Cancelled on unmount: a pending
+  // timer that fires after the page (or a test's jsdom) is gone throws
+  // "document is not defined".
+  const pendingFrame = useRef<number | null>(null);
+  const pendingTimeout = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (pendingFrame.current !== null) cancelAnimationFrame(pendingFrame.current);
+      if (pendingTimeout.current !== null) window.clearTimeout(pendingTimeout.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (propIsSidebarCollapsed !== undefined) {
@@ -85,12 +98,16 @@ export const NavHubBar: React.FC<NavHubBarProps> = ({
     }
     window.scrollTo(0, 0);
 
-    requestAnimationFrame(() => {
+    if (pendingFrame.current !== null) cancelAnimationFrame(pendingFrame.current);
+    if (pendingTimeout.current !== null) window.clearTimeout(pendingTimeout.current);
+    pendingFrame.current = requestAnimationFrame(() => {
+      pendingFrame.current = null;
       const mainEl = document.querySelector('main');
       if (mainEl) mainEl.scrollTop = 0;
       window.scrollTo(0, 0);
     });
-    setTimeout(() => {
+    pendingTimeout.current = window.setTimeout(() => {
+      pendingTimeout.current = null;
       const mainEl = document.querySelector('main');
       if (mainEl) mainEl.scrollTop = 0;
       window.scrollTo(0, 0);
