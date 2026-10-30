@@ -1,5 +1,5 @@
 //src/services/saasService.ts
-import type { SubscriptionPlan, CreateSubscriptionPlanDto, UpdateSubscriptionPlanDto, Application, PlatformFeature, PlanApplication, CreatePlanApplicationDto, UpdatePlanApplicationDto, PlanFeature, CreatePlanFeatureDto, UpdatePlanFeatureDto } from '../types/subscription';
+import type { SubscriptionPlan, CreateSubscriptionPlanDto, UpdateSubscriptionPlanDto, Application, PlatformFeature, PlanApplication, CreatePlanApplicationDto, UpdatePlanApplicationDto, PlanFeature, CreatePlanFeatureDto, UpdatePlanFeatureDto, CompanySubscription, UpdateCompanySubscriptionDto } from '../types/subscription';
 import type { CompanyRegistryItem, CompanyRegistryPayload, CompanyRegistryStatus } from '../types/company-registry';
 import type { PlatformUser } from '../types/user';
 import { saasRequest } from '../api/http';
@@ -441,5 +441,22 @@ export const saasService = {
       method: 'PATCH',
       body: JSON.stringify({ isActive }),
     });
+  },
+
+  // ── Company subscriptions (SaaS Owner) ────────────────────────────────
+  // La suscripción de la compañía es la que da el plan; merchant_subscription no decide el acceso.
+  async listCompanySubscriptions(): Promise<CompanySubscription[]> {
+    return saasFetchAll<CompanySubscription>('company-subscriptions');
+  },
+
+  async updateCompanySubscription(
+    id: number,
+    dto: UpdateCompanySubscriptionDto,
+  ): Promise<CompanySubscription> {
+    const response = await saasApiFetch<{ data: CompanySubscription }>(
+      `company-subscriptions/${id}`,
+      { method: 'PATCH', body: JSON.stringify(dto) },
+    );
+    return response.data;
   },
 };

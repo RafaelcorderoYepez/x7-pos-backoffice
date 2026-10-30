@@ -11,6 +11,7 @@ import { PlatformFeatureCatalogView } from './views/PlatformFeatureCatalogView';
 import { PlanApplicationsView } from './views/PlanApplicationsView';
 import { PlanFeaturesView } from './views/PlanFeaturesView';
 import { CompanyRegistryView } from './views/CompanyRegistryView';
+import { CompanySubscriptionsView } from './views/CompanySubscriptionsView';
 import { GlobalUsersDirectoryView } from './views/GlobalUsersDirectoryView';
 import { OrdersRegistryView } from './views/OrdersRegistryView';
 import { MerchantSettlementsView } from './views/MerchantSettlementsView';
@@ -38,11 +39,6 @@ const FEATURE_BY_SAAS_TAB: Record<string, string> = Object.fromEntries(
 );
 // Options without a view yet in SaaS panel.
 const SAAS_PENDING_TABS: Record<string, { icon: string; title: string; desc: string }> = {
-  'subscription-merchant-subscriptions': {
-    icon: 'storefront',
-    title: 'Merchant Subscriptions',
-    desc: 'Which plan each merchant is subscribed to.',
-  },
   'subscription-subscription-applications': {
     icon: 'apps',
     title: 'Subscription Applications',
@@ -137,6 +133,11 @@ export const SaaSFrame: React.FC = () => {
 
     if (activeTab === 'subscription-features') {
       return <PlatformFeatureCatalogView onNavigate={handleNavigateView} />;
+    }
+
+    // The plan that grants access lives on the company subscription (company_subscription).
+    if (activeTab === 'subscription-merchant-subscriptions') {
+      return <CompanySubscriptionsView />;
     }
 
     // From Subscription Plans they open on the chosen plan; from the NavHubBar, without one,

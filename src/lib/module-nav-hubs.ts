@@ -48,7 +48,7 @@ export const MODULE_NAV_HUBS: ModuleNavHub[] = [
     items: [
       { featureId: 'apps-config', label: 'APPLICATIONS', icon: 'apps', live: true, description: 'Platform application catalog and configuration.' },
       { featureId: 'features-control', label: 'FEATURES', icon: 'toggle_on', live: true, description: 'Feature catalog and feature flags.' },
-      { featureId: 'merchant-subs-link', label: 'MERCHANT SUBSCRIPTIONS', icon: 'storefront', live: false, description: 'Which plan each merchant is subscribed to.' },
+      { featureId: 'merchant-subs-link', label: 'MERCHANT SUBSCRIPTIONS', icon: 'storefront', live: false, description: 'Which plan each company is subscribed to and when it expires.' },
       { featureId: 'plan-apps-rules', label: 'PLAN APPLICATIONS', icon: 'widgets', live: true, description: 'Applications included in each plan.' },
       { featureId: 'plan-features-mapping', label: 'PLAN FEATURES', icon: 'checklist', live: true, description: 'Features unlocked by each plan.' },
       { featureId: 'sub-plans-core', label: 'SUBSCRIPTION PLANS', icon: 'workspace_premium', live: true, description: 'Plan tiers, pricing and billing cycles.' },
