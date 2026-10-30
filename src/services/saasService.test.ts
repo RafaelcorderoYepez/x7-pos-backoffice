@@ -69,4 +69,32 @@ describe('saasService — listados paginados', () => {
 
     expect(plans.map((p) => p.price)).toEqual([69, null]);
   });
+
+  // /users pone los datos de paginación en la raíz de la respuesta, no en `pagination`.
+  it('listPlatformUsers sigue paginando cuando totalPages viene en la raíz', async () => {
+    const rootPage = (data: { id: number }[], pageNumber: number) =>
+      new Response(JSON.stringify({ data, page: pageNumber, limit: 100, totalPages: 2 }));
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(rootPage([{ id: 1 }], 1))
+      .mockResolvedValueOnce(rootPage([{ id: 2 }], 2));
+
+    const users = await saasService.listPlatformUsers();
+
+    expect(users.map((u) => u.id)).toEqual([1, 2]);
+    expect(requestedUrls()).toEqual([
+      expect.stringContaining('/users?page=1&limit=100'),
+      expect.stringContaining('/users?page=2&limit=100'),
+    ]);
+  });
+
+  it('setPlatformUserActive envía isActive por PATCH', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: {} })));
+
+    await saasService.setPlatformUserActive(5, false);
+
+    const [url, init] = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(String(url)).toContain('/users/5/status');
+    expect(init).toMatchObject({ method: 'PATCH', body: JSON.stringify({ isActive: false }) });
+  });
 });

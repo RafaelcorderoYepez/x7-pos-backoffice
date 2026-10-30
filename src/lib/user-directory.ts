@@ -30,12 +30,12 @@ export function userMatchesSearch(
   return tokens.every((token) => haystack.includes(token));
 }
 
-export function filterUsers(
-  users: MerchantUser[],
+export function filterUsers<T extends MerchantUser>(
+  users: T[],
   searchQuery: string,
   roleFilter: string,
   scopeFilter: string,
-): MerchantUser[] {
+): T[] {
   return users.filter(
     (user) =>
       userMatchesSearch(user, searchQuery) &&

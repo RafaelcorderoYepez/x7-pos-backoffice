@@ -34,6 +34,11 @@ export interface MerchantUser {
   merchantId: number;
 }
 
+/** A user as `GET /users` returns it to the SaaS panel: with the merchant it belongs to. */
+export interface PlatformUser extends MerchantUser {
+  merchant?: { id: number; name: string; companyId: number } | null;
+}
+
 export interface HrCollaborator {
   id: number;
   name: string;
