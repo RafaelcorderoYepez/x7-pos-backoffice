@@ -1,18 +1,24 @@
 //src/types/subscription.ts
+// El backend acepta 'yearly' y 'annual' (el seed usa 'annual' para el plan Executive).
+export type BillingCycle = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'annual';
+
 export interface SubscriptionPlan {
   id: number;
   name: string;
   description: string;
-  price: number;
-  billingCycle: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  // null en los planes con precio a medida (isCustomPricing); se muestra priceLabel.
+  price: number | null;
+  billingCycle: BillingCycle;
   status: 'active' | 'inactive' | 'deleted';
+  isCustomPricing?: boolean;
+  priceLabel?: string | null;
 }
 
 export interface CreateSubscriptionPlanDto {
   name: string;
   description: string;
   price: number;
-  billingCycle: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  billingCycle: BillingCycle;
   status: 'active';
 }
 
@@ -20,7 +26,7 @@ export interface UpdateSubscriptionPlanDto {
   name?: string;
   description?: string;
   price?: number;
-  billingCycle?: 'daily' | 'weekly' | 'monthly' | 'yearly';
+  billingCycle?: BillingCycle;
   status?: 'active' | 'inactive';
 }
 

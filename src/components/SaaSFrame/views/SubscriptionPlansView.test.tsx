@@ -114,6 +114,27 @@ describe('SubscriptionPlansView — table rendering', () => {
     });
   });
 
+  it('renders the price label of a custom-priced plan instead of $0.00', async () => {
+    vi.mocked(saasService.getSubscriptionPlans).mockResolvedValue([
+      {
+        id: 6,
+        name: 'Executive',
+        description: 'Custom commercial terms per client.',
+        price: null,
+        priceLabel: 'Contact sales',
+        isCustomPricing: true,
+        billingCycle: 'annual',
+        status: 'active',
+      },
+    ]);
+    renderView();
+    await waitFor(() => {
+      expect(screen.getByText('Contact sales')).toBeInTheDocument();
+      expect(screen.getByText('/ annual')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument();
+  });
+
   it('renders billing cycle labels prefixed with /', async () => {
     renderView();
     await waitFor(() => {

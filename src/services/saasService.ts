@@ -8,6 +8,28 @@ function saasApiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   return saasRequest<T>(`/${path}`, { method: 'GET', ...options }, 'Request failed. Please try again.');
 }
 
+// Los listados del backend paginan (10 por defecto, 100 como máximo): sin recorrer todas las
+// páginas, Applications mostraba 10 de 28 y Plan Features 100 de las 116 del plan Executive.
+const PAGE_SIZE = 100;
+
+async function saasFetchAll<T>(path: string): Promise<T[]> {
+  const separator = path.includes('?') ? '&' : '?';
+  const items: T[] = [];
+  for (let page = 1; ; page++) {
+    const response = await saasApiFetch<{
+      data: T[];
+      pagination?: { totalPages: number };
+    }>(`${path}${separator}page=${page}&limit=${PAGE_SIZE}`);
+    items.push(...response.data);
+    if (!response.pagination || page >= response.pagination.totalPages) return items;
+  }
+}
+
+const toPlan = (plan: SubscriptionPlan): SubscriptionPlan => ({
+  ...plan,
+  price: plan.price === null ? null : Number(plan.price),
+});
+
 export interface MerchantMetric {
   count: number;
   terminals: number;
@@ -204,11 +226,8 @@ export const saasService = {
   },
 
   async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
-    const response = await saasApiFetch<{
-      data: SubscriptionPlan[];
-      pagination: { total: number; page: number; limit: number; totalPages: number };
-    }>('subscription-plan');
-    return response.data.map((plan) => ({ ...plan, price: Number(plan.price) }));
+    const plans = await saasFetchAll<SubscriptionPlan>('subscription-plan');
+    return plans.map(toPlan);
   },
 
   async createSubscriptionPlan(dto: CreateSubscriptionPlanDto): Promise<SubscriptionPlan> {
@@ -216,7 +235,7 @@ export const saasService = {
       method: 'POST',
       body: JSON.stringify(dto),
     });
-    return { ...response.data, price: Number(response.data.price) };
+    return toPlan(response.data);
   },
 
   async updateSubscriptionPlan(id: number, dto: UpdateSubscriptionPlanDto): Promise<SubscriptionPlan> {
@@ -227,7 +246,7 @@ export const saasService = {
         body: JSON.stringify(dto),
       },
     );
-    return { ...response.data, price: Number(response.data.price) };
+    return toPlan(response.data);
   },
 
   async deleteSubscriptionPlan(id: number): Promise<SubscriptionPlan> {
@@ -235,15 +254,11 @@ export const saasService = {
       `subscription-plan/${id}`,
       { method: 'DELETE' },
     );
-    return { ...response.data, price: Number(response.data.price) };
+    return toPlan(response.data);
   },
 
   async getApplications(): Promise<Application[]> {
-    const response = await saasApiFetch<{
-      data: Application[];
-      pagination: { total: number; page: number; limit: number; totalPages: number };
-    }>('applications');
-    return response.data;
+    return saasFetchAll<Application>('applications');
   },
 
   async updateApplication(
@@ -285,11 +300,7 @@ export const saasService = {
   },
 
   async getFeatures(): Promise<PlatformFeature[]> {
-    const response = await saasApiFetch<{
-      data: PlatformFeature[];
-      pagination: { total: number; page: number; limit: number; totalPages: number };
-    }>('features');
-    return response.data;
+    return saasFetchAll<PlatformFeature>('features');
   },
 
   async createFeature(dto: {
@@ -328,11 +339,7 @@ export const saasService = {
   },
 
   async getPlanApplications(planId: number): Promise<PlanApplication[]> {
-    const response = await saasApiFetch<{
-      data: PlanApplication[];
-      pagination: { total: number; page: number; limit: number; totalPages: number };
-    }>(`plan-applications?subscriptionPlanId=${planId}&limit=100`);
-    return response.data;
+    return saasFetchAll<PlanApplication>(`plan-applications?subscriptionPlanId=${planId}`);
   },
 
   async createPlanApplication(dto: CreatePlanApplicationDto): Promise<PlanApplication> {
@@ -352,11 +359,7 @@ export const saasService = {
   },
 
   async getPlanFeatures(planId: number): Promise<PlanFeature[]> {
-    const response = await saasApiFetch<{
-      data: PlanFeature[];
-      pagination: { total: number; page: number; limit: number; totalPages: number };
-    }>(`plan-features?subscriptionPlanId=${planId}&limit=100`);
-    return response.data;
+    return saasFetchAll<PlanFeature>(`plan-features?subscriptionPlanId=${planId}`);
   },
 
   async createPlanFeature(dto: CreatePlanFeatureDto): Promise<PlanFeature> {

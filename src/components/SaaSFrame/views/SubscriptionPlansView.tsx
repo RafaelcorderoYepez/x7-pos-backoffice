@@ -10,6 +10,7 @@ const BILLING_CYCLES: CreateSubscriptionPlanDto['billingCycle'][] = [
   'weekly',
   'monthly',
   'yearly',
+  'annual',
 ];
 
 const EMPTY_FORM = {
@@ -19,8 +20,11 @@ const EMPTY_FORM = {
   billingCycle: 'monthly' as CreateSubscriptionPlanDto['billingCycle'],
 };
 
-const formatPrice = (price: number): string =>
-  `$${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Los planes con precio a medida llegan sin precio: se muestra su etiqueta en vez de $0.00.
+const formatPrice = (plan: SubscriptionPlan): string =>
+  plan.price === null
+    ? plan.priceLabel || 'Custom pricing'
+    : `$${plan.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 interface SubscriptionPlansViewProps {
   onNavigate?: (view: string, plan?: SubscriptionPlan) => void;
@@ -110,7 +114,7 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
     setEditForm({
       name: plan.name,
       description: plan.description,
-      price: plan.price.toString(),
+      price: plan.price === null ? '' : plan.price.toString(),
       billingCycle: plan.billingCycle,
     });
     setEditFormError('');
@@ -157,7 +161,11 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
     if (!name) return setEditFormError('Plan name is required');
     if (name.length > 100) return setEditFormError('Plan name must be 100 characters or less');
     if (!description) return setEditFormError('Description is required');
-    if (!editForm.price || isNaN(price) || price <= 0) return setEditFormError('Price must be a positive number');
+    // Un plan a medida se puede editar sin precio; si se escribe uno, debe ser positivo.
+    const keepsCustomPricing = editingPlan.price === null && !editForm.price;
+    if (!keepsCustomPricing && (!editForm.price || isNaN(price) || price <= 0)) {
+      return setEditFormError('Price must be a positive number');
+    }
 
     setEditFormError('');
     setEditSubmitting(true);
@@ -165,7 +173,7 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
       const updated = await saasService.updateSubscriptionPlan(editingPlan.id, {
         name,
         description,
-        price,
+        ...(keepsCustomPricing ? {} : { price }),
         billingCycle: editForm.billingCycle,
       });
       setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
@@ -424,7 +432,7 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
                     <td className="px-6 py-4 text-center">
                       <div className="flex flex-col items-center gap-1">
                         <span className="text-lg font-black text-[#1d1c17]">
-                          {formatPrice(plan.price)}
+                          {formatPrice(plan)}
                         </span>
                         <span className="text-[10px] font-bold uppercase text-[#5f5e5e] border border-[#e8e2d8] bg-[#f2ede5] px-2 py-0.5 rounded">
                           / {plan.billingCycle}
