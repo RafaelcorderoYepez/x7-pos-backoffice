@@ -28,7 +28,10 @@ dist-ssr
 *.sw?
 *.md
 
-/docs
+/docs/*
+# La propuesta de reorganización de src/ sí se versiona (incluido su .md).
+!/docs/restructure/
+!/docs/restructure/*.md
 /.superpowers
 /.agent
 /.cursor
